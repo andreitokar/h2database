@@ -36,6 +36,7 @@ public class Page {
      * An empty object array.
      */
     public static final Object[] EMPTY_OBJECT_ARRAY = new Object[0];
+    private static final int IN_MEMORY = Integer.MIN_VALUE;
 
     private final MVMap<?, ?> map;
     private long version;
@@ -125,7 +126,9 @@ public class Page {
         p.values = values;
         p.children = children;
         p.totalCount = totalCount;
-        if (memory == 0) {
+        if(map.getStore().getFileStore() == null) {
+            p.memory = IN_MEMORY;
+        } else if (memory == 0) {
             p.recalculateMemory();
         } else {
             p.addMemory(memory);
@@ -302,7 +305,7 @@ public class Page {
         Page newPage = create(map, version,
                 keys, values,
                 children, totalCount,
-                getMemory());
+                memory);
         // mark the old as deleted
         removePage();
         newPage.cachedCompare = cachedCompare;
@@ -388,9 +391,11 @@ public class Page {
         Page newPage = create(map, version,
                 bKeys, bValues,
                 null,
-                bKeys.length, 0);
-        recalculateMemory();
-        newPage.recalculateMemory();
+                b, 0);
+        if(isPersistent()) {
+            recalculateMemory();
+            newPage.recalculateMemory();
+        }
         return newPage;
     }
 
@@ -422,8 +427,10 @@ public class Page {
                 bKeys, null,
                 bChildren,
                 t, 0);
-        recalculateMemory();
-        newPage.recalculateMemory();
+        if(isPersistent()) {
+            recalculateMemory();
+            newPage.recalculateMemory();
+        }
         return newPage;
     }
 
@@ -498,13 +505,15 @@ public class Page {
         // this is slightly slower:
         // keys = Arrays.copyOf(keys, keys.length);
         keys = keys.clone();
-        Object old = keys[index];
-        DataType keyType = map.getKeyType();
-        int mem = keyType.getMemory(key);
-        if (old != null) {
-            mem -= keyType.getMemory(old);
+        if(isPersistent()) {
+            Object old = keys[index];
+            DataType keyType = map.getKeyType();
+            int mem = keyType.getMemory(key);
+            if (old != null) {
+                mem -= keyType.getMemory(old);
+            }
+            addMemory(mem);
         }
-        addMemory(mem);
         keys[index] = key;
     }
 
@@ -521,8 +530,10 @@ public class Page {
         // values = Arrays.copyOf(values, values.length);
         values = values.clone();
         DataType valueType = map.getValueType();
-        addMemory(valueType.getMemory(value) -
-                valueType.getMemory(old));
+        if(isPersistent()) {
+            addMemory(valueType.getMemory(value) -
+                    valueType.getMemory(old));
+        }
         values[index] = value;
         return old;
     }
@@ -569,8 +580,10 @@ public class Page {
         keys[index] = key;
         values[index] = value;
         totalCount++;
-        addMemory(map.getKeyType().getMemory(key) +
-                map.getValueType().getMemory(value));
+        if(isPersistent()) {
+            addMemory(map.getKeyType().getMemory(key) +
+                    map.getValueType().getMemory(value));
+        }
     }
 
     /**
@@ -595,8 +608,10 @@ public class Page {
         children = newChildren;
 
         totalCount += childPage.totalCount;
-        addMemory(map.getKeyType().getMemory(key) +
-                DataUtils.PAGE_MEMORY_CHILD);
+        if(isPersistent()) {
+            addMemory(map.getKeyType().getMemory(key) +
+                    DataUtils.PAGE_MEMORY_CHILD);
+        }
     }
 
     /**
@@ -607,22 +622,28 @@ public class Page {
     public void remove(int index) {
         int keyLength = keys.length;
         int keyIndex = index >= keyLength ? index - 1 : index;
-        Object old = keys[keyIndex];
-        addMemory(-map.getKeyType().getMemory(old));
+        if(isPersistent()) {
+            Object old = keys[keyIndex];
+            addMemory(-map.getKeyType().getMemory(old));
+        }
         Object[] newKeys = new Object[keyLength - 1];
         DataUtils.copyExcept(keys, newKeys, keyLength, keyIndex);
         keys = newKeys;
 
         if (values != null) {
-            old = values[index];
-            addMemory(-map.getValueType().getMemory(old));
+            if(isPersistent()) {
+                Object old = values[index];
+                addMemory(-map.getValueType().getMemory(old));
+            }
             Object[] newValues = new Object[keyLength - 1];
             DataUtils.copyExcept(values, newValues, keyLength, index);
             values = newValues;
             totalCount--;
         }
         if (children != null) {
-            addMemory(-DataUtils.PAGE_MEMORY_CHILD);
+            if(isPersistent()) {
+                addMemory(-DataUtils.PAGE_MEMORY_CHILD);
+            }
             long countOffset = children[index].count;
 
             int childCount = children.length;
@@ -887,37 +908,50 @@ public class Page {
         return pos != 0 ? (int) (pos | (pos >>> 32)) : super.hashCode();
     }
 
+    private boolean isPersistent() {
+        return memory != IN_MEMORY;
+    }
+
     public int getMemory() {
-        if (MVStore.ASSERT) {
-            int mem = memory;
-            recalculateMemory();
-            if (mem != memory) {
-                throw DataUtils.newIllegalStateException(
-                        DataUtils.ERROR_INTERNAL, "Memory calculation error");
+        if (isPersistent()) {
+            if (MVStore.ASSERT) {
+                int mem = memory;
+                recalculateMemory();
+                if (mem != memory) {
+                    throw DataUtils.newIllegalStateException(
+                            DataUtils.ERROR_INTERNAL, "Memory calculation error");
+                }
             }
+            return memory;
         }
-        return memory;
+        return getKeyCount();
     }
 
     private void addMemory(int mem) {
+        if(!isPersistent()) {
+            throw DataUtils.newIllegalStateException(
+                    DataUtils.ERROR_INTERNAL, "Memory calculation error2");
+        }
         memory += mem;
     }
 
     private void recalculateMemory() {
-        int mem = DataUtils.PAGE_MEMORY;
-        DataType keyType = map.getKeyType();
-        for (int i = 0; i < keys.length; i++) {
-            mem += keyType.getMemory(keys[i]);
-        }
-        if (this.isLeaf()) {
-            DataType valueType = map.getValueType();
+        if(isPersistent()) {
+            int mem = DataUtils.PAGE_MEMORY;
+            DataType keyType = map.getKeyType();
             for (int i = 0; i < keys.length; i++) {
-                mem += valueType.getMemory(values[i]);
+                mem += keyType.getMemory(keys[i]);
             }
-        } else {
-            mem += this.getRawChildPageCount() * DataUtils.PAGE_MEMORY_CHILD;
+            if (this.isLeaf()) {
+                DataType valueType = map.getValueType();
+                for (int i = 0; i < keys.length; i++) {
+                    mem += valueType.getMemory(values[i]);
+                }
+            } else {
+                mem += this.getRawChildPageCount() * DataUtils.PAGE_MEMORY_CHILD;
+            }
+            addMemory(mem - memory);
         }
-        addMemory(mem - memory);
     }
 
     void setVersion(long version) {
@@ -928,11 +962,13 @@ public class Page {
      * Remove the page.
      */
     public void removePage() {
-        long p = pos;
-        if (p == 0) {
-            removedInMemory = true;
+        if(isPersistent()) {
+            long p = pos;
+            if (p == 0) {
+                removedInMemory = true;
+            }
+            map.removePage(p, memory);
         }
-        map.removePage(p, memory);
     }
 
     /**

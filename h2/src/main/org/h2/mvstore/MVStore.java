@@ -292,12 +292,11 @@ public class MVStore {
         Object o = config.get("compress");
         this.compressionLevel = o == null ? 0 : (Integer) o;
         String fileName = (String) config.get("fileName");
+        fileStore = (FileStore) config.get("fileStore");
         o = config.get("pageSplitSize");
-        if (o == null) {
-            pageSplitSize = fileName == null ? 4 * 1024 : 16 * 1024;
-        } else {
-            pageSplitSize = (Integer) o;
-        }
+        pageSplitSize = o != null ? (Integer) o :
+                        fileName == null && fileStore == null ? 48 /*4 * 1024*/ :
+                                                                16 * 1024;
         o = config.get("backgroundExceptionHandler");
         this.backgroundExceptionHandler = (UncaughtExceptionHandler) o;
         meta = new MVMap<String, String>(StringDataType.INSTANCE,
@@ -306,7 +305,6 @@ public class MVStore {
         c.put("id", 0);
         c.put("createVersion", currentVersion);
         meta.init(this, c);
-        fileStore = (FileStore) config.get("fileStore");
         if (fileName == null && fileStore == null) {
             cache = null;
             cacheChunkRef = null;
