@@ -126,15 +126,15 @@ public class Page {
         p.values = values;
         p.children = children;
         p.totalCount = totalCount;
-        if(map.getStore().getFileStore() == null) {
+        MVStore store = map.store;
+        if(store.getFileStore() == null) {
             p.memory = IN_MEMORY;
         } else if (memory == 0) {
             p.recalculateMemory();
         } else {
             p.addMemory(memory);
         }
-        MVStore store = map.store;
-        if (store != null) {
+        if(store.getFileStore() != null) {
             store.registerUnsavedPage(p.memory);
         }
         return p;
@@ -149,6 +149,9 @@ public class Page {
      * @return the page
      */
     public static Page create(MVMap<?, ?> map, long version, Page source) {
+        return create(map, version, source.keys, source.values, source.children,
+                source.totalCount, source.memory);
+/*
         Page p = new Page(map, version);
         // the position is 0
         p.keys = source.keys;
@@ -157,10 +160,11 @@ public class Page {
         p.totalCount = source.totalCount;
         p.memory = source.memory;
         MVStore store = map.store;
-        if (store != null) {
+//        if (store != null) {
             store.registerUnsavedPage(p.memory);
-        }
+//        }
         return p;
+*/
     }
 
     /**
