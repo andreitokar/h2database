@@ -691,6 +691,11 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      */
     protected void newRoot(Page newRoot) {
         if (root != newRoot) {
+            long currentVersion = root.getVersion();
+            long newVersion = newRoot.getVersion();
+            if(currentVersion > newVersion) {
+                throw new IllegalStateException(currentVersion + " > " + newVersion);
+            }
             removeUnusedOldVersions();
             if (root.getVersion() != newRoot.getVersion()) {
                 Page last = oldRoots.peekLast();
@@ -1224,36 +1229,38 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     }
 
     private Page copy(Page source, CursorPos parent) {
+        // temporarily, replace child pages with empty pages,
+        // to ensure there are no links to the old store
         Page target = Page.create(this, writeVersion, source);
-        if (source.isLeaf()) {
-            Page child = target;
-            for (CursorPos p = parent; p != null; p = p.parent) {
-                p.page.setChild(p.index, child);
-                p.page = p.page.copy(writeVersion);
-                child = p.page;
-                if (p.parent == null) {
-                    newRoot(p.page);
-                    beforeWrite();
-                }
-            }
-        } else {
-            // temporarily, replace child pages with empty pages,
-            // to ensure there are no links to the old store
+        if (!source.isLeaf()) {
             for (int i = 0; i < getChildPageCount(target); i++) {
-                target.setChild(i, null);
-            }
-            CursorPos pos = new CursorPos(target, 0, parent);
-            for (int i = 0; i < getChildPageCount(target); i++) {
-                pos.index = i;
-                long p = source.getChildPagePos(i);
-                if (p != 0) {
+                if (source.getChildPagePos(i) != 0) {
                     // p == 0 means no child
                     // (for example the last entry of an r-tree node)
                     // (the MVMap is also used for r-trees for compacting)
-                    copy(source.getChildPage(i), pos);
+                    CursorPos pos = new CursorPos(target, i, parent);
+                    Page child = copy(source.getChildPage(i), pos);
+                    target.setChild(i, child);
                 }
             }
-            target = pos.page;
+
+            if(target.getPos() != 0) {
+                target = target.copy(writeVersion);
+            } else {
+                target.setVersion(writeVersion);
+            }
+
+            if(store.isSaveNeeded()) {
+                Page child = target;
+                for(CursorPos p = parent; p != null; p = p.parent) {
+                    Page page = p.page.copy(writeVersion);
+                    page.setChild(p.index, child);
+                    p.page = page;
+                    child = p.page;
+                }
+                newRoot(child);
+                beforeWrite();
+            }
         }
         return target;
     }

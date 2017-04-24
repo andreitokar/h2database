@@ -2194,6 +2194,10 @@ public final class MVStore {
         }
     }
 
+    public boolean isSaveNeeded() {
+        return saveNeeded;
+    }
+
     /**
      * This method is called before writing to a map.
      *
