@@ -6,6 +6,7 @@
 package org.h2.mvstore;
 
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -149,8 +150,16 @@ public class Page {
      * @return the page
      */
     public static Page create(MVMap<?, ?> map, long version, Page source) {
-        return create(map, version, source.keys, source.values, source.children,
-                source.totalCount, source.memory);
+        PageReference[] children = source.children;
+        long totalCount = source.totalCount;
+        if(children != null) {
+            // replace child pages with empty pages
+            children = new PageReference[source.children.length];
+            Arrays.fill(children, PageReference.EMPTY);
+            totalCount = 0;
+        }
+        return create(map, version, source.keys, source.values, children,
+                totalCount, source.memory);
 /*
         Page p = new Page(map, version);
         // the position is 0
@@ -979,6 +988,8 @@ public class Page {
      * A pointer to a page, either in-memory or using a page position.
      */
     public static class PageReference {
+
+        public static PageReference EMPTY = new PageReference(null, 0, 0);
 
         /**
          * The position, if known, or 0.
