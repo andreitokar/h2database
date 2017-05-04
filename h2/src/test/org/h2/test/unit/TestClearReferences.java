@@ -198,6 +198,9 @@ public class TestClearReferences extends TestBase {
             if (o.getClass().getName().startsWith("java.lang.")) {
                 continue;
             }
+            if (o.getClass().getName().startsWith("java.math.")) {
+                continue;
+            }
             if (o.getClass().isArray() && o.getClass().getComponentType().isPrimitive()) {
                 continue;
             }

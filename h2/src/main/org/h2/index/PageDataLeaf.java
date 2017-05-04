@@ -616,7 +616,7 @@ public class PageDataLeaf extends PageData {
      * @return the row
      */
     private Row readRow(Data data, int pos, int columnCount) {
-        Value[] values = new Value[columnCount];
+        Value[] values = new Value[columnCount];         // TODO: eleminate array creation
         synchronized (data) {
             data.setPos(pos);
             for (int i = 0; i < columnCount; i++) {

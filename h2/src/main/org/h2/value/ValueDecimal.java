@@ -21,12 +21,12 @@ public class ValueDecimal extends Value {
     /**
      * The value 'zero'.
      */
-    public static final Object ZERO = new ValueDecimal(BigDecimal.ZERO);
+    public static final ValueDecimal ZERO = new ValueDecimal(BigDecimal.ZERO);
 
     /**
      * The value 'one'.
      */
-    public static final Object ONE = new ValueDecimal(BigDecimal.ONE);
+    public static final ValueDecimal ONE = new ValueDecimal(BigDecimal.ONE);
 
     /**
      * The default precision for a decimal value.

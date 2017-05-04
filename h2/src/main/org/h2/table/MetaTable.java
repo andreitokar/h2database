@@ -1970,7 +1970,7 @@ public class MetaTable extends Table {
     }
 
     private void add(ArrayList<Row> rows, String... strings) {
-        Value[] values = new Value[strings.length];
+        Value[] values = new Value[strings.length];    // TODO: eliminate creation
         for (int i = 0; i < strings.length; i++) {
             String s = strings[i];
             Value v = (s == null) ? (Value) ValueNull.INSTANCE : ValueString.get(s);
@@ -1978,7 +1978,7 @@ public class MetaTable extends Table {
             v = col.convert(v);
             values[i] = v;
         }
-        Row row = database.createRow(values, 1);
+        Row row = createRow(values, 1);
         row.setKey(rows.size());
         rows.add(row);
     }

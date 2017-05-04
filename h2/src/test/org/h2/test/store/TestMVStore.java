@@ -1416,7 +1416,8 @@ public class TestMVStore extends TestBase {
             assertEquals(i + 1, m.size());
         }
         assertEquals(1000, m.size());
-        assertEquals(131896, s.getUnsavedMemory());
+//        assertEquals(131896, s.getUnsavedMemory());
+        assertEquals(152962, s.getUnsavedMemory());
         s.commit();
         assertEquals(2, s.getFileStore().getWriteCount());
         s.close();

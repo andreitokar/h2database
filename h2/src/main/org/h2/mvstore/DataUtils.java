@@ -949,10 +949,10 @@ public class DataUtils {
      * @param <K> the key type
      * @param <V> the value type
      */
-    public static class MapEntry<K, V> implements Map.Entry<K, V> {
+    public static final class MapEntry<K, V> implements Map.Entry<K, V> {
 
         private final K key;
-        private V value;
+        private final V value;
 
         public MapEntry(K key, V value) {
             this.key = key;

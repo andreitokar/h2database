@@ -19,6 +19,8 @@ import org.h2.mvstore.WriteBuffer;
 import org.h2.mvstore.rtree.SpatialDataType;
 import org.h2.mvstore.rtree.SpatialKey;
 import org.h2.mvstore.type.DataType;
+import org.h2.mvstore.type.ExtendedDataType;
+import org.h2.result.Row;
 import org.h2.result.SortOrder;
 import org.h2.store.DataHandler;
 import org.h2.tools.SimpleResultSet;
@@ -71,8 +73,8 @@ public class ValueDataType implements DataType {
     private static final int CUSTOM_DATA_TYPE = 133;
 
     final DataHandler handler;
-    final CompareMode compareMode;
-    final int[] sortTypes;
+    protected final CompareMode compareMode;
+    protected final int[] sortTypes;
     SpatialDataType spatialType;
 
     public ValueDataType(CompareMode compareMode, DataHandler handler,
@@ -214,14 +216,7 @@ public class ValueDataType implements DataType {
             break;
         }
         case Value.LONG: {
-            long x = v.getLong();
-            if (x < 0) {
-                buff.put((byte) LONG_NEG).putVarLong(-x);
-            } else if (x < 8) {
-                buff.put((byte) (LONG_0_7 + x));
-            } else {
-                buff.put((byte) type).putVarLong(x);
-            }
+            writeLong(buff, v.getLong());
             break;
         }
         case Value.DECIMAL: {
@@ -384,10 +379,20 @@ public class ValueDataType implements DataType {
             break;
         }
         case Value.ARRAY: {
-            Value[] list = ((ValueArray) v).getList();
-            buff.put((byte) type).putVarInt(list.length);
-            for (Value x : list) {
-                writeValue(buff, x);
+            if(v instanceof Row)
+            {
+                Row row = (Row) v;
+                int columnCount = row.getColumnCount();
+                buff.put((byte) type).putVarInt(columnCount);
+                for(int i = 0; i < columnCount; ++i) {
+                    writeValue(buff, row.getValue(i));
+                }
+            } else {
+                Value[] list = ((ValueArray) v).getList();
+                buff.put((byte) type).putVarInt(list.length);
+                for (Value x : list) {
+                    writeValue(buff, x);
+                }
             }
             break;
         }
@@ -443,6 +448,16 @@ public class ValueDataType implements DataType {
         }
     }
 
+    protected final void writeLong(WriteBuffer buff, long x) {
+        if (x < 0) {
+            buff.put((byte) LONG_NEG).putVarLong(-x);
+        } else if (x < 8) {
+            buff.put((byte) (LONG_0_7 + x));
+        } else {
+            buff.put((byte) Value.LONG).putVarLong(x);
+        }
+    }
+
     private static void writeString(WriteBuffer buff, String s) {
         int len = s.length();
         buff.putVarInt(len).putStringData(s, len);
@@ -453,7 +468,7 @@ public class ValueDataType implements DataType {
      *
      * @return the value
      */
-    private Object readValue(ByteBuffer buff) {
+    protected Value readValue(ByteBuffer buff) {
         int type = buff.get() & 255;
         switch (type) {
         case Value.NULL:
@@ -636,7 +651,7 @@ public class ValueDataType implements DataType {
         return DataUtils.readVarInt(buff);
     }
 
-    private static long readVarLong(ByteBuffer buff) {
+    protected static long readVarLong(ByteBuffer buff) {
         return DataUtils.readVarLong(buff);
     }
 

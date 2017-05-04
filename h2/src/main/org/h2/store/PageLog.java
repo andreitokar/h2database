@@ -464,7 +464,7 @@ public class PageLog {
         data.checkCapacity(len);
         in.readFully(data.getBytes(), len);
         int columnCount = data.readVarInt();
-        Value[] values = new Value[columnCount];
+        Value[] values = new Value[columnCount];   // TODO: eliminate array creation
         for (int i = 0; i < columnCount; i++) {
             values[i] = data.readValue();
         }

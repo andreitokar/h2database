@@ -204,11 +204,13 @@ public class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
                 Page split = split(p, v);
                 Object k1 = getBounds(p);
                 Object k2 = getBounds(split);
-                Object[] keys = { k1, k2 };
+                Object keys = getExtendedKeyType().createStorage(2);
+                getExtendedKeyType().setValue(keys, 0, k1);
+                getExtendedKeyType().setValue(keys, 1, k2);
                 Page.PageReference[] children = {
                         new Page.PageReference(p, p.getPos(), p.getTotalCount()),
                         new Page.PageReference(split, split.getPos(), split.getTotalCount()),
-                        new Page.PageReference(null, 0, 0)
+                        Page.PageReference.EMPTY
                 };
                 p = Page.create(this, v,
                         keys, null,
@@ -401,18 +403,11 @@ public class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
     }
 
     private Page newPage(boolean leaf, long writeVersion) {
-        Object[] values;
-        Page.PageReference[] refs;
-        if (leaf) {
-            values = Page.EMPTY_OBJECT_ARRAY;
-            refs = null;
-        } else {
-            values = null;
-            refs = new Page.PageReference[] {
-                    new Page.PageReference(null, 0, 0)};
-        }
+        Page.PageReference[] refs = leaf ? null :
+                                           new Page.PageReference[] {
+                                                    Page.PageReference.EMPTY};
         return Page.create(this, writeVersion,
-                Page.EMPTY_OBJECT_ARRAY, values,
+                null, null,
                 refs, 0, 0);
     }
 
