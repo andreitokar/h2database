@@ -13,41 +13,36 @@ import java.util.Iterator;
  * @param <K> the key type
  * @param <V> the value type
  */
-public class Cursor<K, V> implements Iterator<K> {
+public final class Cursor<K, V> implements Iterator<K> {
 
     private final MVMap<K, ?> map;
-    private final K from;
     private CursorPos pos;
     private K current, last;
     private V currentValue, lastValue;
     private Page lastPage;
     private final Page root;
-    private boolean initialized;
 
     Cursor(MVMap<K, ?> map, Page root, K from) {
         this.map = map;
         this.root = root;
-        this.from = from;
+        min(root, from);
+        fetchNext();
     }
 
     @Override
     public boolean hasNext() {
-        if (!initialized) {
-            min(root, from);
-            initialized = true;
-            fetchNext();
-        }
         return current != null;
     }
 
     @Override
     public K next() {
-        hasNext();
         K c = current;
-        last = current;
-        lastValue = currentValue;
-        lastPage = pos == null ? null : pos.page;
-        fetchNext();
+        if(c != null) {
+            last = current;
+            lastValue = currentValue;
+            lastPage = pos == null ? null : pos.page;
+            fetchNext();
+        }
         return c;
     }
 
@@ -87,13 +82,13 @@ public class Cursor<K, V> implements Iterator<K> {
             while (n-- > 0) {
                 fetchNext();
             }
-            return;
+        } else {
+            long index = map.getKeyIndex(current);
+            K k = map.getKey(index + n);
+            pos = null;
+            min(root, k);
+            fetchNext();
         }
-        long index = map.getKeyIndex(current);
-        K k = map.getKey(index + n);
-        pos = null;
-        min(root, k);
-        fetchNext();
     }
 
     @Override

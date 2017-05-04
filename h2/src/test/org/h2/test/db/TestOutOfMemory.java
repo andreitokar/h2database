@@ -13,6 +13,8 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Map;
 import java.util.Random;
+import java.util.concurrent.atomic.AtomicReference;
+
 import org.h2.api.ErrorCode;
 import org.h2.mvstore.MVStore;
 import org.h2.store.fs.FilePath;
@@ -52,7 +54,16 @@ public class TestOutOfMemory extends TestBase {
     private void testMVStoreUsingInMemoryFileSystem() {
         FilePath.register(new FilePathMem());
         String fileName = "memFS:" + getTestName();
-        MVStore store = MVStore.open(fileName);
+        final AtomicReference<Throwable> exRef = new AtomicReference<>();
+        MVStore store = new MVStore.Builder()
+                .fileName(fileName)
+                .backgroundExceptionHandler(new Thread.UncaughtExceptionHandler() {
+                    @Override
+                    public void uncaughtException(Thread t, Throwable e) {
+                        exRef.compareAndSet(null, e);
+                    }
+                })
+                .open();
         try {
             Map<Integer, byte[]> map = store.openMap("test");
             Random r = new Random(1);
@@ -62,6 +73,9 @@ public class TestOutOfMemory extends TestBase {
                     r.nextBytes(data);
                     map.put(i, data);
                 }
+                Throwable throwable = exRef.get();
+                if(throwable instanceof OutOfMemoryError) throw (OutOfMemoryError)throwable;
+                if(throwable instanceof IllegalStateException) throw (IllegalStateException)throwable;
                 fail();
             } catch (OutOfMemoryError e) {
                 // expected

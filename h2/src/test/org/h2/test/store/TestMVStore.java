@@ -1393,12 +1393,13 @@ public class TestMVStore extends TestBase {
         m = s.openMap("data");
         for (int i = 0; i < 10; i++) {
             if (i % 4 != 0) {
-                sleep(2);
+//                sleep(2);
                 m.remove(i);
                 s.commit();
             }
         }
         assertTrue(s.compact(100, 50 * 1024));
+        s.compactMoveChunks();
         s.close();
         long len2 = FileUtils.size(fileName);
         assertTrue("len2: " + len2 + " len: " + len, len2 < len);

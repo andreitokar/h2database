@@ -694,13 +694,12 @@ public final class MVStore {
             }
             s = meta.get(s);
             Chunk c = Chunk.fromString(s);
-            if (!chunks.containsKey(c.id)) {
+            if (chunks.putIfAbsent(c.id, c) == null) {
                 if (c.block == Long.MAX_VALUE) {
                     throw DataUtils.newIllegalStateException(
                             DataUtils.ERROR_FILE_CORRUPT,
                             "Chunk {0} is invalid", c.id);
                 }
-                chunks.put(c.id, c);
             }
         }
     }
@@ -723,6 +722,7 @@ public final class MVStore {
 
     private void verifyLastChunks() {
         long time = getTimeSinceCreation();
+        assert lastChunk == null || chunks.containsKey(lastChunk.id) : lastChunk;
         ArrayList<Integer> ids = new ArrayList<Integer>(chunks.keySet());
         Collections.sort(ids);
         int newestValidChunk = -1;
@@ -1124,7 +1124,7 @@ public final class MVStore {
             }
             if (v >= 0 && v >= lastStoredVersion) {
                 MVMap<?, ?> r = m.openVersion(storeVersion);
-                if (r.getRoot().getPos() == 0) {
+                if (r.getRootPage().getPos() == 0) {
                     changed.add(r);
                 }
             }
@@ -1139,7 +1139,7 @@ public final class MVStore {
         c.maxLen = 0;
         c.maxLenLive = 0;
         for (MVMap<?, ?> m : changed) {
-            Page p = m.getRoot();
+            Page p = m.getRootPage();
             String key = MVMap.getMapRootKey(m.getId());
             if (p.getTotalCount() == 0) {
                 meta.put(key, "0");
@@ -1151,7 +1151,7 @@ public final class MVStore {
         }
         meta.setWriteVersion(version);
 
-        Page metaRoot = meta.getRoot();
+        Page metaRoot = meta.getRootPage();
         metaRoot.writeUnsavedRecursive(c, buff);
 
         int chunkLength = buff.position();
@@ -1247,7 +1247,7 @@ public final class MVStore {
             shrinkFileIfPossible(1);
         }
         for (MVMap<?, ?> m : changed) {
-            Page p = m.getRoot();
+            Page p = m.getRootPage();
             if (p.getTotalCount() > 0) {
                 p.writeEnd();
             }
@@ -2267,7 +2267,14 @@ public final class MVStore {
             for (MVMap<?, ?> m : maps.values()) {
                 m.close();
             }
+/*
+            currentVersion = version;
+            setWriteVersion(version);
+            meta.rollbackRoot(version);
             meta.clear();
+*/
+            meta.setRoot(Page.createEmpty(meta, version), version);
+
             chunks.clear();
             if (fileStore != null) {
                 fileStore.clear();
@@ -2285,10 +2292,7 @@ public final class MVStore {
         for (MVMap<?, ?> m : maps.values()) {
             m.rollbackTo(version);
         }
-        for (long v = currentVersion; v >= version; v--) {
-            if (freedPageSpace.size() == 0) {
-                break;
-            }
+        for (long v = currentVersion; v >= version && !freedPageSpace.isEmpty(); v--) {
             freedPageSpace.remove(v);
         }
         meta.rollbackTo(version);
@@ -2347,6 +2351,7 @@ public final class MVStore {
         }
         // rollback might have rolled back the stored chunk metadata as well
         if (lastChunk != null) {
+//            chunks.put(lastChunk.id, lastChunk);
             for (Chunk c : chunks.values()) {
                 meta.put(Chunk.getMetaKey(c.id), c.asString());
             }
@@ -2484,18 +2489,11 @@ public final class MVStore {
         if (time <= lastCommitTime + autoCommitDelay) {
             return;
         }
-        if (hasUnsavedChanges()) {
-            try {
-                commitAndSave();
-            } catch (Exception e) {
-                if (backgroundExceptionHandler != null) {
-                    backgroundExceptionHandler.uncaughtException(null, e);
-                    return;
-                }
+        try {
+            if (hasUnsavedChanges()) {
+                    commitAndSave();
             }
-        }
-        if (autoCompactFillRate > 0) {
-            try {
+            if (autoCompactFillRate > 0) {
                 // whether there were file read or write operations since
                 // the last time
                 boolean fileOps;
@@ -2511,10 +2509,10 @@ public final class MVStore {
                 // in the bookkeeping?
                 compact(fillRate, autoCommitMemory);
                 autoCompactLastFileOpCount = fileStore.getWriteCount() + fileStore.getReadCount();
-            } catch (Exception e) {
-                if (backgroundExceptionHandler != null) {
-                    backgroundExceptionHandler.uncaughtException(null, e);
-                }
+            }
+        } catch (Throwable e) {
+            if (backgroundExceptionHandler != null) {
+                backgroundExceptionHandler.uncaughtException(null, e);
             }
         }
     }

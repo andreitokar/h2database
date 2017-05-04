@@ -290,15 +290,16 @@ public class MVTable extends TableBase {
                         return true;
                     }
                 }
-                if (!lockSharedSessions.containsKey(session)) {
+                if (lockSharedSessions.putIfAbsent(session, session) == null) {
                     traceLock(session, exclusive, "ok");
                     session.addLock(this);
-                    lockSharedSessions.put(session, session);
                     if (SysProperties.THREAD_DEADLOCK_DETECTOR) {
-                        if (SHARED_LOCKS.get() == null) {
-                            SHARED_LOCKS.set(new ArrayList<String>());
+                        ArrayList<String> list = SHARED_LOCKS.get();
+                        if (list == null) {
+                            list = new ArrayList<>();
+                            SHARED_LOCKS.set(list);
                         }
-                        SHARED_LOCKS.get().add(getName());
+                        list.add(getName());
                     }
                 }
                 return true;

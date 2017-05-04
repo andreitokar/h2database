@@ -25,7 +25,7 @@ import org.h2.util.New;
 /**
  * A store that supports concurrent MVCC read-committed transactions.
  */
-public class TransactionStore {
+public final class TransactionStore {
 
     /**
      * The store.
@@ -118,14 +118,14 @@ public class TransactionStore {
                 store.removeMap(temp);
             }
         }
-        synchronized (undoLog) {
-            if (undoLog.size() > 0) {
+//        synchronized (undoLog) {
+            if (!undoLog.isEmpty()) {
                 for (Long key : undoLog.keySet()) {
                     int transactionId = getTransactionId(key);
                     openTransactions.set(transactionId);
                 }
             }
-        }
+//        }
     }
 
     /**
@@ -180,7 +180,7 @@ public class TransactionStore {
      * @return the list of transactions (sorted by id)
      */
     public List<Transaction> getOpenTransactions() {
-        synchronized (undoLog) {
+//        synchronized (undoLog) {
             ArrayList<Transaction> list = New.arrayList();
             Long key = undoLog.firstKey();
             while (key != null) {
@@ -207,7 +207,7 @@ public class TransactionStore {
                 key = undoLog.ceilingKey(getOperationId(transactionId + 1, 0));
             }
             return list;
-        }
+//        }
     }
 
     /**
@@ -269,17 +269,18 @@ public class TransactionStore {
             Object key, Object oldValue) {
         Long undoKey = getOperationId(t.getId(), logId);
         Object[] log = new Object[] { mapId, key, oldValue };
-        synchronized (undoLog) {
+        if(undoLog.putIfAbsent(undoKey, log) != null) {
             if (logId == 0) {
-                if (undoLog.containsKey(undoKey)) {
-                    throw DataUtils.newIllegalStateException(
-                            DataUtils.ERROR_TOO_MANY_OPEN_TRANSACTIONS,
-                            "An old transaction with the same id " +
-                            "is still open: {0}",
-                            t.getId());
-                }
+                throw DataUtils.newIllegalStateException(
+                        DataUtils.ERROR_TOO_MANY_OPEN_TRANSACTIONS,
+                        "An old transaction with the same id " +
+                        "is still open: {0}",
+                        t.getId());
             }
-            undoLog.put(undoKey, log);
+            throw DataUtils.newIllegalStateException(
+                    DataUtils.ERROR_TRANSACTION_CORRUPT,
+                    "Duplicate keys in transaction log {0}/{1}",
+                    t.getId(), logId);
         }
     }
 
@@ -291,15 +292,14 @@ public class TransactionStore {
      */
     public void logUndo(Transaction t, long logId) {
         Long undoKey = getOperationId(t.getId(), logId);
-        synchronized (undoLog) {
-            Object[] old = undoLog.remove(undoKey);
-            if (old == null) {
+//        synchronized (undoLog) {
+            if (undoLog.remove(undoKey) == null) {
                 throw DataUtils.newIllegalStateException(
                         DataUtils.ERROR_TRANSACTION_ILLEGAL_STATE,
                         "Transaction {0} was concurrently rolled back",
                         t.getId());
             }
-        }
+//        }
     }
 
     /**
@@ -320,46 +320,80 @@ public class TransactionStore {
      * @param t the transaction
      * @param maxLogId the last log id
      */
-    void commit(Transaction t, long maxLogId) {
+    void commit(final Transaction t, long maxLogId) {
         if (store.isClosed()) {
             return;
         }
-        // TODO could synchronize on blocks (100 at a time or so)
-        synchronized (undoLog) {
-            t.setStatus(Transaction.STATUS_COMMITTING);
-            for (long logId = 0; logId < maxLogId; logId++) {
-                Long undoKey = getOperationId(t.getId(), logId);
-                Object[] op = undoLog.get(undoKey);
-                if (op == null) {
-                    // partially committed: load next
-                    undoKey = undoLog.ceilingKey(undoKey);
-                    if (undoKey == null ||
-                            getTransactionId(undoKey) != t.getId()) {
-                        break;
+
+        t.setStatus(Transaction.STATUS_COMMITTING);
+        for (long logId = 0; logId < maxLogId; logId++) {
+            Long undoKey = getOperationId(t.getId(), logId);
+
+            undoLog.operate(undoKey, null, new MVMap.DecisionMaker() {
+                private MVMap.Decision decision;
+
+                @Override
+                public MVMap.Decision decide(Object existingValue, Object providedValue) {
+                    if(decision == null) {
+                        Object[] op = (Object[]) existingValue;
+                        if (op == null) {
+                            decision = MVMap.Decision.ABORT;
+                        } else {
+                            int mapId = (Integer) op[0];
+                            MVMap<Object, VersionedValue> map = openMap(mapId);
+                            if (map == null) {
+                                // map was later removed
+                                decision = MVMap.Decision.REMOVE;
+                            } else {
+                                Object key = op[1];
+                                map.operate(key, null, new MVMap.DecisionMaker() {
+                                    private MVMap.Decision _decision;
+                                    private VersionedValue value;
+
+                                    @Override
+                                    public MVMap.Decision decide(Object existingValue, Object providedValue) {
+                                        if (_decision == null) {
+                                            value = (VersionedValue) existingValue;
+                                            if (value == null) {
+                                                _decision = MVMap.Decision.ABORT;
+                                            } else if (value.value == null) {
+                                                int tx = getTransactionId(value.operationId);
+                                                if (tx == t.transactionId) {
+                                                    // remove the value only if it comes from the same transaction
+                                                    _decision = MVMap.Decision.REMOVE;
+                                                } else {
+                                                    _decision = MVMap.Decision.ABORT;
+                                                }
+                                            } else {
+                                                _decision = MVMap.Decision.PUT;
+                                                value = new VersionedValue(value.value);
+                                            }
+                                        }
+                                        return _decision;
+                                    }
+
+                                    @Override
+                                    public Object selectValue(Object existingValue, Object providedValue) {
+                                        return value;
+                                    }
+
+                                    @Override
+                                    public void reset() {
+                                        _decision = null;
+                                    }
+                                });
+                                decision = MVMap.Decision.REMOVE;
+                            }
+                        }
                     }
-                    logId = getLogId(undoKey) - 1;
-                    continue;
+                    return decision;
                 }
-                int mapId = (Integer) op[0];
-                MVMap<Object, VersionedValue> map = openMap(mapId);
-                if (map == null) {
-                    // map was later removed
-                } else {
-                    Object key = op[1];
-                    VersionedValue value = map.get(key);
-                    if (value == null) {
-                        // nothing to do
-                    } else if (value.value == null) {
-                        // remove the value
-                        map.remove(key);
-                    } else {
-                        VersionedValue v2 = new VersionedValue();
-                        v2.value = value.value;
-                        map.put(key, v2);
-                    }
+
+                @Override
+                public void reset() {
+                    decision = null;
                 }
-                undoLog.remove(undoKey);
-            }
+            });
         }
         endTransaction(t);
     }
@@ -478,10 +512,10 @@ public class TransactionStore {
      */
     void rollbackTo(Transaction t, long maxLogId, long toLogId) {
         // TODO could synchronize on blocks (100 at a time or so)
-        synchronized (undoLog) {
+//        synchronized (undoLog) {
             for (long logId = maxLogId - 1; logId >= toLogId; logId--) {
                 Long undoKey = getOperationId(t.getId(), logId);
-                Object[] op = undoLog.get(undoKey);
+                Object[] op = undoLog.remove(undoKey);
                 if (op == null) {
                     // partially rolled back: load previous
                     undoKey = undoLog.floorKey(undoKey);
@@ -505,9 +539,9 @@ public class TransactionStore {
                         map.put(key, oldValue);
                     }
                 }
-                undoLog.remove(undoKey);
+//                undoLog.remove(undoKey);
             }
-        }
+//        }
     }
 
     /**
@@ -531,7 +565,7 @@ public class TransactionStore {
             }
 
             private void fetchNext() {
-                synchronized (undoLog) {
+//                synchronized (undoLog) {
                     while (logId >= toLogId) {
                         Long undoKey = getOperationId(t.getId(), logId);
                         Object[] op = undoLog.get(undoKey);
@@ -560,7 +594,7 @@ public class TransactionStore {
                             return;
                         }
                     }
-                }
+//                }
                 current = null;
             }
 
@@ -590,7 +624,7 @@ public class TransactionStore {
     /**
      * A change in a map.
      */
-    public static class Change {
+    public static final class Change {
 
         /**
          * The name of the map where the change occurred.
@@ -611,7 +645,7 @@ public class TransactionStore {
     /**
      * A transaction.
      */
-    public static class Transaction {
+    public static final class Transaction {
 
         /**
          * The status of a closed transaction (committed or rolled back).
@@ -845,7 +879,7 @@ public class TransactionStore {
      * @param <K> the key type
      * @param <V> the value type
      */
-    public static class TransactionMap<K, V> {
+    public static final class TransactionMap<K, V> {
 
         /**
          * The map id.
@@ -868,7 +902,7 @@ public class TransactionStore {
          */
         final MVMap<K, VersionedValue> map;
 
-        private Transaction transaction;
+        private final Transaction transaction;
 
         TransactionMap(Transaction transaction, MVMap<K, VersionedValue> map,
                 int mapId) {
@@ -934,10 +968,10 @@ public class TransactionStore {
                 Cursor<K, VersionedValue> cursor = map.cursor(null);
                 while (cursor.hasNext()) {
                     VersionedValue data;
-                    synchronized (transaction.store.undoLog) {
+//                    synchronized (transaction.store.undoLog) {
                         K key = cursor.next();
                         data = getValue(key, readLogId, cursor.getValue());
-                    }
+//                    }
                     if (data != null && data.value != null) {
                         size++;
                     }
@@ -1015,18 +1049,20 @@ public class TransactionStore {
         @SuppressWarnings("unchecked")
         public V putCommitted(K key, V value) {
             DataUtils.checkArgument(value != null, "The value may not be null");
-            VersionedValue newValue = new VersionedValue();
-            newValue.value = value;
+            VersionedValue newValue = new VersionedValue(value);
             VersionedValue oldValue = map.put(key, newValue);
             return (V) (oldValue == null ? null : oldValue.value);
         }
 
         private V set(K key, V value) {
             transaction.checkNotClosed();
-            V old = get(key);
-            boolean ok = trySet(key, value, false);
-            if (ok) {
-                return old;
+            TxDecisionMaker decisionMaker = new TxDecisionMaker(key);
+            long operationId = getOperationId(transaction.transactionId, transaction.logId);
+            VersionedValue newValue = new VersionedValue(operationId, value);
+            VersionedValue result = map.put(key, newValue, decisionMaker);
+            if(decisionMaker.decide(result, newValue) != MVMap.Decision.ABORT) {
+                VersionedValue versionedValue = getValue(key, readLogId, result);
+                return versionedValue == null ? null : (V)versionedValue.value;
             }
             throw DataUtils.newIllegalStateException(
                     DataUtils.ERROR_TRANSACTION_LOCKED, "Entry is locked");
@@ -1073,8 +1109,8 @@ public class TransactionStore {
          *         update
          */
         public boolean trySet(K key, V value, boolean onlyIfUnchanged) {
-            VersionedValue current = map.get(key);
             if (onlyIfUnchanged) {
+                VersionedValue current = map.get(key);
                 VersionedValue old = getValue(key, readLogId);
                 if (!map.areValuesEqual(old, current)) {
                     long tx = getTransactionId(current.operationId);
@@ -1095,47 +1131,11 @@ public class TransactionStore {
                     }
                 }
             }
-            VersionedValue newValue = new VersionedValue();
-            newValue.operationId = getOperationId(
-                    transaction.transactionId, transaction.logId);
-            newValue.value = value;
-            if (current == null) {
-                // a new value
-                transaction.log(mapId, key, current);
-                VersionedValue old = map.putIfAbsent(key, newValue);
-                if (old != null) {
-                    transaction.logUndo();
-                    return false;
-                }
-                return true;
-            }
-            long id = current.operationId;
-            if (id == 0) {
-                // committed
-                transaction.log(mapId, key, current);
-                // the transaction is committed:
-                // overwrite the value
-                if (!map.replace(key, current, newValue)) {
-                    // somebody else was faster
-                    transaction.logUndo();
-                    return false;
-                }
-                return true;
-            }
-            int tx = getTransactionId(current.operationId);
-            if (tx == transaction.transactionId) {
-                // added or updated by this transaction
-                transaction.log(mapId, key, current);
-                if (!map.replace(key, current, newValue)) {
-                    // strange, somebody overwrote the value
-                    // even though the change was not committed
-                    transaction.logUndo();
-                    return false;
-                }
-                return true;
-            }
-            // the transaction is not yet committed
-            return false;
+            TxDecisionMaker decisionMaker = new TxDecisionMaker(key);
+            long operationId = getOperationId(transaction.transactionId, transaction.logId);
+            VersionedValue newValue = new VersionedValue(operationId, value);
+            VersionedValue result = map.put(key, newValue, decisionMaker);
+            return decisionMaker.decide(result, newValue) != MVMap.Decision.ABORT;
         }
 
         /**
@@ -1199,15 +1199,17 @@ public class TransactionStore {
         }
 
         private VersionedValue getValue(K key, long maxLog) {
-            synchronized (getUndoLog()) {
+//            synchronized (getUndoLog()) {
                 VersionedValue data = map.get(key);
                 return getValue(key, maxLog, data);
-            }
+//            }
         }
 
+/*
         Object getUndoLog() {
             return transaction.store.undoLog;
         }
+*/
 
         /**
          * Get the versioned value for the given key.
@@ -1218,6 +1220,7 @@ public class TransactionStore {
          * @return the value
          */
         VersionedValue getValue(K key, long maxLog, VersionedValue data) {
+/*
             if (MVStore.ASSERT) {
                 if (!Thread.holdsLock(getUndoLog())) {
                     throw DataUtils.newIllegalStateException(
@@ -1225,6 +1228,7 @@ public class TransactionStore {
                             "not synchronized on undoLog");
                 }
             }
+*/
             while (true) {
                 if (data == null) {
                     // doesn't exist or deleted by a committed transaction
@@ -1254,7 +1258,11 @@ public class TransactionStore {
                     // in the meantime (the transaction might still be open)
                     // or it might be changed again in a different
                     // transaction (possibly one with the same id)
-                    data = map.get(key);
+                    VersionedValue newData = map.get(key);
+//                    if(data == newData) {
+//                        throw new IllegalStateException("Endless loop?");
+//                    }
+                    data = newData;
                 } else {
                     data = (VersionedValue) d[2];
                 }
@@ -1457,7 +1465,7 @@ public class TransactionStore {
 
                 private void fetchNext() {
                     while (cursor.hasNext()) {
-                        synchronized (getUndoLog()) {
+//                        synchronized (getUndoLog()) {
                             K k;
                             try {
                                 k = cursor.next();
@@ -1490,7 +1498,7 @@ public class TransactionStore {
                                 currentKey = key;
                                 return;
                             }
-                        }
+//                        }
                     }
                     current = null;
                     currentKey = null;
@@ -1576,23 +1584,80 @@ public class TransactionStore {
             return map.getKeyType();
         }
 
+        private final class TxDecisionMaker extends MVMap.DecisionMaker {
+            private final K key;
+            private MVMap.Decision decision;
+            private VersionedValue originalValue;
+
+            public TxDecisionMaker(K key) {
+                this.key = key;
+            }
+
+            @Override
+            public MVMap.Decision decide(Object existingValue, Object providedValue) {
+                if(decision == null) {
+                    originalValue = (VersionedValue)existingValue;
+                    if(originalValue == null) {
+                        // a new value
+                        decision = MVMap.Decision.PUT;
+                    } else {
+                        long id = originalValue.operationId;
+                        if(id == 0) {
+                            // commited
+                            decision = MVMap.Decision.PUT;
+                        } else {
+                            int tx = getTransactionId(id);
+                            if (tx == transaction.transactionId) {
+                                // added or updated by this transaction
+                                decision = MVMap.Decision.PUT;
+                            } else {
+                                // the transaction is not yet committed
+                                decision = MVMap.Decision.ABORT;
+                            }
+                        }
+                    }
+                    if(decision != MVMap.Decision.ABORT) {
+                        transaction.log(mapId, key, originalValue);
+                    }
+                }
+                return decision;
+            }
+
+            @Override
+            public void reset() {
+                if(decision != MVMap.Decision.ABORT) {
+                    // map has been updated after decision was made
+                    transaction.logUndo();
+                }
+                decision = null;
+            }
+        }
     }
 
     /**
      * A versioned value (possibly null). It contains a pointer to the old
      * value, and the value itself.
      */
-    static class VersionedValue {
+    static final class VersionedValue {
 
         /**
          * The operation id.
          */
-        public long operationId;
+        public final long operationId;
 
         /**
          * The value.
          */
-        public Object value;
+        public final Object value;
+
+        public VersionedValue(Object value) {
+            this(0, value);
+        }
+
+        public VersionedValue(long operationId, Object value) {
+            this.operationId = operationId;
+            this.value = value;
+        }
 
         @Override
         public String toString() {
@@ -1607,7 +1672,7 @@ public class TransactionStore {
     /**
      * The value type for a versioned value.
      */
-    public static class VersionedValueType implements DataType {
+    public static final class VersionedValueType implements DataType {
 
         private final DataType valueType;
 
@@ -1640,9 +1705,7 @@ public class TransactionStore {
             if (buff.get() == 0) {
                 // fast path (no op ids or null entries)
                 for (int i = 0; i < len; i++) {
-                    VersionedValue v = new VersionedValue();
-                    v.value = valueType.read(buff);
-                    obj[i] = v;
+                    obj[i] = new VersionedValue(valueType.read(buff));
                 }
             } else {
                 // slow path (some entries may be null)
@@ -1654,12 +1717,9 @@ public class TransactionStore {
 
         @Override
         public Object read(ByteBuffer buff) {
-            VersionedValue v = new VersionedValue();
-            v.operationId = DataUtils.readVarLong(buff);
-            if (buff.get() == 1) {
-                v.value = valueType.read(buff);
-            }
-            return v;
+            long operationId = DataUtils.readVarLong(buff);
+            Object value = buff.get() == 1 ? valueType.read(buff) : null;
+            return new VersionedValue(operationId, value);
         }
 
         @Override

@@ -24,7 +24,7 @@ import org.h2.util.New;
 /**
  * Utility methods
  */
-public class DataUtils {
+public final class DataUtils {
 
     /**
      * An error occurred while reading from the file.
@@ -949,7 +949,7 @@ public class DataUtils {
      * @param <K> the key type
      * @param <V> the value type
      */
-    public static class MapEntry<K, V> implements Map.Entry<K, V> {
+    public static final class MapEntry<K, V> implements Map.Entry<K, V> {
 
         private final K key;
         private V value;

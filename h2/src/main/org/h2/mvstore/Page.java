@@ -6,13 +6,16 @@
 package org.h2.mvstore;
 
 import java.nio.ByteBuffer;
-import java.util.Arrays;
+    import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 
 import org.h2.compress.Compressor;
+import org.h2.mvstore.rtree.MVRTreeMap;
 import org.h2.mvstore.type.DataType;
+import org.h2.mvstore.type.ObjectDataType;
 import org.h2.util.New;
+import org.h2.value.*;
 
 /**
  * A page (a node or a leaf).
@@ -31,7 +34,7 @@ import org.h2.util.New;
  * leaf: values (one for each key)
  * node: children (1 more than keys)
  */
-public class Page {
+public final class Page {
 
     /**
      * An empty object array.
@@ -99,7 +102,7 @@ public class Page {
      * @param version the version
      * @return the new page
      */
-    static Page createEmpty(MVMap<?, ?> map, long version) {
+    public static Page createEmpty(MVMap<?, ?> map, long version) {
         return create(map, version,
                 EMPTY_OBJECT_ARRAY, EMPTY_OBJECT_ARRAY,
                 null,
@@ -160,20 +163,6 @@ public class Page {
         }
         return create(map, version, source.keys, source.values, children,
                 totalCount, source.memory);
-/*
-        Page p = new Page(map, version);
-        // the position is 0
-        p.keys = source.keys;
-        p.values = source.values;
-        p.children = source.children;
-        p.totalCount = source.totalCount;
-        p.memory = source.memory;
-        MVStore store = map.store;
-//        if (store != null) {
-            store.registerUnsavedPage(p.memory);
-//        }
-        return p;
-*/
     }
 
     /**
@@ -295,7 +284,7 @@ public class Page {
                 buff.append(" ");
             }
             if (children != null) {
-                buff.append("[" + Long.toHexString(children[i].pos) + "] ");
+                buff.append("[").append(Long.toHexString(children[i].pos)).append("] ");
             }
             if (i < keys.length) {
                 buff.append(keys[i]);
@@ -337,6 +326,19 @@ public class Page {
      * @return the value or null
      */
     public int binarySearch(Object key) {
+/*
+        int keyCount = getKeyCount();
+        if(keyCount == 0) return -1;
+        Class<?> keyClass = key == null ? null : key.getClass();
+        Object key0 = getKey(0);
+        Class<?> arrayClass = key0.getClass();
+        if(keyClass == ValueLong.class && arrayClass == ValueLong.class) return binarySearch(((ValueLong)key).getLong(), keys);
+        if(keyClass == Long.class && arrayClass == Long.class) return binarySearch2((Long)key, keys);
+        if(keyClass == ValueInt.class && arrayClass == ValueInt.class) return binarySearch(((ValueInt)key).getInt(), keys);
+        if(keyClass == Integer.class && arrayClass == Integer.class) return binarySearch2((Integer)key, keys);
+        if(key instanceof ValueString && key0 instanceof ValueString) return binarySearch(((ValueString)key).getString(), keys);
+        if(key instanceof String && key0 instanceof String) return binarySearch2((String)key, keys);
+//*/
         int low = 0, high = keys.length - 1;
         // the cached index minus one, so that
         // for the first time (when cachedCompare is 0),
@@ -377,6 +379,197 @@ public class Page {
         // return -(low + 1);
     }
 
+    private int binarySearch(long key, Object keys[]) {
+        int low = 0, high = keys.length - 1;
+        // the cached index minus one, so that
+        // for the first time (when cachedCompare is 0),
+        // the default value is used
+        int x = cachedCompare - 1;
+        if (x < 0 || x > high) {
+            x = high >>> 1;
+        }
+        while (low <= high) {
+            int compare = Long.compare(key, ((ValueLong) keys[x]).getLong());
+            if (compare > 0) {
+                low = x + 1;
+            } else if (compare < 0) {
+                high = x - 1;
+            } else {
+                cachedCompare = x + 1;
+                return x;
+            }
+            x = (low + high) >>> 1;
+        }
+        cachedCompare = low;
+        return -(low + 1);
+    }
+
+    private int binarySearch2(long key, Object keys[]) {
+        int low = 0, high = keys.length - 1;
+        // the cached index minus one, so that
+        // for the first time (when cachedCompare is 0),
+        // the default value is used
+        int x = cachedCompare - 1;
+        if (x < 0 || x > high) {
+            x = high >>> 1;
+        }
+        while (low <= high) {
+            int compare = Long.compare(key, (Long)keys[x]);
+            if (compare > 0) {
+                low = x + 1;
+            } else if (compare < 0) {
+                high = x - 1;
+            } else {
+                cachedCompare = x + 1;
+                return x;
+            }
+            x = (low + high) >>> 1;
+        }
+        cachedCompare = low;
+        return -(low + 1);
+    }
+
+    private int binarySearch(int key, Object keys[]) {
+        int low = 0, high = keys.length - 1;
+        // the cached index minus one, so that
+        // for the first time (when cachedCompare is 0),
+        // the default value is used
+        int x = cachedCompare - 1;
+        if (x < 0 || x > high) {
+            x = high >>> 1;
+        }
+        while (low <= high) {
+            int compare = Integer.compare(key, ((ValueInt) keys[x]).getInt());
+            if (compare > 0) {
+                low = x + 1;
+            } else if (compare < 0) {
+                high = x - 1;
+            } else {
+                cachedCompare = x + 1;
+                return x;
+            }
+            x = (low + high) >>> 1;
+        }
+        cachedCompare = low;
+        return -(low + 1);
+    }
+
+    private int binarySearch2(int key, Object keys[]) {
+        int low = 0, high = keys.length - 1;
+        // the cached index minus one, so that
+        // for the first time (when cachedCompare is 0),
+        // the default value is used
+        int x = cachedCompare - 1;
+        if (x < 0 || x > high) {
+            x = high >>> 1;
+        }
+        while (low <= high) {
+            int compare = Integer.compare(key, (Integer)keys[x]);
+            if (compare > 0) {
+                low = x + 1;
+            } else if (compare < 0) {
+                high = x - 1;
+            } else {
+                cachedCompare = x + 1;
+                return x;
+            }
+            x = (low + high) >>> 1;
+        }
+        cachedCompare = low;
+        return -(low + 1);
+    }
+
+    private int binarySearch(String key, Object keys[]) {
+        int low = 0, high = keys.length - 1;
+        // the cached index minus one, so that
+        // for the first time (when cachedCompare is 0),
+        // the default value is used
+        int x = cachedCompare - 1;
+        if (x < 0 || x > high) {
+            x = high >>> 1;
+        }
+        while (low <= high) {
+            int compare = key.compareTo(((ValueString) keys[x]).getString());
+            if (compare > 0) {
+                low = x + 1;
+            } else if (compare < 0) {
+                high = x - 1;
+            } else {
+                cachedCompare = x + 1;
+                return x;
+            }
+            x = (low + high) >>> 1;
+        }
+        cachedCompare = low;
+        return -(low + 1);
+    }
+
+    private int binarySearch2(String key, Object keys[]) {
+        int low = 0, high = keys.length - 1;
+        // the cached index minus one, so that
+        // for the first time (when cachedCompare is 0),
+        // the default value is used
+        int x = cachedCompare - 1;
+        if (x < 0 || x > high) {
+            x = high >>> 1;
+        }
+        while (low <= high) {
+            int compare = key.compareTo((String)keys[x]);
+            if (compare > 0) {
+                low = x + 1;
+            } else if (compare < 0) {
+                high = x - 1;
+            } else {
+                cachedCompare = x + 1;
+                return x;
+            }
+            x = (low + high) >>> 1;
+        }
+        cachedCompare = low;
+        return -(low + 1);
+    }
+
+    private int binarySearch(ValueArray key, Object keys[]) {
+        Value[] keyList = key.getList();
+        DataType types[] = new DataType[keyList.length];
+        for (int i = 0; i < keyList.length; i++) {
+            ObjectDataType tmp = new ObjectDataType();
+            types[i] = tmp;
+        }
+
+        int low = 0, high = keys.length - 1;
+        // the cached index minus one, so that
+        // for the first time (when cachedCompare is 0),
+        // the default value is used
+        int x = cachedCompare - 1;
+        if (x < 0 || x > high) {
+            x = high >>> 1;
+        }
+        while (low <= high) {
+            Value[] elementValues = ((ValueArray)keys[x]).getList();
+            int compare = 0;
+            int compareLength = Math.min(keyList.length, elementValues.length);
+            for(int i = 0; compare == 0 && i < compareLength; ++i) {
+                if(keyList[i] == null) {
+                    compare = elementValues[i] == null ? 0 : -1;
+                } else {
+                    compare = types[i].compare(keyList[i].getObject(), elementValues[i].getObject());
+                }
+            }
+            if (compare > 0) {
+                low = x + 1;
+            } else if (compare < 0) {
+                high = x - 1;
+            } else {
+                cachedCompare = x + 1;
+                return x;
+            }
+            x = (low + high) >>> 1;
+        }
+        cachedCompare = low;
+        return -(low + 1);
+    }
+
     /**
      * Split the page. This modifies the current page.
      *
@@ -388,19 +581,20 @@ public class Page {
     }
 
     private Page splitLeaf(int at) {
-        int a = at, b = keys.length - a;
-        Object[] aKeys = new Object[a];
+        int b = keys.length - at;
+        assert at > 0;
+        assert b > 0;
+        Object[] aKeys = new Object[at];
         Object[] bKeys = new Object[b];
-        System.arraycopy(keys, 0, aKeys, 0, a);
-        System.arraycopy(keys, a, bKeys, 0, b);
+        System.arraycopy(keys, 0, aKeys, 0, at);
+        System.arraycopy(keys, at, bKeys, 0, b);
         keys = aKeys;
-        Object[] aValues = new Object[a];
+        Object[] aValues = new Object[at];
         Object[] bValues = new Object[b];
-        bValues = new Object[b];
-        System.arraycopy(values, 0, aValues, 0, a);
-        System.arraycopy(values, a, bValues, 0, b);
+        System.arraycopy(values, 0, aValues, 0, at);
+        System.arraycopy(values, at, bValues, 0, b);
         values = aValues;
-        totalCount = a;
+        totalCount = at;
         Page newPage = create(map, version,
                 bKeys, bValues,
                 null,
@@ -413,18 +607,19 @@ public class Page {
     }
 
     private Page splitNode(int at) {
-        int a = at, b = keys.length - a;
-
-        Object[] aKeys = new Object[a];
+        int b = keys.length - at;
+        assert at > 0;
+        assert b > 1;
+        Object[] aKeys = new Object[at];
         Object[] bKeys = new Object[b - 1];
-        System.arraycopy(keys, 0, aKeys, 0, a);
-        System.arraycopy(keys, a + 1, bKeys, 0, b - 1);
+        System.arraycopy(keys, 0, aKeys, 0, at);
+        System.arraycopy(keys, at + 1, bKeys, 0, b - 1);
         keys = aKeys;
 
-        PageReference[] aChildren = new PageReference[a + 1];
+        PageReference[] aChildren = new PageReference[at + 1];
         PageReference[] bChildren = new PageReference[b];
-        System.arraycopy(children, 0, aChildren, 0, a + 1);
-        System.arraycopy(children, a + 1, bChildren, 0, b);
+        System.arraycopy(children, 0, aChildren, 0, at + 1);
+        System.arraycopy(children, at + 1, bChildren, 0, b);
         children = aChildren;
 
         long t = 0;
@@ -488,23 +683,23 @@ public class Page {
      * @param c the new child page
      */
     public void setChild(int index, Page c) {
+        long position;
+        long totalCount;
         if (c == null) {
-            long oldCount = children[index].count;
+            position = 0;
+            totalCount = 0;
+        } else {
+            position = c.pos;
+            totalCount = c.totalCount;
+        }
+
+        PageReference oldChild = children[index];
+        if(c != oldChild.page || position != oldChild.pos) {
+            this.totalCount += totalCount - oldChild.count;
             // this is slightly slower:
             // children = Arrays.copyOf(children, children.length);
             children = children.clone();
-            PageReference ref = new PageReference(null, 0, 0);
-            children[index] = ref;
-            totalCount -= oldCount;
-        } else if (c != children[index].page ||
-                c.getPos() != children[index].pos) {
-            long oldCount = children[index].count;
-            // this is slightly slower:
-            // children = Arrays.copyOf(children, children.length);
-            children = children.clone();
-            PageReference ref = new PageReference(c, c.pos, c.totalCount);
-            children[index] = ref;
-            totalCount += c.totalCount - oldCount;
+            children[index] = c == null ? PageReference.EMPTY : new PageReference(c);
         }
     }
 
@@ -538,6 +733,7 @@ public class Page {
      * @return the old value
      */
     public Object setValue(int index, Object value) {
+        if(value == null) throw new IllegalArgumentException();
         Object old = values[index];
         // this is slightly slower:
         // values = Arrays.copyOf(values, values.length);
@@ -643,7 +839,7 @@ public class Page {
         DataUtils.copyExcept(keys, newKeys, keyLength, keyIndex);
         keys = newKeys;
 
-        if (values != null) {
+        if (isLeaf()) {
             if(isPersistent()) {
                 Object old = values[index];
                 addMemory(-map.getValueType().getMemory(old));
@@ -652,19 +848,16 @@ public class Page {
             DataUtils.copyExcept(values, newValues, keyLength, index);
             values = newValues;
             totalCount--;
-        }
-        if (children != null) {
+        } else {
+            assert children != null;
             if(isPersistent()) {
                 addMemory(-DataUtils.PAGE_MEMORY_CHILD);
             }
-            long countOffset = children[index].count;
-
+            totalCount -= children[index].count;
             int childCount = children.length;
             PageReference[] newChildren = new PageReference[childCount - 1];
             DataUtils.copyExcept(children, newChildren, childCount, index);
             children = newChildren;
-
-            totalCount -= countOffset;
         }
     }
 
@@ -704,6 +897,7 @@ public class Page {
                     chunkId, checkTest, check);
         }
         int len = DataUtils.readVarInt(buff);
+        assert len > 0;
         keys = new Object[len];
         int type = buff.get();
         boolean node = (type & 1) == DataUtils.PAGE_TYPE_NODE;
@@ -711,13 +905,16 @@ public class Page {
             children = new PageReference[len + 1];
             long[] p = new long[len + 1];
             for (int i = 0; i <= len; i++) {
-                p[i] = buff.getLong();
+                long position = buff.getLong();
+                p[i] = position;
             }
             long total = 0;
             for (int i = 0; i <= len; i++) {
                 long s = DataUtils.readVarLong(buff);
+                long position = p[i];
+                assert position == 0 ? s == 0 : s >= 0;
                 total += s;
-                children[i] = new PageReference(null, p[i], s);
+                children[i] = position == 0 ? PageReference.EMPTY : new PageReference(position, s);
             }
             totalCount = total;
         }
@@ -837,6 +1034,13 @@ public class Page {
         return typePos + 1;
     }
 
+    private void writeChildren2(WriteBuffer buff) {
+        int len = keys.length;
+        for (int i = 0; i <= len; i++) {
+            buff.putLong(children[i].pos);
+        }
+    }
+
     private void writeChildren(WriteBuffer buff) {
         int len = keys.length;
         for (int i = 0; i <= len; i++) {
@@ -863,12 +1067,12 @@ public class Page {
                 Page p = children[i].page;
                 if (p != null) {
                     p.writeUnsavedRecursive(chunk, buff);
-                    children[i] = new PageReference(p, p.getPos(), p.totalCount);
+                    children[i] = new PageReference(p);
                 }
             }
             int old = buff.position();
             buff.position(patch);
-            writeChildren(buff);
+            writeChildren2(buff);
             buff.position(old);
         }
     }
@@ -889,7 +1093,7 @@ public class Page {
                             DataUtils.ERROR_INTERNAL, "Page not written");
                 }
                 ref.page.writeEnd();
-                children[i] = new PageReference(null, ref.pos, ref.count);
+                children[i] = new PageReference(ref.pos, ref.count);
             }
         }
     }
@@ -987,7 +1191,7 @@ public class Page {
     /**
      * A pointer to a page, either in-memory or using a page position.
      */
-    public static class PageReference {
+    public static final class PageReference {
 
         public static PageReference EMPTY = new PageReference(null, 0, 0);
 
@@ -1006,6 +1210,14 @@ public class Page {
          */
         final long count;
 
+        public PageReference(Page page) {
+            this(page, page.pos, page.totalCount);
+        }
+
+        public PageReference(long pos, long count) {
+            this(null, pos, count);
+        }
+
         public PageReference(Page page, long pos, long count) {
             this.page = page;
             this.pos = pos;
@@ -1020,7 +1232,7 @@ public class Page {
      * pages of type node. This information is used for garbage collection (to
      * quickly find out which chunks are still in use).
      */
-    public static class PageChildren {
+    public static final class PageChildren {
 
         /**
          * An empty array of type long.

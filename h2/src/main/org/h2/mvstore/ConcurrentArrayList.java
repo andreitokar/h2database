@@ -60,7 +60,7 @@ public class ConcurrentArrayList<K> {
      * @param obj the element to remove
      * @return true if the element matched and was removed
      */
-    public synchronized boolean removeFirst(K obj) {
+    public synchronized boolean removeFirstOccurrence(K obj) {
         if (peekFirst() != obj) {
             return false;
         }
@@ -78,7 +78,7 @@ public class ConcurrentArrayList<K> {
      * @param obj the element to remove
      * @return true if the element matched and was removed
      */
-    public synchronized boolean removeLast(K obj) {
+    public synchronized boolean removeLastOccurrence(K obj) {
         if (peekLast() != obj) {
             return false;
         }

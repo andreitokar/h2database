@@ -8,6 +8,7 @@ package org.h2.test.store;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.Random;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.h2.mvstore.ConcurrentArrayList;
@@ -50,8 +51,8 @@ public class TestConcurrentLinkedList extends TestBase {
         long start = System.nanoTime();
         // final ConcurrentLinkedList<Integer> test =
         //     new ConcurrentLinkedList<Integer>();
-        final ConcurrentArrayList<Integer> test =
-                new ConcurrentArrayList<Integer>();
+//        final ConcurrentArrayList<Integer> test = new ConcurrentArrayList<Integer>();
+        final ConcurrentLinkedDeque<Integer> test = new ConcurrentLinkedDeque<>();
         final LinkedList<Integer> x = new LinkedList<Integer>();
         final AtomicInteger counter = new AtomicInteger();
         Task task = new Task() {
@@ -100,7 +101,7 @@ public class TestConcurrentLinkedList extends TestBase {
                 Math.sin(i);
                 f = test.peekFirst();
                 if (f != test.peekLast()) {
-                    test.removeFirst(f);
+                    test.removeFirstOccurrence(f);
                 }
             }
         }
@@ -109,7 +110,8 @@ public class TestConcurrentLinkedList extends TestBase {
     }
 
     private void testConcurrent() {
-        final ConcurrentArrayList<Integer> test = new ConcurrentArrayList<Integer>();
+        final ConcurrentLinkedDeque<Integer> test = new ConcurrentLinkedDeque<>();
+//        final ConcurrentArrayList<Integer> test = new ConcurrentArrayList<Integer>();
         // final ConcurrentRing<Integer> test = new ConcurrentRing<Integer>();
         final AtomicInteger counter = new AtomicInteger();
         final AtomicInteger size = new AtomicInteger();
@@ -133,7 +135,7 @@ public class TestConcurrentLinkedList extends TestBase {
                 continue;
             }
             assertEquals(i, x.intValue());
-            if (test.removeFirst(x)) {
+            if (test.removeFirstOccurrence(x)) {
                 size.getAndDecrement();
                 i++;
             }
@@ -144,7 +146,8 @@ public class TestConcurrentLinkedList extends TestBase {
     private void testRandomized() {
         Random r = new Random(0);
         for (int i = 0; i < 100; i++) {
-            ConcurrentArrayList<Integer> test = new ConcurrentArrayList<Integer>();
+            ConcurrentLinkedDeque<Integer> test = new ConcurrentLinkedDeque<>();
+//            ConcurrentArrayList<Integer> test = new ConcurrentArrayList<Integer>();
             // ConcurrentRing<Integer> test = new ConcurrentRing<Integer>();
             LinkedList<Integer> x = new LinkedList<Integer>();
             StringBuilder buff = new StringBuilder();
@@ -164,10 +167,10 @@ public class TestConcurrentLinkedList extends TestBase {
                     if (value != null && (x.size() > 5 || r.nextBoolean())) {
                         buff.append("removeFirst\n");
                         x.removeFirst();
-                        test.removeFirst(value);
+                        test.removeFirstOccurrence(value);
                     } else {
                         buff.append("removeFirst -1\n");
-                        test.removeFirst(-1);
+                        test.removeFirstOccurrence(-1);
                     }
                     break;
                 }
@@ -176,10 +179,10 @@ public class TestConcurrentLinkedList extends TestBase {
                     if (value != null && (x.size() > 5 || r.nextBoolean())) {
                         buff.append("removeLast\n");
                         x.removeLast();
-                        test.removeLast(value);
+                        test.removeLastOccurrence(value);
                     } else {
                         buff.append("removeLast -1\n");
-                        test.removeLast(-1);
+                        test.removeLastOccurrence(-1);
                     }
                     break;
                 }
