@@ -1056,7 +1056,7 @@ public final class TransactionStore {
 
         private V set(K key, V value) {
             transaction.checkNotClosed();
-            TxDecisionMaker decisionMaker = new TxDecisionMaker(key);
+            TxDecisionMaker decisionMaker = new TxDecisionMaker(mapId, key, transaction);
             long operationId = getOperationId(transaction.transactionId, transaction.logId);
             VersionedValue newValue = new VersionedValue(operationId, value);
             VersionedValue result = map.put(key, newValue, decisionMaker);
@@ -1111,7 +1111,7 @@ public final class TransactionStore {
         public boolean trySet(K key, V value, boolean onlyIfUnchanged) {
             if (onlyIfUnchanged) {
                 VersionedValue current = map.get(key);
-                VersionedValue old = getValue(key, readLogId);
+                VersionedValue old = getValue(key, readLogId, current);
                 if (!map.areValuesEqual(old, current)) {
                     long tx = getTransactionId(current.operationId);
                     if (tx == transaction.transactionId) {
@@ -1131,7 +1131,7 @@ public final class TransactionStore {
                     }
                 }
             }
-            TxDecisionMaker decisionMaker = new TxDecisionMaker(key);
+            TxDecisionMaker decisionMaker = new TxDecisionMaker(mapId, key, transaction);
             long operationId = getOperationId(transaction.transactionId, transaction.logId);
             VersionedValue newValue = new VersionedValue(operationId, value);
             VersionedValue result = map.put(key, newValue, decisionMaker);
@@ -1249,7 +1249,7 @@ public final class TransactionStore {
                 // get the value before the uncommitted transaction
                 Object[] d;
                 d = transaction.store.undoLog.get(id);
-                if (d == null) {
+                if (d == null || ((Integer)d[0]).intValue() != map.getId() || !map.areValuesEqual(map.getKeyType(), d[1], key)) {
                     if (transaction.store.store.isReadOnly()) {
                         // uncommitted transaction for a read-only store
                         return null;
@@ -1584,40 +1584,35 @@ public final class TransactionStore {
             return map.getKeyType();
         }
 
-        private final class TxDecisionMaker extends MVMap.DecisionMaker {
-            private final K key;
+        private static final class TxDecisionMaker extends MVMap.DecisionMaker {
+            private final int mapId;
+            private final Object key;
+            private final Transaction transaction;
             private MVMap.Decision decision;
-            private VersionedValue originalValue;
 
-            public TxDecisionMaker(K key) {
+            public TxDecisionMaker(int mapId, Object key, Transaction transaction) {
+                this.mapId = mapId;
                 this.key = key;
+                this.transaction = transaction;
             }
 
             @Override
             public MVMap.Decision decide(Object existingValue, Object providedValue) {
                 if(decision == null) {
-                    originalValue = (VersionedValue)existingValue;
-                    if(originalValue == null) {
+                    VersionedValue originalValue = (VersionedValue)existingValue;
+                    long id;
+                    // if map does not have that entry yet
+                    if(originalValue == null ||
+                            // or entry is a committed one
+                            (id = originalValue.operationId) == 0 ||
+                            // or it came from the same transaction
+                            getTransactionId(id) == transaction.transactionId) {
                         // a new value
                         decision = MVMap.Decision.PUT;
-                    } else {
-                        long id = originalValue.operationId;
-                        if(id == 0) {
-                            // commited
-                            decision = MVMap.Decision.PUT;
-                        } else {
-                            int tx = getTransactionId(id);
-                            if (tx == transaction.transactionId) {
-                                // added or updated by this transaction
-                                decision = MVMap.Decision.PUT;
-                            } else {
-                                // the transaction is not yet committed
-                                decision = MVMap.Decision.ABORT;
-                            }
-                        }
-                    }
-                    if(decision != MVMap.Decision.ABORT) {
                         transaction.log(mapId, key, originalValue);
+                    } else {
+                        // this entry comes from a different transaction and it's not committed yet
+                        decision = MVMap.Decision.ABORT;
                     }
                 }
                 return decision;
@@ -1626,7 +1621,7 @@ public final class TransactionStore {
             @Override
             public void reset() {
                 if(decision != MVMap.Decision.ABORT) {
-                    // map has been updated after decision was made
+                    // map was updated after our decision has been made
                     transaction.logUndo();
                 }
                 decision = null;
@@ -1765,7 +1760,7 @@ public final class TransactionStore {
      * A data type that contains an array of objects with the specified data
      * types.
      */
-    public static class ArrayType implements DataType {
+    public static final class ArrayType implements DataType {
 
         private final int arrayLength;
         private final DataType[] elementTypes;

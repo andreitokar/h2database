@@ -41,7 +41,9 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
     }
 
     public MVRTreeMap<V>cloneFromThis() {
-        return new MVRTreeMap<>(keyType, getValueType());
+        MVRTreeMap<V> res = new MVRTreeMap<>(keyType, getValueType());
+        res.quadraticSplit = quadraticSplit;
+        return res;
     }
 
     /**
@@ -197,9 +199,9 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
                         Object k2 = getBounds(split);
                         Object[] keys = {k1, k2};
                         Page.PageReference[] children = {
-                                new Page.PageReference(p, p.getPos(), p.getTotalCount()),
-                                new Page.PageReference(split, split.getPos(), split.getTotalCount()),
-                                new Page.PageReference(null, 0, 0)
+                                new Page.PageReference(p),
+                                new Page.PageReference(split),
+                                Page.PageReference.EMPTY
                         };
                         p = Page.create(this, version,
                                 keys, null,
@@ -619,8 +621,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
             refs = null;
         } else {
             values = null;
-            refs = new Page.PageReference[] {
-                    new Page.PageReference(null, 0, 0)};
+            refs = Page.PageReference.SINGLE_EMPTY;
         }
         return Page.create(this, writeVersion,
                 Page.EMPTY_OBJECT_ARRAY, values,

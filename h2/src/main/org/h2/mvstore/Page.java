@@ -738,8 +738,8 @@ public final class Page {
         // this is slightly slower:
         // values = Arrays.copyOf(values, values.length);
         values = values.clone();
-        DataType valueType = map.getValueType();
         if(isPersistent()) {
+            DataType valueType = map.getValueType();
             addMemory(valueType.getMemory(value) -
                     valueType.getMemory(old));
         }
@@ -812,8 +812,7 @@ public final class Page {
         int childCount = children.length;
         PageReference[] newChildren = new PageReference[childCount + 1];
         DataUtils.copyWithGap(children, newChildren, childCount, index);
-        newChildren[index] = new PageReference(
-                childPage, childPage.getPos(), childPage.totalCount);
+        newChildren[index] = new PageReference(childPage);
         children = newChildren;
 
         totalCount += childPage.totalCount;
@@ -1194,6 +1193,7 @@ public final class Page {
     public static final class PageReference {
 
         public static PageReference EMPTY = new PageReference(null, 0, 0);
+        public static PageReference SINGLE_EMPTY[] = {EMPTY};
 
         /**
          * The position, if known, or 0.

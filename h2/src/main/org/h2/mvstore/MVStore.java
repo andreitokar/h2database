@@ -2205,6 +2205,7 @@ public final class MVStore {
      */
     void beforeWrite(MVMap<?, ?> map) {
         if (saveNeeded) {
+/*
             if (map == meta) {
                 // to, don't save while the metadata map is locked
                 // this is to avoid deadlocks that could occur when we
@@ -2212,6 +2213,7 @@ public final class MVStore {
                 // TODO there should be no deadlocks possible
                 return;
             }
+*/
             saveNeeded = false;
             // check again, because it could have been written by now
             if (unsavedMemory > autoCommitMemory && autoCommitMemory > 0) {
