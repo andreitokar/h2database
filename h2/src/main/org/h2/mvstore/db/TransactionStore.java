@@ -353,8 +353,12 @@ public final class TransactionStore {
                     if (value == null) {
                         // nothing to do
                     } else if (value.value == null) {
-                        // remove the value
-                        map.remove(key);
+                        int tx = getTransactionId(value.operationId);
+                        if (tx == t.transactionId) {
+                            // remove the value
+                            // only if it's transaction id is same as current transaction id
+                            map.remove(key);
+                        }
                     } else {
                         map.put(key, new VersionedValue(value.value));
                     }
