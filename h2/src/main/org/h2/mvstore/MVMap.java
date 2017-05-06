@@ -119,23 +119,23 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         return put(key, value, null);
     }
 
-    public abstract static class DecisionMaker {
-        public static final DecisionMaker IF_ABSENT = new DecisionMaker() {
+    public abstract static class DecisionMaker<V> {
+        public static final DecisionMaker<Object> IF_ABSENT = new DecisionMaker<Object>() {
             @Override
             public Decision decide(Object existingValue, Object providedValue) {
                 return existingValue == null ? Decision.PUT : Decision.ABORT;
             }
         };
 
-        public static final DecisionMaker IF_PRESENT = new DecisionMaker() {
+        public static final DecisionMaker<Object> IF_PRESENT = new DecisionMaker<Object>() {
             @Override
             public Decision decide(Object existingValue, Object providedValue) {
                 return existingValue != null ? Decision.PUT : Decision.ABORT;
             }
         };
 
-        public abstract Decision decide(Object existingValue, Object providedValue);
-        public Object selectValue(Object existingValue, Object providedValue) {
+        public abstract Decision decide(V existingValue, V providedValue);
+        public V selectValue(V existingValue, V providedValue) {
             return providedValue;
         }
         public void reset() {}
@@ -151,12 +151,12 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @return the old value if the key existed, or null otherwise
      */
     @SuppressWarnings("unchecked")
-    public final V put(K key, V value, DecisionMaker decisionMaker) {
+    public final V put(K key, V value, DecisionMaker<? super V> decisionMaker) {
         DataUtils.checkArgument(value != null, "The value may not be null");
-        return (V) operate(key, value, decisionMaker);
+        return operate(key, value, decisionMaker);
     }
 
-    public V operate(Object key, Object value, DecisionMaker decisionMaker) {
+    public V operate(K key, V value, DecisionMaker<? super V> decisionMaker) {
         beforeWrite();
         while(true) {
             RootReference rootReference = getRoot();
@@ -185,7 +185,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                                 value == null         ? Decision.REMOVE :
                                                         Decision.PUT;
             if(decisionMaker != null) {
-                value = decisionMaker.selectValue(result, value);
+                value = (V)decisionMaker.selectValue(result, value);
             }
             switch (decision) {
                 case ABORT:
@@ -549,7 +549,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     @Override
     @SuppressWarnings("unchecked")
     public V remove(Object key) {
-        return operate(key, null, null);
+        return operate((K)key, null, null);
     }
 
     /**
@@ -573,8 +573,8 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      */
     @Override
     public boolean remove(Object key, Object value) {
-        EqualsDecisionMaker decisionMaker = new EqualsDecisionMaker(valueType, value);
-        Object result = operate(key, null, decisionMaker);
+        EqualsDecisionMaker<V> decisionMaker = new EqualsDecisionMaker<V>(valueType, (V)value);
+        V result = operate((K)key, null, decisionMaker);
         return decisionMaker.decide(result, null) != Decision.ABORT;
     }
 
@@ -612,7 +612,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      */
     @Override
     public final boolean replace(K key, V oldValue, V newValue) {
-        DecisionMaker decisionMaker = new EqualsDecisionMaker(valueType, oldValue);
+        DecisionMaker<V> decisionMaker = new EqualsDecisionMaker<V>(valueType, oldValue);
         V result = put(key, newValue, decisionMaker);
         return decisionMaker.decide(result, newValue) != Decision.ABORT;
     }
@@ -1349,18 +1349,18 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
     }
 
-    private static final class EqualsDecisionMaker extends DecisionMaker {
+    private static final class EqualsDecisionMaker<V> extends DecisionMaker<V> {
         private final DataType dataType;
-        private final Object   expectedValue;
+        private final V        expectedValue;
         private       Decision decision;
 
-        private EqualsDecisionMaker(DataType dataType, Object expectedValue) {
+        private EqualsDecisionMaker(DataType dataType, V expectedValue) {
             this.dataType = dataType;
             this.expectedValue = expectedValue;
         }
 
         @Override
-        public Decision decide(Object existingValue, Object providedValue) {
+        public Decision decide(V existingValue, V providedValue) {
             if(decision == null) {
                 decision = !areValuesEqual(dataType, expectedValue, existingValue) ? Decision.ABORT :
                                                 providedValue == null ? Decision.REMOVE : Decision.PUT;

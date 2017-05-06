@@ -141,32 +141,11 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
     @Override
     @SuppressWarnings("unchecked")
     public V remove(Object key) {
-        return operate(key, null, null);
-/*
-        beforeWrite();
-        V result;
-        RootReference rootReference;
-        Page p;
-        long version;
-        do {
-            version = writeVersion;
-            rootReference = getRoot();
-            p = rootReference.root.copy(version);
-            result = (V) remove(p, version, key);
-            if(result == null) {
-                return null;
-            }
-            if (!p.isLeaf() && p.getTotalCount() == 0) {
-                p.removePage();
-                p = Page.createEmpty(this, version);
-            }
-        } while(!newRoot(rootReference, p, version));
-        return result;
-*/
+        return operate((SpatialKey) key, null, null);
     }
 
     @Override
-    public V operate(Object key, Object value, DecisionMaker decisionMaker) {
+    public V operate(SpatialKey key, V value, DecisionMaker<? super V> decisionMaker) {
         beforeWrite();
         V result;
         RootReference rootReference;

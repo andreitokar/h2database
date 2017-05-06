@@ -329,13 +329,13 @@ public final class TransactionStore {
         for (long logId = 0; logId < maxLogId; logId++) {
             Long undoKey = getOperationId(t.getId(), logId);
 
-            undoLog.operate(undoKey, null, new MVMap.DecisionMaker() {
+            undoLog.operate(undoKey, null, new MVMap.DecisionMaker<Object[]>() {
                 private MVMap.Decision decision;
 
                 @Override
-                public MVMap.Decision decide(Object existingValue, Object providedValue) {
+                public MVMap.Decision decide(Object[] existingValue, Object[] providedValue) {
                     if(decision == null) {
-                        Object[] op = (Object[]) existingValue;
+                        Object[] op = existingValue;
                         if (op == null) {
                             decision = MVMap.Decision.ABORT;
                         } else {
@@ -346,18 +346,18 @@ public final class TransactionStore {
                                 decision = MVMap.Decision.REMOVE;
                             } else {
                                 Object key = op[1];
-                                map.operate(key, null, new MVMap.DecisionMaker() {
+                                map.operate(key, null, new MVMap.DecisionMaker<VersionedValue>() {
                                     private MVMap.Decision _decision;
                                     private VersionedValue value;
 
                                     @Override
-                                    public MVMap.Decision decide(Object existingValue, Object providedValue) {
+                                    public MVMap.Decision decide(VersionedValue existingValue, VersionedValue providedValue) {
                                         if (_decision == null) {
-                                            value = (VersionedValue) existingValue;
-                                            if (value == null) {
+                                            value = existingValue;
+                                            if (existingValue == null) {
                                                 _decision = MVMap.Decision.ABORT;
-                                            } else if (value.value == null) {
-                                                int tx = getTransactionId(value.operationId);
+                                            } else if (existingValue.value == null) {
+                                                int tx = getTransactionId(existingValue.operationId);
                                                 if (tx == t.transactionId) {
                                                     // remove the value only if it comes from the same transaction
                                                     _decision = MVMap.Decision.REMOVE;
@@ -366,14 +366,14 @@ public final class TransactionStore {
                                                 }
                                             } else {
                                                 _decision = MVMap.Decision.PUT;
-                                                value = new VersionedValue(value.value);
+                                                value = new VersionedValue(existingValue.value);
                                             }
                                         }
                                         return _decision;
                                     }
 
                                     @Override
-                                    public Object selectValue(Object existingValue, Object providedValue) {
+                                    public VersionedValue selectValue(VersionedValue existingValue, VersionedValue providedValue) {
                                         return value;
                                     }
 
@@ -510,11 +510,43 @@ public final class TransactionStore {
      * @param maxLogId the last log id
      * @param toLogId the log id to roll back to
      */
-    void rollbackTo(Transaction t, long maxLogId, long toLogId) {
+    void rollbackTo(final Transaction t, long maxLogId, long toLogId) {
         // TODO could synchronize on blocks (100 at a time or so)
 //        synchronized (undoLog) {
             for (long logId = maxLogId - 1; logId >= toLogId; logId--) {
                 Long undoKey = getOperationId(t.getId(), logId);
+//*
+                undoLog.operate(undoKey, null, new MVMap.DecisionMaker<Object[]>() {
+                    private MVMap.Decision decision;
+
+                    @Override
+                    public MVMap.Decision decide(Object[] existingValue, Object[] providedValue) {
+                        if(decision == null) {
+                            assert existingValue != null;
+                            Object[] op = existingValue;
+//                            if(op == null) {
+//                                decision = MVMap.Decision.ABORT;
+//                            } else {
+                                int mapId = (Integer)op[0];
+                                MVMap<Object, VersionedValue> map = openMap(mapId);
+                                if(map != null) {
+                                    Object key = op[1];
+                                    VersionedValue oldValue = (VersionedValue) op[2];
+                                    if (oldValue == null) {
+                                        // this transaction added the value
+                                        map.remove(key);
+                                    } else {
+                                        // this transaction updated the value
+                                        map.put(key, oldValue);
+                                    }
+                                }
+//                            }
+                            decision = MVMap.Decision.REMOVE;
+                        }
+                        return decision;
+                    }
+                });
+/*/
                 Object[] op = undoLog.remove(undoKey);
                 if (op == null) {
                     // partially rolled back: load previous
@@ -540,6 +572,7 @@ public final class TransactionStore {
                     }
                 }
 //                undoLog.remove(undoKey);
+//*/
             }
 //        }
     }
@@ -1584,7 +1617,7 @@ public final class TransactionStore {
             return map.getKeyType();
         }
 
-        private static final class TxDecisionMaker extends MVMap.DecisionMaker {
+        private static final class TxDecisionMaker extends MVMap.DecisionMaker<VersionedValue> {
             private final int mapId;
             private final Object key;
             private final Transaction transaction;
@@ -1597,19 +1630,20 @@ public final class TransactionStore {
             }
 
             @Override
-            public MVMap.Decision decide(Object existingValue, Object providedValue) {
+            public MVMap.Decision decide(VersionedValue existingValue, VersionedValue providedValue) {
                 if(decision == null) {
-                    VersionedValue originalValue = (VersionedValue)existingValue;
+                    assert providedValue != null;
+                    assert getTransactionId(providedValue.operationId) == transaction.transactionId;
                     long id;
                     // if map does not have that entry yet
-                    if(originalValue == null ||
+                    if(existingValue == null ||
                             // or entry is a committed one
-                            (id = originalValue.operationId) == 0 ||
+                            (id = existingValue.operationId) == 0 ||
                             // or it came from the same transaction
                             getTransactionId(id) == transaction.transactionId) {
                         // a new value
                         decision = MVMap.Decision.PUT;
-                        transaction.log(mapId, key, originalValue);
+                        transaction.log(mapId, key, existingValue);
                     } else {
                         // this entry comes from a different transaction and it's not committed yet
                         decision = MVMap.Decision.ABORT;
