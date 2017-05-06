@@ -221,6 +221,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
                     if(indx < 0) {
                         p.insertLeaf(p.getKeyCount(), key, value);
                     } else {
+                        p.setKey(indx, key);
                         p.setValue(indx, value);
                     }
                     break;

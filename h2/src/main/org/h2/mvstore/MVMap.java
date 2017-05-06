@@ -125,12 +125,22 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             public Decision decide(Object existingValue, Object providedValue) {
                 return existingValue == null ? Decision.PUT : Decision.ABORT;
             }
+
+            @Override
+            public String toString() {
+                return "if_absent";
+            }
         };
 
         public static final DecisionMaker<Object> IF_PRESENT = new DecisionMaker<Object>() {
             @Override
             public Decision decide(Object existingValue, Object providedValue) {
                 return existingValue != null ? Decision.PUT : Decision.ABORT;
+            }
+
+            @Override
+            public String toString() {
+                return "if_present";
             }
         };
 
@@ -1371,6 +1381,11 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         @Override
         public void reset() {
             decision = null;
+        }
+
+        @Override
+        public String toString() {
+            return "equals_to "+expectedValue;
         }
     }
 
