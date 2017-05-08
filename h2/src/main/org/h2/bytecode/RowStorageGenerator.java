@@ -2,17 +2,17 @@ package org.h2.bytecode;
 
 import org.h2.engine.Constants;
 import org.h2.value.*;
-import org.objectweb.asm.ClassVisitor;
-import org.objectweb.asm.ClassWriter;
-import org.objectweb.asm.Label;
-import org.objectweb.asm.MethodVisitor;
+import jdk.internal.org.objectweb.asm.ClassVisitor;
+import jdk.internal.org.objectweb.asm.ClassWriter;
+import jdk.internal.org.objectweb.asm.Label;
+import jdk.internal.org.objectweb.asm.MethodVisitor;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.util.HashMap;
 import java.util.Map;
 
-import static org.objectweb.asm.Opcodes.*;
+import static jdk.internal.org.objectweb.asm.Opcodes.*;
 
 /**
  * Class RowStorageGenerator.
@@ -167,14 +167,15 @@ public final class RowStorageGenerator {
 //*/
         Class<? extends RowStorage> cls = generateStorageClass(valueTypes);
         try {
-            Constructor<? extends RowStorage> constructor = cls.getConstructor(Value[].class);
+            Constructor<? extends RowStorage> constructor = cls.getConstructor();
             Value[] initargs = {
                     ValueInt.get(3),
                     ValueString.get("Hello"),
                     ValueDate.fromMillis(System.currentTimeMillis()),
                     ValueLong.get(77)
             };
-            RowStorage row = constructor.newInstance((Object) initargs);
+            RowStorage row = constructor.newInstance();
+            row.setValues(initargs);
             row.setKey(12345);
             System.out.println(row);
 
