@@ -188,7 +188,32 @@ public abstract class RowStorage extends Value implements Row, Cloneable {
         return 0;
     }
 
+    protected int _compareSecure(Value o, CompareMode mode) {
+        if(this == o) return 0;
+        RowStorage other = (RowStorage) o;
+        if(getClass() != o.getClass())
+        {
+            return Integer.compare(System.identityHashCode(this), System.identityHashCode(o));
+        }
+        return compareTo(other);
+    }
 
+    private int compareTo(RowStorage other) {
+        int res = 0;
+        int columnCount = getColumnCount();
+        for (int indx = 0; indx < columnCount && res == 0; ++indx) {
+            res = Integer.compare(getInt(indx), other.getInt(indx));
+        }
+        return res;
+    }
+
+    protected int getInt(int indx) {
+        return getInt(getValue(indx));
+    }
+
+    protected long getLong(int indx) {
+        return getLong(getValue(indx));
+    }
 
     @Override
     public boolean equals(Object o) {
