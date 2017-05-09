@@ -7,7 +7,6 @@ package org.h2.mvstore;
 
 import java.nio.ByteBuffer;
 import java.util.*;
-import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -235,7 +234,9 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                             Object k = p.getKey(at);
                             Page split = p.split(at);
                             if (pos == null) {
-                                Object keys[] = {k};
+                                Object keys = getExtendedKeyType().createStorage(1);
+                                getExtendedKeyType().setValue(keys, 0, k);
+//                                Object keys[] = {k};
                                 Page.PageReference children[] = {
                                         new Page.PageReference(p),
                                         new Page.PageReference(split)
@@ -859,6 +860,9 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
     @Override
     public final Set<Map.Entry<K, V>> entrySet() {
+        return new MVEntrySet<>(this);
+/*
+
         final MVMap<K, V> map = this;
         final Page root = this.getRootPage();
         return new AbstractSet<Entry<K, V>>() {
@@ -900,10 +904,14 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
         };
 
+*/
     }
 
     @Override
     public Set<K> keySet() {
+        return new MVKeySet<>(this);
+/*
+
         final MVMap<K, V> map = this;
         final Page root = this.getRootPage();
         return new AbstractSet<K>() {
@@ -924,6 +932,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             }
 
         };
+*/
     }
 
     /**
@@ -1556,7 +1565,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
         @Override
         public Iterator<Entry<K, V>> iterator() {
-            final Cursor<K, V> cursor = new Cursor<K, V>(map, map.root, null);
+            final Cursor<K, V> cursor = new Cursor<K, V>(map, map.getRootPage(), null);
             return new Iterator<Entry<K, V>>() {
 
                 @Override
@@ -1601,7 +1610,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
         @Override
         public Iterator<K> iterator() {
-            return new Cursor<>(map, map.root, null);
+            return new Cursor<>(map, map.getRootPage(), null);
         }
 
         @Override

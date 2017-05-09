@@ -20,7 +20,6 @@ import org.h2.mvstore.MVMap;
 import org.h2.mvstore.MVStore;
 import org.h2.mvstore.WriteBuffer;
 import org.h2.mvstore.type.DataType;
-import org.h2.mvstore.type.ExtendedDataType;
 import org.h2.mvstore.type.ObjectDataType;
 import org.h2.util.New;
 
@@ -261,9 +260,9 @@ public final class TransactionStore {
      * @param key the key
      * @param oldValue the old value
      */
-    void log(Transaction t, long logId, int mapId, Object key, Object oldValue) {
+    void log(Transaction t, long logId, int mapId, Object key, VersionedValue oldValue) {
         Long undoKey = getOperationId(t.getId(), logId);
-        Object[] log = new Object[] { mapId, key, oldValue };
+        Record log = new Record(mapId, key, oldValue);
         if(undoLog.putIfAbsent(undoKey, log) != null) {
             if (logId == 0) {
                 throw DataUtils.newIllegalStateException(
@@ -491,7 +490,7 @@ public final class TransactionStore {
             private void fetchNext() {
                 while (logId >= toLogId) {
                     Long undoKey = getOperationId(t.getId(), logId);
-                    Object[] op = undoLog.get(undoKey);
+                    Record op = undoLog.get(undoKey);
                     logId--;
                     if (op == null) {
                         // partially rolled back: load previous
@@ -502,14 +501,10 @@ public final class TransactionStore {
                         logId = getLogId(undoKey);
                         continue;
                     }
-                    int mapId = (Integer)op[0];
+                    int mapId = op.mapId;
                     MVMap<Object, VersionedValue> m = openMap(mapId);
                     if (m != null) { // could be null if map was removed later on
-                        current = new Change();
-                        current.mapName = m.getName();
-                        current.key = op[1];
-                        VersionedValue oldValue = (VersionedValue) op[2];
-                        current.value = oldValue == null ? null : oldValue.value;
+                        current = new Change(m.getName(), op.key, op.oldValue == null ? null : op.oldValue.value);
                         return;
                     }
                 }
@@ -1759,7 +1754,7 @@ public final class TransactionStore {
 
     }
 
-    private class CommitDecisionMaker extends MVMap.DecisionMaker<Object[]> {
+    private class CommitDecisionMaker extends MVMap.DecisionMaker<Record> {
         private final int            transactionId;
         private       MVMap.Decision decision;
 
@@ -1768,15 +1763,15 @@ public final class TransactionStore {
         }
 
         @Override
-        public MVMap.Decision decide(Object[] existingValue, Object[] providedValue) {
+        public MVMap.Decision decide(Record existingValue, Record providedValue) {
             if(decision == null) {
                 if (existingValue == null) {
                     decision = MVMap.Decision.ABORT;
                 } else {
-                    int mapId = (Integer) existingValue[0];
+                    int mapId = existingValue.mapId;
                     MVMap<Object, VersionedValue> map = openMap(mapId);
                     if (map != null) { // could be null if map was later removed
-                        Object key = existingValue[1];
+                        Object key = existingValue.key;
                         map.operate(key, null, new FinalCommitDecisionMaker(transactionId));
                     }
                     decision = MVMap.Decision.REMOVE;
@@ -1843,21 +1838,21 @@ public final class TransactionStore {
         }
     }
 
-    private final class RollbackDecisionMaker extends MVMap.DecisionMaker<Object[]> {
+    private final class RollbackDecisionMaker extends MVMap.DecisionMaker<Record> {
         private MVMap.Decision decision;
 
         @Override
-        public MVMap.Decision decide(Object[] existingValue, Object[] providedValue) {
+        public MVMap.Decision decide(Record existingValue, Record providedValue) {
             if(decision == null) {
                 assert existingValue != null;
-//                            if(existingValue == null) {
-//                                decision = MVMap.Decision.ABORT;
-//                            } else {
-                    int mapId = (Integer) existingValue[0];
+//                if(existingValue == null) {
+//                    decision = MVMap.Decision.ABORT;
+//                } else {
+                    int mapId = existingValue.mapId;
                     MVMap<Object, VersionedValue> map = openMap(mapId);
                     if(map != null) {
-                        Object key = existingValue[1];
-                        VersionedValue oldValue = (VersionedValue) existingValue[2];
+                        Object key = existingValue.key;
+                        VersionedValue oldValue = existingValue.oldValue;
                         if (oldValue == null) {
                             // this transaction added the value
                             map.remove(key);
@@ -1868,7 +1863,7 @@ public final class TransactionStore {
                     }
                 }
                 decision = MVMap.Decision.REMOVE;
-//                        }
+//            }
             return decision;
         }
 

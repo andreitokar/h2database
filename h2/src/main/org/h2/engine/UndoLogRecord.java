@@ -216,16 +216,16 @@ public class UndoLogRecord {
         table = log.getTable(buff.readInt());
         long key = buff.readLong();
         int sessionId = buff.readInt();
-        row.setKey(key);
-        row.setDeleted(deleted);
-        row.setSessionId(sessionId);
         int columnCount = buff.readInt();
         Value[] values = new Value[columnCount];    //TODO: eliminate array creation
-        row = getTable()/*.getDatabase()*/.createRow(values, Row.MEMORY_CALCULATE);
+        row = getTable().createRow(values, Row.MEMORY_CALCULATE);
         for (int i = 0; i < columnCount; i++) {
             Value value = buff.readValue();
             row.setValue(i, value);
         }
+        row.setKey(key);
+        row.setDeleted(deleted);
+        row.setSessionId(sessionId);
         state = IN_MEMORY_INVALID;
     }
 

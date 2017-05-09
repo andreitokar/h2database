@@ -11,12 +11,8 @@ import java.util.HashSet;
 import java.util.Set;
 
 import org.h2.compress.Compressor;
-import org.h2.mvstore.rtree.MVRTreeMap;
-import org.h2.mvstore.type.DataType;
 import org.h2.mvstore.type.ExtendedDataType;
-import org.h2.mvstore.type.ObjectDataType;
 import org.h2.util.New;
-import org.h2.value.*;
 
 /**
  * A page (a node or a leaf).
@@ -344,235 +340,6 @@ public final class Page {
         int result = map.getExtendedKeyType().binarySearch(key, keys, cachedCompare);
         cachedCompare = result < 0 ? -(result + 1) : result + 1;
         return result;
-/*
-        int low = 0, high = keyCount - 1;
-        // the cached index minus one, so that
-        // for the first time (when cachedCompare is 0),
-        // the default value is used
-        int x = cachedCompare - 1;
-        if (x < 0 || x > high) {
-            x = high >>> 1;
-        }
-        while (low <= high) {
-            int compare = map.compare(key, getKey(x));
-            if (compare > 0) {
-                low = x + 1;
-            } else if (compare < 0) {
-                high = x - 1;
-            } else {
-                cachedCompare = x + 1;
-                return x;
-            }
-            x = (low + high) >>> 1;
-        }
-        cachedCompare = low;
-        return -(low + 1);
-
-        // regular binary search (without caching)
-        // int low = 0, high = keys.length - 1;
-        // while (low <= high) {
-        //     int x = (low + high) >>> 1;
-        //     int compare = map.compare(key, keys[x]);
-        //     if (compare > 0) {
-        //         low = x + 1;
-        //     } else if (compare < 0) {
-        //         high = x - 1;
-        //     } else {
-        //         return x;
-        //     }
-        // }
-        // return -(low + 1);
-    }
-
-    private int binarySearch(long key, Object keys[]) {
-        int low = 0, high = keys.length - 1;
-        // the cached index minus one, so that
-        // for the first time (when cachedCompare is 0),
-        // the default value is used
-        int x = cachedCompare - 1;
-        if (x < 0 || x > high) {
-            x = high >>> 1;
-        }
-        while (low <= high) {
-            int compare = Long.compare(key, ((ValueLong) keys[x]).getLong());
-            if (compare > 0) {
-                low = x + 1;
-            } else if (compare < 0) {
-                high = x - 1;
-            } else {
-                cachedCompare = x + 1;
-                return x;
-            }
-            x = (low + high) >>> 1;
-        }
-        cachedCompare = low;
-        return -(low + 1);
-    }
-
-    private int binarySearch2(long key, long keys[]) {
-        int low = 0, high = keys.length - 1;
-        // the cached index minus one, so that
-        // for the first time (when cachedCompare is 0),
-        // the default value is used
-        int x = cachedCompare - 1;
-        if (x < 0 || x > high) {
-            x = high >>> 1;
-        }
-        while (low <= high) {
-            int compare = Long.compare(key, keys[x]);
-            if (compare > 0) {
-                low = x + 1;
-            } else if (compare < 0) {
-                high = x - 1;
-            } else {
-                cachedCompare = x + 1;
-                return x;
-            }
-            x = (low + high) >>> 1;
-        }
-        cachedCompare = low;
-        return -(low + 1);
-    }
-
-    private int binarySearch(int key, Object keys[]) {
-        int low = 0, high = keys.length - 1;
-        // the cached index minus one, so that
-        // for the first time (when cachedCompare is 0),
-        // the default value is used
-        int x = cachedCompare - 1;
-        if (x < 0 || x > high) {
-            x = high >>> 1;
-        }
-        while (low <= high) {
-            int compare = Integer.compare(key, ((ValueInt) keys[x]).getInt());
-            if (compare > 0) {
-                low = x + 1;
-            } else if (compare < 0) {
-                high = x - 1;
-            } else {
-                cachedCompare = x + 1;
-                return x;
-            }
-            x = (low + high) >>> 1;
-        }
-        cachedCompare = low;
-        return -(low + 1);
-    }
-
-    private int binarySearch2(int key, int keys[]) {
-        int low = 0, high = keys.length - 1;
-        // the cached index minus one, so that
-        // for the first time (when cachedCompare is 0),
-        // the default value is used
-        int x = cachedCompare - 1;
-        if (x < 0 || x > high) {
-            x = high >>> 1;
-        }
-        while (low <= high) {
-            int compare = Integer.compare(key, keys[x]);
-            if (compare > 0) {
-                low = x + 1;
-            } else if (compare < 0) {
-                high = x - 1;
-            } else {
-                cachedCompare = x + 1;
-                return x;
-            }
-            x = (low + high) >>> 1;
-        }
-        cachedCompare = low;
-        return -(low + 1);
-    }
-
-    private int binarySearch(String key, Object keys[]) {
-        int low = 0, high = keys.length - 1;
-        // the cached index minus one, so that
-        // for the first time (when cachedCompare is 0),
-        // the default value is used
-        int x = cachedCompare - 1;
-        if (x < 0 || x > high) {
-            x = high >>> 1;
-        }
-        while (low <= high) {
-            int compare = key.compareTo(((ValueString) keys[x]).getString());
-            if (compare > 0) {
-                low = x + 1;
-            } else if (compare < 0) {
-                high = x - 1;
-            } else {
-                cachedCompare = x + 1;
-                return x;
-            }
-            x = (low + high) >>> 1;
-        }
-        cachedCompare = low;
-        return -(low + 1);
-    }
-
-    private int binarySearch2(String key, Object keys[]) {
-        int low = 0, high = keys.length - 1;
-        // the cached index minus one, so that
-        // for the first time (when cachedCompare is 0),
-        // the default value is used
-        int x = cachedCompare - 1;
-        if (x < 0 || x > high) {
-            x = high >>> 1;
-        }
-        while (low <= high) {
-            int compare = key.compareTo((String)keys[x]);
-            if (compare > 0) {
-                low = x + 1;
-            } else if (compare < 0) {
-                high = x - 1;
-            } else {
-                cachedCompare = x + 1;
-                return x;
-            }
-            x = (low + high) >>> 1;
-        }
-        cachedCompare = low;
-        return -(low + 1);
-    }
-
-    private int binarySearch(ValueArray key, Object keys[]) {
-        Value[] keyList = key.getList();
-        DataType types[] = new DataType[keyList.length];
-        for (int i = 0; i < keyList.length; i++) {
-            ObjectDataType tmp = new ObjectDataType();
-            types[i] = tmp;
-        }
-
-        int low = 0, high = keys.length - 1;
-        // the cached index minus one, so that
-        // for the first time (when cachedCompare is 0),
-        // the default value is used
-        int x = cachedCompare - 1;
-        if (x < 0 || x > high) {
-            x = high >>> 1;
-        }
-        while (low <= high) {
-            Value[] elementValues = ((ValueArray)keys[x]).getList();
-            int compare = 0;
-            int compareLength = Math.min(keyList.length, elementValues.length);
-            for(int i = 0; compare == 0 && i < compareLength; ++i) {
-                if(keyList[i] == null) {
-                    compare = elementValues[i] == null ? 0 : -1;
-                } else {
-                    compare = types[i].compare(keyList[i].getObject(), elementValues[i].getObject());
-                }
-            }
-            if (compare > 0) {
-                low = x + 1;
-            } else if (compare < 0) {
-                high = x - 1;
-            } else {
-                cachedCompare = x + 1;
-                return x;
-            }
-            x = (low + high) >>> 1;
-        }
-        cachedCompare = low;
-        return -(low + 1);
     }
 
     /**
@@ -1170,13 +937,11 @@ public final class Page {
     Object createKeyStorage(int size)
     {
         return map.getExtendedKeyType().createStorage(size);
-//        return Array.newInstance(map.getKeyType().getStorageClass(), size);
     }
 
     private Object createValueStorage(int size)
     {
         return map.getExtendedValueType().createStorage(size);
-//        return Array.newInstance(map.getValueType().getStorageClass(), size);
     }
 
     /**
