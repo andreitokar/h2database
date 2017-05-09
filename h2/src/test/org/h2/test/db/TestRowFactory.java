@@ -6,11 +6,13 @@
 package org.h2.test.db;
 
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.h2.result.Row;
 import org.h2.result.RowFactory;
 import org.h2.result.RowImpl;
+import org.h2.table.CompactRowFactory;
 import org.h2.test.TestBase;
 import org.h2.value.Value;
 
@@ -41,6 +43,25 @@ public class TestRowFactory extends TestBase {
             stat.execute("insert into t1 values(" + i + ", 'name')");
         }
         assertTrue(MyTestRowFactory.COUNTER.get() >= 1000);
+        conn.close();
+        deleteDb("rowFactory");
+
+        testCompactRowFactory();
+    }
+
+    public void testCompactRowFactory() throws Exception {
+        deleteDb("rowFactory");
+        Connection conn = getConnection("rowFactory;ROW_FACTORY=\"" + CompactRowFactory.class.getName() + '"');
+        Statement stat = conn.createStatement();
+        stat.execute("create table t1(id int, name varchar)");
+        stat.execute("create index name_idx on t1(name)");
+        for (int i = 0; i < 1000; i++) {
+            stat.execute("insert into t1 values(" + i + ", 'name_"+i+"')");
+        }
+        ResultSet resultSet = stat.executeQuery("select id from t1 where name='name_500'");
+        assertTrue(resultSet.next());
+        assertEquals(500, resultSet.getInt("id"));
+        resultSet.close();
         conn.close();
         deleteDb("rowFactory");
     }

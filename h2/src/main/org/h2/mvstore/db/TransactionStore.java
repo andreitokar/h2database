@@ -13,12 +13,14 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map.Entry;
 
+import org.h2.engine.Constants;
 import org.h2.mvstore.Cursor;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.MVMap;
 import org.h2.mvstore.MVStore;
 import org.h2.mvstore.WriteBuffer;
 import org.h2.mvstore.type.DataType;
+import org.h2.mvstore.type.ExtendedDataType;
 import org.h2.mvstore.type.ObjectDataType;
 import org.h2.util.New;
 
@@ -36,7 +38,7 @@ public final class TransactionStore {
      * The persisted map of prepared transactions.
      * Key: transactionId, value: [ status, name ].
      */
-    final MVMap<Integer, Object[]> preparedTransactions;
+    private final MVMap<Integer, Object[]> preparedTransactions;
 
     /**
      * The undo log.
@@ -48,7 +50,7 @@ public final class TransactionStore {
      * <p>
      * Key: opId, value: [ mapId, key, oldValue ].
      */
-    final MVMap<Long, Object[]> undoLog;
+    final MVMap<Long, Record> undoLog;
 
     /**
      * The map of maps.
@@ -89,13 +91,14 @@ public final class TransactionStore {
         this.dataType = dataType;
         preparedTransactions = store.openMap("openTransactions",
                 new MVMap.Builder<Integer, Object[]>());
+
         VersionedValueType oldValueType = new VersionedValueType(dataType);
-        ArrayType undoLogValueType = new ArrayType(new DataType[]{
-                new ObjectDataType(), dataType, oldValueType
-        });
-        MVMap.Builder<Long, Object[]> builder =
-                new MVMap.Builder<Long, Object[]>().
-                valueType(undoLogValueType);
+        RecordType undoLogValueType = new RecordType(dataType, oldValueType);
+
+        MVMap.Builder<Long, Record> builder =
+                new MVMap.Builder<Long, Record>().
+                        keyType(new ObjectDataType.LongType()).
+                        valueType(undoLogValueType);
         undoLog = store.openMap("undoLog", builder);
         if (undoLog.getValueType() != undoLogValueType) {
             throw DataUtils.newIllegalStateException(
@@ -544,17 +547,23 @@ public final class TransactionStore {
         /**
          * The name of the map where the change occurred.
          */
-        public String mapName;
+        public final String mapName;
 
         /**
          * The key.
          */
-        public Object key;
+        public final Object key;
 
         /**
          * The value.
          */
-        public Object value;
+        public final Object value;
+
+        public Change(String mapName, Object key, Object value) {
+            this.mapName = mapName;
+            this.key = key;
+            this.value = value;
+        }
     }
 
     /**
@@ -651,7 +660,7 @@ public final class TransactionStore {
          * @param key the key
          * @param oldValue the old value
          */
-        void log(int mapId, Object key, Object oldValue) {
+        void log(int mapId, Object key, VersionedValue oldValue) {
             store.log(this, logId, mapId, key, oldValue);
             // only increment the log id if logging was successful
             logId++;
@@ -868,7 +877,7 @@ public final class TransactionStore {
          */
         public long sizeAsLong() {
             long sizeRaw = map.sizeAsLong();
-            MVMap<Long, Object[]> undo = transaction.store.undoLog;
+            MVMap<Long, Record> undo = transaction.store.undoLog;
             long undoLogSize;
             synchronized (undo) {
                 undoLogSize = undo.sizeAsLong();
@@ -900,15 +909,15 @@ public final class TransactionStore {
                 long size = map.sizeAsLong();
                 MVMap<Object, Integer> temp = transaction.store.createTempMap();
                 try {
-                    for (Entry<Long, Object[]> e : undo.entrySet()) {
-                        Object[] op = e.getValue();
-                        int m = (Integer) op[0];
+                    for (Entry<Long, Record> e : undo.entrySet()) {
+                        Record op = e.getValue();
+                        int m = op.mapId;
                         if (m != mapId) {
                             // a different map - ignore
                             continue;
                         }
                         @SuppressWarnings("unchecked")
-                        K key = (K) op[1];
+                        K key = (K) op.key;
                         if (get(key) == null) {
                             Integer old = temp.put(key, 1);
                             // count each key only once (there might be multiple
@@ -1145,9 +1154,8 @@ public final class TransactionStore {
                     }
                 }
                 // get the value before the uncommitted transaction
-                Object[] d;
-                d = transaction.store.undoLog.get(id);
-                if (d == null || (Integer)d[0] != map.getId() || !map.areValuesEqual(map.getKeyType(), d[1], key)) {
+                Record d = transaction.store.undoLog.get(id);
+                if (d == null || d.mapId != map.getId() || !map.areValuesEqual(map.getKeyType(), d.key, key)) {
                     if (transaction.store.store.isReadOnly()) {
                         // uncommitted transaction for a read-only store
                         return null;
@@ -1158,7 +1166,7 @@ public final class TransactionStore {
                     // transaction (possibly one with the same id)
                     data = map.get(key);
                 } else {
-                    data = (VersionedValue) d[2];
+                    data = d.oldValue;
                 }
             }
         }
@@ -1577,6 +1585,7 @@ public final class TransactionStore {
 
         @Override
         public int getMemory(Object obj) {
+            if(obj == null) return 0;
             VersionedValue v = (VersionedValue) obj;
             return valueType.getMemory(v.value) + 8;
         }
@@ -1588,11 +1597,11 @@ public final class TransactionStore {
             }
             VersionedValue a = (VersionedValue) aObj;
             VersionedValue b = (VersionedValue) bObj;
-            long comp = a.operationId - b.operationId;
+            int comp = Long.compare(a.operationId, b.operationId);
             if (comp == 0) {
-                return valueType.compare(a.value, b.value);
+                comp = valueType.compare(a.value, b.value);
             }
-            return Long.signum(comp);
+            return comp;
         }
 
         @Override
@@ -1613,7 +1622,8 @@ public final class TransactionStore {
         @Override
         public Object read(ByteBuffer buff) {
             long operationId = DataUtils.readVarLong(buff);
-            Object value = buff.get() == 1 ? valueType.read(buff) : null;
+            byte hasValue = buff.get();
+            Object value = hasValue == 1 ? valueType.read(buff) : null;
             return new VersionedValue(operationId, value);
         }
 
@@ -1656,32 +1666,37 @@ public final class TransactionStore {
 
     }
 
+    private static final class Record {
+        private final int mapId;
+        private final Object key;
+        private final VersionedValue oldValue;
+
+        public Record(int mapId, Object key, VersionedValue oldValue) {
+            this.mapId = mapId;
+            this.key = key;
+            this.oldValue = oldValue;
+        }
+    }
+
     /**
      * A data type that contains an array of objects with the specified data
      * types.
      */
-    public static final class ArrayType implements DataType {
+    public static final class RecordType implements DataType {
+        private final DataType keyType;
+        private final VersionedValueType valueType;
 
-        private final int arrayLength;
-        private final DataType[] elementTypes;
-
-        ArrayType(DataType[] elementTypes) {
-            this.arrayLength = elementTypes.length;
-            this.elementTypes = elementTypes;
+        public RecordType(DataType keyType, VersionedValueType valueType) {
+            this.keyType = keyType;
+            this.valueType = valueType;
         }
 
         @Override
         public int getMemory(Object obj) {
-            Object[] array = (Object[]) obj;
-            int size = 0;
-            for (int i = 0; i < arrayLength; i++) {
-                DataType t = elementTypes[i];
-                Object o = array[i];
-                if (o != null) {
-                    size += t.getMemory(o);
-                }
-            }
-            return size;
+            Record record = (Record) obj;
+            return 4 + 2 * Constants.MEMORY_POINTER +
+                    keyType.getMemory(record.key) +
+                    valueType.getMemory(record.oldValue);
         }
 
         @Override
@@ -1689,16 +1704,16 @@ public final class TransactionStore {
             if (aObj == bObj) {
                 return 0;
             }
-            Object[] a = (Object[]) aObj;
-            Object[] b = (Object[]) bObj;
-            for (int i = 0; i < arrayLength; i++) {
-                DataType t = elementTypes[i];
-                int comp = t.compare(a[i], b[i]);
-                if (comp != 0) {
-                    return comp;
+            Record a = (Record) aObj;
+            Record b = (Record) bObj;
+            int comp = Integer.compare(a.mapId, b.mapId);
+            if(comp == 0) {
+                comp = keyType.compare(a.key, b.key);
+                if(comp == 0) {
+                    comp = valueType.compare(a.oldValue, b.oldValue);
                 }
             }
-            return 0;
+            return comp;
         }
 
         @Override
@@ -1719,29 +1734,27 @@ public final class TransactionStore {
 
         @Override
         public void write(WriteBuffer buff, Object obj) {
-            Object[] array = (Object[]) obj;
-            for (int i = 0; i < arrayLength; i++) {
-                DataType t = elementTypes[i];
-                Object o = array[i];
-                if (o == null) {
-                    buff.put((byte) 0);
-                } else {
-                    buff.put((byte) 1);
-                    t.write(buff, o);
-                }
+            Record record = (Record) obj;
+            buff.putVarInt(record.mapId);
+            keyType.write(buff, record.key);
+            VersionedValue oldValue = record.oldValue;
+            if(oldValue == null) {
+                buff.put((byte) 0);
+            } else {
+                buff.put((byte) 1);
+                valueType.write(buff, oldValue);
             }
         }
 
         @Override
         public Object read(ByteBuffer buff) {
-            Object[] array = new Object[arrayLength];
-            for (int i = 0; i < arrayLength; i++) {
-                DataType t = elementTypes[i];
-                if (buff.get() == 1) {
-                    array[i] = t.read(buff);
-                }
+            int mapId = DataUtils.readVarInt(buff);
+            Object key = keyType.read(buff);
+            VersionedValue oldValue = null;
+            if(buff.get() == 1) {
+                oldValue = (VersionedValue) valueType.read(buff);
             }
-            return array;
+            return new Record(mapId, key, oldValue);
         }
 
     }

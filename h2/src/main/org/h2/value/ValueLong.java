@@ -7,12 +7,17 @@ package org.h2.value;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.nio.ByteBuffer;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 
 import org.h2.api.ErrorCode;
 import org.h2.message.DbException;
-import org.h2.util.MathUtils;
+import org.h2.mvstore.WriteBuffer;
+import org.h2.mvstore.db.ValueDataType;
+import org.h2.mvstore.type.ExtendedDataType;
+import org.h2.result.SortOrder;
+import org.h2.store.DataHandler;
 
 /**
  * Implementation of the BIGINT data type.
@@ -171,7 +176,11 @@ public class ValueLong extends Value {
     @Override
     protected int compareSecure(Value o, CompareMode mode) {
         ValueLong v = (ValueLong) o;
-        return MathUtils.compareLong(value, v.value);
+        return compare(v);
+    }
+
+    private int compare(ValueLong v) {
+        return Long.compare(value, v.value);
     }
 
     @Override
@@ -223,4 +232,111 @@ public class ValueLong extends Value {
         return other instanceof ValueLong && value == ((ValueLong) other).value;
     }
 
+
+    public static final class Type extends ValueDataType implements ExtendedDataType {
+
+        public static final Type INSTANCE = new Type(null, null, null);
+
+        public Type(CompareMode compareMode, DataHandler handler, int[] sortTypes) {
+            super(compareMode, handler, sortTypes);
+        }
+
+        @Override
+        public Object createStorage(int size) {
+            return new long[size];
+        }
+
+        @Override
+        public Object clone(Object storage) {
+            return ((long[])storage).clone();
+        }
+
+        @Override
+        public int getLength(Object storage) {
+            return ((long[])storage).length;
+        }
+
+        @Override
+        public Object getValue(Object storage, int indx) {
+            return ValueLong.get(((long[])storage)[indx]);
+        }
+
+        @Override
+        public void setValue(Object storage, int indx, Object value) {
+            ((long[])storage)[indx] = ((Value)value).getLong();
+        }
+
+        @Override
+        public int getMemorySize(Object storage) {
+            return getLength(storage) * 8;
+        }
+
+        @Override
+        public int binarySearch(Object what, Object storage, int initialGuess) {
+//            return Arrays.binarySearch((long[]) storage, ((Value)key).getLong());
+
+            if (what == null) {
+                return -1;
+            }
+//            int sortType = sortTypes[0];
+            if (what == ValueNull.INSTANCE) {
+                int sortType = SortOrder.ASCENDING;
+                return SortOrder.compareNull(true, sortType);
+            }
+//            boolean isDescending = (sortType & SortOrder.DESCENDING) != 0;
+            long[] data = (long[]) storage;
+            long key = ((Value) what).getLong();
+            int low = 0;
+            int high = data.length - 1;
+            // the cached index minus one, so that
+            // for the first time (when cachedCompare is 0),
+            // the default value is used
+            int x = initialGuess - 1;
+            if (x < 0 || x > high) {
+                x = high >>> 1;
+            }
+            while (low <= high) {
+                int compare = Long.compare(key, data[x]);
+//                if(isDescending) compare = -compare;
+                if (compare > 0) {
+                    low = x + 1;
+                } else if (compare < 0) {
+                    high = x - 1;
+                } else {
+                    return x;
+                }
+                x = (low + high) >>> 1;
+            }
+            x = -(low + 1);
+            return x;
+        }
+
+        @Override
+        public void writeStorage(WriteBuffer buff, Object storage) {
+            long[] data = (long[]) storage;
+//*
+            for (long x : data) {
+                writeLong(buff, x);
+            }
+/*/
+            for (long x : data) {
+                buff.putVarLong(x);
+            }
+//*/
+        }
+
+        @Override
+        public void read(ByteBuffer buff, Object storage) {
+            long[] data = (long[]) storage;
+//*
+            for (int i = 0; i < data.length; i++) {
+                data[i] = readValue(buff).getLong();
+            }
+/*/
+            for (int i = 0; i < data.length; i++) {
+                data[i] = DataUtils.readVarLong(buff);
+            }
+//*/
+        }
+    }
 }

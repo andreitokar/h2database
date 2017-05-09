@@ -28,6 +28,7 @@ import org.h2.jdbc.JdbcConnection;
 import org.h2.message.DbException;
 import org.h2.message.Trace;
 import org.h2.message.TraceSystem;
+import org.h2.mvstore.db.MVPrimaryIndex;
 import org.h2.mvstore.db.MVTable;
 import org.h2.mvstore.db.TransactionStore.Change;
 import org.h2.mvstore.db.TransactionStore.Transaction;
@@ -779,7 +780,7 @@ public class Session extends SessionWithState {
                 MVTable t = tableMap.get(c.mapName);
                 if (t != null) {
                     long key = ((ValueLong) c.key).getLong();
-                    ValueArray value = (ValueArray) c.value;
+                    Value value = (Value) c.value;
                     short op;
                     Row row;
                     if (value == null) {
@@ -787,9 +788,10 @@ public class Session extends SessionWithState {
                         row = t.getRow(this, key);
                     } else {
                         op = UndoLogRecord.DELETE;
-                        row = createRow(value.getList(), Row.MEMORY_CALCULATE);
+//                        row = t.createRow(value.getList(), Row.MEMORY_CALCULATE);
+                        row = MVPrimaryIndex.convertValueToRow(key, value, t);
                     }
-                    row.setKey(key);
+//                    row.setKey(key);
                     UndoLogRecord log = new UndoLogRecord(t, op, row);
                     log.undo(this);
                 }

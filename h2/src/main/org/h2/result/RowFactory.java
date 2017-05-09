@@ -5,6 +5,7 @@
  */
 package org.h2.result;
 
+import org.h2.table.Column;
 import org.h2.value.Value;
 
 /**
@@ -17,6 +18,10 @@ public abstract class RowFactory {
      * Default implementation of row factory.
      */
     public static final RowFactory DEFAULT = new DefaultRowFactory();
+
+    public RowFactory createRowFactory(Column columns[]) {
+        return this;
+    }
 
     /**
      * Create new row.

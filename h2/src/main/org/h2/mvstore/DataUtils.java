@@ -952,7 +952,7 @@ public final class DataUtils {
     public static final class MapEntry<K, V> implements Map.Entry<K, V> {
 
         private final K key;
-        private V value;
+        private final V value;
 
         public MapEntry(K key, V value) {
             this.key = key;

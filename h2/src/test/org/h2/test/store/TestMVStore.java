@@ -1393,7 +1393,7 @@ public class TestMVStore extends TestBase {
         m = s.openMap("data");
         for (int i = 0; i < 10; i++) {
             if (i % 4 != 0) {
-//                sleep(2);
+                sleep(2);
                 m.remove(i);
                 s.commit();
             }

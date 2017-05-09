@@ -19,7 +19,11 @@ import java.util.HashMap;
 import java.util.UUID;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.WriteBuffer;
+import org.h2.result.SortOrder;
 import org.h2.util.New;
+import org.h2.value.Value;
+import org.h2.value.ValueLong;
+import org.h2.value.ValueNull;
 
 /**
  * A data type implementation for the most common data types, including
@@ -98,6 +102,9 @@ public class ObjectDataType implements DataType {
             .hashMap();
 
     private AutoDetectDataType last = new StringType(this);
+
+    public ObjectDataType() {
+    }
 
     @Override
     public int compare(Object a, Object b) {
@@ -233,35 +240,35 @@ public class ObjectDataType implements DataType {
     }
 
     private static int getTypeId(Object obj) {
-        if (obj instanceof Integer) {
+        if (obj == null) return TYPE_NULL;
+        Class<?> objClass = obj.getClass();
+        if (objClass == Integer.class) {
             return TYPE_INT;
-        } else if (obj instanceof String) {
+        } else if (objClass == String.class) {
             return TYPE_STRING;
-        } else if (obj instanceof Long) {
+        } else if (objClass == Long.class) {
             return TYPE_LONG;
-        } else if (obj instanceof Double) {
+        } else if (objClass == Double.class) {
             return TYPE_DOUBLE;
-        } else if (obj instanceof Float) {
+        } else if (objClass == Float.class) {
             return TYPE_FLOAT;
-        } else if (obj instanceof Boolean) {
+        } else if (objClass == Boolean.class) {
             return TYPE_BOOLEAN;
-        } else if (obj instanceof UUID) {
+        } else if (objClass == UUID.class) {
             return TYPE_UUID;
-        } else if (obj instanceof Byte) {
+        } else if (objClass == Byte.class) {
             return TYPE_BYTE;
-        } else if (obj instanceof Short) {
+        } else if (objClass == Short.class) {
             return TYPE_SHORT;
-        } else if (obj instanceof Character) {
+        } else if (objClass == Character.class) {
             return TYPE_CHAR;
-        } else if (obj == null) {
-            return TYPE_NULL;
         } else if (isDate(obj)) {
             return TYPE_DATE;
         } else if (isBigInteger(obj)) {
             return TYPE_BIG_INTEGER;
         } else if (isBigDecimal(obj)) {
             return TYPE_BIG_DECIMAL;
-        } else if (obj.getClass().isArray()) {
+        } else if (objClass.isArray()) {
             return TYPE_ARRAY;
         }
         return TYPE_SERIALIZED_OBJECT;
@@ -754,7 +761,11 @@ public class ObjectDataType implements DataType {
     /**
      * The type for long objects.
      */
-    static class LongType extends AutoDetectDataType {
+    public static final class LongType extends AutoDetectDataType implements ExtendedDataType  {
+
+        public LongType() {
+            this(new ObjectDataType());
+        }
 
         LongType(ObjectDataType base) {
             super(base, TYPE_LONG);
@@ -815,6 +826,83 @@ public class ObjectDataType implements DataType {
             return Long.valueOf(tag - TAG_LONG_0_7);
         }
 
+        @Override
+        public Object createStorage(int size) {
+            return new long[size];
+        }
+
+        @Override
+        public Object clone(Object storage) {
+            return ((long[])storage).clone();
+        }
+
+        @Override
+        public int getLength(Object storage) {
+            return ((long[])storage).length;
+        }
+
+        @Override
+        public Object getValue(Object storage, int indx) {
+            return ((long[])storage)[indx];
+        }
+
+        @Override
+        public void setValue(Object storage, int indx, Object value) {
+            ((long[])storage)[indx] = ((Long)value);
+        }
+
+        @Override
+        public int getMemorySize(Object storage) {
+            return getLength(storage) * 8;
+        }
+
+        @Override
+        public int binarySearch(Object what, Object storage, int initialGuess) {
+            if (what == null) {
+                return -1;
+            }
+            long[] data = (long[]) storage;
+            long key = ((Long) what);
+            int low = 0;
+            int high = data.length - 1;
+            // the cached index minus one, so that
+            // for the first time (when cachedCompare is 0),
+            // the default value is used
+            int x = initialGuess - 1;
+            if (x < 0 || x > high) {
+                x = high >>> 1;
+            }
+            while (low <= high) {
+                int compare = Long.compare(key, data[x]);
+//                if(isDescending) compare = -compare;
+                if (compare > 0) {
+                    low = x + 1;
+                } else if (compare < 0) {
+                    high = x - 1;
+                } else {
+                    return x;
+                }
+                x = (low + high) >>> 1;
+            }
+            x = -(low + 1);
+            return x;
+        }
+
+        @Override
+        public void writeStorage(WriteBuffer buff, Object storage) {
+            long[] data = (long[]) storage;
+            for (long x : data) {
+                buff.putVarLong(x);
+            }
+        }
+
+        @Override
+        public void read(ByteBuffer buff, Object storage) {
+            long[] data = (long[]) storage;
+            for (int i = 0; i < data.length; i++) {
+                data[i] = DataUtils.readVarLong(buff);
+            }
+        }
     }
 
     /**

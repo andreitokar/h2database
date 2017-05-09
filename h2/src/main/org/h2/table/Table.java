@@ -24,12 +24,7 @@ import org.h2.index.Index;
 import org.h2.index.IndexType;
 import org.h2.message.DbException;
 import org.h2.message.Trace;
-import org.h2.result.Row;
-import org.h2.result.RowList;
-import org.h2.result.SearchRow;
-import org.h2.result.SimpleRow;
-import org.h2.result.SimpleRowValue;
-import org.h2.result.SortOrder;
+import org.h2.result.*;
 import org.h2.schema.Schema;
 import org.h2.schema.SchemaObjectBase;
 import org.h2.schema.Sequence;
@@ -81,6 +76,7 @@ public abstract class Table extends SchemaObjectBase {
     private boolean checkForeignKeyConstraints = true;
     private boolean onCommitDrop, onCommitTruncate;
     private volatile Row nullRow;
+    private RowFactory rowFactory = RowFactory.DEFAULT;
 
     public Table(Schema schema, int id, String name, boolean persistIndexes,
             boolean persistData) {
@@ -427,6 +423,7 @@ public abstract class Table extends SchemaObjectBase {
             }
             columnMap.put(columnName, col);
         }
+        rowFactory = database.getRowFactory().createRowFactory(columns);
     }
 
     /**
@@ -615,8 +612,12 @@ public abstract class Table extends SchemaObjectBase {
         }
     }
 
+    public Row createRow(Value[] data, int memory) {
+        return rowFactory.createRow(data, memory);
+    }
+
     public Row getTemplateRow() {
-        return database.createRow(new Value[columns.length], Row.MEMORY_CALCULATE);
+        return createRow(new Value[columns.length], Row.MEMORY_CALCULATE);
     }
 
     /**
@@ -639,7 +640,7 @@ public abstract class Table extends SchemaObjectBase {
             // be ok.
             Value[] values = new Value[columns.length];
             Arrays.fill(values, ValueNull.INSTANCE);
-            nullRow = row = database.createRow(values, 1);
+            nullRow = row = createRow(values, 1);
         }
         return row;
     }

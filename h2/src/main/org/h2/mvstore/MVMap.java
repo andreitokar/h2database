@@ -5,18 +5,14 @@
  */
 package org.h2.mvstore;
 
-import java.util.AbstractList;
-import java.util.AbstractMap;
-import java.util.AbstractSet;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.nio.ByteBuffer;
+import java.util.*;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.h2.mvstore.type.DataType;
+import org.h2.mvstore.type.ExtendedDataType;
 import org.h2.mvstore.type.ObjectDataType;
 import org.h2.util.New;
 
@@ -53,7 +49,9 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     private int id;
     private long createVersion;
     private final DataType keyType;
+    private final ExtendedDataType extendedKeyType;
     private final DataType valueType;
+    private final ExtendedDataType extendedValueType;
 
 
     /**
@@ -66,7 +64,9 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
     protected MVMap(DataType keyType, DataType valueType) {
         this.keyType = keyType;
+        this.extendedKeyType = keyType instanceof ExtendedDataType ? (ExtendedDataType) keyType : new DataTypeExtentionWrapper(keyType);
         this.valueType = valueType;
+        this.extendedValueType = valueType instanceof ExtendedDataType ? (ExtendedDataType) valueType : new DataTypeExtentionWrapper(valueType);
     }
 
     public MVMap<K,V>cloneFromThis() {
@@ -498,7 +498,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
 
     /**
-     * Get a value.
+     * Get the value for the given key, or null if not found.
      *
      * @param key the key
      * @return the value, or null if not found
@@ -519,7 +519,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     }
 
     @Override
-    public boolean containsKey(Object key) {
+    public final boolean containsKey(Object key) {
         return get(key) != null;
     }
 
@@ -698,12 +698,30 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     }
 
     /**
+     * Get extended key type.
+     *
+     * @return the key type
+     */
+    protected final ExtendedDataType getExtendedKeyType() {
+        return extendedKeyType;
+    }
+
+    /**
      * Get the value type.
      *
      * @return the value type
      */
     public final DataType getValueType() {
         return valueType;
+    }
+
+    /**
+     * Get extended value type.
+     *
+     * @return the value type
+     */
+    public final ExtendedDataType getExtendedValueType() {
+        return extendedValueType;
     }
 
     /**
@@ -1053,12 +1071,12 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     }
 
     @Override
-    public int hashCode() {
+    public final int hashCode() {
         return id;
     }
 
     @Override
-    public boolean equals(Object o) {
+    public final boolean equals(Object o) {
         return this == o;
     }
 
@@ -1069,7 +1087,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @return the number of entries, as an integer
      */
     @Override
-    public int size() {
+    public final int size() {
         long size = sizeAsLong();
         return size > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) size;
     }
@@ -1276,7 +1294,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     }
 
     @Override
-    public String toString() {
+    public final String toString() {
         return asString(null);
     }
 
@@ -1399,6 +1417,201 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             this.root = root;
             this.version = version;
             this.previous = previous;
+        }
+    }
+    private static final class DataTypeExtentionWrapper implements ExtendedDataType {
+
+        private final DataType dataType;
+
+        private DataTypeExtentionWrapper(DataType dataType) {
+            this.dataType = dataType;
+        }
+
+        @Override
+        public Object createStorage(int size) {
+            return new Object[size];
+        }
+
+        @Override
+        public Object clone(Object storage) {
+            Object data[] = (Object[])storage;
+            return data.clone();
+        }
+
+        @Override
+        public int getLength(Object storage) {
+/*
+            return Array.getLength(storage);
+/*/
+            Object data[] = (Object[])storage;
+            return data.length;
+//*/
+        }
+
+        @Override
+        public Object getValue(Object storage, int indx) {
+/*
+            return Array.get(storage, indx);
+/*/
+            Object data[] = (Object[])storage;
+            return data[indx];
+//*/
+        }
+
+        @Override
+        public void setValue(Object storage, int indx, Object value) {
+/*
+            Array.set(storage, indx, value);
+/*/
+            Object data[] = (Object[])storage;
+            data[indx] = value;
+//*/
+        }
+
+        @Override
+        public int getMemorySize(Object storage) {
+            int mem = 0;
+            Object data[] = (Object[])storage;
+            for (Object key : data) {
+                mem += dataType.getMemory(key);
+            }
+            return mem;
+        }
+
+        @Override
+        public int binarySearch(Object key, Object storage, int initialGuess) {
+            Object keys[] = (Object[])storage;
+            int low = 0, high = keys.length - 1;
+            // the cached index minus one, so that
+            // for the first time (when cachedCompare is 0),
+            // the default value is used
+            int x = initialGuess - 1;
+            if (x < 0 || x > high) {
+                x = high >>> 1;
+            }
+            while (low <= high) {
+                int compare = dataType.compare(key, keys[x]);
+                if (compare > 0) {
+                    low = x + 1;
+                } else if (compare < 0) {
+                    high = x - 1;
+                } else {
+                    return x;
+                }
+                x = (low + high) >>> 1;
+            }
+            return -(low + 1);
+        }
+
+        @Override
+        public void writeStorage(WriteBuffer buff, Object storage) {
+            Object data[] = (Object[])storage;
+            dataType.write(buff, data, data.length, true);
+        }
+
+        @Override
+        public void read(ByteBuffer buff, Object storage) {
+            Object data[] = (Object[])storage;
+            dataType.read(buff, data, data.length, true);
+        }
+
+        @Override
+        public int compare(Object a, Object b) {
+            return dataType.compare(a, b);
+        }
+
+        @Override
+        public int getMemory(Object obj) {
+            return obj == null ? 0 : dataType.getMemory(obj);
+        }
+
+        @Override
+        public void write(WriteBuffer buff, Object obj) {
+            dataType.write(buff, obj);
+        }
+
+        @Override
+        public void write(WriteBuffer buff, Object[] obj, int len, boolean key) {
+            dataType.write(buff, obj, len, key);
+        }
+
+        @Override
+        public Object read(ByteBuffer buff) {
+            return dataType.read(buff);
+        }
+
+        @Override
+        public void read(ByteBuffer buff, Object[] obj, int len, boolean key) {
+            dataType.read(buff, obj, len, key);
+        }
+    }
+
+    private static final class MVEntrySet<K, V> extends AbstractSet<Entry<K, V>> {
+
+        private final MVMap<K,V>   map;
+
+        private MVEntrySet(MVMap<K, V> map) {
+            this.map = map;
+        }
+
+        @Override
+        public Iterator<Entry<K, V>> iterator() {
+            final Cursor<K, V> cursor = new Cursor<K, V>(map, map.root, null);
+            return new Iterator<Entry<K, V>>() {
+
+                @Override
+                public boolean hasNext() {
+                    return cursor.hasNext();
+                }
+
+                @Override
+                public Entry<K, V> next() {
+                    K k = cursor.next();
+                    return new DataUtils.MapEntry<K, V>(k, cursor.getValue());
+                }
+
+                @Override
+                public void remove() {
+                    throw DataUtils.newUnsupportedOperationException(
+                            "Removing is not supported");
+                }
+            };
+
+        }
+
+        @Override
+        public int size() {
+            return map.size();
+        }
+
+        @Override
+        public boolean contains(Object o) {
+            return map.containsKey(o);
+        }
+
+    }
+
+    private static final class MVKeySet<K> extends AbstractSet<K> {
+
+        private final MVMap<K, ?> map;
+
+        private MVKeySet(MVMap<K, ?> map) {
+            this.map = map;
+        }
+
+        @Override
+        public Iterator<K> iterator() {
+            return new Cursor<>(map, map.root, null);
+        }
+
+        @Override
+        public int size() {
+            return map.size();
+        }
+
+        @Override
+        public boolean contains(Object o) {
+            return map.containsKey(o);
         }
     }
 }
