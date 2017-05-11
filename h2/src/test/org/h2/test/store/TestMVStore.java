@@ -1419,7 +1419,11 @@ public class TestMVStore extends TestBase {
         assertEquals(1000, m.size());
         // previously (131896) we fail to account for initial root page for every map
         // there are two of them here (meta and "data"), hence lack of 256 bytes
-        assertEquals(132152, s.getUnsavedMemory());
+        // assertEquals(132152, s.getUnsavedMemory());
+        // accounting have changed: now we split and count on upward traversal
+        // after node modification, whereas before it was on a way down
+        // and before node modification
+        assertEquals(117120, s.getUnsavedMemory());
         s.commit();
         assertEquals(2, s.getFileStore().getWriteCount());
         s.close();

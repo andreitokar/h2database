@@ -11,7 +11,6 @@ import java.util.HashSet;
 import java.util.Set;
 
 import org.h2.compress.Compressor;
-import org.h2.mvstore.rtree.MVRTreeMap;
 import org.h2.mvstore.type.DataType;
 import org.h2.mvstore.type.ObjectDataType;
 import org.h2.util.New;
@@ -90,7 +89,7 @@ public final class Page {
      */
     private volatile boolean removedInMemory;
 
-    Page(MVMap<?, ?> map, long version) {
+    private Page(MVMap<?, ?> map, long version) {
         this.map = map;
         this.version = version;
     }
@@ -133,13 +132,12 @@ public final class Page {
         MVStore store = map.store;
         if(store.getFileStore() == null) {
             p.memory = IN_MEMORY;
-        } else if (memory == 0) {
-            p.recalculateMemory();
         } else {
-            p.addMemory(memory);
-        }
-        if(store.getFileStore() != null) {
-            store.registerUnsavedPage(p.memory);
+            if (memory == 0) {
+                p.recalculateMemory();
+            } else {
+                p.addMemory(memory);
+            }
         }
         return p;
     }
@@ -161,8 +159,10 @@ public final class Page {
             Arrays.fill(children, PageReference.EMPTY);
             totalCount = 0;
         }
-        return create(map, version, source.keys, source.values, children,
-                totalCount, source.memory);
+        Page page = create(map, version, source.keys, source.values, children,
+                           totalCount, source.memory);
+        map.store.registerUnsavedPage(page.getMemory());
+        return page;
     }
 
     /**
@@ -219,7 +219,13 @@ public final class Page {
      */
     public Page getChildPage(int index) {
         PageReference ref = children[index];
-        return ref.page != null ? ref.page : map.readPage(ref.pos);
+        Page page = ref.page;
+        if(page == null) {
+            page = map.readPage(ref.pos);
+            assert ref.pos == page.pos;
+            assert ref.count == page.totalCount;
+        }
+        return page;
     }
 
     /**
@@ -304,12 +310,21 @@ public final class Page {
      * @return a page with the given version
      */
     public Page copy(long version) {
+        return copy(version, false);
+    }
+
+    public Page copy(long version, boolean countRemoval) {
         Page newPage = create(map, version,
                 keys, values,
                 children, totalCount,
                 memory);
         // mark the old as deleted
-        removePage();
+        if(countRemoval) {
+            removePage();
+            if(isPersistent()) {
+                map.store.registerUnsavedPage(newPage.getMemory());
+            }
+        }
         newPage.cachedCompare = cachedCompare;
         return newPage;
     }
@@ -599,10 +614,7 @@ public final class Page {
                 bKeys, bValues,
                 null,
                 b, 0);
-        if(isPersistent()) {
-            recalculateMemory();
-            newPage.recalculateMemory();
-        }
+        recalculateMemory();
         return newPage;
     }
 
@@ -635,10 +647,7 @@ public final class Page {
                 bKeys, null,
                 bChildren,
                 t, 0);
-        if(isPersistent()) {
-            recalculateMemory();
-            newPage.recalculateMemory();
-        }
+        recalculateMemory();
         return newPage;
     }
 

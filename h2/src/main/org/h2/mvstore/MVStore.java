@@ -392,21 +392,15 @@ public final class MVStore {
     }
 
     /**
-     * Open an old, stored version of a map.
+     * Find position of the root page for historical version of the map.
      *
+     * @param mapId to find the old version for
      * @param version the version
-     * @param mapId the map id
-     * @param template the template map
-     * @return the read-only map
+     * @return position of the root Page
      */
-    @SuppressWarnings("unchecked")
-    <T extends MVMap<?, ?>> T openMapVersion(long version, int mapId,
-            MVMap<?, ?> template) {
+    long getRootPos(int mapId, long version) {
         MVMap<String, String> oldMeta = getMetaMap(version);
-        long rootPos = getRootPos(oldMeta, mapId);
-        MVMap<?, ?> m = template.openReadOnly();
-        m.setRootPos(rootPos, version);
-        return (T) m;
+        return getRootPos(oldMeta, mapId);
     }
 
     /**
@@ -520,8 +514,7 @@ public final class MVStore {
         Chunk c = getChunkForVersion(version);
         DataUtils.checkArgument(c != null, "Unknown version {0}", version);
         c = readChunkHeader(c.block);
-        MVMap<String, String> oldMeta = meta.openReadOnly();
-        oldMeta.setRootPos(c.metaRootPos, version);
+        MVMap<String, String> oldMeta = meta.openReadOnly(c.metaRootPos, version);
         return oldMeta;
     }
 
@@ -943,14 +936,6 @@ public final class MVStore {
         Chunk c = chunks.get(chunkId);
         if (c == null) {
             checkOpen();
-            if (!Thread.holdsLock(this)) {
-                // it could also be unsynchronized metadata
-                // access (if synchronization on this was forgotten)
-                throw DataUtils.newIllegalStateException(
-                        DataUtils.ERROR_CHUNK_NOT_FOUND,
-                        "Chunk {0} no longer exists",
-                        chunkId);
-            }
             String s = meta.get(Chunk.getMetaKey(chunkId));
             if (s == null) {
                 return null;
@@ -1081,7 +1066,7 @@ public final class MVStore {
         }
         int newChunkId = lastChunkId;
         while (true) {
-            newChunkId = (newChunkId + 1) % Chunk.MAX_ID;
+            newChunkId = (newChunkId + 1) & Chunk.MAX_ID;
             Chunk old = chunks.get(newChunkId);
             if (old == null) {
                 break;
@@ -1124,7 +1109,12 @@ public final class MVStore {
             }
             if (v >= 0 && v >= lastStoredVersion) {
                 MVMap<?, ?> r = m.openVersion(storeVersion);
-                if (r.getRootPage().getPos() == 0) {
+                Page rootPage = r.getRootPage();
+                if (rootPage.getPos() == 0 ||
+                        // after deletion previously saved leaf
+                        // may pop up as a root, but we stiil need
+                        // to save new root pos in meta
+                        rootPage.isLeaf()) {
                     changed.add(r);
                 }
             }
@@ -2186,7 +2176,7 @@ public final class MVStore {
      *
      * @param memory the memory usage of the page
      */
-    void registerUnsavedPage(int memory) {
+    public void registerUnsavedPage(int memory) {
         unsavedMemory += memory;
         int newValue = unsavedMemory;
         if (newValue > autoCommitMemory && autoCommitMemory > 0) {
