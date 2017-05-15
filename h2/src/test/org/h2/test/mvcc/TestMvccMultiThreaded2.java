@@ -34,6 +34,7 @@ public class TestMvccMultiThreaded2 extends TestBase {
         test.config.lockTimeout = 120000;
         test.config.memory = true;
         test.config.multiThreaded = true;
+        test.config.traceTest = true;
         test.test();
     }
 
@@ -45,7 +46,7 @@ public class TestMvccMultiThreaded2 extends TestBase {
     private void testSelectForUpdateConcurrency()
             throws SQLException, InterruptedException {
         deleteDb(getTestName());
-        Connection conn = getConnection(getTestName() + URL);
+        Connection conn = getConnection(getTestName() + URL/*+";LOCK_MODE=0"*/);
         conn.setAutoCommit(false);
 
         String sql = "CREATE TABLE test ("
@@ -68,16 +69,19 @@ public class TestMvccMultiThreaded2 extends TestBase {
             threads.add(sfu);
             sfu.start();
         }
-
+        long totalCount = 0;
         for (SelectForUpdate sfu : threads) {
             sfu.join();
+            totalCount += sfu.count;
         }
 
         IOUtils.closeSilently(conn);
         deleteDb(getTestName());
+        System.out.println("Operations completed: " + totalCount);
     }
 
     private class SelectForUpdate extends Thread {
+        private long count;
 
         @Override
         public void run() {
@@ -98,15 +102,15 @@ public class TestMvccMultiThreaded2 extends TestBase {
                         assertTrue(rs.getInt(2) == 100);
 
                         conn.commit();
-
+                        ++count;
                         long now = System.currentTimeMillis();
                         if (now - start > 1000 * 60)
                             done = true;
                     } catch (JdbcSQLException e1) {
                         // skip DUPLICATE_KEY_1 to just focus on this bug.
-                        if (e1.getErrorCode() != ErrorCode.DUPLICATE_KEY_1) {
+//                        if (e1.getErrorCode() != ErrorCode.DUPLICATE_KEY_1) {
                             throw e1;
-                        }
+//                        }
                     }
                 }
             } catch (SQLException e) {

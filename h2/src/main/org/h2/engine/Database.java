@@ -2165,6 +2165,7 @@ public class Database implements DataHandler {
     public void setLockMode(int lockMode) {
         switch (lockMode) {
         case Constants.LOCK_MODE_OFF:
+/*
             if (multiThreaded) {
                 // currently the combination of LOCK_MODE=0 and MULTI_THREADED
                 // is not supported. also see code in
@@ -2173,6 +2174,7 @@ public class Database implements DataHandler {
                         ErrorCode.UNSUPPORTED_SETTING_COMBINATION,
                         "LOCK_MODE=0 & MULTI_THREADED");
             }
+*/
             break;
         case Constants.LOCK_MODE_READ_COMMITTED:
         case Constants.LOCK_MODE_TABLE:

@@ -423,6 +423,22 @@ public final class TransactionStore {
         }
     }
 
+    synchronized boolean waitForTxToEnd(int transactionId, long millis) {
+        long until = System.currentTimeMillis() + millis;
+        while(openTransactions.get(transactionId)) {
+            long dur = until - System.currentTimeMillis();
+            if(dur <= 0) {
+                return false;
+            }
+            try {
+                wait(dur);
+            } catch (InterruptedException ex) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     /**
      * Rollback to an old savepoint.
      *
@@ -970,15 +986,20 @@ public final class TransactionStore {
         }
 
         private V set(K key, V value) {
-            transaction.checkNotClosed();
             TxDecisionMaker decisionMaker = new TxDecisionMaker(mapId, key, transaction);
-            long operationId = getOperationId(transaction.transactionId, transaction.logId);
-            VersionedValue newValue = new VersionedValue(operationId, value);
-            VersionedValue result = map.put(key, newValue, decisionMaker);
-            if(decisionMaker.decide(result, newValue) != MVMap.Decision.ABORT) {
-                VersionedValue versionedValue = getValue(key, readLogId, result);
-                return versionedValue == null ? null : (V)versionedValue.value;
-            }
+            int blockingId;
+//            do {
+//                transaction.checkNotClosed();
+                long operationId = getOperationId(transaction.transactionId, transaction.logId);
+                VersionedValue newValue = new VersionedValue(operationId, value);
+                VersionedValue result = map.put(key, newValue, decisionMaker);
+                if (decisionMaker.decide(result, newValue) != MVMap.Decision.ABORT) {
+                    VersionedValue versionedValue = getValue(key, readLogId, result);
+                    return versionedValue == null ? null : (V) versionedValue.value;
+                }
+//                blockingId = decisionMaker.blokingId;
+//                decisionMaker.reset();
+//            } while (transaction.store.waitForTxToEnd(blockingId, 10000));
             throw DataUtils.newIllegalStateException(
                     DataUtils.ERROR_TRANSACTION_LOCKED, "Entry is locked");
         }
@@ -1482,7 +1503,8 @@ public final class TransactionStore {
             private final int mapId;
             private final Object key;
             private final Transaction transaction;
-            private MVMap.Decision decision;
+            private       int         blockingId;
+            private MVMap.Decision    decision;
 
             public TxDecisionMaker(int mapId, Object key, Transaction transaction) {
                 this.mapId = mapId;
@@ -1501,7 +1523,7 @@ public final class TransactionStore {
                             // or entry is a committed one
                             (id = existingValue.operationId) == 0 ||
                             // or it came from the same transaction
-                            getTransactionId(id) == transaction.transactionId) {
+                            (blockingId = getTransactionId(id)) == transaction.transactionId) {
                         // a new value
                         decision = MVMap.Decision.PUT;
                         transaction.log(mapId, key, existingValue);
@@ -1519,6 +1541,7 @@ public final class TransactionStore {
                     // map was updated after our decision has been made
                     transaction.logUndo();
                 }
+                blockingId = 0;
                 decision = null;
             }
 

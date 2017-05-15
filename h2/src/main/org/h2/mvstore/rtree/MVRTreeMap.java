@@ -145,8 +145,9 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
     }
 
     @Override
-    public V operate(SpatialKey key, V value, DecisionMaker<? super V> decisionMaker) {
+    public V operateUnderLock(SpatialKey key, V value, DecisionMaker<? super V> decisionMaker) {
         beforeWrite();
+        int attempt = 0;
         V result;
         RootReference rootReference;
         Page p;
@@ -192,7 +193,8 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
                     }
                     break;
             }
-        } while(!newRoot(rootReference, p, version));
+            ++attempt;
+        } while(!newRoot(rootReference, p, version, attempt));
         return result;
     }
 

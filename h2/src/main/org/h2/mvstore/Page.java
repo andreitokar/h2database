@@ -41,7 +41,7 @@ public final class Page {
     public static final Object[] EMPTY_OBJECT_ARRAY = new Object[0];
     private static final int IN_MEMORY = Integer.MIN_VALUE;
 
-    private final MVMap<?, ?> map;
+    public final MVMap<?, ?> map;
     private long version;
     private long pos;
 
