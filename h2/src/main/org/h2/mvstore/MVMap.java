@@ -11,6 +11,9 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.h2.api.ErrorCode;
+import org.h2.message.DbException;
+import org.h2.mvstore.db.TransactionStore;
 import org.h2.mvstore.type.DataType;
 import org.h2.mvstore.type.ObjectDataType;
 import org.h2.util.New;
@@ -100,7 +103,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         this.id = DataUtils.readHexInt(config, "id", 0);
         this.createVersion = DataUtils.readHexLong(config, "createVersion", 0);
         this.writeVersion = store.getCurrentVersion();
-        setRoot(Page.createEmpty(this,  -1), -1);
+        setRoot(Page.createEmpty(this), -1);
     }
 
     /**
@@ -116,7 +119,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     }
 
     public abstract static class DecisionMaker<V> {
-        public static final DecisionMaker<Object> IF_ABSENT = new DecisionMaker<Object>() {
+        static final DecisionMaker<Object> IF_ABSENT = new DecisionMaker<Object>() {
             @Override
             public Decision decide(Object existingValue, Object providedValue) {
                 return existingValue == null ? Decision.PUT : Decision.ABORT;
@@ -128,7 +131,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             }
         };
 
-        public static final DecisionMaker<Object> IF_PRESENT = new DecisionMaker<Object>() {
+        static final DecisionMaker<Object> IF_PRESENT = new DecisionMaker<Object>() {
             @Override
             public Decision decide(Object existingValue, Object providedValue) {
                 return existingValue != null ? Decision.PUT : Decision.ABORT;
@@ -165,20 +168,21 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     public final V operate(K key, V value, DecisionMaker<? super V> decisionMaker) {
         while (true) {
             try {
-                if (updateSemaphore.tryAcquire(10, TimeUnit.SECONDS)) {
+                if (updateSemaphore.tryAcquire(30, TimeUnit.SECONDS)) {
                     try {
                         return operateUnderLock(key, value, decisionMaker);
                     } finally {
                         updateSemaphore.release();
                     }
                 }
-                throw DataUtils.newIllegalStateException(DataUtils.ERROR_TRANSACTION_LOCKED, "Unable to obtain update permit");
+//                throw DataUtils.newIllegalStateException(DataUtils.ERROR_TRANSACTION_LOCKED, "Unable to obtain update permit");
+                throw DbException.get(ErrorCode.LOCK_TIMEOUT_1);
             } catch (InterruptedException ignore) {
             }
         }
     }
 
-    protected V operateUnderLock(K key, V value, DecisionMaker<? super V> decisionMaker) {
+    public V operateUnderLock(K key, V value, DecisionMaker<? super V> decisionMaker) {
         beforeWrite();
         int attempt = 0;
         while(true) {
@@ -191,20 +195,29 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
             CursorPos pos = traverseDown(rootReference.root, key);
             if(rootReference != getRoot()) {
-                System.out.println("Concurrent update of "+getId()+"/"+getName()+" key="+key+", retry...");
+//                System.out.println("    Concurrent update of "+getId()+"/"+getName()+" key="+key+", retry...");
                 continue;
             }
 
             Page p = pos.page;
-//            Page leaf = p = pos.page;
             int index = pos.index;
             CursorPos tip = pos;
             pos = pos.parent;
-            V result = index < 0 ? null : (V)p.getValue(index);
+            final V result = index < 0 ? null : (V)p.getValue(index);
+//            if(decisionMaker instanceof TransactionStore.TransactionMap.TxDecisionMaker) {
+//                assert ((TransactionStore.TransactionMap.TxDecisionMaker) decisionMaker).decision == null;
+//            }
             Decision decision = decisionMaker != null ? decisionMaker.decide(result, value) :
                                 value == null         ? Decision.REMOVE :
                                                         Decision.PUT;
-            if(decisionMaker != null) {
+//            if(decisionMaker instanceof TransactionStore.TransactionMap.TxDecisionMaker) {
+//                if(decision != Decision.ABORT && result != null) {
+//                    TransactionStore.VersionedValue versionedValue = (TransactionStore.VersionedValue) result;
+//                    int transactionId = ((TransactionStore.TransactionMap.TxDecisionMaker) decisionMaker).transaction.transactionId;
+//                    assert versionedValue.operationId == 0 || TransactionStore.getTransactionId(versionedValue.operationId) == transactionId : result + " !!! " + transactionId;
+//                }
+//            }
+            if(decisionMaker != null && decision != Decision.ABORT) {
                 value = (V)decisionMaker.selectValue(result, value);
             }
             int unsavedMemory = 0;
@@ -230,6 +243,13 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                     p.remove(index);
                     break;
                 case PUT:
+                    if(decisionMaker instanceof TransactionStore.TransactionMap.TxDecisionMaker) {
+                        if(result != null) {
+                            TransactionStore.VersionedValue versionedValue = (TransactionStore.VersionedValue) result;
+                            int transactionId = ((TransactionStore.TransactionMap.TxDecisionMaker) decisionMaker).transaction.transactionId;
+                            assert versionedValue.operationId == 0 || TransactionStore.getTransactionId(versionedValue.operationId) == transactionId : result + " !!! " + transactionId;
+                        }
+                    }
                     if (index < 0) {
                         index = -index - 1;
                         p = p.copy(version);
@@ -248,7 +268,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                                         new Page.PageReference(p),
                                         new Page.PageReference(split)
                                 };
-                                p = Page.create(this, version, keys, null, children, totalCount, 0);
+                                p = Page.create(this, keys, null, children, totalCount, 0);
                                 break;
                             }
                             Page c = p;
@@ -267,7 +287,10 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             }
             unsavedMemory += p.getMemory();
             if(rootReference != getRoot()) {
-                System.out.println("------------- Concurrent update of "+getId()+"/"+getName()+" key="+key+", retry...");
+//                System.out.println("--- Concurrent update of "+getId()+"/"+getName()+" key="+key+", retry...");
+                if(decisionMaker != null) {
+                    decisionMaker.reset();
+                }
                 continue;
             }
 
@@ -279,8 +302,15 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                 unsavedMemory += p.getMemory();
                 pos = pos.parent;
             }
-            if(/*version == writeVersion &&*/ newRoot(rootReference, p, writeVersion, attempt)) {
-//                leaf.removePage();
+            if(newRoot(rootReference, p, writeVersion, attempt)) {
+//                if(decisionMaker instanceof TransactionStore.TransactionMap.TxDecisionMaker) {
+//                    assert get(p, key) == value;
+//                    if(result != null) {
+//                        TransactionStore.VersionedValue versionedValue = (TransactionStore.VersionedValue) result;
+//                        int transactionId = ((TransactionStore.TransactionMap.TxDecisionMaker) decisionMaker).transaction.transactionId;
+//                        assert versionedValue.operationId == 0 || TransactionStore.getTransactionId(versionedValue.operationId) == transactionId : result + " !!! " + transactionId;
+//                    }
+//                }
                 while(tip != null) {
                     tip.page.removePage();
                     tip = tip.parent;
@@ -293,7 +323,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             if(decisionMaker != null) {
                 decisionMaker.reset();
             }
-            System.out.println("CONCURRENT UPDATE of "+getId()+"/"+getName()+" key="+key+", retry...");
+//            System.out.println("... CONCURRENT UPDATE of "+getId()+"/"+getName()+" key="+key+", retry...");
         }
     }
 
@@ -546,6 +576,10 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     @SuppressWarnings("unchecked")
     public V get(Object key) {
         Page p = getRootPage();
+        return get(p, key);
+    }
+
+    public V get(Page p, Object key) {
         while (true) {
             int index = p.binarySearch(key);
             if (p.isLeaf()) {
@@ -575,7 +609,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             rootReference = getRoot();
             rootReference.root.removeAllRecursive();
             version = writeVersion;
-        } while (!newRoot(rootReference, Page.createEmpty(this, version), version, ++attempt));
+        } while (!newRoot(rootReference, Page.createEmpty(this), version, ++attempt));
     }
 
     /**
@@ -625,7 +659,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     public boolean remove(Object key, Object value) {
         EqualsDecisionMaker<V> decisionMaker = new EqualsDecisionMaker<V>(valueType, (V)value);
         V result = operate((K)key, null, decisionMaker);
-        return decisionMaker.decide(result, null) != Decision.ABORT;
+        return decisionMaker.decision != Decision.ABORT;
     }
 
     /**
@@ -662,9 +696,9 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      */
     @Override
     public final boolean replace(K key, V oldValue, V newValue) {
-        DecisionMaker<V> decisionMaker = new EqualsDecisionMaker<V>(valueType, oldValue);
+        EqualsDecisionMaker<V> decisionMaker = new EqualsDecisionMaker<V>(valueType, oldValue);
         V result = put(key, newValue, decisionMaker);
-        return decisionMaker.decide(result, newValue) != Decision.ABORT;
+        return decisionMaker.decision != Decision.ABORT;
     }
 
     /**
@@ -697,10 +731,10 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @param newRoot the new root page
      */
     protected final boolean newRoot(RootReference oldRoot, Page newRoot, long newVersion, int attemptUpdateCounter) {
-        if(attemptUpdateCounter > 1000) {
-            throw DataUtils.newIllegalStateException(DataUtils.ERROR_INTERNAL,
-                    "Unable to change RootReference after {0} attempts", attemptUpdateCounter);
-        }
+//        if(attemptUpdateCounter > 1000) {
+//            throw DataUtils.newIllegalStateException(DataUtils.ERROR_INTERNAL,
+//                    "Unable to change RootReference after {0} attempts", attemptUpdateCounter);
+//        }
         RootReference currentRoot = getRoot();
         if (currentRoot != oldRoot && oldRoot != null) {
             return false;
@@ -773,13 +807,12 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @param version the version of the root
      */
     final void setRootPos(long rootPos, long version) {
-        Page root = readOrCreateRootPage(rootPos, version);
+        Page root = readOrCreateRootPage(rootPos);
         setRoot(root, version);
     }
 
-    private Page readOrCreateRootPage(long rootPos, long version) {
-        Page root = rootPos == 0 ? Page.createEmpty(this, -1) : readPage(rootPos);
-        root.setVersion(version);
+    private Page readOrCreateRootPage(long rootPos) {
+        Page root = rootPos == 0 ? Page.createEmpty(this) : readPage(rootPos);
         return root;
     }
 
@@ -1176,7 +1209,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @return the opened map
      */
     final MVMap<K, V> openReadOnly(long rootPos, long version) {
-        Page root = readOrCreateRootPage(rootPos, version);
+        Page root = readOrCreateRootPage(rootPos);
         return openReadOnly(root, version);
     }
 
@@ -1246,28 +1279,13 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      *
      * @param sourceMap the source map
      */
-    final /*synchronized*/ void copyFrom(MVMap<K, V> sourceMap) {
+    final void copyFrom(MVMap<K, V> sourceMap) {
         beforeWrite();
         setRoot(copy(sourceMap.getRootPage(), null), writeVersion);
-/*
-        Cursor<K, V> sourceCursor = sourceMap.cursor(null);
-        Cursor<K, V> cursor = cursor(null);
-
-        while(sourceCursor.hasNext()) {
-            assert cursor.hasNext();
-            K sourceKey = sourceCursor.next();
-            K key = cursor.next();
-            assert getKeyType().compare(sourceKey, key) == 0 : sourceKey + " != " + key;
-            V sourceValue = sourceCursor.getValue();
-            V value = cursor.getValue();
-            assert getValueType().compare(sourceValue, value) == 0 : key + " -> " + sourceValue + " != " + value;
-        }
-        assert !cursor.hasNext();
-*/
     }
 
     private Page copy(Page source, CursorPos parent) {
-        Page target = Page.create(this, writeVersion, source);
+        Page target = Page.create(this, source);
         if (!source.isLeaf()) {
             CursorPos pos = new CursorPos(target, 0, parent);
             for (int i = 0; i < getChildPageCount(target); i++) {
@@ -1281,18 +1299,11 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                     pos.page = target;
                 }
             }
-//            target = pos.page;
 
             if(store.isSaveNeeded()) {
                 Page child = target;
                 for(CursorPos p = parent; p != null; p = p.parent) {
                     p.page.setChild(p.index, child);
-//                    p.page = p.page.copy(writeVersion);
-
-//                    Page page = p.page.copy(writeVersion);
-//                    page.setChild(p.index, child);
-//                    p.page = page;
-
                     child = p.page;
                 }
                 setRoot(child, writeVersion);

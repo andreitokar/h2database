@@ -891,7 +891,10 @@ public final class MVStore {
             if (fileStore != null && shrinkIfPossible) {
                 shrinkFileIfPossible(0);
             }
-            System.out.println("UpdateSuccessPercent: " + getUpdateSuccessRatio());
+            int updateFailureRatio = (int)(10000 * getUpdateFailureRatio());
+            if(updateFailureRatio != 0) {
+                System.out.println("UpdateFailurePercent: " + updateFailureRatio / 100 + "." + updateFailureRatio % 100 + "%");
+            }
             // release memory early - this is important when called
             // because of out of memory
             cache = null;
@@ -2268,7 +2271,7 @@ public final class MVStore {
             meta.rollbackRoot(version);
             meta.clear();
 */
-            meta.setRoot(Page.createEmpty(meta, version), version);
+            meta.setRoot(Page.createEmpty(meta), version);
 
             chunks.clear();
             if (fileStore != null) {
@@ -2683,7 +2686,7 @@ public final class MVStore {
         return fileStore == null ? false : fileStore.isReadOnly();
     }
 
-    public synchronized double getUpdateSuccessRatio() {
+    public synchronized double getUpdateFailureRatio() {
         long updateCounter = this.updateCounter;
         long updateAttemptCounter = this.updateAttemptCounter;
         MVMap.RootReference rootReference = meta.getRoot();
@@ -2694,7 +2697,7 @@ public final class MVStore {
             updateCounter += root.updateCounter;
             updateAttemptCounter += root.updateAttemptCounter;
         }
-        return updateAttemptCounter == 0 ? 0 : (updateCounter * 100.0 / updateAttemptCounter);
+        return updateAttemptCounter == 0 ? 0 : 1 - ((double)updateCounter / updateAttemptCounter);
     }
 
     /**

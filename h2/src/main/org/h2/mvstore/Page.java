@@ -6,7 +6,7 @@
 package org.h2.mvstore;
 
 import java.nio.ByteBuffer;
-    import java.util.Arrays;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -42,7 +42,7 @@ public final class Page {
     private static final int IN_MEMORY = Integer.MIN_VALUE;
 
     public final MVMap<?, ?> map;
-    private long version;
+//    private long version;
     private long pos;
 
     /**
@@ -89,20 +89,18 @@ public final class Page {
      */
     private volatile boolean removedInMemory;
 
-    private Page(MVMap<?, ?> map, long version) {
+    private Page(MVMap<?, ?> map) {
         this.map = map;
-        this.version = version;
     }
 
     /**
      * Create a new, empty page.
      *
      * @param map the map
-     * @param version the version
      * @return the new page
      */
-    public static Page createEmpty(MVMap<?, ?> map, long version) {
-        return create(map, version,
+    public static Page createEmpty(MVMap<?, ?> map) {
+        return create(map,
                 EMPTY_OBJECT_ARRAY, EMPTY_OBJECT_ARRAY,
                 null,
                 0, DataUtils.PAGE_MEMORY);
@@ -112,7 +110,6 @@ public final class Page {
      * Create a new page. The arrays are not cloned.
      *
      * @param map the map
-     * @param version the version
      * @param keys the keys
      * @param values the values
      * @param children the child page positions
@@ -120,10 +117,10 @@ public final class Page {
      * @param memory the memory used in bytes
      * @return the page
      */
-    public static Page create(MVMap<?, ?> map, long version,
-            Object[] keys, Object[] values, PageReference[] children,
-            long totalCount, int memory) {
-        Page p = new Page(map, version);
+    public static Page create(MVMap<?, ?> map,
+                              Object[] keys, Object[] values, PageReference[] children,
+                              long totalCount, int memory) {
+        Page p = new Page(map);
         // the position is 0
         p.keys = keys;
         p.values = values;
@@ -146,11 +143,10 @@ public final class Page {
      * Create a copy of a page.
      *
      * @param map the map
-     * @param version the version
      * @param source the source page
      * @return the page
      */
-    public static Page create(MVMap<?, ?> map, long version, Page source) {
+    public static Page create(MVMap<?, ?> map, Page source) {
         PageReference[] children = source.children;
         long totalCount = source.totalCount;
         if(children != null) {
@@ -159,7 +155,7 @@ public final class Page {
             Arrays.fill(children, PageReference.EMPTY);
             totalCount = 0;
         }
-        Page page = create(map, version, source.keys, source.values, children,
+        Page page = create(map, source.keys, source.values, children,
                            totalCount, source.memory);
         map.store.registerUnsavedPage(page.getMemory());
         return page;
@@ -193,7 +189,7 @@ public final class Page {
                     length, filePos, maxPos);
         }
         buff = fileStore.readFully(filePos, length);
-        Page p = new Page(map, 0);
+        Page p = new Page(map);
         p.pos = pos;
         int chunkId = DataUtils.getPageChunkId(pos);
         int offset = DataUtils.getPageOffset(pos);
@@ -279,7 +275,6 @@ public final class Page {
     public String toString() {
         StringBuilder buff = new StringBuilder();
         buff.append("id: ").append(System.identityHashCode(this)).append('\n');
-        buff.append("version: ").append(Long.toHexString(version)).append("\n");
         buff.append("pos: ").append(Long.toHexString(pos)).append("\n");
         if (pos != 0) {
             int chunkId = DataUtils.getPageChunkId(pos);
@@ -310,14 +305,11 @@ public final class Page {
      * @return a page with the given version
      */
     public Page copy(long version) {
-        return copy(version, false);
+        return copy(false);
     }
 
-    public Page copy(long version, boolean countRemoval) {
-        Page newPage = create(map, version,
-                keys, values,
-                children, totalCount,
-                memory);
+    public Page copy(boolean countRemoval) {
+        Page newPage = create(map, keys, values, children, totalCount, memory);
         // mark the old as deleted
         if(countRemoval) {
             removePage();
@@ -610,7 +602,7 @@ public final class Page {
         System.arraycopy(values, at, bValues, 0, b);
         values = aValues;
         totalCount = at;
-        Page newPage = create(map, version,
+        Page newPage = create(map,
                 bKeys, bValues,
                 null,
                 b, 0);
@@ -643,7 +635,7 @@ public final class Page {
         for (PageReference x : bChildren) {
             t += x.count;
         }
-        Page newPage = create(map, version,
+        Page newPage = create(map,
                 bKeys, null,
                 bChildren,
                 t, 0);
@@ -1106,10 +1098,6 @@ public final class Page {
         }
     }
 
-    long getVersion() {
-        return version;
-    }
-
     public int getRawChildPageCount() {
         return children.length;
     }
@@ -1177,10 +1165,6 @@ public final class Page {
             }
             addMemory(mem - memory);
         }
-    }
-
-    void setVersion(long version) {
-        this.version = version;
     }
 
     /**

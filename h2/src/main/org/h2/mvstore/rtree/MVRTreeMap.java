@@ -112,11 +112,11 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
      * @param key the key
      * @return the value, or null if not found
      */
-    protected Object get(Page p, Object key) {
+    public V get(Page p, Object key) {
         if (!p.isLeaf()) {
             for (int i = 0; i < p.getKeyCount(); i++) {
                 if (contains(p, i, key)) {
-                    Object o = get(p.getChildPage(i), key);
+                    V o = get(p.getChildPage(i), key);
                     if (o != null) {
                         return o;
                     }
@@ -125,7 +125,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
         } else {
             for (int i = 0; i < p.getKeyCount(); i++) {
                 if (keyType.equals(p.getKey(i), key)) {
-                    return p.getValue(i);
+                    return (V)p.getValue(i);
                 }
             }
         }
@@ -148,15 +148,11 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
     public V operateUnderLock(SpatialKey key, V value, DecisionMaker<? super V> decisionMaker) {
         beforeWrite();
         int attempt = 0;
-        V result;
-        RootReference rootReference;
-        Page p;
-        long version;
-        do {
-            version = writeVersion;
-            rootReference = getRoot();
-            p = rootReference.root.copy(version, true);
-            result = operate(p, version, key, value, decisionMaker);
+        while(true) {
+            ++attempt;
+            RootReference rootReference = getRoot();
+            Page p = rootReference.root.copy(true);
+            V result = operate(p, key, value, decisionMaker);
             Decision decision = decisionMaker != null ? decisionMaker.decide(result, value) :
                                 value == null         ? Decision.REMOVE :
                                                         Decision.PUT;
@@ -166,7 +162,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
                 case REMOVE:
                     if (!p.isLeaf() && p.getTotalCount() == 0) {
                         p.removePage();
-                        p = Page.createEmpty(this, version);
+                        p = Page.createEmpty(this);
                     }
                     break;
                 case PUT:
@@ -174,7 +170,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
                         // only possible if this is the root, else we would have
                         // split earlier (this requires pageSplitSize is fixed)
                         long totalCount = p.getTotalCount();
-                        Page split = split(p, version);
+                        Page split = split(p);
                         Object k1 = getBounds(p);
                         Object k2 = getBounds(split);
                         Object[] keys = {k1, k2};
@@ -183,7 +179,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
                                 new Page.PageReference(split),
                                 Page.PageReference.EMPTY
                         };
-                        p = Page.create(this, version,
+                        p = Page.create(this,
                                 keys, null,
                                 children,
                                 totalCount, 0);
@@ -193,12 +189,16 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
                     }
                     break;
             }
-            ++attempt;
-        } while(!newRoot(rootReference, p, version, attempt));
-        return result;
+            if(newRoot(rootReference, p, writeVersion, attempt)) {
+                return result;
+            }
+            if(decisionMaker != null) {
+                decisionMaker.reset();
+            }
+        }
     }
 
-    private V operate(Page p, long version, Object key, Object value, DecisionMaker decisionMaker) {
+    private V operate(Page p, Object key, Object value, DecisionMaker decisionMaker) {
         V result = null;
         if (p.isLeaf()) {
             int indx = -1;
@@ -211,7 +211,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
             Decision decision = decisionMaker != null ? decisionMaker.decide(result, value) :
                                 value == null         ? Decision.REMOVE :
                                                         Decision.PUT;
-            if(decisionMaker != null) {
+            if(decisionMaker != null && decision != Decision.ABORT) {
                 value = decisionMaker.selectValue(result, value);
             }
             switch (decision) {
@@ -242,9 +242,9 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
                     // this will mark the old page as deleted
                     // so we need to update the parent in any case
                     // (otherwise the old page might be deleted again)
-                    Page c = cOld.copy(version, true);
+                    Page c = cOld.copy(true);
                     long oldSize = c.getTotalCount();
-                    result = operate(c, version, key, value, decisionMaker);
+                    result = operate(c, key, value, decisionMaker);
                     p.setChild(i, c);
                     if (oldSize == c.getTotalCount()) {
                         continue;
@@ -290,17 +290,17 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
                     }
                 }
             }
-            Page c = p.getChildPage(index).copy(version, true);
+            Page c = p.getChildPage(index).copy(true);
             if (c.getMemory() > store.getPageSplitSize() && c.getKeyCount() > 4) {
                 // split on the way down
-                Page split = split(c, version);
+                Page split = split(c);
                 p.setKey(index, getBounds(c));
                 p.setChild(index, c);
                 p.insertNode(index, getBounds(split), split);
                 // now we are not sure where to add
-                result = operate(p, version, key, value, decisionMaker);
+                result = operate(p, key, value, decisionMaker);
             } else {
-                result = operate(c, version, key, value, decisionMaker);
+                result = operate(c, key, value, decisionMaker);
                 Object bounds = p.getKey(index);
                 keyType.increaseBounds(bounds, key);
                 p.setKey(index, bounds);
@@ -335,23 +335,23 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
         operate(key, value, null);
     }
 
-    private Page split(Page p, long writeVersion) {
+    private Page split(Page p) {
         return quadraticSplit ?
-                splitQuadratic(p, writeVersion) :
-                splitLinear(p, writeVersion);
+                splitQuadratic(p) :
+                splitLinear(p);
     }
 
-    private Page splitLinear(Page p, long writeVersion) {
+    private Page splitLinear(Page p) {
         ArrayList<Object> keys = New.arrayList();
         for (int i = 0; i < p.getKeyCount(); i++) {
             keys.add(p.getKey(i));
         }
         int[] extremes = keyType.getExtremes(keys);
         if (extremes == null) {
-            return splitQuadratic(p, writeVersion);
+            return splitQuadratic(p);
         }
-        Page splitA = newPage(p.isLeaf(), writeVersion);
-        Page splitB = newPage(p.isLeaf(), writeVersion);
+        Page splitA = newPage(p.isLeaf());
+        Page splitB = newPage(p.isLeaf());
         move(p, splitA, extremes[0]);
         if (extremes[1] > extremes[0]) {
             extremes[1]--;
@@ -377,9 +377,9 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
         return splitA;
     }
 
-    private Page splitQuadratic(Page p, long writeVersion) {
-        Page splitA = newPage(p.isLeaf(), writeVersion);
-        Page splitB = newPage(p.isLeaf(), writeVersion);
+    private Page splitQuadratic(Page p) {
+        Page splitA = newPage(p.isLeaf());
+        Page splitB = newPage(p.isLeaf());
         float largest = Float.MIN_VALUE;
         int ia = 0, ib = 0;
         for (int a = 0; a < p.getKeyCount(); a++) {
@@ -433,7 +433,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
         return splitA;
     }
 
-    private Page newPage(boolean leaf, long writeVersion) {
+    private Page newPage(boolean leaf) {
         Object[] values;
         Page.PageReference[] refs;
         if (leaf) {
@@ -443,7 +443,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
             values = null;
             refs = Page.PageReference.SINGLE_EMPTY;
         }
-        Page page = Page.create(this, writeVersion,
+        Page page = Page.create(this,
                 Page.EMPTY_OBJECT_ARRAY, values,
                 refs, 0, 0);
         if(store.getFileStore() != null)

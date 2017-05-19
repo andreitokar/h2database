@@ -365,9 +365,9 @@ public class TestTransactionStore extends TestBase {
             List<Transaction> list = ts.getOpenTransactions();
             if (list.size() != 0) {
                 tx = list.get(0);
-                if (tx.getStatus() == Transaction.STATUS_COMMITTING) {
+//                if (tx.getStatus() == Transaction.STATUS_COMMITTING) {
                     i++;
-                }
+//                }
             }
             s.close();
             FileUtils.delete(fileName);
