@@ -217,7 +217,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 //                    assert versionedValue.operationId == 0 || TransactionStore.getTransactionId(versionedValue.operationId) == transactionId : result + " !!! " + transactionId;
 //                }
 //            }
-            if(decisionMaker != null && decision != Decision.ABORT) {
+            if(decisionMaker != null && decision == Decision.PUT) {
                 value = (V)decisionMaker.selectValue(result, value);
             }
             int unsavedMemory = 0;

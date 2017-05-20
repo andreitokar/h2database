@@ -211,7 +211,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
             Decision decision = decisionMaker != null ? decisionMaker.decide(result, value) :
                                 value == null         ? Decision.REMOVE :
                                                         Decision.PUT;
-            if(decisionMaker != null && decision != Decision.ABORT) {
+            if(decisionMaker != null && decision == Decision.PUT) {
                 value = decisionMaker.selectValue(result, value);
             }
             switch (decision) {
