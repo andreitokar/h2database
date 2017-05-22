@@ -115,8 +115,9 @@ public class TestMvccMultiThreaded2 extends TestBase {
                 }
             } catch (SQLException e) {
                 TestBase.logError("error", e);
+            } finally {
+                IOUtils.closeSilently(conn);
             }
-            IOUtils.closeSilently(conn);
         }
     }
 }

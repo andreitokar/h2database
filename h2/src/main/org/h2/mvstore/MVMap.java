@@ -175,8 +175,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                         updateSemaphore.release();
                     }
                 }
-//                throw DataUtils.newIllegalStateException(DataUtils.ERROR_TRANSACTION_LOCKED, "Unable to obtain update permit");
-                throw DbException.get(ErrorCode.LOCK_TIMEOUT_1);
+                throw DbException.get(ErrorCode.LOCK_TIMEOUT_1, "Unable to obtain update permit");
             } catch (InterruptedException ignore) {
             }
         }
@@ -204,19 +203,9 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             CursorPos tip = pos;
             pos = pos.parent;
             final V result = index < 0 ? null : (V)p.getValue(index);
-//            if(decisionMaker instanceof TransactionStore.TransactionMap.TxDecisionMaker) {
-//                assert ((TransactionStore.TransactionMap.TxDecisionMaker) decisionMaker).decision == null;
-//            }
             Decision decision = decisionMaker != null ? decisionMaker.decide(result, value) :
                                 value == null         ? Decision.REMOVE :
                                                         Decision.PUT;
-//            if(decisionMaker instanceof TransactionStore.TransactionMap.TxDecisionMaker) {
-//                if(decision != Decision.ABORT && result != null) {
-//                    TransactionStore.VersionedValue versionedValue = (TransactionStore.VersionedValue) result;
-//                    int transactionId = ((TransactionStore.TransactionMap.TxDecisionMaker) decisionMaker).transaction.transactionId;
-//                    assert versionedValue.operationId == 0 || TransactionStore.getTransactionId(versionedValue.operationId) == transactionId : result + " !!! " + transactionId;
-//                }
-//            }
             if(decisionMaker != null && decision == Decision.PUT) {
                 value = (V)decisionMaker.selectValue(result, value);
             }
@@ -243,13 +232,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                     p.remove(index);
                     break;
                 case PUT:
-                    if(decisionMaker instanceof TransactionStore.TransactionMap.TxDecisionMaker) {
-                        if(result != null) {
-                            TransactionStore.VersionedValue versionedValue = (TransactionStore.VersionedValue) result;
-                            int transactionId = ((TransactionStore.TransactionMap.TxDecisionMaker) decisionMaker).transaction.transactionId;
-                            assert versionedValue.operationId == 0 || TransactionStore.getTransactionId(versionedValue.operationId) == transactionId : result + " !!! " + transactionId;
-                        }
-                    }
                     if (index < 0) {
                         index = -index - 1;
                         p = p.copy(version);
@@ -303,14 +285,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                 pos = pos.parent;
             }
             if(newRoot(rootReference, p, writeVersion, attempt)) {
-//                if(decisionMaker instanceof TransactionStore.TransactionMap.TxDecisionMaker) {
-//                    assert get(p, key) == value;
-//                    if(result != null) {
-//                        TransactionStore.VersionedValue versionedValue = (TransactionStore.VersionedValue) result;
-//                        int transactionId = ((TransactionStore.TransactionMap.TxDecisionMaker) decisionMaker).transaction.transactionId;
-//                        assert versionedValue.operationId == 0 || TransactionStore.getTransactionId(versionedValue.operationId) == transactionId : result + " !!! " + transactionId;
-//                    }
-//                }
                 while(tip != null) {
                     tip.page.removePage();
                     tip = tip.parent;
