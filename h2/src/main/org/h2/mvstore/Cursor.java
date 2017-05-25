@@ -16,34 +16,41 @@ import java.util.Iterator;
 public final class Cursor<K, V> implements Iterator<K> {
 
     private final MVMap<K, ?> map;
-    private CursorPos pos;
+    private final boolean snapshot;
+    private CursorPos cursorPos;
+    private K anchor;
     private K current, last;
-    private V currentValue, lastValue;
+    private V currentValue;
     private Page lastPage;
-    private final Page root;
 
     Cursor(MVMap<K, ?> map, Page root, K from) {
+        this(map, root, from, false);
+    }
+
+    Cursor(MVMap<K, ?> map, Page root, K from, boolean snapshot) {
         this.map = map;
-        this.root = root;
-        min(root, from);
-        fetchNext();
+        this.snapshot = snapshot;
+        this.anchor = from;
+        this.cursorPos = traverseDown(root, from);
     }
 
     @Override
     public boolean hasNext() {
+        if(current == null) {
+            fetchNext();
+        }
         return current != null;
     }
 
     @Override
     public K next() {
-        K c = current;
-        if(c != null) {
-            last = current;
-            lastValue = currentValue;
-            lastPage = pos == null ? null : pos.page;
-            fetchNext();
+        if(!hasNext()) {
+            return null;
         }
-        return c;
+        anchor = current;
+        last = current;
+        current = null;
+        return anchor;
     }
 
     /**
@@ -52,7 +59,7 @@ public final class Cursor<K, V> implements Iterator<K> {
      * @return the key or null
      */
     public K getKey() {
-        return last;
+        return current;
     }
 
     /**
@@ -61,7 +68,7 @@ public final class Cursor<K, V> implements Iterator<K> {
      * @return the value or null
      */
     public V getValue() {
-        return lastValue;
+        return currentValue;
     }
 
     Page getPage() {
@@ -75,19 +82,14 @@ public final class Cursor<K, V> implements Iterator<K> {
      * @param n the number of entries to skip
      */
     public void skip(long n) {
-        if (!hasNext()) {
-            return;
-        }
         if (n < 10) {
-            while (n-- > 0) {
-                fetchNext();
+            while (n-- > 0 && hasNext()) {
+                next();
             }
-        } else {
-            long index = map.getKeyIndex(current);
-            K k = map.getKey(index + n);
-            pos = null;
-            min(root, k);
-            fetchNext();
+        } else if(hasNext()) {
+            long index = map.getKeyIndex(next());
+            anchor = map.getKey(index + n);
+            cursorPos = traverseDown(map.getRootPage(), anchor);
         }
     }
 
@@ -98,54 +100,63 @@ public final class Cursor<K, V> implements Iterator<K> {
     }
 
     /**
-     * Fetch the next entry that is equal or larger than the given key, starting
-     * from the given page. This method retains the stack.
-     *
-     * @param p the page to start
-     * @param from the key to search
-     */
-    private void min(Page p, K from) {
-        while (true) {
-            if (p.isLeaf()) {
-                int x = from == null ? 0 : p.binarySearch(from);
-                if (x < 0) {
-                    x = -x - 1;
-                }
-                pos = new CursorPos(p, x, pos);
-                break;
-            }
-            int x = from == null ? -1 : p.binarySearch(from);
-            if (x < 0) {
-                x = -x - 1;
-            } else {
-                x++;
-            }
-            pos = new CursorPos(p, x + 1, pos);
-            p = p.getChildPage(x);
-        }
-    }
-
-    /**
      * Fetch the next entry if there is one.
      */
     @SuppressWarnings("unchecked")
     private void fetchNext() {
-        while (pos != null) {
-            if (pos.index < pos.page.getKeyCount()) {
-                int index = pos.index++;
-                current = (K) pos.page.getKey(index);
-                currentValue = (V) pos.page.getValue(index);
-                return;
-            }
-            pos = pos.parent;
-            if (pos == null) {
-                break;
-            }
-            if (pos.index < map.getChildPageCount(pos.page)) {
-                min(pos.page.getChildPage(pos.index++), null);
+        while(cursorPos != null) {
+            Page page = cursorPos.page;
+            if(!snapshot && page.isRemoved()) {
+                cursorPos = traverseDown(map.getRootPage(), anchor);
+                if(last != null) {
+                    ++cursorPos.index;
+                }
+            } else if (page.isLeaf()) {
+                if (cursorPos.index < page.getKeyCount()) {
+                    int index = cursorPos.index++;
+                    current = (K) page.getKey(index);
+                    currentValue = (V) page.getValue(index);
+                    lastPage = page;
+                    assert last != current : last + " == " + current;
+                    return;
+                }
+                cursorPos = cursorPos.parent;
+            } else {
+                int index = ++cursorPos.index;
+                if (index < map.getChildPageCount(page)) {
+                    cursorPos = traverseDown(page.getChildPage(index), null, cursorPos);
+                } else {
+                    cursorPos = cursorPos.parent;
+                }
             }
         }
         current = null;
     }
 
+    private static CursorPos traverseDown(Page p, Object key) {
+        return traverseDown(p, key, null);
+    }
+
+    private static CursorPos traverseDown(Page p, Object key, CursorPos pos) {
+        while (!p.isLeaf()) {
+            assert p.getKeyCount() > 0;
+            int index = 0;
+            if(key != null) {
+                index = p.binarySearch(key) + 1;
+                if (index < 0) {
+                    index = -index;
+                }
+            }
+            pos = new CursorPos(p, index, pos);
+            p = p.getChildPage(index);
+        }
+        int index = 0;
+        if(key != null) {
+            index = p.binarySearch(key);
+            if (index < 0) {
+                index = -index - 1;
+            }
+        }
+        return new CursorPos(p, index, pos);
+    }
 }

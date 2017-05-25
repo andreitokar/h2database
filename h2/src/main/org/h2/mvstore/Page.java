@@ -81,6 +81,8 @@ public final class Page {
      */
     private PageReference[] children;
 
+    private volatile boolean removed;
+
     /**
      * Whether the page is an in-memory (not stored, or not yet stored) page,
      * and it is removed. This is to keep track of pages that concurrently
@@ -1171,6 +1173,7 @@ public final class Page {
      * Remove the page.
      */
     public void removePage() {
+        removed = true;
         if(isPersistent()) {
             long p = pos;
             if (p == 0) {
@@ -1178,6 +1181,10 @@ public final class Page {
             }
             map.removePage(p, memory);
         }
+    }
+
+    public boolean isRemoved() {
+        return removed;
     }
 
     /**

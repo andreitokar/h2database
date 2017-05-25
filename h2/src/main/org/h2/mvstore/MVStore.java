@@ -2137,7 +2137,7 @@ public final class MVStore {
         if (version > currentVersion || version < 0) {
             return false;
         }
-        if (version == currentVersion || chunks.size() == 0) {
+        if (version == currentVersion || chunks.isEmpty()) {
             // no stored data
             return true;
         }

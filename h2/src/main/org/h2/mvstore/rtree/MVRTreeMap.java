@@ -153,41 +153,29 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
             RootReference rootReference = getRoot();
             Page p = rootReference.root.copy(true);
             V result = operate(p, key, value, decisionMaker);
-            Decision decision = decisionMaker != null ? decisionMaker.decide(result, value) :
-                                value == null         ? Decision.REMOVE :
-                                                        Decision.PUT;
-            switch (decision) {
-                case ABORT:
-                    return result;
-                case REMOVE:
-                    if (!p.isLeaf() && p.getTotalCount() == 0) {
-                        p.removePage();
-                        p = Page.createEmpty(this);
-                    }
-                    break;
-                case PUT:
-                    if (p.getMemory() > store.getPageSplitSize() && p.getKeyCount() > 3) {
-                        // only possible if this is the root, else we would have
-                        // split earlier (this requires pageSplitSize is fixed)
-                        long totalCount = p.getTotalCount();
-                        Page split = split(p);
-                        Object k1 = getBounds(p);
-                        Object k2 = getBounds(split);
-                        Object[] keys = {k1, k2};
-                        Page.PageReference[] children = {
-                                new Page.PageReference(p),
-                                new Page.PageReference(split),
-                                Page.PageReference.EMPTY
-                        };
-                        p = Page.create(this,
-                                keys, null,
-                                children,
-                                totalCount, 0);
-                        if(store.getFileStore() != null) {
-                            store.registerUnsavedPage(p.getMemory());
-                        }
-                    }
-                    break;
+            if (!p.isLeaf() && p.getTotalCount() == 0) {
+                p.removePage();
+                p = Page.createEmpty(this);
+            } else if (p.getMemory() > store.getPageSplitSize() && p.getKeyCount() > 3) {
+                // only possible if this is the root, else we would have
+                // split earlier (this requires pageSplitSize is fixed)
+                long totalCount = p.getTotalCount();
+                Page split = split(p);
+                Object k1 = getBounds(p);
+                Object k2 = getBounds(split);
+                Object[] keys = {k1, k2};
+                Page.PageReference[] children = {
+                        new Page.PageReference(p),
+                        new Page.PageReference(split),
+                        Page.PageReference.EMPTY
+                };
+                p = Page.create(this,
+                        keys, null,
+                        children,
+                        totalCount, 0);
+                if(store.getFileStore() != null) {
+                    store.registerUnsavedPage(p.getMemory());
+                }
             }
             if(newRoot(rootReference, p, writeVersion, attempt)) {
                 return result;
@@ -211,9 +199,6 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
             Decision decision = decisionMaker != null ? decisionMaker.decide(result, value) :
                                 value == null         ? Decision.REMOVE :
                                                         Decision.PUT;
-            if(decisionMaker != null && decision == Decision.PUT) {
-                value = decisionMaker.selectValue(result, value);
-            }
             switch (decision) {
                 case ABORT: break;
                 case REMOVE:
@@ -222,6 +207,9 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
                     }
                     break;
                 case PUT:
+                    if(decisionMaker != null) {
+                        value = decisionMaker.selectValue(result, value);
+                    }
                     if(indx < 0) {
                         p.insertLeaf(p.getKeyCount(), key, value);
                     } else {
@@ -247,6 +235,9 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
                     result = operate(c, key, value, decisionMaker);
                     p.setChild(i, c);
                     if (oldSize == c.getTotalCount()) {
+                        if(decisionMaker != null) {
+                            decisionMaker.reset();
+                        }
                         continue;
                     }
                     if (c.getTotalCount() == 0) {

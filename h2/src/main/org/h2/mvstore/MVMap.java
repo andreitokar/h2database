@@ -13,7 +13,6 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.h2.api.ErrorCode;
 import org.h2.message.DbException;
-import org.h2.mvstore.db.TransactionStore;
 import org.h2.mvstore.type.DataType;
 import org.h2.mvstore.type.ObjectDataType;
 import org.h2.util.New;
@@ -206,9 +205,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             Decision decision = decisionMaker != null ? decisionMaker.decide(result, value) :
                                 value == null         ? Decision.REMOVE :
                                                         Decision.PUT;
-            if(decisionMaker != null && decision == Decision.PUT) {
-                value = (V)decisionMaker.selectValue(result, value);
-            }
             int unsavedMemory = 0;
             switch (decision) {
                 case ABORT:
@@ -232,6 +228,9 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                     p.remove(index);
                     break;
                 case PUT:
+                    if(decisionMaker != null) {
+                        value = (V)decisionMaker.selectValue(result, value);
+                    }
                     if (index < 0) {
                         index = -index - 1;
                         p = p.copy(version);
@@ -301,7 +300,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         }
     }
 
-    private CursorPos traverseDown(Page p, K key) {
+    private static CursorPos traverseDown(Page p, Object key) {
         CursorPos pos = null;
         while (!p.isLeaf()) {
             assert p.getKeyCount() > 0;
@@ -898,7 +897,11 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @return the cursor
      */
     public final Cursor<K, V> cursor(K from) {
-        return new Cursor<K, V>(this, getRootPage(), from);
+        return cursor(from, true);
+    }
+
+    public final Cursor<K, V> cursor(K from, boolean snapshot) {
+        return new Cursor<K, V>(this, getRootPage(), from, snapshot);
     }
 
     @Override
@@ -934,12 +937,14 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
             @Override
             public int size() {
-                return MVMap.this.size();
+                throw DataUtils.newUnsupportedOperationException("MVMap.entrySet().size() is not supported.");
+//                return MVMap.this.size();
             }
 
             @Override
             public boolean contains(Object o) {
-                return MVMap.this.containsKey(o);
+                throw DataUtils.newUnsupportedOperationException("MVMap.entrySet().contains() is not supported.");
+//                return MVMap.this.containsKey(o);
             }
 
         };
@@ -954,7 +959,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
             @Override
             public Iterator<K> iterator() {
-                return new Cursor<K, V>(map, root, null);
+                return new Cursor<K, V>(map, root, null, true);
             }
 
             @Override
@@ -1383,10 +1388,11 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
         @Override
         public Decision decide(V existingValue, V providedValue) {
-            if(decision == null) {
+            assert decision == null;
+//            if(decision == null) {
                 decision = !areValuesEqual(dataType, expectedValue, existingValue) ? Decision.ABORT :
                                                 providedValue == null ? Decision.REMOVE : Decision.PUT;
-            }
+//            }
             return decision;
         }
 
