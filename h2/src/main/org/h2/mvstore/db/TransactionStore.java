@@ -241,6 +241,7 @@ public final class TransactionStore {
                     "There are {0} open transactions",
                     transactionId - 1);
         }
+        committingTransactions.clear(transactionId);
         openTransactions.set(transactionId);
         int status = Transaction.STATUS_OPEN;
         return new Transaction(this, transactionId, status, null, 0);
@@ -427,7 +428,7 @@ public final class TransactionStore {
         if (t.getStatus() >= Transaction.STATUS_PREPARED) {
             preparedTransactions.remove(t.getId());
         }
-        committingTransactions.clear(t.transactionId);
+//        committingTransactions.clear(t.transactionId);
         t.setStatus(Transaction.STATUS_CLOSED);
         openTransactions.clear(t.transactionId);
         if (store.getAutoCommitDelay() == 0) {
@@ -1169,7 +1170,7 @@ public final class TransactionStore {
          * @return the value
          */
         private VersionedValue getValue(K key, long maxLog, VersionedValue data) {
-            boolean first = false;
+            boolean first = true;
             while (true) {
                 if (data == null) {
                     // doesn't exist or deleted by a committed transaction
@@ -1186,13 +1187,13 @@ public final class TransactionStore {
                     if (getLogId(id) < maxLog) {
                         return data;
                     }
-                } else if(first && transaction.store.committingTransactions.get(tx)) {
-                    return data;
+                } else if(first && transaction.store.committingTransactions.get(tx) || !transaction.store.openTransactions.get(tx)) {
+                    data = map.get(key);
+                    continue;
                 }
                 first = false;
                 // get the value before the uncommitted transaction
-                Object[] d;
-                d = transaction.store.undoLog.get(id);
+                Object[] d = transaction.store.undoLog.get(id);
                 if (d == null || (Integer)d[0] != map.getId() || !map.areValuesEqual(map.getKeyType(), d[1], key)) {
                     if (transaction.store.store.isReadOnly()) {
                         // uncommitted transaction for a read-only store
@@ -1396,14 +1397,7 @@ public final class TransactionStore {
         public Iterator<Entry<K, V>> entryIterator(final K from) {
             return new Iterator<Entry<K, V>>() {
                 private Entry<K, V> current;
-                private K currentKey;
-                private final Cursor<K, VersionedValue> cursor;
-
-                {
-                    currentKey = from;
-                    cursor = map.cursor(from, false);
-                    fetchNext();
-                }
+                private final Cursor<K, VersionedValue> cursor = map.cursor(from, true);
 
                 private void fetchNext() {
                     while (cursor.hasNext()) {
@@ -1439,24 +1433,28 @@ public final class TransactionStore {
                                 @SuppressWarnings("unchecked")
                                 V value = (V) data.value;
                                 current = new DataUtils.MapEntry<K, V>(key, value);
-                                currentKey = key;
                                 return;
                             }
 //                        }
                     }
                     current = null;
-                    currentKey = null;
                 }
 
                 @Override
                 public boolean hasNext() {
+                    if(current == null) {
+                        fetchNext();
+                    }
                     return current != null;
                 }
 
                 @Override
                 public Entry<K, V> next() {
+                    if(!hasNext()) {
+                        return null;
+                    }
                     Entry<K, V> result = current;
-                    fetchNext();
+                    current = null;
                     return result;
                 }
 
@@ -1558,37 +1556,16 @@ public final class TransactionStore {
                         decision = MVMap.Decision.PUT;
                         transaction.log(mapId, key, existingValue);
                     } else if(transaction.store.committingTransactions.get(blockingId)) {
-                        assert transaction.store.openTransactions.get(blockingId) || !transaction.store.committingTransactions.get(blockingId);
                         // entry belongs to a committing transaction and therefore will be committed soon
+                        // we assume that we are looking at final value for this transaction
+                        // and if it's not the case, then it will fail later
+                        // because a tree root has definitely changed
                         decision = MVMap.Decision.PUT;
                         transaction.log(mapId, key, new VersionedValue(existingValue.value));
                     } else {
                         // this entry comes from a different transaction and it's not committed yet
                         decision = MVMap.Decision.ABORT;
                     }
-
-/*
-                    // if map does not have that entry yet
-                    if(existingValue == null ||
-                            // or entry is a committed one
-                            (id = existingValue.operationId) == 0 ||
-                            // or it came from the same transaction
-                            (blockingId = getTransactionId(id)) == transaction.transactionId ||
-                            // or entry belongs to a commiting transaction and therefore will be commited soon
-                            transaction.store.preparedTransactions.get(blockingId)[0].equals(Transaction.STATUS_COMMITTING)) {
-                        // a new value
-                        decision = MVMap.Decision.PUT;
-
-                        VersionedValue valueToLog = existingValue;
-                        if(existingValue != null && id != 0 && blockingId != transaction.transactionId) {
-                            valueToLog = new VersionedValue(existingValue.value);
-                        }
-                        transaction.log(mapId, key, valueToLog);
-                    } else {
-                        // this entry comes from a different transaction and it's not committed yet
-                        decision = MVMap.Decision.ABORT;
-                    }
-*/
 //                }
                 return decision;
             }

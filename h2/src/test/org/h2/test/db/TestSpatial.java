@@ -65,36 +65,36 @@ public class TestSpatial extends TestBase {
     }
 
     private void testSpatial() throws SQLException {
-//        testBug1();
-//        testSpatialValues();
-//        testOverlap();
-//        testNotOverlap();
-//        testPersistentSpatialIndex();
-//        testSpatialIndexQueryMultipleTable();
-//        testIndexTransaction();
-//        testJavaAlias();
-//        testJavaAliasTableFunction();
-//        testMemorySpatialIndex();
-//        testGeometryDataType();
-//        testWKB();
-//        testValueConversion();
-//        testEquals();
-//        testTableFunctionGeometry();
-//        testHashCode();
-//        testAggregateWithGeometry();
-//        testTableViewSpatialPredicate();
-//        testValueGeometryScript();
-//        testInPlaceUpdate();
-//        testScanIndexOnNonSpatialQuery();
-//        testStoreCorruption();
-//        testExplainSpatialIndexWithPk();
-//        testNullableGeometry();
-//        testNullableGeometryDelete();
-//        testNullableGeometryInsert();
-//        testNullableGeometryUpdate();
+        testBug1();
+        testSpatialValues();
+        testOverlap();
+        testNotOverlap();
+        testPersistentSpatialIndex();
+        testSpatialIndexQueryMultipleTable();
+        testIndexTransaction();
+        testJavaAlias();
+        testJavaAliasTableFunction();
+        testMemorySpatialIndex();
+        testGeometryDataType();
+        testWKB();
+        testValueConversion();
+        testEquals();
+        testTableFunctionGeometry();
+        testHashCode();
+        testAggregateWithGeometry();
+        testTableViewSpatialPredicate();
+        testValueGeometryScript();
+        testInPlaceUpdate();
+        testScanIndexOnNonSpatialQuery();
+        testStoreCorruption();
+        testExplainSpatialIndexWithPk();
+        testNullableGeometry();
+        testNullableGeometryDelete();
+        testNullableGeometryInsert();
+        testNullableGeometryUpdate();
         testIndexUpdateNullGeometry();
-//        testInsertNull();
-//        testSpatialIndexWithOrder();
+        testInsertNull();
+        testSpatialIndexWithOrder();
     }
 
     private void testBug1() throws SQLException {

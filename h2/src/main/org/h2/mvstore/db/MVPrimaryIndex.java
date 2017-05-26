@@ -280,7 +280,7 @@ public class MVPrimaryIndex extends BaseIndex {
         }
         Value value = map.get(v);
         Entry<Value, Value> e = new DataUtils.MapEntry<Value, Value>(v, value);
-        List<Entry<Value, Value>> list = Arrays.asList(e);
+        List<Entry<Value, Value>> list = Collections.singletonList(e);
         MVStoreCursor c = new MVStoreCursor(session, list.iterator(), v);
         c.next();
         return c;
@@ -386,7 +386,7 @@ public class MVPrimaryIndex extends BaseIndex {
     /**
      * A cursor.
      */
-    class MVStoreCursor implements Cursor {
+    static final class MVStoreCursor implements Cursor {
 
         private final Session session;
         private final Iterator<Entry<Value, Value>> it;
