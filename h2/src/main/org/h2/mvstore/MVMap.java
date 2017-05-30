@@ -41,7 +41,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     protected MVStore store;
 
     private final AtomicReference<RootReference> root = new AtomicReference<>();
-    private final Semaphore updateSemaphore = new Semaphore(3, true);
+    private final Semaphore updateSemaphore = new Semaphore(3, false);
 
     /**
      * The version used for writing.
@@ -165,6 +165,9 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     }
 
     public final V operate(K key, V value, DecisionMaker<? super V> decisionMaker) {
+//*
+        return operateUnderLock(key, value, decisionMaker);
+/*/
         while (true) {
             try {
                 if (updateSemaphore.tryAcquire(30, TimeUnit.SECONDS)) {
@@ -178,6 +181,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             } catch (InterruptedException ignore) {
             }
         }
+//*/
     }
 
     public V operateUnderLock(K key, V value, DecisionMaker<? super V> decisionMaker) {
@@ -193,7 +197,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
             CursorPos pos = traverseDown(rootReference.root, key);
             if(rootReference != getRoot()) {
-//                System.out.println("    Concurrent update of "+getId()+"/"+getName()+" key="+key+", retry...");
                 continue;
             }
 
@@ -268,7 +271,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             }
             unsavedMemory += p.getMemory();
             if(rootReference != getRoot()) {
-//                System.out.println("--- Concurrent update of "+getId()+"/"+getName()+" key="+key+", retry...");
                 if(decisionMaker != null) {
                     decisionMaker.reset();
                 }
@@ -296,7 +298,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             if(decisionMaker != null) {
                 decisionMaker.reset();
             }
-//            System.out.println("... CONCURRENT UPDATE of "+getId()+"/"+getName()+" key="+key+", retry...");
         }
     }
 

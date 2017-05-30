@@ -436,23 +436,11 @@ public final class MVStore {
         checkOpen();
         String x = meta.get("name." + name);
         int id;
-        long root;
         HashMap<String, Object> c;
         M map;
         if (x != null) {
             id = DataUtils.parseHexInt(x);
-            @SuppressWarnings("unchecked")
-            M old = (M) maps.get(id);
-            if (old != null) {
-                return old;
-            }
-            map = builder.create();
-            String config = meta.get(MVMap.getMapKey(id));
-            c = New.hashMap();
-            c.putAll(DataUtils.parseMap(config));
-            c.put("id", id);
-            map.init(this, c);
-            root = getRootPos(meta, id);
+            map = openMap(id, builder);
         } else {
             c = New.hashMap();
             id = ++lastMapId;
@@ -464,10 +452,35 @@ public final class MVStore {
             x = Integer.toHexString(id);
             meta.put(MVMap.getMapKey(id), map.asString(name));
             meta.put("name." + name, x);
-            root = 0;
+            map.setRootPos(0, -1);
+            @SuppressWarnings("unchecked")
+            M existingMap = (M)maps.putIfAbsent(id, map);
+            if(existingMap != null) {
+                map = existingMap;
+            }
         }
-        map.setRootPos(root, -1);
-        maps.put(id, map);
+        return map;
+    }
+
+    public synchronized <M extends MVMap<K, V>, K, V> M openMap(int id,
+                                       MVMap.MapBuilder<M, K, V> builder) {
+        checkOpen();
+        @SuppressWarnings("unchecked")
+        M map = (M) maps.get(id);
+        if (map == null) {
+            String configAsString = meta.get(MVMap.getMapKey(id));
+            if(configAsString != null) {
+                map = builder.create();
+                HashMap<String, Object> config = New.hashMap();
+                config.putAll(DataUtils.parseMap(configAsString));
+                config.put("id", id);
+                map.init(this, config);
+                long root = getRootPos(meta, id);
+                map.setRootPos(root, -1);
+                maps.put(id, map);
+
+            }
+        }
         return map;
     }
 
@@ -1473,25 +1486,27 @@ public final class MVStore {
                     continue;
                 }
                 HashMap<Integer, Chunk> freed = e.getValue();
-                for (Chunk f : freed.values()) {
-                    Chunk c = chunks.get(f.id);
-                    if (c == null) {
-                        // already removed
-                        continue;
+                synchronized (freed) {
+                    for (Chunk f : freed.values()) {
+                        Chunk c = chunks.get(f.id);
+                        if (c == null) {
+                            // already removed
+                            continue;
+                        }
+                        // no need to synchronize, as old entries
+                        // are not concurrently modified
+                        c.maxLenLive += f.maxLenLive;
+                        c.pageCountLive += f.pageCountLive;
+                        if (c.pageCountLive < 0 && c.pageCountLive > -MARKED_FREE) {
+                            // can happen after a rollback
+                            c.pageCountLive = 0;
+                        }
+                        if (c.maxLenLive < 0 && c.maxLenLive > -MARKED_FREE) {
+                            // can happen after a rollback
+                            c.maxLenLive = 0;
+                        }
+                        modified.add(c);
                     }
-                    // no need to synchronize, as old entries
-                    // are not concurrently modified
-                    c.maxLenLive += f.maxLenLive;
-                    c.pageCountLive += f.pageCountLive;
-                    if (c.pageCountLive < 0 && c.pageCountLive > -MARKED_FREE) {
-                        // can happen after a rollback
-                        c.pageCountLive = 0;
-                    }
-                    if (c.maxLenLive < 0 && c.maxLenLive > -MARKED_FREE) {
-                        // can happen after a rollback
-                        c.maxLenLive = 0;
-                    }
-                    modified.add(c);
                 }
                 it.remove();
             }
@@ -2364,13 +2379,13 @@ public final class MVStore {
     }
 
     private void revertTemp(long storeVersion) {
-        for (Iterator<Long> it = freedPageSpace.keySet().iterator();
-                it.hasNext();) {
+        Set<Long> keys = freedPageSpace.keySet();
+        for (Iterator<Long> it = keys.iterator();
+             it.hasNext();) {
             long v = it.next();
-            if (v > storeVersion) {
-                continue;
+            if (v <= storeVersion) {
+                it.remove();
             }
-            it.remove();
         }
         for (MVMap<?, ?> m : maps.values()) {
             m.removeUnusedOldVersions();

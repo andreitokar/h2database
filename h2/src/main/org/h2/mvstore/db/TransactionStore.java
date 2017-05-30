@@ -6,13 +6,11 @@
 package org.h2.mvstore.db;
 
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.BitSet;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
+import java.util.*;
 import java.util.Map.Entry;
+import java.util.concurrent.ConcurrentHashMap;
 
+import org.h2.api.ErrorCode;
 import org.h2.mvstore.Cursor;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.MVMap;
@@ -27,10 +25,13 @@ import org.h2.util.New;
  */
 public final class TransactionStore {
 
+    private static final int AVG_OPEN_TRANSACTIONS = 0x100;
+
     /**
      * The store.
      */
     final MVStore store;
+    private final int timeoutMillis;
 
     /**
      * The persisted map of prepared transactions.
@@ -53,8 +54,8 @@ public final class TransactionStore {
     /**
      * The map of maps.
      */
-    private HashMap<Integer, MVMap<Object, VersionedValue>> maps =
-            New.hashMap();
+    private final ConcurrentHashMap<Integer, MVMap<Object, VersionedValue>> maps =
+            new ConcurrentHashMap<Integer, MVMap<Object, VersionedValue>>();
 
     private final DataType dataType;
 
@@ -64,6 +65,8 @@ public final class TransactionStore {
     private int maxTransactionId = 0xffff;
     private int lastTransactionId;
     private final BitSet openTransactions = new BitSet();
+    private final Transaction[] transactions = new Transaction[AVG_OPEN_TRANSACTIONS];
+    private volatile Transaction[] spilledTransactions = new Transaction[AVG_OPEN_TRANSACTIONS];
     private final AtomicBitSet committingTransactions = new AtomicBitSet(maxTransactionId);
 
     /**
@@ -77,18 +80,19 @@ public final class TransactionStore {
      * @param store the store
      */
     public TransactionStore(MVStore store) {
-        this(store, new ObjectDataType());
+        this(store, new ObjectDataType(), 0);
     }
 
     /**
      * Create a new transaction store.
-     *
-     * @param store the store
+     *  @param store the store
      * @param dataType the data type for map keys and values
+     * @param timeoutMillis wait for Tx to commit in multithread mode, 0 otherwise
      */
-    public TransactionStore(MVStore store, DataType dataType) {
+    public TransactionStore(MVStore store, DataType dataType, int timeoutMillis) {
         this.store = store;
         this.dataType = dataType;
+        this.timeoutMillis = timeoutMillis;
         preparedTransactions = store.openMap("openTransactions",
                 new MVMap.Builder<Integer, Object[]>());
         VersionedValueType oldValueType = new VersionedValueType(dataType);
@@ -230,7 +234,7 @@ public final class TransactionStore {
         int transactionId = openTransactions.nextClearBit(1);
 /*/
         int transactionId = openTransactions.nextClearBit(lastTransactionId+1);
-        if(transactionId > maxTransactionId) {
+        if(transactionId >= AVG_OPEN_TRANSACTIONS || transactionId > maxTransactionId) {
             transactionId = openTransactions.nextClearBit(1);
         }
         lastTransactionId = transactionId;
@@ -241,10 +245,20 @@ public final class TransactionStore {
                     "There are {0} open transactions",
                     transactionId - 1);
         }
-        committingTransactions.clear(transactionId);
         openTransactions.set(transactionId);
         int status = Transaction.STATUS_OPEN;
-        return new Transaction(this, transactionId, status, null, 0);
+        Transaction transaction = new Transaction(this, transactionId, status, null, 0);
+        if(transactionId < AVG_OPEN_TRANSACTIONS) {
+            transactions[transactionId] = transaction;
+        } else {
+            transactionId -= AVG_OPEN_TRANSACTIONS;
+            if(spilledTransactions.length <= transactionId) {
+                int newLength = Math.max(spilledTransactions.length + AVG_OPEN_TRANSACTIONS, transactionId + 1);
+                spilledTransactions = Arrays.copyOf(spilledTransactions, newLength);
+            }
+            spilledTransactions[transactionId] = transaction;
+        }
+        return transaction;
     }
 
     /**
@@ -308,7 +322,7 @@ public final class TransactionStore {
      * @param <V> the value type
      * @param map the map
      */
-    synchronized <K, V> void removeMap(TransactionMap<K, V> map) {
+    <K, V> void removeMap(TransactionMap<K, V> map) {
         maps.remove(map.map.getId());
         store.removeMap(map.map);
     }
@@ -326,7 +340,7 @@ public final class TransactionStore {
                     t.getStatus() == Transaction.STATUS_PREPARED && preparedTransactions.get(t.transactionId) != null;
             committingTransactions.set(t.transactionId);
             t.setStatus(Transaction.STATUS_COMMITTING);
-            CommitDecisionMaker decisionMaker = new CommitDecisionMaker();
+            CommitDecisionMaker decisionMaker = new CommitDecisionMaker(this);
             for (long logId = 0; logId < maxLogId; logId++) {
                 long undoKey = getOperationId(t.getId(), logId);
                 decisionMaker.setOperationId(undoKey);
@@ -341,6 +355,7 @@ public final class TransactionStore {
                     logId = getLogId(nextKey) - 1;
                 }
             }
+            committingTransactions.clear(t.transactionId);
             endTransaction(t);
         }
     }
@@ -354,7 +369,7 @@ public final class TransactionStore {
      * @param valueType the value type
      * @return the map
      */
-    synchronized <K> MVMap<K, VersionedValue> openMap(String name,
+    <K> MVMap<K, VersionedValue> openMap(String name,
             DataType keyType, DataType valueType) {
         if (keyType == null) {
             keyType = new ObjectDataType();
@@ -380,17 +395,19 @@ public final class TransactionStore {
      * @param mapId the id
      * @return the map
      */
-    private synchronized MVMap<Object, VersionedValue> openMap(int mapId) {
+    private MVMap<Object, VersionedValue> openMap(int mapId) {
         MVMap<Object, VersionedValue> map = maps.get(mapId);
         if (map == null) {
-            String mapName = store.getMapName(mapId);
-            if (mapName != null) { // could be null if the map was removed later on
-                VersionedValueType vt = new VersionedValueType(dataType);
-                MVMap.Builder<Object, VersionedValue> mapBuilder =
-                        new MVMap.Builder<Object, VersionedValue>().
-                                keyType(dataType).valueType(vt);
-                map = store.openMap(mapName, mapBuilder);
-                maps.put(mapId, map);
+            VersionedValueType vt = new VersionedValueType(dataType);
+            MVMap.Builder<Object, VersionedValue> mapBuilder =
+                    new MVMap.Builder<Object, VersionedValue>().
+                            keyType(dataType).valueType(vt);
+            map = store.openMap(mapId, mapBuilder);
+            if(map != null) {
+                MVMap<Object, VersionedValue> existingMap = maps.putIfAbsent(mapId, map);
+                if (existingMap != null) {
+                    map = existingMap;
+                }
             }
         }
         return map;
@@ -424,13 +441,23 @@ public final class TransactionStore {
      *
      * @param t the transaction
      */
-    synchronized void endTransaction(Transaction t) {
+    void endTransaction(Transaction t) {
         if (t.getStatus() >= Transaction.STATUS_PREPARED) {
             preparedTransactions.remove(t.getId());
         }
-//        committingTransactions.clear(t.transactionId);
-        t.setStatus(Transaction.STATUS_CLOSED);
-        openTransactions.clear(t.transactionId);
+        t.closeIt();
+        synchronized (this) {
+            openTransactions.clear(t.transactionId);
+            if(t.transactionId < AVG_OPEN_TRANSACTIONS) {
+                transactions[t.transactionId] = null;
+            } else {
+                spilledTransactions[t.transactionId - AVG_OPEN_TRANSACTIONS] = null;
+                int prospectiveLength = spilledTransactions.length >> 1;
+                if(prospectiveLength > AVG_OPEN_TRANSACTIONS && openTransactions.length() < prospectiveLength) {
+                    spilledTransactions = Arrays.copyOf(spilledTransactions, prospectiveLength);
+                }
+            }
+        }
         if (store.getAutoCommitDelay() == 0) {
             store.commit();
             return;
@@ -446,23 +473,12 @@ public final class TransactionStore {
                 store.commit();
             }
         }
-        notifyAll();
     }
 
-    synchronized boolean waitForTxToEnd(int transactionId, long millis) {
-        long until = System.currentTimeMillis() + millis;
-        while(openTransactions.get(transactionId)) {
-            long dur = until - System.currentTimeMillis();
-            if(dur <= 0) {
-                return false;
-            }
-            try {
-                wait(dur);
-            } catch (InterruptedException ex) {
-                return false;
-            }
-        }
-        return true;
+    private Transaction getTransaction(int transactionId) {
+        return  transactionId < AVG_OPEN_TRANSACTIONS ?
+                    transactions[transactionId] :
+                    spilledTransactions[transactionId - AVG_OPEN_TRANSACTIONS];
     }
 
     /**
@@ -475,7 +491,7 @@ public final class TransactionStore {
         long toOperationId = getOperationId(t.getId(), toLogId);
         for (long logId = t.logId - 1; logId >= toLogId; logId--) {
             Long undoKey = getOperationId(t.getId(), logId);
-            undoLog.operate(undoKey, null, new RollbackDecisionMaker(toOperationId));
+            undoLog.operate(undoKey, null, new RollbackDecisionMaker(this, toOperationId));
         }
     }
 
@@ -705,7 +721,6 @@ public final class TransactionStore {
             checkNotClosed();
             MVMap<K, VersionedValue> map = store.openMap(name, keyType,
                     valueType);
-            int mapId = map.getId();
             return new TransactionMap<K, V>(this, map);
         }
 
@@ -720,7 +735,6 @@ public final class TransactionStore {
         public <K, V> TransactionMap<K, V> openMap(
                 MVMap<K, VersionedValue> map) {
             checkNotClosed();
-            int mapId = map.getId();
             return new TransactionMap<K, V>(this, map);
         }
 
@@ -786,6 +800,27 @@ public final class TransactionStore {
                 throw DataUtils.newIllegalStateException(
                         DataUtils.ERROR_CLOSED, "Transaction is closed");
             }
+        }
+
+        private synchronized void closeIt() {
+            status = STATUS_CLOSED;
+            notifyAll();
+        }
+
+        public synchronized boolean waitForThisToEnd(long millis) {
+            long until = System.currentTimeMillis() + millis;
+            while(status != STATUS_CLOSED) {
+                long dur = until - System.currentTimeMillis();
+                if(dur <= 0) {
+                    return false;
+                }
+                try {
+                    wait(dur);
+                } catch (InterruptedException ex) {
+                    return false;
+                }
+            }
+            return true;
         }
 
         /**
@@ -877,10 +912,7 @@ public final class TransactionStore {
         public long sizeAsLong() {
             long sizeRaw = map.sizeAsLong();
             MVMap<Long, Object[]> undo = transaction.store.undoLog;
-            long undoLogSize;
-//            synchronized (undo) {
-                undoLogSize = undo.sizeAsLong();
-//            }
+            long undoLogSize = undo.sizeAsLong();
             if (undoLogSize == 0) {
                 return sizeRaw;
             }
@@ -890,11 +922,8 @@ public final class TransactionStore {
                 long size = 0;
                 Cursor<K, VersionedValue> cursor = map.cursor(null);
                 while (cursor.hasNext()) {
-                    VersionedValue data;
-//                    synchronized (transaction.store.undoLog) {
-                        K key = cursor.next();
-                        data = getValue(key, readLogId, cursor.getValue());
-//                    }
+                    K key = cursor.next();
+                    VersionedValue data = getValue(key, readLogId, cursor.getValue());
                     if (data != null && data.value != null) {
                         size++;
                     }
@@ -903,15 +932,14 @@ public final class TransactionStore {
             }
             // the undo log is smaller than the map -
             // scan the undo log and subtract invisible entries
-            synchronized (undo) {
+//            synchronized (undo) {
                 // re-fetch in case any transaction was committed now
                 long size = map.sizeAsLong();
                 MVMap<Object, Integer> temp = transaction.store.createTempMap();
                 try {
-//*
                     Cursor<Long, Object[]> cursor = undo.cursor(null);
                     while (cursor.hasNext()) {
-                        Long undoKey = cursor.next();
+                        /*Long undoKey = */cursor.next();
                         Object[] op = cursor.getValue();
                         int mapId = (Integer) op[0];
                         if (mapId == map.getId()) {
@@ -927,32 +955,11 @@ public final class TransactionStore {
                             }
                         }
                     }
-/*/
-                    for (Entry<Long, Object[]> e : undo.entrySet()) {
-                        Object[] op = e.getValue();
-
-                        int mapId = (Integer) op[0];
-                        if (mapId != map.getId()) {
-                            // a different map - ignore
-                            continue;
-                        }
-                        @SuppressWarnings("unchecked")
-                        K key = (K) op[1];
-                        if (get(key) == null) {
-                            Integer old = temp.put(key, 1);
-                            // count each key only once (there might be multiple
-                            // changes for the same key)
-                            if (old == null) {
-                                size--;
-                            }
-                        }
-                    }
-//*/
                 } finally {
                     transaction.store.store.removeMap(temp);
                 }
                 return size;
-            }
+//            }
         }
 
         /**
@@ -1001,28 +1008,23 @@ public final class TransactionStore {
 
         private V set(K key, V value) {
             TxDecisionMaker decisionMaker = new TxDecisionMaker(map.getId(), key, transaction);
-//            int blockingId;
-//            do {
+            Transaction blockingTransaction;
+            int timeoutMillis = transaction.store.timeoutMillis;
+            do {
                 transaction.checkNotClosed();
                 long operationId = getOperationId(transaction.transactionId, transaction.logId);
                 VersionedValue newValue = new VersionedValue(operationId, value);
                 VersionedValue result = map.put(key, newValue, decisionMaker);
                 assert decisionMaker.decision != null;
                 if (decisionMaker.decision != MVMap.Decision.ABORT) {
-//                    assert result == null || result.operationId == 0 ||
-//                           getTransactionId(result.operationId) == transaction.transactionId ||
-//                           transaction.store.committingTransactions.get(getTransactionId(result.operationId)) ||
-//                           !transaction.store.openTransactions.get(getTransactionId(result.operationId))
-//                           : result+" is not a valit result for tx "+transaction.transactionId;
+                    //noinspection unchecked
                     return result == null ? null : (V) result.value;
-//                    VersionedValue versionedValue = getValue(key, readLogId, result);
-//                    return versionedValue == null ? null : (V) versionedValue.value;
                 }
-//                blockingId = decisionMaker.blokingId;
-//                decisionMaker.reset();
-//            } while (transaction.store.waitForTxToEnd(blockingId, 10000));
+                blockingTransaction = decisionMaker.blockingTransaction;
+                decisionMaker.reset();
+            } while (blockingTransaction == null || timeoutMillis > 0 && blockingTransaction.waitForThisToEnd(timeoutMillis));
             throw DataUtils.newIllegalStateException(
-                    DataUtils.ERROR_TRANSACTION_LOCKED, "Entry is locked in " + map.getName());
+                        DataUtils.ERROR_TRANSACTION_LOCKED, "Entry is locked in " + map.getName());
         }
 
         /**
@@ -1107,16 +1109,6 @@ public final class TransactionStore {
         }
 
         /**
-         * Get the most recent value for the given key.
-         *
-         * @param key the key
-         * @return the value or null
-         */
-        public V getLatest(K key) {
-            return get(key, Long.MAX_VALUE);
-        }
-
-        /**
          * Whether the map contains the key.
          *
          * @param key the key
@@ -1187,7 +1179,7 @@ public final class TransactionStore {
                     if (getLogId(id) < maxLog) {
                         return data;
                     }
-                } else if(first && transaction.store.committingTransactions.get(tx) || !transaction.store.openTransactions.get(tx)) {
+                } else if(first && transaction.store.committingTransactions.get(tx)) {
                     data = map.get(key);
                     continue;
                 }
@@ -1326,57 +1318,40 @@ public final class TransactionStore {
          */
         public Iterator<K> keyIterator(final K from, final boolean includeUncommitted) {
             return new Iterator<K>() {
-                private K currentKey = from;
-                private Cursor<K, VersionedValue> cursor = map.cursor(currentKey);
-
-                {
-                    fetchNext();
-                }
+                private K current;
+                private Cursor<K, VersionedValue> cursor = map.cursor(from);
 
                 private void fetchNext() {
                     while (cursor.hasNext()) {
-                        K k;
-                        try {
-                            k = cursor.next();
-                        } catch (IllegalStateException e) {
-                            // TODO this is a bit ugly
-                            if (DataUtils.getErrorCode(e.getMessage()) ==
-                                    DataUtils.ERROR_CHUNK_NOT_FOUND) {
-                                cursor = map.cursor(currentKey);
-                                // we (should) get the current key again,
-                                // we need to ignore that one
-                                if (!cursor.hasNext()) {
-                                    break;
-                                }
-                                cursor.next();
-                                if (!cursor.hasNext()) {
-                                    break;
-                                }
-                                k = cursor.next();
-                            } else {
-                                throw e;
-                            }
-                        }
-                        currentKey = k;
+                        K key = cursor.next();
+                        current = key;
                         if (includeUncommitted) {
                             return;
                         }
-                        if (containsKey(k)) {
+                        VersionedValue data = cursor.getValue();
+                        data = getValue(key, readLogId, data);
+                        if(data != null && data.value != null) {
                             return;
                         }
                     }
-                    currentKey = null;
+                    current = null;
                 }
 
                 @Override
                 public boolean hasNext() {
-                    return currentKey != null;
+                    if(current == null) {
+                        fetchNext();
+                    }
+                    return current != null;
                 }
 
                 @Override
                 public K next() {
-                    K result = currentKey;
-                    fetchNext();
+                    if(!hasNext()) {
+                        return null;
+                    }
+                    K result = current;
+                    current = null;
                     return result;
                 }
 
@@ -1401,41 +1376,15 @@ public final class TransactionStore {
 
                 private void fetchNext() {
                     while (cursor.hasNext()) {
-//                        synchronized (getUndoLog()) {
-                            K k;
-//                            try {
-                                k = cursor.next();
-/*
-                            } catch (IllegalStateException e) {
-                                // TODO this is a bit ugly
-                                if (DataUtils.getErrorCode(e.getMessage()) ==
-                                        DataUtils.ERROR_CHUNK_NOT_FOUND) {
-                                    cursor = map.cursor(currentKey);
-                                    // we (should) get the current key again,
-                                    // we need to ignore that one
-                                    if (!cursor.hasNext()) {
-                                        break;
-                                    }
-                                    cursor.next();
-                                    if (!cursor.hasNext()) {
-                                        break;
-                                    }
-                                    k = cursor.next();
-                                } else {
-                                    throw e;
-                                }
-                            }
-*/
-                            final K key = k;
-                            VersionedValue data = cursor.getValue();
-                            data = getValue(key, readLogId, data);
-                            if (data != null && data.value != null) {
-                                @SuppressWarnings("unchecked")
-                                V value = (V) data.value;
-                                current = new DataUtils.MapEntry<K, V>(key, value);
-                                return;
-                            }
-//                        }
+                        K key = cursor.next();
+                        VersionedValue data = cursor.getValue();
+                        data = getValue(key, readLogId, data);
+                        if (data != null && data.value != null) {
+                            @SuppressWarnings("unchecked")
+                            V value = (V) data.value;
+                            current = new DataUtils.MapEntry<K, V>(key, value);
+                            return;
+                        }
                     }
                     current = null;
                 }
@@ -1481,10 +1430,6 @@ public final class TransactionStore {
             return new Iterator<K>() {
                 private K current;
 
-                {
-                    fetchNext();
-                }
-
                 private void fetchNext() {
                     while (iterator.hasNext()) {
                         current = iterator.next();
@@ -1500,15 +1445,22 @@ public final class TransactionStore {
 
                 @Override
                 public boolean hasNext() {
+                    if(current == null) {
+                        fetchNext();
+                    }
                     return current != null;
                 }
 
                 @Override
                 public K next() {
+                    if(!hasNext()) {
+                        return null;
+                    }
                     K result = current;
-                    fetchNext();
+                    current = null;
                     return result;
                 }
+
 
                 @Override
                 public void remove() {
@@ -1526,12 +1478,12 @@ public final class TransactionStore {
             return map.getKeyType();
         }
 
-        public final class TxDecisionMaker extends MVMap.DecisionMaker<VersionedValue> {
-            private final int mapId;
-            private final Object key;
-            public final Transaction transaction;
-            private       int         blockingId;
-            private MVMap.Decision    decision;
+        public static final class TxDecisionMaker extends MVMap.DecisionMaker<VersionedValue> {
+            private final int            mapId;
+            private final Object         key;
+            public  final Transaction    transaction;
+            private       Transaction    blockingTransaction;
+            private       MVMap.Decision decision;
 
             private TxDecisionMaker(int mapId, Object key, Transaction transaction) {
                 this.mapId = mapId;
@@ -1542,31 +1494,31 @@ public final class TransactionStore {
             @Override
             public MVMap.Decision decide(VersionedValue existingValue, VersionedValue providedValue) {
                 assert decision == null;
-//                if(decision == null) {
-                    assert providedValue != null;
-                    assert getTransactionId(providedValue.operationId) == transaction.transactionId;
-                    assert getLogId(providedValue.operationId) == transaction.logId;
-                    long id;
-                    // if map does not have that entry yet
-                    if(existingValue == null ||
-                            // or entry is a committed one
-                            (id = existingValue.operationId) == 0 ||
-                            // or it came from the same transaction
-                            (blockingId = getTransactionId(id)) == transaction.transactionId) {
-                        decision = MVMap.Decision.PUT;
-                        transaction.log(mapId, key, existingValue);
-                    } else if(transaction.store.committingTransactions.get(blockingId)) {
-                        // entry belongs to a committing transaction and therefore will be committed soon
-                        // we assume that we are looking at final value for this transaction
-                        // and if it's not the case, then it will fail later
-                        // because a tree root has definitely changed
-                        decision = MVMap.Decision.PUT;
-                        transaction.log(mapId, key, new VersionedValue(existingValue.value));
-                    } else {
-                        // this entry comes from a different transaction and it's not committed yet
-                        decision = MVMap.Decision.ABORT;
-                    }
-//                }
+                assert providedValue != null;
+                assert getTransactionId(providedValue.operationId) == transaction.transactionId;
+                assert getLogId(providedValue.operationId) == transaction.logId;
+                long id;
+                int blockingId;
+                // if map does not have that entry yet
+                if(existingValue == null ||
+                        // or entry is a committed one
+                        (id = existingValue.operationId) == 0 ||
+                        // or it came from the same transaction
+                        (blockingId = getTransactionId(id)) == transaction.transactionId) {
+                    decision = MVMap.Decision.PUT;
+                    transaction.log(mapId, key, existingValue);
+                } else if(transaction.store.committingTransactions.get(blockingId)) {
+                    // entry belongs to a committing transaction and therefore will be committed soon
+                    // we assume that we are looking at final value for this transaction
+                    // and if it's not the case, then it will fail later
+                    // because a tree root has definitely changed
+                    decision = MVMap.Decision.PUT;
+                    transaction.log(mapId, key, new VersionedValue(existingValue.value));
+                } else {
+                    // this entry comes from a different transaction and it's not committed yet
+                    blockingTransaction = transaction.store.getTransaction(blockingId);
+                    decision = MVMap.Decision.ABORT;
+                }
                 return decision;
             }
 
@@ -1576,7 +1528,7 @@ public final class TransactionStore {
                     // map was updated after our decision has been made
                     transaction.logUndo();
                 }
-                blockingId = 0;
+                blockingTransaction = null;
                 decision = null;
             }
 
@@ -1723,7 +1675,7 @@ public final class TransactionStore {
         private final int arrayLength;
         private final DataType[] elementTypes;
 
-        ArrayType(DataType[] elementTypes) {
+        private ArrayType(DataType[] elementTypes) {
             this.arrayLength = elementTypes.length;
             this.elementTypes = elementTypes;
         }
@@ -1804,11 +1756,13 @@ public final class TransactionStore {
 
     }
 
-    private final class CommitDecisionMaker extends MVMap.DecisionMaker<Object[]> {
+    private static final class CommitDecisionMaker extends MVMap.DecisionMaker<Object[]> {
+        private final TransactionStore store;
         private final FinalCommitDecisionMaker finalCommitDecisionMaker;
         private       MVMap.Decision decision;
 
-        private CommitDecisionMaker() {
+        private CommitDecisionMaker(TransactionStore store) {
+            this.store = store;
             finalCommitDecisionMaker = new FinalCommitDecisionMaker();
         }
 
@@ -1820,21 +1774,19 @@ public final class TransactionStore {
         @Override
         public MVMap.Decision decide(Object[] existingValue, Object[] providedValue) {
             assert decision == null;
-//            if(decision == null) {
-                if (existingValue == null) {
-                    decision = MVMap.Decision.ABORT;
-                } else {
-                    int mapId = (Integer) existingValue[0];
-                    MVMap<Object, VersionedValue> map = openMap(mapId);
-                    if (map != null) { // could be null if map was later removed
-                        Object key = existingValue[1];
-                        VersionedValue prev = (VersionedValue) existingValue[2];
-                        assert prev == null || prev.operationId == 0 || getTransactionId(prev.operationId) == getTransactionId(finalCommitDecisionMaker.undoKey) ;
-                        map.operateUnderLock(key, null, finalCommitDecisionMaker);
-                    }
-                    decision = MVMap.Decision.REMOVE;
+            if (existingValue == null) {
+                decision = MVMap.Decision.ABORT;
+            } else {
+                int mapId = (Integer) existingValue[0];
+                MVMap<Object, VersionedValue> map = store.openMap(mapId);
+                if (map != null) { // could be null if map was later removed
+                    Object key = existingValue[1];
+                    VersionedValue prev = (VersionedValue) existingValue[2];
+                    assert prev == null || prev.operationId == 0 || getTransactionId(prev.operationId) == getTransactionId(finalCommitDecisionMaker.undoKey) ;
+                    map.operateUnderLock(key, null, finalCommitDecisionMaker);
                 }
-//            }
+                decision = MVMap.Decision.REMOVE;
+            }
             return decision;
         }
 
@@ -1855,33 +1807,31 @@ public final class TransactionStore {
         private MVMap.Decision decision;
         private VersionedValue value;
 
-        FinalCommitDecisionMaker() {}
+        private FinalCommitDecisionMaker() {}
 
-        public void setOperationId(long undoKey) {
+        private void setOperationId(long undoKey) {
             this.undoKey = undoKey;
         }
 
         @Override
         public MVMap.Decision decide(VersionedValue existingValue, VersionedValue providedValue) {
             assert decision == null;
-//            if (decision == null) {
-                if (existingValue == null) {
-                    decision = MVMap.Decision.ABORT;
-                } else {
-                    if (existingValue.operationId == undoKey) {
-                        if (existingValue.value == null) {
-                            // remove the value only if it comes from the same transaction
-                            decision = MVMap.Decision.REMOVE;
-                        } else {
-                            // put the value only if it comes from the same transaction
-                            decision = MVMap.Decision.PUT;
-                            value = new VersionedValue(existingValue.value);
-                        }
+            if (existingValue == null) {
+                decision = MVMap.Decision.ABORT;
+            } else {
+                if (existingValue.operationId == undoKey) {
+                    if (existingValue.value == null) {
+                        // remove the value only if it comes from the same transaction
+                        decision = MVMap.Decision.REMOVE;
                     } else {
-                        decision = MVMap.Decision.ABORT;
+                        // put the value only if it comes from the same transaction
+                        decision = MVMap.Decision.PUT;
+                        value = new VersionedValue(existingValue.value);
                     }
+                } else {
+                    decision = MVMap.Decision.ABORT;
                 }
-//            }
+            }
             return decision;
         }
 
@@ -1907,34 +1857,34 @@ public final class TransactionStore {
         }
     }
 
-    private final class RollbackDecisionMaker extends MVMap.DecisionMaker<Object[]> {
+    private static final class RollbackDecisionMaker extends MVMap.DecisionMaker<Object[]> {
+        private final TransactionStore store;
         private final long toOperationId;
         private MVMap.Decision decision;
 
-        private RollbackDecisionMaker(long toOperationId) {
+        private RollbackDecisionMaker(TransactionStore store, long toOperationId) {
+            this.store = store;
             this.toOperationId = toOperationId;
         }
 
         @Override
         public MVMap.Decision decide(Object[] existingValue, Object[] providedValue) {
             assert decision == null;
-//            if(decision == null) {
-                assert existingValue != null;
-                VersionedValue oldValue = (VersionedValue) existingValue[2];
-                long operationId;
-                if(oldValue == null ||
-                        (operationId = oldValue.operationId) == 0 ||
-                        getTransactionId(operationId) == getTransactionId(toOperationId)
-                                && getLogId(operationId) <= getLogId(toOperationId)) {
-                    int mapId = (Integer) existingValue[0];
-                    MVMap<Object, VersionedValue> map = openMap(mapId);
-                    if(map != null) {
-                        Object key = existingValue[1];
-                        map.operateUnderLock(key, oldValue, null);
-                    }
+            assert existingValue != null;
+            VersionedValue oldValue = (VersionedValue) existingValue[2];
+            long operationId;
+            if(oldValue == null ||
+                    (operationId = oldValue.operationId) == 0 ||
+                    getTransactionId(operationId) == getTransactionId(toOperationId)
+                            && getLogId(operationId) <= getLogId(toOperationId)) {
+                int mapId = (Integer) existingValue[0];
+                MVMap<Object, VersionedValue> map = store.openMap(mapId);
+                if(map != null) {
+                    Object key = existingValue[1];
+                    map.operateUnderLock(key, oldValue, null);
                 }
-                decision = MVMap.Decision.REMOVE;
-//            }
+            }
+            decision = MVMap.Decision.REMOVE;
             return decision;
         }
 

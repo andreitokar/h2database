@@ -6,6 +6,7 @@
 package org.h2.test.mvcc;
 
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.concurrent.CountDownLatch;
@@ -25,17 +26,19 @@ public class TestMvccMultiThreaded extends TestBase {
      * @param a ignored
      */
     public static void main(String... a) throws Exception {
-        TestBase.createCaller().init().test();
+        TestBase init = TestBase.createCaller().init();
+        init.config.multiThreaded = true;
+        init.test();
     }
 
     @Override
     public void test() throws Exception {
-        testMergeWithUniqueKeyViolation();
+//        testMergeWithUniqueKeyViolation();
         // not supported currently
-        if (!config.multiThreaded) {
+//        if (!config.multiThreaded) {
             testConcurrentMerge();
             testConcurrentUpdate();
-        }
+//        }
     }
 
     private void testMergeWithUniqueKeyViolation() throws Exception {

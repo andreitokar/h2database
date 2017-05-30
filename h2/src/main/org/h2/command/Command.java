@@ -183,7 +183,7 @@ public abstract class Command implements CommandInterface {
         startTimeNanos = 0;
         long start = 0;
         Database database = session.getDatabase();
-        Object sync = database.isMultiThreaded() ? (Object) session : (Object) database;
+//        Object sync = database.isMultiThreaded() ? (Object) session : (Object) database;
         session.waitIfExclusiveModeEnabled();
         boolean callStop = true;
         boolean writing = !isReadOnly();
@@ -192,7 +192,7 @@ public abstract class Command implements CommandInterface {
                 // wait
             }
         }
-        synchronized (sync) {
+//        synchronized (sync) {
             session.setCurrentCommand(this);
             try {
                 while (true) {
@@ -234,7 +234,7 @@ public abstract class Command implements CommandInterface {
                     database.afterWriting();
                 }
             }
-        }
+//        }
     }
 
     @Override
@@ -250,23 +250,25 @@ public abstract class Command implements CommandInterface {
                 // wait
             }
         }
-        synchronized (sync) {
+//        synchronized (sync) {
             Session.Savepoint rollback = session.setSavepoint();
             session.setCurrentCommand(this);
             try {
                 while (true) {
-                    database.checkPowerOff();
-                    try {
-                        return update();
-                    } catch (DbException e) {
-                        start = filterConcurrentUpdate(e, start);
-                    } catch (OutOfMemoryError e) {
-                        callStop = false;
-                        database.shutdownImmediately();
-                        throw DbException.convert(e);
-                    } catch (Throwable e) {
-                        throw DbException.convert(e);
-                    }
+//                    synchronized (sync) {
+                        database.checkPowerOff();
+                        try {
+                            return update();
+                        } catch (DbException e) {
+                            start = filterConcurrentUpdate(e, start);
+                        } catch (OutOfMemoryError e) {
+                            callStop = false;
+                            database.shutdownImmediately();
+                            throw DbException.convert(e);
+                        } catch (Throwable e) {
+                            throw DbException.convert(e);
+                        }
+//                    }
                 }
             } catch (DbException e) {
                 e = e.addSQL(sql);
@@ -295,7 +297,7 @@ public abstract class Command implements CommandInterface {
                     }
                 }
             }
-        }
+//        }
     }
 
     private long filterConcurrentUpdate(DbException e, long start) {
@@ -309,14 +311,20 @@ public abstract class Command implements CommandInterface {
         if (start != 0 && now - start > session.getLockTimeout()) {
             throw DbException.get(ErrorCode.LOCK_TIMEOUT_1, e.getCause(), "");
         }
+
+/*
         Database database = session.getDatabase();
-        int sleep = 1 + MathUtils.randomInt(10);
+        int sleep = 1*/
+/* + MathUtils.randomInt(10)*//*
+;
         while (true) {
             try {
                 if (database.isMultiThreaded()) {
                     Thread.sleep(sleep);
                 } else {
-                    database.wait(sleep);
+                    synchronized (database) {
+                        database.wait(sleep);
+                    }
                 }
             } catch (InterruptedException e1) {
                 // ignore
@@ -326,6 +334,8 @@ public abstract class Command implements CommandInterface {
                 break;
             }
         }
+*/
+
         return start == 0 ? now : start;
     }
 
