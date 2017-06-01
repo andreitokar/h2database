@@ -368,7 +368,8 @@ public class RegularTable extends TableBase {
     }
 
     @Override
-    public void removeRow(Session session, Row row) {
+    public Row removeRow(Session session, Row row) {
+        Row result = null;
         if (database.isMultiVersion()) {
             if (row.isDeleted()) {
                 throw DbException.get(ErrorCode.CONCURRENT_UPDATE_1, getName());
@@ -386,7 +387,10 @@ public class RegularTable extends TableBase {
         try {
             for (; i >= 0; i--) {
                 Index index = indexes.get(i);
-                index.remove(session, row);
+                Row r = index.removeRow(session, row);
+                if(index.isRowIdIndex()) {
+                    result = r;
+                }
                 checkRowCount(session, index, -1);
             }
             rowCount--;
@@ -407,6 +411,7 @@ public class RegularTable extends TableBase {
             throw DbException.convert(e);
         }
         analyzeIfRequired(session);
+        return result;
     }
 
     @Override

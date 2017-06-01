@@ -161,11 +161,10 @@ public abstract class Table extends SchemaObjectBase {
 
     /**
      * Remove a row from the table and all indexes.
-     *
-     * @param session the session
+     *  @param session the session
      * @param row the row
      */
-    public abstract void removeRow(Session session, Row row);
+    public abstract Row removeRow(Session session, Row row);
 
     /**
      * Remove all rows from the table and indexes.
@@ -480,7 +479,7 @@ public abstract class Table extends SchemaObjectBase {
             Row o = rows.next();
             rows.next();
             try {
-                removeRow(session, o);
+                Row removedRow = removeRow(session, o);
             } catch (DbException e) {
                 if (e.getErrorCode() == ErrorCode.CONCURRENT_UPDATE_1) {
                     session.rollbackTo(rollback, false);

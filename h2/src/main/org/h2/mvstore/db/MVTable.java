@@ -669,20 +669,25 @@ public class MVTable extends TableBase {
     }
 
     @Override
-    public void removeRow(Session session, Row row) {
+    public Row removeRow(Session session, Row row) {
+        Row result = row;
         lastModificationId = database.getNextModificationDataId();
         Transaction t = getTransaction(session);
         long savepoint = t.setSavepoint();
         try {
             for (int i = indexes.size() - 1; i >= 0; i--) {
                 Index index = indexes.get(i);
-                index.remove(session, row);
+                Row r = index.removeRow(session, row);
+                if(index.isRowIdIndex()) {
+                    result = r;
+                }
             }
         } catch (Throwable e) {
             t.rollbackToSavepoint(savepoint);
             throw DbException.convert(e);
         }
         analyzeIfRequired(session);
+        return result;
     }
 
     @Override

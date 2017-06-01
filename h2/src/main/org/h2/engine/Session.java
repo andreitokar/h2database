@@ -771,6 +771,9 @@ public class Session extends SessionWithState {
         }
         if (transaction != null) {
             long savepointId = savepoint == null ? 0 : savepoint.transactionSavepoint;
+/*
+            transaction.rollbackToSavepoint(savepointId);
+/*/
             HashMap<String, MVTable> tableMap =
                     database.getMvStore().getTables();
             Iterator<Change> it = transaction.getChanges(savepointId);
@@ -794,6 +797,7 @@ public class Session extends SessionWithState {
                     log.undo(this);
                 }
             }
+//*/
         }
         if (savepoints != null) {
             String[] names = new String[savepoints.size()];

@@ -1078,8 +1078,10 @@ public class TestTableEngines extends TestBase {
             }
 
             @Override
-            public void removeRow(Session session, Row r) {
+            public Row removeRow(Session session, Row r) {
+                Row result = this.row;
                 this.row = null;
+                return result;
             }
 
             @Override
@@ -1379,15 +1381,20 @@ public class TestTableEngines extends TestBase {
         }
 
         @Override
-        public void removeRow(Session session, Row row) {
+        public Row removeRow(Session session, Row row) {
+            Row result = null;
             if (indexes != null) {
                 for (Index index : indexes) {
-                    index.remove(session, row);
+                    Row r = index.removeRow(session, row);
+                    if(index.isRowIdIndex()) {
+                        result = r;
+                    }
                 }
             } else {
-                scan.remove(session, row);
+                result = scan.removeRow(session, row);
             }
             dataModificationId++;
+            return result;
         }
 
         @Override

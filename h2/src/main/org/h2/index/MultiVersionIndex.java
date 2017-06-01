@@ -188,13 +188,18 @@ public class MultiVersionIndex implements Index {
 
     @Override
     public void remove(Session session, Row row) {
+        removeRow(session, row);
+    }
+
+    public Row removeRow(Session session, Row row) {
         synchronized (sync) {
-            base.remove(session, row);
+            Row result = base.removeRow(session, row);
             if (removeIfExists(session, row)) {
                 // added and deleted in the same transaction: no change
             } else {
                 delta.add(session, row);
             }
+            return result;
         }
     }
 

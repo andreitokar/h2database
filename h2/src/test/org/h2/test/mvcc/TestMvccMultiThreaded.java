@@ -27,13 +27,13 @@ public class TestMvccMultiThreaded extends TestBase {
      */
     public static void main(String... a) throws Exception {
         TestBase init = TestBase.createCaller().init();
-        init.config.multiThreaded = true;
+//        init.config.multiThreaded = true;
         init.test();
     }
 
     @Override
     public void test() throws Exception {
-//        testMergeWithUniqueKeyViolation();
+        testMergeWithUniqueKeyViolation();
         // not supported currently
 //        if (!config.multiThreaded) {
             testConcurrentMerge();
@@ -115,12 +115,17 @@ public class TestMvccMultiThreaded extends TestBase {
 
         for (int i = 0; i < len; i++) {
             final int x = i;
+            connList[x].setAutoCommit(false);
             tasks[i] = new Task() {
                 @Override
                 public void call() throws Exception {
                     for (int a = 0; a < count; a++) {
+                        ResultSet rs = connList[x].createStatement().executeQuery(
+                                "select value from test for update");
+                        assert rs.next();
                         connList[x].createStatement().execute(
                                 "update test set value=value+1");
+                        connList[x].commit();
                         latch.countDown();
                         latch.await();
                     }

@@ -1171,8 +1171,8 @@ public class TableFilter implements ColumnResolver {
      */
     public void lockRows(ArrayList<Row> forUpdateRows) {
         for (Row row : forUpdateRows) {
-            Row newRow = row.getCopy();
-            table.removeRow(session, row);
+            Row newRow = table.removeRow(session, row);
+            newRow = (newRow == null ? row : newRow).getCopy();
             session.log(table, UndoLogRecord.DELETE, row);
             table.addRow(session, newRow);
             session.log(table, UndoLogRecord.INSERT, newRow);

@@ -49,6 +49,7 @@ public class TestMvcc4 extends TestBase {
             Statement s = setup.createStatement();
             s.executeUpdate("CREATE TABLE test ("
                     + "entity_id VARCHAR(100) NOT NULL PRIMARY KEY, "
+//                    + "entity_id VARCHAR(100) NOT NULL, "
                     + "lastUpdated TIMESTAMP NOT NULL)");
 
             PreparedStatement ps = setup.prepareStatement(
@@ -103,7 +104,7 @@ public class TestMvcc4 extends TestBase {
         // for lock case.
         PreparedStatement ps = c1.prepareStatement("UPDATE test SET lastUpdated = ?");
         ps.setTimestamp(1, new Timestamp(System.currentTimeMillis()));
-        ps.executeUpdate();
+        assertEquals(2, ps.executeUpdate());
 
         c1.commit();
         c1.close();
@@ -114,7 +115,7 @@ public class TestMvcc4 extends TestBase {
         ps = verify.prepareStatement("SELECT COUNT(*) FROM test");
         ResultSet rs = ps.executeQuery();
         assertTrue(rs.next());
-        assertTrue(rs.getInt(1) == 2);
+        assertEquals(2,rs.getInt(1));
         verify.commit();
         verify.close();
 

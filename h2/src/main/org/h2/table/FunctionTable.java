@@ -114,7 +114,7 @@ public class FunctionTable extends Table {
     }
 
     @Override
-    public void removeRow(Session session, Row row) {
+    public Row removeRow(Session session, Row row) {
         throw DbException.getUnsupportedException("ALIAS");
     }
 

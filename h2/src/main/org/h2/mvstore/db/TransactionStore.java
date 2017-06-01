@@ -511,10 +511,6 @@ public final class TransactionStore {
             private long logId = maxLogId - 1;
             private Change current;
 
-            {
-                fetchNext();
-            }
-
             private void fetchNext() {
                 while (logId >= toLogId) {
                     Long undoKey = getOperationId(t.getId(), logId);
@@ -545,16 +541,19 @@ public final class TransactionStore {
 
             @Override
             public boolean hasNext() {
+                if(current == null) {
+                    fetchNext();
+                }
                 return current != null;
             }
 
             @Override
             public Change next() {
-                if (current == null) {
+                if(!hasNext()) {
                     throw DataUtils.newUnsupportedOperationException("no data");
                 }
                 Change result = current;
-                fetchNext();
+                current = null;
                 return result;
             }
 
@@ -1023,8 +1022,7 @@ public final class TransactionStore {
                 blockingTransaction = decisionMaker.blockingTransaction;
                 decisionMaker.reset();
             } while (blockingTransaction == null || timeoutMillis > 0 && blockingTransaction.waitForThisToEnd(timeoutMillis));
-            throw DataUtils.newIllegalStateException(
-                        DataUtils.ERROR_TRANSACTION_LOCKED, "Entry is locked in " + map.getName());
+            throw DataUtils.newIllegalStateException(DataUtils.ERROR_TRANSACTION_LOCKED, "Entry is locked in " + map.getName());
         }
 
         /**
