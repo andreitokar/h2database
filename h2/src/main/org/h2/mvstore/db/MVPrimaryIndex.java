@@ -176,7 +176,7 @@ public class MVPrimaryIndex extends BaseIndex {
             }
             ValueArray array = (ValueArray)old;
             Row result = session.createRow(array.getList(), 0);
-            row.setKey(row.getKey());
+            result.setKey(row.getKey());
             return result;
         } catch (IllegalStateException e) {
             throw mvTable.convertException(e);

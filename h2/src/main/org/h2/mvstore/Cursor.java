@@ -24,7 +24,7 @@ public final class Cursor<K, V> implements Iterator<K> {
     private Page lastPage;
 
     Cursor(MVMap<K, ?> map, Page root, K from) {
-        this(map, root, from, false);
+        this(map, root, from, true);
     }
 
     Cursor(MVMap<K, ?> map, Page root, K from, boolean snapshot) {

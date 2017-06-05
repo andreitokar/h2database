@@ -250,7 +250,7 @@ public abstract class Command implements CommandInterface {
                 // wait
             }
         }
-        synchronized (sync) {
+//        synchronized (sync) {
             Session.Savepoint rollback = session.setSavepoint();
             session.setCurrentCommand(this);
             try {
@@ -298,7 +298,7 @@ public abstract class Command implements CommandInterface {
                     }
                 }
             }
-        }
+//        }
     }
 
     private long filterConcurrentUpdate(DbException e, long start) {

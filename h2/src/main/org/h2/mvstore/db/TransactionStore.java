@@ -10,7 +10,6 @@ import java.util.*;
 import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentHashMap;
 
-import org.h2.api.ErrorCode;
 import org.h2.mvstore.Cursor;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.MVMap;
@@ -198,6 +197,7 @@ public final class TransactionStore {
                     status = Transaction.STATUS_OPEN;
                 } else {
                     status = Transaction.STATUS_COMMITTING;
+                    committingTransactions.set(transactionId);
                 }
                 name = null;
             } else {
@@ -329,18 +329,18 @@ public final class TransactionStore {
 
     /**
      * Commit a transaction.
+     *  @param t the transaction
      *
-     * @param t the transaction
-     * @param maxLogId the last log id
      */
-    void commit(Transaction t, long maxLogId) {
+    void commit(Transaction t) {
         if (!store.isClosed()) {
             assert openTransactions.get(t.transactionId);
             assert t.getStatus() == Transaction.STATUS_OPEN ||
-                    t.getStatus() == Transaction.STATUS_PREPARED && preparedTransactions.get(t.transactionId) != null;
+                    t.getStatus() == Transaction.STATUS_PREPARED && preparedTransactions.get(t.transactionId) != null : t.getStatus();
             committingTransactions.set(t.transactionId);
             t.setStatus(Transaction.STATUS_COMMITTING);
             CommitDecisionMaker decisionMaker = new CommitDecisionMaker(this);
+            long maxLogId = t.logId;
             for (long logId = 0; logId < maxLogId; logId++) {
                 long undoKey = getOperationId(t.getId(), logId);
                 decisionMaker.setOperationId(undoKey);
@@ -442,8 +442,13 @@ public final class TransactionStore {
      * @param t the transaction
      */
     void endTransaction(Transaction t) {
+        int txId = t.getId();
+        Long ceilingKey;
+        assert (ceilingKey = undoLog.ceilingKey(getOperationId(txId, 0))) == null || getTransactionId(ceilingKey) != txId :
+                "undoLog has leftovers for " + txId + " : " + getTransactionId(ceilingKey) + "/" + getLogId(ceilingKey);
+
         if (t.getStatus() >= Transaction.STATUS_PREPARED) {
-            preparedTransactions.remove(t.getId());
+            preparedTransactions.remove(txId);
         }
         t.closeIt();
         synchronized (this) {
@@ -477,8 +482,8 @@ public final class TransactionStore {
 
     private Transaction getTransaction(int transactionId) {
         return  transactionId < AVG_OPEN_TRANSACTIONS ?
-                    transactions[transactionId] :
-                    spilledTransactions[transactionId - AVG_OPEN_TRANSACTIONS];
+                transactions[transactionId] :
+                spilledTransactions[transactionId - AVG_OPEN_TRANSACTIONS];
     }
 
     /**
@@ -681,6 +686,7 @@ public final class TransactionStore {
          * @param oldValue the old value
          */
         void log(int mapId, Object key, Object oldValue) {
+            checkOpen();
             store.log(this, mapId, key, oldValue);
             // only increment the log id if logging was successful
             logId++;
@@ -690,6 +696,7 @@ public final class TransactionStore {
          * Remove the last log entry.
          */
         void logUndo() {
+            checkOpen();
             store.logUndo(this, --logId);
         }
 
@@ -753,7 +760,7 @@ public final class TransactionStore {
         public void commit() {
             checkNotClosed();
             if(!store.committingTransactions.get(transactionId) || getStatus() != Transaction.STATUS_COMMITTING) {
-                store.commit(this, logId);
+                store.commit(this);
             }
         }
 
@@ -789,6 +796,17 @@ public final class TransactionStore {
          */
         public Iterator<Change> getChanges(long savepointId) {
             return store.getChanges(this, logId, savepointId);
+        }
+
+        /**
+         * Check whether this transaction is open.
+         */
+        void checkOpen() {
+            if (status != STATUS_OPEN) {
+                throw DataUtils.newIllegalStateException(
+                        DataUtils.ERROR_TRANSACTION_ILLEGAL_STATE,
+                        "Transaction {0} has status {1}, not open", transactionId, status);
+            }
         }
 
         /**
@@ -1020,8 +1038,11 @@ public final class TransactionStore {
                     return result == null ? null : (V) result.value;
                 }
                 blockingTransaction = decisionMaker.blockingTransaction;
+                assert blockingTransaction != null : "Tx " + decisionMaker.blockingId +
+                        " is missing, open: " + transaction.store.openTransactions.get(decisionMaker.blockingId) +
+                        ", committing: " + transaction.store.committingTransactions.get(decisionMaker.blockingId);
                 decisionMaker.reset();
-            } while (blockingTransaction == null || timeoutMillis > 0 && blockingTransaction.waitForThisToEnd(timeoutMillis));
+            } while (/*blockingTransaction == null ||*/ timeoutMillis > 0 && blockingTransaction.waitForThisToEnd(timeoutMillis));
             throw DataUtils.newIllegalStateException(DataUtils.ERROR_TRANSACTION_LOCKED, "Entry is locked in " + map.getName());
         }
 
@@ -1179,7 +1200,8 @@ public final class TransactionStore {
                     }
                 } else if(first && transaction.store.committingTransactions.get(tx)) {
                     data = map.get(key);
-                    continue;
+                    return data;
+//                    continue;
                 }
                 first = false;
                 // get the value before the uncommitted transaction
@@ -1480,6 +1502,7 @@ public final class TransactionStore {
             private final int            mapId;
             private final Object         key;
             public  final Transaction    transaction;
+            private       int            blockingId;
             private       Transaction    blockingTransaction;
             private       MVMap.Decision decision;
 
@@ -1496,7 +1519,6 @@ public final class TransactionStore {
                 assert getTransactionId(providedValue.operationId) == transaction.transactionId;
                 assert getLogId(providedValue.operationId) == transaction.logId;
                 long id;
-                int blockingId;
                 // if map does not have that entry yet
                 if(existingValue == null ||
                         // or entry is a committed one

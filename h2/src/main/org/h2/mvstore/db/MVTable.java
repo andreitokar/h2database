@@ -683,7 +683,9 @@ public class MVTable extends TableBase {
                 }
             }
         } catch (Throwable e) {
-            t.rollbackToSavepoint(savepoint);
+            try {
+                t.rollbackToSavepoint(savepoint);
+            } catch (Throwable ignore) {/**/}
             throw DbException.convert(e);
         }
         analyzeIfRequired(session);

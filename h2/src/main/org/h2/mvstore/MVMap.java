@@ -211,6 +211,10 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             int unsavedMemory = 0;
             switch (decision) {
                 case ABORT:
+                    if(rootReference != getRoot()) {
+                        decisionMaker.reset();
+                        continue;
+                    }
                     return result;
                 case REMOVE:
                     if (index < 0) {

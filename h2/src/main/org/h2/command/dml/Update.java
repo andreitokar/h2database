@@ -122,6 +122,7 @@ public class Update extends Prepared {
                         }
                         newRow.setValue(i, newValue);
                     }
+                    newRow.setKey(oldRow.getKey());
                     table.validateConvertUpdateSequence(session, newRow);
                     boolean done = false;
                     if (table.fireRow()) {

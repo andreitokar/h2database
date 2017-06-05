@@ -1893,6 +1893,7 @@ public class Function extends Expression implements FunctionCall {
         if (field == Calendar.MONTH) {
             return 12 * result + (month2 - month1);
         } else if (field == Calendar.YEAR) {
+//            return (12 * result + (month2 - month1))/12;
             return result;
         } else {
             throw DbException.getUnsupportedException("DATEDIFF " + part);

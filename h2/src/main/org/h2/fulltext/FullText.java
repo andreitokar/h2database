@@ -104,7 +104,7 @@ public class FullText {
      *
      * @param conn the connection
      */
-    public static void init(Connection conn) throws SQLException {
+    public static synchronized void init(Connection conn) throws SQLException {
         Statement stat = conn.createStatement();
         stat.execute("CREATE SCHEMA IF NOT EXISTS " + SCHEMA);
         stat.execute("CREATE TABLE IF NOT EXISTS " + SCHEMA +
@@ -172,7 +172,7 @@ public class FullText {
      * @param table the table name (case sensitive)
      * @param columnList the column list (null for all columns)
      */
-    public static void createIndex(Connection conn, String schema,
+    public static synchronized void createIndex(Connection conn, String schema,
             String table, String columnList) throws SQLException {
         init(conn);
         PreparedStatement prep = conn.prepareStatement("INSERT INTO " + SCHEMA
@@ -191,7 +191,7 @@ public class FullText {
      *
      * @param conn the connection
      */
-    public static void reindex(Connection conn) throws SQLException {
+    public static synchronized void reindex(Connection conn) throws SQLException {
         init(conn);
         removeAllTriggers(conn, TRIGGER_PREFIX);
         FullTextSettings setting = FullTextSettings.getInstance(conn);
@@ -217,7 +217,7 @@ public class FullText {
      * @param schema the schema name of the table (case sensitive)
      * @param table the table name (case sensitive)
      */
-    public static void dropIndex(Connection conn, String schema, String table)
+    public static synchronized void dropIndex(Connection conn, String schema, String table)
             throws SQLException {
         init(conn);
         PreparedStatement prep = conn.prepareStatement("SELECT ID FROM " + SCHEMA
@@ -259,7 +259,7 @@ public class FullText {
      *
      * @param conn the connection
      */
-    public static void dropAll(Connection conn) throws SQLException {
+    public static synchronized void dropAll(Connection conn) throws SQLException {
         init(conn);
         Statement stat = conn.createStatement();
         stat.execute("DROP SCHEMA IF EXISTS " + SCHEMA);
@@ -286,7 +286,7 @@ public class FullText {
      * @param offset the offset or 0 for no offset
      * @return the result set
      */
-    public static ResultSet search(Connection conn, String text, int limit,
+    public static synchronized ResultSet search(Connection conn, String text, int limit,
             int offset) throws SQLException {
         try {
             return search(conn, text, limit, offset, false);
@@ -317,7 +317,7 @@ public class FullText {
      * @param offset the offset or 0 for no offset
      * @return the result set
      */
-    public static ResultSet searchData(Connection conn, String text, int limit,
+    public static synchronized ResultSet searchData(Connection conn, String text, int limit,
             int offset) throws SQLException {
         try {
             return search(conn, text, limit, offset, true);
@@ -335,7 +335,7 @@ public class FullText {
      * @param conn the connection
      * @param commaSeparatedList the list
      */
-    public static void setIgnoreList(Connection conn, String commaSeparatedList)
+    public static synchronized void setIgnoreList(Connection conn, String commaSeparatedList)
             throws SQLException {
         try {
             init(conn);
@@ -360,7 +360,7 @@ public class FullText {
      * @param conn the connection
      * @param whitespaceChars the list of characters
      */
-    public static void setWhitespaceChars(Connection conn,
+    public static synchronized void setWhitespaceChars(Connection conn,
             String whitespaceChars) throws SQLException {
         try {
             init(conn);
@@ -873,7 +873,7 @@ public class FullText {
          * INTERNAL
          */
         @Override
-        public void init(Connection conn, String schemaName, String triggerName,
+        public synchronized void init(Connection conn, String schemaName, String triggerName,
                 String tableName, boolean before, int type) throws SQLException {
             setting = FullTextSettings.getInstance(conn);
             if (!setting.isInitialized()) {
@@ -954,7 +954,7 @@ public class FullText {
          * INTERNAL
          */
         @Override
-        public void fire(Connection conn, Object[] oldRow, Object[] newRow)
+        public synchronized void fire(Connection conn, Object[] oldRow, Object[] newRow)
                 throws SQLException {
             if (oldRow != null) {
                 if (newRow != null) {
@@ -977,7 +977,7 @@ public class FullText {
          * INTERNAL
          */
         @Override
-        public void close() {
+        public synchronized void close() {
             setting.removeIndexInfo(index);
         }
 
@@ -985,7 +985,7 @@ public class FullText {
          * INTERNAL
          */
         @Override
-        public void remove() {
+        public synchronized void remove() {
             setting.removeIndexInfo(index);
         }
 
@@ -1101,7 +1101,7 @@ public class FullText {
      * INTERNAL
      * Close all fulltext settings, freeing up memory.
      */
-    public static void closeAll() {
+    public static synchronized void closeAll() {
         FullTextSettings.closeAll();
     }
 

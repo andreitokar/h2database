@@ -64,7 +64,7 @@ public class TestMvccMultiThreaded2 extends TestBase {
         conn.commit();
 
         ArrayList<SelectForUpdate> threads = new ArrayList<SelectForUpdate>();
-        for (int i = 0; i < 100; i++) {
+        for (int i = 0; i < 2; i++) {
             SelectForUpdate sfu = new SelectForUpdate();
             threads.add(sfu);
             sfu.start();
