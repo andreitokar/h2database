@@ -2074,6 +2074,7 @@ public class TestMVStore extends TestBase {
      *
      * @param msg the message
      */
+    @SuppressWarnings("unused")
     protected static void log(String msg) {
         // System.out.println(msg);
     }

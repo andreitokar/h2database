@@ -7,7 +7,6 @@ package org.h2.mvstore.rtree;
 
 import java.util.ArrayList;
 import java.util.Iterator;
-
 import org.h2.mvstore.CursorPos;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.MVMap;
@@ -584,6 +583,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
          * @param test the user-supplied test key
          * @return true if there is a match
          */
+        @SuppressWarnings("unused")
         protected boolean check(boolean leaf, SpatialKey key, SpatialKey test) {
             return true;
         }
