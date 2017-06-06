@@ -273,6 +273,18 @@ public final class Page {
         return pos;
     }
 
+    public static Object get(Page p, Object key) {
+        while (true) {
+            int index = p.binarySearch(key);
+            if (p.isLeaf()) {
+                return index >= 0 ? p.getValue(index) : null;
+            } else if (index++ < 0) {
+                index = -index;
+            }
+            p = p.getChildPage(index);
+        }
+    }
+
     @Override
     public String toString() {
         StringBuilder buff = new StringBuilder();

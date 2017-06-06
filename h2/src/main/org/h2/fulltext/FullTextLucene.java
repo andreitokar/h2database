@@ -93,7 +93,7 @@ public class FullTextLucene extends FullText {
      *
      * @param conn the connection
      */
-    public static void init(Connection conn) throws SQLException {
+    public static synchronized void init(Connection conn) throws SQLException {
         Statement stat = conn.createStatement();
         stat.execute("CREATE SCHEMA IF NOT EXISTS " + SCHEMA);
         stat.execute("CREATE TABLE IF NOT EXISTS " + SCHEMA +
@@ -127,7 +127,7 @@ public class FullTextLucene extends FullText {
      * @param table the table name (case sensitive)
      * @param columnList the column list (null for all columns)
      */
-    public static void createIndex(Connection conn, String schema,
+    public static synchronized void createIndex(Connection conn, String schema,
             String table, String columnList) throws SQLException {
         init(conn);
         PreparedStatement prep = conn.prepareStatement("INSERT INTO " + SCHEMA
@@ -148,7 +148,7 @@ public class FullTextLucene extends FullText {
      * @param schema the schema name of the table (case sensitive)
      * @param table the table name (case sensitive)
      */
-    public static void dropIndex(Connection conn, String schema, String table)
+    public static synchronized void dropIndex(Connection conn, String schema, String table)
             throws SQLException {
         init(conn);
 
@@ -170,7 +170,7 @@ public class FullTextLucene extends FullText {
      *
      * @param conn the connection
      */
-    public static void reindex(Connection conn) throws SQLException {
+    public static synchronized void reindex(Connection conn) throws SQLException {
         init(conn);
         removeAllTriggers(conn, TRIGGER_PREFIX);
         removeIndexFiles(conn);
@@ -189,7 +189,7 @@ public class FullTextLucene extends FullText {
      *
      * @param conn the connection
      */
-    public static void dropAll(Connection conn) throws SQLException {
+    public static synchronized void dropAll(Connection conn) throws SQLException {
         Statement stat = conn.createStatement();
         stat.execute("DROP SCHEMA IF EXISTS " + SCHEMA);
         removeAllTriggers(conn, TRIGGER_PREFIX);
@@ -211,7 +211,7 @@ public class FullTextLucene extends FullText {
      * @param offset the offset or 0 for no offset
      * @return the result set
      */
-    public static ResultSet search(Connection conn, String text, int limit,
+    public static synchronized ResultSet search(Connection conn, String text, int limit,
             int offset) throws SQLException {
         return search(conn, text, limit, offset, false);
     }
@@ -236,7 +236,7 @@ public class FullTextLucene extends FullText {
      * @param offset the offset or 0 for no offset
      * @return the result set
      */
-    public static ResultSet searchData(Connection conn, String text, int limit,
+    public static synchronized ResultSet searchData(Connection conn, String text, int limit,
             int offset) throws SQLException {
         return search(conn, text, limit, offset, true);
     }
@@ -373,7 +373,10 @@ public class FullTextLucene extends FullText {
 
     private static void removeIndexFiles(Connection conn) throws SQLException {
         String path = getIndexPath(conn);
-        IndexAccess access = INDEX_ACCESS.get(path);
+        IndexAccess access;
+        synchronized (INDEX_ACCESS) {
+            access = INDEX_ACCESS.get(path);
+        }
         if (access != null) {
             removeIndexAccess(access, path);
         }

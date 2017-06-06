@@ -27,7 +27,7 @@ public final class Cursor<K, V> implements Iterator<K> {
         this(map, root, from, true);
     }
 
-    Cursor(MVMap<K, ?> map, Page root, K from, boolean snapshot) {
+    public Cursor(MVMap<K, ?> map, Page root, K from, boolean snapshot) {
         this.map = map;
         this.snapshot = snapshot;
         this.anchor = from;

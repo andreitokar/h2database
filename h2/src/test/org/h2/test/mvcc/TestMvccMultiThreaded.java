@@ -122,7 +122,7 @@ public class TestMvccMultiThreaded extends TestBase {
                     for (int a = 0; a < count; a++) {
                         ResultSet rs = connList[x].createStatement().executeQuery(
                                 "select value from test for update");
-                        assert rs.next();
+                        assertTrue(rs.next());
                         connList[x].createStatement().execute(
                                 "update test set value=value+1");
                         connList[x].commit();

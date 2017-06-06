@@ -554,9 +554,10 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     @SuppressWarnings("unchecked")
     public V get(Object key) {
         Page p = getRootPage();
-        return get(p, key);
+        return (V) Page.get(p, key);
     }
 
+/*
     public V get(Page p, Object key) {
         while (true) {
             int index = p.binarySearch(key);
@@ -568,6 +569,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             p = p.getChildPage(index);
         }
     }
+*/
 
     @Override
     public boolean containsKey(Object key) {

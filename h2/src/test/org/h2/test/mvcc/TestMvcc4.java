@@ -49,7 +49,6 @@ public class TestMvcc4 extends TestBase {
             Statement s = setup.createStatement();
             s.executeUpdate("CREATE TABLE test ("
                     + "entity_id VARCHAR(100) NOT NULL PRIMARY KEY, "
-//                    + "entity_id VARCHAR(100) NOT NULL, "
                     + "lastUpdated TIMESTAMP NOT NULL)");
 
             PreparedStatement ps = setup.prepareStatement(

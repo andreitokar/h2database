@@ -34,7 +34,6 @@ public class TestMvccMultiThreaded2 extends TestBase {
         test.config.lockTimeout = 120000;
         test.config.memory = true;
         test.config.multiThreaded = true;
-        test.config.traceTest = true;
         test.test();
     }
 
@@ -64,7 +63,7 @@ public class TestMvccMultiThreaded2 extends TestBase {
         conn.commit();
 
         ArrayList<SelectForUpdate> threads = new ArrayList<SelectForUpdate>();
-        for (int i = 0; i < 2; i++) {
+        for (int i = 0; i < 100; i++) {
             SelectForUpdate sfu = new SelectForUpdate();
             threads.add(sfu);
             sfu.start();
