@@ -294,9 +294,11 @@ public class Sequence extends SchemaObjectBase {
             // locked it) because it must be committed immediately, otherwise
             // other threads can not access the sys table.
             Session sysSession = database.getSystemSession();
-            synchronized (database.isMultiThreaded() ?  sysSession : database) {
-                flushInternal(sysSession);
-                sysSession.commit(false);
+            synchronized (sysSession) {
+                synchronized (database.isMultiThreaded() ? sysSession : database) {
+                    flushInternal(sysSession);
+                    sysSession.commit(false);
+                }
             }
         } else {
             synchronized (database.isMultiThreaded() ? session : database) {

@@ -68,7 +68,6 @@ public final class TransactionStore {
     private boolean init;
 
     private int maxTransactionId = 0xffff;
-    private int lastTransactionId;
     private final BitSet openTransactions = new BitSet();
     private final Transaction[] transactions = new Transaction[AVG_OPEN_TRANSACTIONS];
     private volatile Transaction[] spilledTransactions = new Transaction[AVG_OPEN_TRANSACTIONS];
@@ -247,15 +246,7 @@ public final class TransactionStore {
                     DataUtils.ERROR_TRANSACTION_ILLEGAL_STATE,
                     "Not initialized");
         }
-/*
         int transactionId = openTransactions.nextClearBit(1);
-/*/
-        int transactionId = openTransactions.nextClearBit(lastTransactionId+1);
-        if(transactionId >= AVG_OPEN_TRANSACTIONS || transactionId > maxTransactionId) {
-            transactionId = openTransactions.nextClearBit(1);
-        }
-        lastTransactionId = transactionId;
-//*/
         if (transactionId > maxTransactionId) {
             throw DataUtils.newIllegalStateException(
                     DataUtils.ERROR_TOO_MANY_OPEN_TRANSACTIONS,
@@ -301,7 +292,7 @@ public final class TransactionStore {
     void log(Transaction t, int mapId, Object key, Object oldValue) {
         Long undoKey = getOperationId(t.getId(), t.logId);
         Object[] log = new Object[] { mapId, key, oldValue };
-        if(undoLog.put/*IfAbsent*/(undoKey, log) != null) {
+        if(undoLog.put(undoKey, log) != null) {
             if (t.logId == 0) {
                 throw DataUtils.newIllegalStateException(
                         DataUtils.ERROR_TOO_MANY_OPEN_TRANSACTIONS,
@@ -963,18 +954,15 @@ public final class TransactionStore {
                 mapRootReference = map.getRoot();
                 undoLogRootReference = transaction.store.undoLog.getRoot();
             } while(mapRootReference != map.getRoot() || committingTransactions != transaction.store.committingTransactions.get());
-            long sizeRaw = mapRootReference.root.getTotalCount();
+            long size = mapRootReference.root.getTotalCount();
             long undoLogSize = undoLogRootReference.root.getTotalCount();
-//            long sizeRaw = map.sizeAsLong();
-//            MVMap<Long, Object[]> undo = transaction.store.undoLog;
-//            long undoLogSize = undo.sizeAsLong();
             if (undoLogSize == 0) {
-                return sizeRaw;
+                return size;
             }
-            if (undoLogSize > sizeRaw) {
+            if (undoLogSize > size) {
                 // the undo log is larger than the map -
                 // count the entries of the map
-                long size = 0;
+                size = 0;
                 Cursor<K, VersionedValue> cursor = new Cursor<>(map, mapRootReference.root, null, true);
                 while (cursor.hasNext()) {
                     K key = cursor.next();
@@ -987,34 +975,30 @@ public final class TransactionStore {
             }
             // the undo log is smaller than the map -
             // scan the undo log and subtract invisible entries
-//            synchronized (undo) {
-                // re-fetch in case any transaction was committed now
-                long size = map.sizeAsLong();
-                MVMap<Object, Integer> temp = transaction.store.createTempMap();
-                try {
-                    Cursor<Long, Object[]> cursor = new Cursor<>(transaction.store.undoLog, undoLogRootReference.root, null, true);
-                    while (cursor.hasNext()) {
-                        /*Long undoKey = */cursor.next();
-                        Object[] op = cursor.getValue();
-                        int mapId = (Integer) op[0];
-                        if (mapId == map.getId()) {
-                            @SuppressWarnings("unchecked")
-                            K key = (K) op[1];
-                            if (get(key) == null) {
-                                Integer old = temp.putIfAbsent(key, 1);
-                                // count each key only once (there might be multiple
-                                // changes for the same key)
-                                if (old == null) {
-                                    size--;
-                                }
+            MVMap<Object, Integer> temp = transaction.store.createTempMap();
+            try {
+                Cursor<Long, Object[]> cursor = new Cursor<>(transaction.store.undoLog, undoLogRootReference.root, null, true);
+                while (cursor.hasNext()) {
+                    /*Long undoKey = */cursor.next();
+                    Object[] op = cursor.getValue();
+                    int mapId = (Integer) op[0];
+                    if (mapId == map.getId()) {
+                        @SuppressWarnings("unchecked")
+                        K key = (K) op[1];
+                        if (get(key) == null) {
+                            Integer old = temp.putIfAbsent(key, 1);
+                            // count each key only once (there might be multiple
+                            // changes for the same key)
+                            if (old == null) {
+                                size--;
                             }
                         }
                     }
-                } finally {
-                    transaction.store.store.removeMap(temp);
                 }
-                return size;
-//            }
+            } finally {
+                transaction.store.store.removeMap(temp);
+            }
+            return size;
         }
 
         /**
@@ -1270,21 +1254,7 @@ public final class TransactionStore {
                 assert d != null : getTransactionId(id)+"/"+getLogId(id);
                 assert d[0].equals(map.getId());
                 assert map.areValuesEqual(map.getKeyType(), d[1], key);
-/*
-                if (d == null || (Integer)d[0] != map.getId() || !map.areValuesEqual(map.getKeyType(), d[1], key)) {
-                    if (transaction.store.store.isReadOnly()) {
-                        // uncommitted transaction for a read-only store
-                        return null;
-                    }
-                    // this entry should be committed or rolled back
-                    // in the meantime (the transaction might still be open)
-                    // or it might be changed again in a different
-                    // transaction (possibly one with the same id)
-                    data = map.get(key);
-                } else {
-*/
-                    data = (VersionedValue) d[2];
-//                }
+                data = (VersionedValue) d[2];
             }
         }
 
