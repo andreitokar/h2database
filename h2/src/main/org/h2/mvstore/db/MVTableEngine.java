@@ -162,7 +162,7 @@ public class MVTableEngine implements TableEngine {
                 }
                 this.transactionStore = new TransactionStore(
                         store,
-                        new ValueDataType(null, db, null), db.isMultiThreaded() ? 100 : 0);
+                        new ValueDataType(null, db, null), db.isMultiThreaded() ? 10000 : 0);
                 transactionStore.init();
             } catch (IllegalStateException e) {
                 throw convertIllegalStateException(e);

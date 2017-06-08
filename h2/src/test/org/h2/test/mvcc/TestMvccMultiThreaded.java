@@ -29,7 +29,10 @@ public class TestMvccMultiThreaded extends TestBase {
      */
     public static void main(String... a) throws Exception {
         TestBase init = TestBase.createCaller().init();
+//        init.config.memory = true;
 //        init.config.multiThreaded = true;
+//        init.config.cipher = "AES";
+//        System.out.println(init.config);
         init.test();
     }
 
@@ -63,6 +66,7 @@ public class TestMvccMultiThreaded extends TestBase {
                             stat.execute("select * from test where id=1 for update");
                         } catch (SQLException e) {
                             assertEquals(ErrorCode.DEADLOCK_1, e.getErrorCode());
+                            e.printStackTrace();
                         }
                     }
                     conn.close();
