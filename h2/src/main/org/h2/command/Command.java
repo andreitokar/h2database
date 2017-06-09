@@ -313,6 +313,7 @@ public abstract class Command implements CommandInterface {
             throw DbException.get(ErrorCode.LOCK_TIMEOUT_1, e.getCause(), "");
         }
 
+        session.setState(Session.State.BLOCKED);
         Database database = session.getDatabase();
         int sleep = 1; // + MathUtils.randomInt(10);
         while (true) {
@@ -332,6 +333,7 @@ public abstract class Command implements CommandInterface {
                 break;
             }
         }
+        session.setState(Session.State.RUNNING);
 
         return start == 0 ? now : start;
     }

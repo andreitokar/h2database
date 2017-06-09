@@ -56,6 +56,7 @@ import org.h2.value.ValueString;
  * SessionRemote object on the client side.
  */
 public class Session extends SessionWithState {
+    public enum State { INIT, RUNNING, BLOCKED, SLEEP, CLOSED }
 
     /**
      * This special log position means that the log entry has been written.
@@ -148,6 +149,7 @@ public class Session extends SessionWithState {
     private ArrayList<Value> temporaryLobs;
 
     private Transaction transaction;
+    private State state = State.INIT;
     private long startStatement = -1;
 
     public Session(Database database, User user, int id) {
@@ -843,6 +845,7 @@ public class Session extends SessionWithState {
     @Override
     public void close() {
         if (!closed) {
+            state = State.CLOSED;
             try {
                 database.checkPowerOff();
 
@@ -1188,11 +1191,15 @@ public class Session extends SessionWithState {
         if (lastThrottle + TimeUnit.MILLISECONDS.toNanos(Constants.THROTTLE_DELAY) > time) {
             return;
         }
+        State prevState = this.state;
         lastThrottle = time + throttleNs;
         try {
+            this.state = State.SLEEP;
             Thread.sleep(TimeUnit.NANOSECONDS.toMillis(throttleNs));
         } catch (Exception e) {
             // ignore InterruptedException
+        } finally {
+            this.state = prevState;
         }
     }
 
@@ -1209,6 +1216,7 @@ public class Session extends SessionWithState {
             long now = System.nanoTime();
             cancelAtNs = now + TimeUnit.MILLISECONDS.toNanos(queryTimeout);
         }
+        state = command == null ? State.SLEEP : State.RUNNING;
     }
 
     /**
@@ -1640,6 +1648,7 @@ public class Session extends SessionWithState {
                 throw DbException.get(ErrorCode.DATABASE_IS_CLOSED);
             }
             transaction = database.getMvStore().getTransactionStore().begin();
+            transaction.setOwnerId(id);
             startStatement = -1;
         }
         return transaction;
@@ -1709,6 +1718,18 @@ public class Session extends SessionWithState {
             tablesToAnalyze = New.hashSet();
         }
         tablesToAnalyze.add(table);
+    }
+
+    public State getState() {
+        return state;
+    }
+
+    public void setState(State state) {
+        this.state = state;
+    }
+
+    public int getBlockingSessionId() {
+        return transaction == null ? 0 : transaction.getBlockerId();
     }
 
     /**

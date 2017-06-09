@@ -183,16 +183,8 @@ public final class TransactionStore {
         return operationId & ((1L << 40) - 1);
     }
 
-    /**
-     * Get the list of unclosed transactions that have pending writes.
-     *
-     * @return the list of transactions (sorted by id)
-     */
-    public List<Transaction> getOpenTransactions() {
-        ArrayList<Transaction> list = New.arrayList();
-        boolean success;
+    public void initTransactions() {
         Long key = undoLog.firstKey();
-        BitSet committing = new BitSet();
         while (key != null) {
             int transactionId = getTransactionId(key);
             key = undoLog.lowerKey(getOperationId(transactionId + 1, 0));
@@ -205,7 +197,6 @@ public final class TransactionStore {
                     status = Transaction.STATUS_OPEN;
                 } else {
                     status = Transaction.STATUS_COMMITTING;
-                    committing.set(transactionId);
                 }
                 name = null;
             } else {
@@ -214,17 +205,32 @@ public final class TransactionStore {
             }
             Transaction t = new Transaction(this, transactionId, status,
                     name, logId);
-            list.add(t);
+            if (t.getStatus() == Transaction.STATUS_COMMITTING) {
+                t.commit();
+            } else if (t.getStatus() != Transaction.STATUS_PREPARED) {
+                t.rollback();
+            }
             key = undoLog.ceilingKey(getOperationId(transactionId + 1, 0));
         }
+    }
 
-        do {
-            BitSet original = committingTransactions.get();
-            BitSet clone = (BitSet) original.clone();
-            clone.or(committing);
-            success = committingTransactions.compareAndSet(original, clone);
-        } while(!success);
-
+    /**
+     * Get the list of unclosed transactions that have pending writes.
+     *
+     * @return the list of transactions (sorted by id)
+     */
+    public List<Transaction> getOpenTransactions() {
+        ArrayList<Transaction> list = New.arrayList();
+        int transactionId = 0;
+        while((transactionId = openTransactions.nextSetBit(transactionId)) > 0) {
+            Transaction transaction = getTransaction(transactionId);
+            if(transaction != null) {
+                transaction = new Transaction(transaction);
+                if(transaction.getStatus() != Transaction.STATUS_CLOSED) {
+                    list.add(transaction);
+                }
+            }
+        }
         return list;
     }
 
@@ -256,6 +262,12 @@ public final class TransactionStore {
         openTransactions.set(transactionId);
         int status = Transaction.STATUS_OPEN;
         Transaction transaction = new Transaction(this, transactionId, status, null, 0);
+        registerTransaction(transaction);
+        return transaction;
+    }
+
+    private void registerTransaction(Transaction transaction) {
+        int transactionId = transaction.transactionId;
         if(transactionId < AVG_OPEN_TRANSACTIONS) {
             transactions[transactionId] = transaction;
         } else {
@@ -266,7 +278,6 @@ public final class TransactionStore {
             }
             spilledTransactions[transactionId] = transaction;
         }
-        return transaction;
     }
 
     /**
@@ -657,6 +668,10 @@ public final class TransactionStore {
 
         private String name;
 
+        private int blockingTransactionId;
+
+        private int ownerId;
+
         private Transaction(TransactionStore store, int transactionId, int status,
                             String name, long logId) {
             this.store = store;
@@ -664,6 +679,16 @@ public final class TransactionStore {
             this.status = status;
             this.name = name;
             this.logId = logId;
+        }
+
+        private Transaction(Transaction tx) {
+            this.store = tx.store;
+            this.transactionId = tx.transactionId;
+            this.status = tx.status;
+            this.name = tx.name;
+            this.logId = tx.logId;
+            this.blockingTransactionId = tx.blockingTransactionId;
+            this.ownerId = tx.ownerId;
         }
 
         public int getId() {
@@ -678,6 +703,15 @@ public final class TransactionStore {
             this.status = status;
         }
 
+        public int getOwnerId() {
+            return ownerId;
+        }
+
+        public void setOwnerId(int ownerId) {
+            assert this.ownerId == 0 : this.ownerId;
+            this.ownerId = ownerId;
+        }
+
         public void setName(String name) {
             checkNotClosed();
             this.name = name;
@@ -686,6 +720,16 @@ public final class TransactionStore {
 
         public String getName() {
             return name;
+        }
+
+        public int getBlockerId() {
+            if(blockingTransactionId != 0) {
+                Transaction tx = store.getTransaction(blockingTransactionId);
+                if(tx != null) {
+                    return tx.getOwnerId();
+                }
+            }
+            return 0;
         }
 
         /**
@@ -843,7 +887,15 @@ public final class TransactionStore {
             notifyAll();
         }
 
-        public synchronized boolean waitForThisToEnd(long millis) {
+        public synchronized boolean waitFor(Transaction toWaitFor, long millis) {
+            checkOpen();
+            synchronized (this) {
+                blockingTransactionId = toWaitFor.transactionId;
+            }
+            return toWaitFor.waitForThisToEnd(millis);
+        }
+
+        private synchronized boolean waitForThisToEnd(long millis) {
             long until = System.currentTimeMillis() + millis;
             while(status != STATUS_CLOSED) {
                 long dur = until - System.currentTimeMillis();
@@ -1051,6 +1103,10 @@ public final class TransactionStore {
             int timeoutMillis = transaction.store.timeoutMillis;
             do {
                 transaction.checkNotClosed();
+                synchronized (transaction) {
+                    transaction.blockingTransactionId = 0;
+                }
+
                 long operationId = getOperationId(transaction.transactionId, transaction.logId);
                 VersionedValue newValue = new VersionedValue(operationId, value);
                 VersionedValue result = map.put(key, newValue, decisionMaker);
@@ -1064,7 +1120,7 @@ public final class TransactionStore {
                         " is missing, open: " + transaction.store.openTransactions.get(decisionMaker.blockingId) +
                         ", committing: " + transaction.store.committingTransactions.get().get(decisionMaker.blockingId);
                 decisionMaker.reset();
-            } while (/*blockingTransaction == null ||*/ timeoutMillis > 0 && blockingTransaction.waitForThisToEnd(timeoutMillis));
+            } while (timeoutMillis > 0 && transaction.waitFor(blockingTransaction, timeoutMillis));
             throw DataUtils.newIllegalStateException(DataUtils.ERROR_TRANSACTION_LOCKED, "Entry is locked in " + map.getName());
         }
 

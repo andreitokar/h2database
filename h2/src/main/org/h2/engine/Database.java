@@ -935,13 +935,11 @@ public class Database implements DataHandler {
             boolean wasLocked = lockMeta(session);
             Cursor cursor = metaIdIndex.find(session, r, r);
             if (cursor.next()) {
-/*
                 if (SysProperties.CHECK) {
                     if (lockMode != Constants.LOCK_MODE_OFF && !wasLocked) {
                         throw DbException.throwInternalError();
                     }
                 }
-*/
                 Row found = cursor.get();
                 found = meta.removeRow(session, found);
                 if (isMultiVersion()) {
@@ -1159,6 +1157,10 @@ public class Database implements DataHandler {
             delayedCloser = null;
         }
         return session;
+    }
+
+    public synchronized Session createTempSystemSession() {
+        return new Session(this, systemUser, ++nextSessionId);
     }
 
     /**

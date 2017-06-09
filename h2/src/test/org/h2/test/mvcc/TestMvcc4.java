@@ -30,6 +30,7 @@ public class TestMvcc4 extends TestBase {
         test.config.mvcc = true;
         test.config.lockTimeout = 20000;
         test.config.memory = true;
+        test.config.multiThreaded = true;
         test.test();
     }
 
@@ -42,6 +43,7 @@ public class TestMvcc4 extends TestBase {
     }
 
     private void testSelectForUpdateAndUpdateConcurrency() throws SQLException {
+        deleteDb("mvcc4");
         Connection setup = getConnection("mvcc4");
         setup.setAutoCommit(false);
 
@@ -63,7 +65,7 @@ public class TestMvcc4 extends TestBase {
         }
 
         //Create a connection from thread 1
-        Connection c1 = getConnection("mvcc4;LOCK_TIMEOUT=10000");
+        Connection c1 = getConnection("mvcc4;LOCK_TIMEOUT=10000;DEFAULT_LOCK_TIMEOUT=10000");
         c1.setAutoCommit(false);
 
         //Fire off a concurrent update.
@@ -82,7 +84,13 @@ public class TestMvcc4 extends TestBase {
                     ps.executeQuery().next();
 
                     executedUpdate.countDown();
-                    waitForThreadToBlockOnDB(mainThread);
+
+                    PreparedStatement stmt = c2.prepareStatement("SELECT * FROM INFORMATION_SCHEMA.SESSIONS WHERE BLOCKER_ID = SESSION_ID()");
+                    ResultSet resultSet;
+                    do {
+                        resultSet = stmt.executeQuery();
+                    } while(!resultSet.next());
+//                    waitForThreadToBlockOnDB(mainThread);
 
                     c2.commit();
                     c2.close();
@@ -127,6 +135,7 @@ public class TestMvcc4 extends TestBase {
      *
      * @param t the thread
      */
+/*
     void waitForThreadToBlockOnDB(Thread t) {
         while (true) {
             // sleep the first time through the loop so we give the main thread
@@ -152,6 +161,7 @@ public class TestMvcc4 extends TestBase {
             }
         }
     }
+*/
 }
 
 
