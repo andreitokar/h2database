@@ -1721,7 +1721,7 @@ public class Session extends SessionWithState {
     }
 
     public State getState() {
-        return state;
+        return getBlockingSessionId() != 0 ? State.BLOCKED : state;
     }
 
     public void setState(State state) {

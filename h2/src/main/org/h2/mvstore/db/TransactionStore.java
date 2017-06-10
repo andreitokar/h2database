@@ -121,18 +121,40 @@ public final class TransactionStore {
      * in which case the store can only be used for reading.
      */
     public synchronized void init() {
-        init = true;
-        // remove all temporary maps
-        for (String mapName : store.getMapNames()) {
-            if (mapName.startsWith("temp.")) {
-                MVMap<Object, Integer> temp = openTempMap(mapName);
-                store.removeMap(temp);
+        if(!init) {
+            init = true;
+            // remove all temporary maps
+            for (String mapName : store.getMapNames()) {
+                if (mapName.startsWith("temp.")) {
+                    MVMap<Object, Integer> temp = openTempMap(mapName);
+                    store.removeMap(temp);
+                }
             }
-        }
-        if (!undoLog.isEmpty()) {
-            for (Long key : undoLog.keySet()) {
+
+            Long key = undoLog.firstKey();
+            while (key != null) {
                 int transactionId = getTransactionId(key);
-                openTransactions.set(transactionId);
+                key = undoLog.lowerKey(getOperationId(transactionId + 1, 0));
+                long logId = getLogId(key) + 1;
+                Object[] data = preparedTransactions.get(transactionId);
+                int status;
+                String name;
+                if (data == null) {
+                    if (undoLog.containsKey(getOperationId(transactionId, 0))) {
+                        status = Transaction.STATUS_OPEN;
+                    } else {
+                        status = Transaction.STATUS_COMMITTING;
+                    }
+                    name = null;
+                } else {
+                    status = (Integer) data[0];
+                    name = (String) data[1];
+                }
+                Transaction t = new Transaction(this, transactionId, status,
+                        name, logId);
+                registerTransaction(t);
+
+                key = undoLog.ceilingKey(getOperationId(transactionId + 1, 0));
             }
         }
     }
@@ -183,37 +205,6 @@ public final class TransactionStore {
         return operationId & ((1L << 40) - 1);
     }
 
-    public void initTransactions() {
-        Long key = undoLog.firstKey();
-        while (key != null) {
-            int transactionId = getTransactionId(key);
-            key = undoLog.lowerKey(getOperationId(transactionId + 1, 0));
-            long logId = getLogId(key) + 1;
-            Object[] data = preparedTransactions.get(transactionId);
-            int status;
-            String name;
-            if (data == null) {
-                if (undoLog.containsKey(getOperationId(transactionId, 0))) {
-                    status = Transaction.STATUS_OPEN;
-                } else {
-                    status = Transaction.STATUS_COMMITTING;
-                }
-                name = null;
-            } else {
-                status = (Integer) data[0];
-                name = (String) data[1];
-            }
-            Transaction t = new Transaction(this, transactionId, status,
-                    name, logId);
-            if (t.getStatus() == Transaction.STATUS_COMMITTING) {
-                t.commit();
-            } else if (t.getStatus() != Transaction.STATUS_PREPARED) {
-                t.rollback();
-            }
-            key = undoLog.ceilingKey(getOperationId(transactionId + 1, 0));
-        }
-    }
-
     /**
      * Get the list of unclosed transactions that have pending writes.
      *
@@ -221,8 +212,11 @@ public final class TransactionStore {
      */
     public List<Transaction> getOpenTransactions() {
         ArrayList<Transaction> list = New.arrayList();
+        if(!init) {
+            init();
+        }
         int transactionId = 0;
-        while((transactionId = openTransactions.nextSetBit(transactionId)) > 0) {
+        while((transactionId = openTransactions.nextSetBit(transactionId + 1)) > 0) {
             Transaction transaction = getTransaction(transactionId);
             if(transaction != null) {
                 transaction = new Transaction(transaction);
@@ -259,7 +253,6 @@ public final class TransactionStore {
                     "There are {0} open transactions",
                     transactionId - 1);
         }
-        openTransactions.set(transactionId);
         int status = Transaction.STATUS_OPEN;
         Transaction transaction = new Transaction(this, transactionId, status, null, 0);
         registerTransaction(transaction);
@@ -268,6 +261,7 @@ public final class TransactionStore {
 
     private void registerTransaction(Transaction transaction) {
         int transactionId = transaction.transactionId;
+        openTransactions.set(transactionId);
         if(transactionId < AVG_OPEN_TRANSACTIONS) {
             transactions[transactionId] = transaction;
         } else {
@@ -351,11 +345,8 @@ public final class TransactionStore {
      *  @param t the transaction
      *
      */
-    void commit(Transaction t) {
+    private void commit(Transaction t) {
         if (!store.isClosed()) {
-            assert openTransactions.get(t.transactionId);
-            assert t.getStatus() == Transaction.STATUS_OPEN ||
-                    t.getStatus() == Transaction.STATUS_PREPARED && preparedTransactions.get(t.transactionId) != null : t.getStatus();
             boolean success;
             do {
                 BitSet original = committingTransactions.get();
@@ -822,7 +813,10 @@ public final class TransactionStore {
          */
         public void commit() {
             checkNotClosed();
-            if(!store.committingTransactions.get().get(transactionId) || getStatus() != Transaction.STATUS_COMMITTING) {
+            if(!store.committingTransactions.get().get(transactionId) /*|| getStatus() != Transaction.STATUS_COMMITTING*/) {
+                assert store.openTransactions.get(transactionId) : this + " " + store.openTransactions;
+                assert getStatus() == Transaction.STATUS_OPEN ||
+                       getStatus() == Transaction.STATUS_PREPARED && store.preparedTransactions.get(transactionId) != null : getStatus();
                 store.commit(this);
             }
         }

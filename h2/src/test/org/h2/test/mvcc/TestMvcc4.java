@@ -30,7 +30,6 @@ public class TestMvcc4 extends TestBase {
         test.config.mvcc = true;
         test.config.lockTimeout = 20000;
         test.config.memory = true;
-        test.config.multiThreaded = true;
         test.test();
     }
 

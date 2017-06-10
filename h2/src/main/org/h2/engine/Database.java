@@ -303,7 +303,7 @@ public class Database implements DataHandler {
                 }
                 traceSystem.close();
             }
-            closeOpenFilesAndUnlock(false);
+            try { closeOpenFilesAndUnlock(false); } catch(Throwable ignore) {/* to preserve original exeption */}
             throw DbException.convert(e);
         }
     }
@@ -763,6 +763,7 @@ public class Database implements DataHandler {
                 rec.execute(this, systemSession, eventListener);
             }
         }
+        systemSession.commit(true);
         if (mvStore != null) {
             mvStore.initTransactions();
             mvStore.removeTemporaryMaps(objectIds);

@@ -149,7 +149,7 @@ public class MVTableEngine implements TableEngine {
          * @param builder the builder
          * @param encrypted whether the store is encrypted
          */
-        void open(Database db, MVStore.Builder builder, boolean encrypted) {
+        private void open(Database db, MVStore.Builder builder, boolean encrypted) {
             this.encrypted = encrypted;
             try {
                 this.store = builder.open();
@@ -162,7 +162,7 @@ public class MVTableEngine implements TableEngine {
                 }
                 this.transactionStore = new TransactionStore(
                         store,
-                        new ValueDataType(null, db, null), db.isMultiThreaded() ? 10000 : 0);
+                        new ValueDataType(null, db, null), 10000);
                 transactionStore.init();
             } catch (IllegalStateException e) {
                 throw convertIllegalStateException(e);
@@ -248,7 +248,14 @@ public class MVTableEngine implements TableEngine {
          * rollback all open transactions.
          */
         public void initTransactions() {
-            transactionStore.initTransactions();
+            List<Transaction> list = transactionStore.getOpenTransactions();
+            for (Transaction t : list) {
+                if(t.getStatus() == Transaction.STATUS_COMMITTING) {
+                    t.commit();
+                } else if(t.getStatus() != Transaction.STATUS_PREPARED) {
+                    t.rollback();
+                }
+            }
         }
 
         /**
