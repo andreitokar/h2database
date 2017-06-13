@@ -28,12 +28,7 @@ public class TestMvccMultiThreaded extends TestBase {
      * @param a ignored
      */
     public static void main(String... a) throws Exception {
-        TestBase init = TestBase.createCaller().init();
-//        init.config.memory = true;
-//        init.config.multiThreaded = true;
-//        init.config.cipher = "AES";
-//        System.out.println(init.config);
-        init.test();
+        TestBase.createCaller().init().test();
     }
 
     @Override
@@ -55,7 +50,7 @@ public class TestMvccMultiThreaded extends TestBase {
         stat.execute("insert into test(id, updated) values(1, 100)");
         ArrayList<Task> tasks = new ArrayList<>();
         int count = 3;
-        for(int i=0; i<count; i++) {
+        for (int i = 0; i < count; i++) {
             Task task = new Task() {
                 @Override
                 public void call() throws Exception {
@@ -79,7 +74,7 @@ public class TestMvccMultiThreaded extends TestBase {
             ResultSet rs = stat.executeQuery("select * from test");
             assertTrue(rs.next());
         }
-        for(Task t : tasks) {
+        for (Task t : tasks) {
             t.get();
         }
         conn.close();
