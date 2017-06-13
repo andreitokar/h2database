@@ -45,7 +45,7 @@ public class TestMvccMultiThreaded2 extends TestBase {
     private void testSelectForUpdateConcurrency()
             throws SQLException, InterruptedException {
         deleteDb(getTestName());
-        Connection conn = getConnection(getTestName() + URL/*+";LOCK_MODE=0"*/);
+        Connection conn = getConnection(getTestName() + URL);
         conn.setAutoCommit(false);
 
         String sql = "CREATE TABLE test ("
@@ -91,25 +91,19 @@ public class TestMvccMultiThreaded2 extends TestBase {
                 conn = getConnection(getTestName() + URL);
                 conn.setAutoCommit(false);
                 while (!done) {
-                    try {
-                        PreparedStatement ps = conn.prepareStatement(
-                                "SELECT * FROM test WHERE entity_id = ? FOR UPDATE");
-                        ps.setString(1, "1");
-                        ResultSet rs = ps.executeQuery();
+                    PreparedStatement ps = conn.prepareStatement(
+                            "SELECT * FROM test WHERE entity_id = ? FOR UPDATE");
+                    ps.setString(1, "1");
+                    ResultSet rs = ps.executeQuery();
 
-                        assertTrue(rs.next());
-                        assertTrue(rs.getInt(2) == 100);
+                    assertTrue(rs.next());
+                    assertTrue(rs.getInt(2) == 100);
 
-                        conn.commit();
-                        ++count;
-                        long now = System.currentTimeMillis();
-                        if (now - start > 1000 * 60)
-                            done = true;
-                    } catch (JdbcSQLException e1) {
-                        // skip DUPLICATE_KEY_1 to just focus on this bug.
-//                        if (e1.getErrorCode() != ErrorCode.DUPLICATE_KEY_1) {
-                            throw e1;
-//                        }
+                    conn.commit();
+                    ++count;
+                    long now = System.currentTimeMillis();
+                    if (now - start > (config.fast ? 5 : 60) * 1000) {
+                        done = true;
                     }
                 }
             } catch (SQLException e) {

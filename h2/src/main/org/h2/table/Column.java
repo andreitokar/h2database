@@ -301,17 +301,14 @@ public class Column {
      * @return the new or converted value
      */
     public Value validateConvertUpdateSequence(Session session, Value value) {
-        // take a local copy of defaultExpression to avoid holding the lock
-        // while calling getValue
-        final Expression localDefaultExpression;
-        synchronized (this) {
-            localDefaultExpression = defaultExpression;
-        }
+        final Expression localDefaultExpression = defaultExpression;
         if (value == null) {
             if (localDefaultExpression == null) {
                 value = ValueNull.INSTANCE;
             } else {
-                value = localDefaultExpression.getValue(session).convertTo(type);
+                synchronized (localDefaultExpression) {
+                    value = localDefaultExpression.getValue(session).convertTo(type);
+                }
                 if (primaryKey) {
                     session.setLastIdentity(value);
                 }
@@ -320,7 +317,10 @@ public class Column {
         Mode mode = session.getDatabase().getMode();
         if (value == ValueNull.INSTANCE) {
             if (convertNullToDefault) {
-                value = localDefaultExpression.getValue(session).convertTo(type);
+                assert localDefaultExpression != null;
+                synchronized (localDefaultExpression) {
+                    value = localDefaultExpression.getValue(session).convertTo(type);
+                }
             }
             if (value == ValueNull.INSTANCE && !nullable) {
                 if (mode.convertInsertNullToZero) {
@@ -349,7 +349,7 @@ public class Column {
         if (checkConstraint != null) {
             resolver.setValue(value);
             Value v;
-            synchronized (this) {
+            synchronized (checkConstraint) {
                 v = checkConstraint.getValue(session);
             }
             // Both TRUE and NULL are ok

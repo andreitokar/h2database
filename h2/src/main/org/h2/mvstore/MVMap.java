@@ -191,9 +191,9 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             ++attempt;
             RootReference rootReference = getRoot();
             long version = writeVersion;
-            if(rootReference.version > version) {
-                throw new IllegalStateException("Inconsistent versions, current:" + rootReference.version + ", new:" + version);
-            }
+//            if(rootReference.version > version) {
+//                throw new IllegalStateException("Inconsistent versions, current:" + rootReference.version + ", new:" + version);
+//            }
 
             CursorPos pos = traverseDown(rootReference.root, key);
             if(rootReference != getRoot()) {

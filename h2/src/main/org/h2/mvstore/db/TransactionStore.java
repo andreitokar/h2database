@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 
 import org.h2.mvstore.Cursor;
 import org.h2.mvstore.DataUtils;
@@ -68,9 +69,9 @@ public final class TransactionStore {
     private boolean init;
 
     private int maxTransactionId = 0xffff;
-    private final BitSet openTransactions = new BitSet();
-    private final Transaction[] transactions = new Transaction[AVG_OPEN_TRANSACTIONS];
+    private final AtomicReferenceArray<Transaction> transactions = new AtomicReferenceArray<Transaction>(AVG_OPEN_TRANSACTIONS);
     private volatile Transaction[] spilledTransactions = new Transaction[AVG_OPEN_TRANSACTIONS];
+    private final AtomicReference<BitSet> openTransactions = new AtomicReference<>(new BitSet());
     private final AtomicReference<BitSet> committingTransactions = new AtomicReference<>(new BitSet());
 
 
@@ -152,6 +153,14 @@ public final class TransactionStore {
                 }
                 Transaction t = new Transaction(this, transactionId, status,
                         name, logId);
+                boolean success;
+                do {
+                    BitSet original = openTransactions.get();
+                    BitSet clone = (BitSet) original.clone();
+                    assert !clone.get(transactionId);
+                    clone.set(transactionId);
+                    success = openTransactions.compareAndSet(original, clone);
+                } while(!success);
                 registerTransaction(t);
 
                 key = undoLog.ceilingKey(getOperationId(transactionId + 1, 0));
@@ -216,7 +225,8 @@ public final class TransactionStore {
             init();
         }
         int transactionId = 0;
-        while((transactionId = openTransactions.nextSetBit(transactionId + 1)) > 0) {
+        BitSet bitSet = openTransactions.get();
+        while((transactionId = bitSet.nextSetBit(transactionId + 1)) > 0) {
             Transaction transaction = getTransaction(transactionId);
             if(transaction != null) {
                 transaction = new Transaction(transaction);
@@ -240,19 +250,27 @@ public final class TransactionStore {
      *
      * @return the transaction
      */
-    public synchronized Transaction begin() {
+    public /*synchronized*/ Transaction begin() {
         if (!init) {
             throw DataUtils.newIllegalStateException(
                     DataUtils.ERROR_TRANSACTION_ILLEGAL_STATE,
                     "Not initialized");
         }
-        int transactionId = openTransactions.nextClearBit(1);
-        if (transactionId > maxTransactionId) {
-            throw DataUtils.newIllegalStateException(
-                    DataUtils.ERROR_TOO_MANY_OPEN_TRANSACTIONS,
-                    "There are {0} open transactions",
-                    transactionId - 1);
-        }
+        int transactionId;
+        boolean success;
+        do {
+            BitSet original = openTransactions.get();
+            transactionId = original.nextClearBit(1);
+            if (transactionId > maxTransactionId) {
+                throw DataUtils.newIllegalStateException(
+                        DataUtils.ERROR_TOO_MANY_OPEN_TRANSACTIONS,
+                        "There are {0} open transactions",
+                        transactionId - 1);
+            }
+            BitSet clone = (BitSet) original.clone();
+            clone.set(transactionId);
+            success = openTransactions.compareAndSet(original, clone);
+        } while(!success);
         int status = Transaction.STATUS_OPEN;
         Transaction transaction = new Transaction(this, transactionId, status, null, 0);
         registerTransaction(transaction);
@@ -261,9 +279,9 @@ public final class TransactionStore {
 
     private void registerTransaction(Transaction transaction) {
         int transactionId = transaction.transactionId;
-        openTransactions.set(transactionId);
+//        openTransactions.set(transactionId);
         if(transactionId < AVG_OPEN_TRANSACTIONS) {
-            transactions[transactionId] = transaction;
+            transactions.set(transactionId, transaction);
         } else {
             transactionId -= AVG_OPEN_TRANSACTIONS;
             if(spilledTransactions.length <= transactionId) {
@@ -279,7 +297,7 @@ public final class TransactionStore {
      *
      * @param t the transaction
      */
-    synchronized void storeTransaction(Transaction t) {
+    /*synchronized*/ void storeTransaction(Transaction t) {
         if (t.getStatus() == Transaction.STATUS_PREPARED ||
                 t.getName() != null) {
             Object[] v = { t.getStatus(), t.getName() };
@@ -472,18 +490,27 @@ public final class TransactionStore {
             preparedTransactions.remove(txId);
         }
         t.closeIt();
-        synchronized (this) {
-            openTransactions.clear(t.transactionId);
+//        synchronized (this) {
+//            openTransactions.clear(t.transactionId);
             if(t.transactionId < AVG_OPEN_TRANSACTIONS) {
-                transactions[t.transactionId] = null;
+                transactions.set(t.transactionId, null);
             } else {
                 spilledTransactions[t.transactionId - AVG_OPEN_TRANSACTIONS] = null;
                 int prospectiveLength = spilledTransactions.length >> 1;
-                if(prospectiveLength > AVG_OPEN_TRANSACTIONS && openTransactions.length() < prospectiveLength) {
+                if(prospectiveLength > AVG_OPEN_TRANSACTIONS && openTransactions.get().length() < prospectiveLength) {
                     spilledTransactions = Arrays.copyOf(spilledTransactions, prospectiveLength);
                 }
             }
-        }
+//        }
+
+        boolean success;
+        do {
+            BitSet original = openTransactions.get();
+            BitSet clone = (BitSet) original.clone();
+            clone.clear(t.transactionId);
+            success = openTransactions.compareAndSet(original, clone);
+        } while(!success);
+
         if (store.getAutoCommitDelay() == 0) {
             store.commit();
             return;
@@ -503,7 +530,7 @@ public final class TransactionStore {
 
     private Transaction getTransaction(int transactionId) {
         return  transactionId < AVG_OPEN_TRANSACTIONS ?
-                transactions[transactionId] :
+                transactions.get(transactionId) :
                 spilledTransactions[transactionId - AVG_OPEN_TRANSACTIONS];
     }
 
@@ -814,9 +841,11 @@ public final class TransactionStore {
         public void commit() {
             checkNotClosed();
             if(!store.committingTransactions.get().get(transactionId) /*|| getStatus() != Transaction.STATUS_COMMITTING*/) {
-                assert store.openTransactions.get(transactionId) : this + " " + store.openTransactions;
+                assert store.openTransactions.get().get(transactionId) : this + " " + store.openTransactions;
                 assert getStatus() == Transaction.STATUS_OPEN ||
-                       getStatus() == Transaction.STATUS_PREPARED && store.preparedTransactions.get(transactionId) != null : getStatus();
+                       getStatus() == Transaction.STATUS_PREPARED && store.preparedTransactions.get(transactionId) != null ||
+                       // this case is only possible if called from initTransactions()
+                       getStatus() == Transaction.STATUS_COMMITTING : getStatus();
                 store.commit(this);
             }
         }
@@ -881,7 +910,7 @@ public final class TransactionStore {
             notifyAll();
         }
 
-        public synchronized boolean waitFor(Transaction toWaitFor, long millis) {
+        public boolean waitFor(Transaction toWaitFor, long millis) {
             checkOpen();
             synchronized (this) {
                 blockingTransactionId = toWaitFor.transactionId;
@@ -1097,9 +1126,9 @@ public final class TransactionStore {
             int timeoutMillis = transaction.store.timeoutMillis;
             do {
                 transaction.checkNotClosed();
-                synchronized (transaction) {
+//                synchronized (transaction) {
                     transaction.blockingTransactionId = 0;
-                }
+//                }
 
                 long operationId = getOperationId(transaction.transactionId, transaction.logId);
                 VersionedValue newValue = new VersionedValue(operationId, value);
@@ -1111,7 +1140,7 @@ public final class TransactionStore {
                 }
                 blockingTransaction = decisionMaker.blockingTransaction;
                 assert blockingTransaction != null : "Tx " + decisionMaker.blockingId +
-                        " is missing, open: " + transaction.store.openTransactions.get(decisionMaker.blockingId) +
+                        " is missing, open: " + transaction.store.openTransactions.get().get(decisionMaker.blockingId) +
                         ", committing: " + transaction.store.committingTransactions.get().get(decisionMaker.blockingId);
                 decisionMaker.reset();
             } while (timeoutMillis > 0 && transaction.waitFor(blockingTransaction, timeoutMillis));
