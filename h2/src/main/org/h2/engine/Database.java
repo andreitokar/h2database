@@ -1644,7 +1644,7 @@ public class Database implements DataHandler {
      * @param session the session
      * @param obj the database object
      */
-    public void updateMeta(Session session, DbObject obj) {
+    public void _updateMeta(Session session, DbObject obj) {
         lockMeta(session);
         synchronized (this) {
             int id = obj.getId();
@@ -1653,6 +1653,24 @@ public class Database implements DataHandler {
             // for temporary objects
             if (id > 0) {
                 objectIds.set(id);
+            }
+        }
+    }
+
+    public synchronized void updateMeta(Session session, DbObject obj) {
+        assert !starting;
+        int id = obj.getId();
+        if(!obj.isTemporary() && id > 0) {
+            Row newRow = meta.getTemplateRow();
+            MetaRecord.populateRowFromDBObject(obj, newRow);
+            objectIds.set(id);
+
+            SearchRow r = meta.getTemplateSimpleRow(false);
+            r.setValue(0, ValueInt.get(id));
+            Cursor cursor = metaIdIndex.find(session, r, r);
+            if (cursor.next()) {
+                Row oldRow = cursor.get();
+                meta.updateRow(session, oldRow, newRow);
             }
         }
     }
@@ -1709,9 +1727,9 @@ public class Database implements DataHandler {
             }
         }
         obj.checkRename();
-        int id = obj.getId();
+//        int id = obj.getId();
         lockMeta(session);
-        removeMeta(session, id);
+//        removeMeta(session, id);
         map.remove(obj.getName());
         obj.rename(newName);
         map.put(newName, obj);

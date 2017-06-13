@@ -482,8 +482,15 @@ public abstract class BaseIndex extends SchemaObjectBase implements Index {
         return null;
     }
 
+    @Override
     public Row removeRow(Session session, Row row) {
         remove(session, row);
         return null;
+    }
+
+    @Override
+    public void update(Session session, Row oldRow, Row newRow) {
+        remove(session, oldRow);
+        add(session, newRow);
     }
 }

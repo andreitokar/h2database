@@ -52,6 +52,8 @@ public interface Index extends SchemaObject {
     void remove(Session session, Row row);
     Row removeRow(Session session, Row row);
 
+    void update(Session session, Row oldRow, Row newRow);
+
     /**
      * Find a row or a list of rows and create a cursor to iterate over the
      * result.

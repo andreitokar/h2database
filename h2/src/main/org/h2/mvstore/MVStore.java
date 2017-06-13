@@ -18,6 +18,8 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+
 import org.h2.compress.CompressDeflate;
 import org.h2.compress.CompressLZF;
 import org.h2.compress.Compressor;
@@ -236,7 +238,8 @@ public final class MVStore {
      */
     private int unsavedMemory;
     private int autoCommitMemory;
-    private boolean saveNeeded;
+    private volatile boolean saveNeeded;
+    private final AtomicBoolean saveInProgress = new AtomicBoolean();
 
     /**
      * The time the store was created, in milliseconds since 1970.
@@ -1003,7 +1006,7 @@ public final class MVStore {
      *
      * @return the new version
      */
-    public synchronized long commit() {
+    public /*synchronized*/ long commit() {
         if (fileStore != null) {
             return commitAndSave();
         }
@@ -1021,7 +1024,7 @@ public final class MVStore {
      *
      * @return the new version (incremented if there were changes)
      */
-    private synchronized long commitAndSave() {
+    private /*synchronized*/ long commitAndSave() {
         if (closed) {
             return currentVersion;
         }
@@ -1041,16 +1044,20 @@ public final class MVStore {
             throw DataUtils.newIllegalStateException(
                     DataUtils.ERROR_WRITING_FAILED, "This store is read-only");
         }
-        try {
-            currentStoreVersion = currentVersion;
-            currentStoreThread = Thread.currentThread();
-            return storeNow();
-        } finally {
-            // in any case reset the current store version,
-            // to allow closing the store
-            currentStoreVersion = -1;
-            currentStoreThread = null;
+        if(saveInProgress.compareAndSet(false, true)) {
+            try {
+                currentStoreVersion = currentVersion;
+                currentStoreThread = Thread.currentThread();
+                return storeNow();
+            } finally {
+                // in any case reset the current store version,
+                // to allow closing the store
+                currentStoreVersion = -1;
+                currentStoreThread = null;
+                saveInProgress.set(false);
+            }
         }
+        return currentVersion;
     }
 
     private long storeNow() {
@@ -1553,14 +1560,13 @@ public final class MVStore {
      * @return the position
      */
     private long getFileLengthInUse() {
-        long size = 2 * BLOCK_SIZE;
+        long size = 2;
         for (Chunk c : chunks.values()) {
             if (c.len != Integer.MAX_VALUE) {
-                long x = (c.block + c.len) * BLOCK_SIZE;
-                size = Math.max(size, x);
+                size = Math.max(size, c.block + c.len);
             }
         }
-        return size;
+        return size * BLOCK_SIZE;
     }
 
     /**
@@ -1864,7 +1870,7 @@ public final class MVStore {
                 continue;
             }
             long age = last.version - c.version + 1;
-            c.collectPriority = (int) (c.getFillRate() * 1000 / age);
+            c.collectPriority = (int) (c.getFillRate() * 1000 / Math.max(1,age));
             old.add(c);
         }
         if (old.isEmpty()) {

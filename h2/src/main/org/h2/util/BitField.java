@@ -8,7 +8,7 @@ package org.h2.util;
 /**
  * A list of bits.
  */
-public final class BitField {
+public final class BitField implements Cloneable {
 
     private static final int ADDRESS_BITS = 6;
     private static final int BITS = 64;
@@ -185,4 +185,10 @@ public final class BitField {
         return maxLength;
     }
 
+    @Override
+    protected BitField clone() throws CloneNotSupportedException {
+        BitField result = (BitField) super.clone();
+        result.data = data.clone();
+        return result;
+    }
 }

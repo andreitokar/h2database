@@ -734,6 +734,40 @@ public class MVTable extends TableBase {
         analyzeIfRequired(session);
     }
 
+    @Override
+    public void updateRow(Session session, Row oldRow, Row newRow) {
+        newRow.setKey(oldRow.getKey());
+        lastModificationId = database.getNextModificationDataId();
+        Transaction t = getTransaction(session);
+        long savepoint = t.setSavepoint();
+        try {
+            for (int i = 0, size = indexes.size(); i < size; i++) {
+                Index index = indexes.get(i);
+                assert index.isRowIdIndex() == (i == 0) : i + " " + index;
+                index.update(session, oldRow, newRow);
+            }
+/*
+
+            for (int i = indexes.size() - 1; i >= 0; i--) {
+                Index index = indexes.get(i);
+                Row r = index.removeRow(session, oldRow);
+            }
+
+            for (int i = 0, size = indexes.size(); i < size; i++) {
+                Index index = indexes.get(i);
+                index.add(session, newRow);
+                assert index.isRowIdIndex() == (i == 0) : i + " " + index;
+            }
+*/
+        } catch (Throwable e) {
+            try {
+                t.rollbackToSavepoint(savepoint);
+            } catch (Throwable ignore) {/**/}
+            throw DbException.convert(e);
+        }
+        analyzeIfRequired(session);
+    }
+
     private void analyzeIfRequired(Session session) {
         if (nextAnalyze == 0 || nextAnalyze > changesSinceAnalyze++) {
             return;

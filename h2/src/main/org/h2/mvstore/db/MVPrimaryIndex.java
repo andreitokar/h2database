@@ -184,6 +184,56 @@ public class MVPrimaryIndex extends BaseIndex {
     }
 
     @Override
+    public void update(Session session, Row oldRow, Row newRow) {
+        long key = oldRow.getKey();
+        assert key != 0;
+        if (mainIndexColumn != -1) {
+            long c = newRow.getValue(mainIndexColumn).getLong();
+            newRow.setKey(c);
+        }
+        if(newRow.getKey() != key) {
+            super.update(session, oldRow, newRow);
+        } else {
+            if (mvTable.getContainsLargeObject()) {
+                for (int i = 0, len = oldRow.getColumnCount(); i < len; i++) {
+                    Value oldValue = oldRow.getValue(i);
+                    Value newValue = newRow.getValue(i);
+                    if(oldValue != newValue) {
+                        if (oldValue.isLinkedToTable()) {
+                            session.removeAtCommit(oldValue);
+                        }
+                        Value v2 = newValue.copy(database, getId());
+                        if (v2.isLinkedToTable()) {
+                            session.removeAtCommitStop(v2);
+                        }
+                        if (newValue != v2) {
+                            newRow.setValue(i, v2);
+                        }
+                    }
+                }
+            }
+
+            TransactionMap<Value, Value> map = getMap(session);
+            try {
+                Value old = map.put(ValueLong.get(key), ValueArray.get(newRow.getValueList()));
+                if (old == null) {
+                    throw DbException.get(ErrorCode.ROW_NOT_FOUND_WHEN_DELETING_1,
+                            getSQL() + ": " + key);
+                }
+            } catch (IllegalStateException e) {
+                throw mvTable.convertException(e);
+            }
+        }
+
+
+        // because it's possible to directly update the key using the _rowid_
+        // syntax
+        if (newRow.getKey() > lastKey.get()) {
+            lastKey.set(newRow.getKey());
+        }
+    }
+
+    @Override
     public Cursor find(Session session, SearchRow first, SearchRow last) {
         ValueLong min, max;
         if (first == null) {

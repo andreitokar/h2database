@@ -191,7 +191,7 @@ public abstract class Table extends SchemaObjectBase {
      * @param newRow the row with updated values (_rowid_ suppose to be the same)
      * @throws DbException if a constraint was violated
      */
-    public void addRow(Session session, Row oldRow, Row newRow) {
+    public void updateRow(Session session, Row oldRow, Row newRow) {
         newRow.setKey(oldRow.getKey());
         removeRow(session, oldRow);
         addRow(session, newRow);

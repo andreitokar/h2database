@@ -204,6 +204,12 @@ public class MultiVersionIndex implements Index {
     }
 
     @Override
+    public void update(Session session, Row oldRow, Row newRow) {
+        remove(session, oldRow);
+        add(session, newRow);
+    }
+
+    @Override
     public void remove(Session session) {
         synchronized (sync) {
             base.remove(session);

@@ -1006,6 +1006,8 @@ public class MetaTable extends Table {
                             fs.getWriteCount());
                     add(rows, "info.FILE_READ", "" +
                             fs.getReadCount());
+                    int updateFailureRatio = (int)(10000 * mvStore.getStore().getUpdateFailureRatio());
+                    add(rows, "info.UPDATE_FAILURE_PERCENT", "" + updateFailureRatio / 100 + "." + updateFailureRatio % 100 + "%");
                     long size;
                     try {
                         size = fs.getFile().size();
