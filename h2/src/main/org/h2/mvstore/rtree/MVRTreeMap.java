@@ -140,7 +140,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
     @Override
     @SuppressWarnings("unchecked")
     public V remove(Object key) {
-        return operate((SpatialKey) key, null, null);
+        return operate((SpatialKey) key, null, DecisionMaker.REMOVE);
     }
 
     @Override
@@ -176,7 +176,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
                     store.registerUnsavedPage(p.getMemory());
                 }
             }
-            if(newRoot(rootReference, p, writeVersion, attempt)) {
+            if(newRoot(rootReference, p, writeVersion, attempt, false)) {
                 return result;
             }
             if(decisionMaker != null) {
@@ -311,7 +311,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
     @Override
     @SuppressWarnings("unchecked")
     public V put(SpatialKey key, V value) {
-        return operate(key, value, null);
+        return operate(key, value, DecisionMaker.PUT);
     }
 
     /**
@@ -322,7 +322,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
      * @param value the value
      */
     public void add(SpatialKey key, V value) {
-        operate(key, value, null);
+        operate(key, value, DecisionMaker.PUT);
     }
 
     private Page split(Page p) {

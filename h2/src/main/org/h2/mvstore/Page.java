@@ -315,10 +315,9 @@ public final class Page {
     /**
      * Create a copy of this page.
      *
-     * @param version the new version
-     * @return a page with the given version
+     * @return a mutable copy of this page
      */
-    public Page copy(long version) {
+    public Page copy() {
         return copy(false);
     }
 

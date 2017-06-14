@@ -11,7 +11,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
-import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import org.h2.test.TestBase;
 
@@ -64,7 +63,7 @@ public class TestMvcc4 extends TestBase {
         }
 
         //Create a connection from thread 1
-        Connection c1 = getConnection("mvcc4;LOCK_TIMEOUT=10000;DEFAULT_LOCK_TIMEOUT=10000");
+        Connection c1 = getConnection("mvcc4;LOCK_TIMEOUT=10000");
         c1.setAutoCommit(false);
 
         //Fire off a concurrent update.
@@ -89,7 +88,6 @@ public class TestMvcc4 extends TestBase {
                     do {
                         resultSet = stmt.executeQuery();
                     } while(!resultSet.next());
-//                    waitForThreadToBlockOnDB(mainThread);
 
                     c2.commit();
                     c2.close();
@@ -127,40 +125,6 @@ public class TestMvcc4 extends TestBase {
 
         setup.close();
     }
-
-    /**
-     * Wait for the given thread to block on synchronizing on the database
-     * object.
-     *
-     * @param t the thread
-     */
-/*
-    void waitForThreadToBlockOnDB(Thread t) {
-        while (true) {
-            // sleep the first time through the loop so we give the main thread
-            // a chance
-            try {
-                Thread.sleep(20);
-            } catch (InterruptedException e1) {
-                // ignore
-            }
-            // TODO must not use getAllStackTraces, as the method names are
-            // implementation details
-            Map<Thread, StackTraceElement[]> threadMap = Thread.getAllStackTraces();
-            StackTraceElement[] elements = threadMap.get(t);
-            if (elements != null
-                    &&
-                    elements.length > 1 &&
-                    (config.multiThreaded ? "sleep".equals(elements[0]
-                            .getMethodName()) : "wait".equals(elements[0]
-                            .getMethodName())) &&
-                    "filterConcurrentUpdate"
-                            .equals(elements[1].getMethodName())) {
-                return;
-            }
-        }
-    }
-*/
 }
 
 

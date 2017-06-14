@@ -2048,7 +2048,7 @@ public final class TransactionStore {
                 MVMap<Object, VersionedValue> map = store.openMap(mapId);
                 if(map != null) {
                     Object key = existingValue[1];
-                    map.operateUnderLock(key, oldValue, null);
+                    map.operateUnderLock(key, oldValue, MVMap.DecisionMaker.DEFAULT);
                 }
             }
             decision = MVMap.Decision.REMOVE;

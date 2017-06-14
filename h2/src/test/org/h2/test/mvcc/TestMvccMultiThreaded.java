@@ -6,7 +6,6 @@
 package org.h2.test.mvcc;
 
 import java.sql.Connection;
-import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -35,11 +34,8 @@ public class TestMvccMultiThreaded extends TestBase {
     public void test() throws Exception {
         testConcurrentSelectForUpdate();
         testMergeWithUniqueKeyViolation();
-        // not supported currently
-//        if (!config.multiThreaded) {
-            testConcurrentMerge();
-            testConcurrentUpdate();
-//        }
+        testConcurrentMerge();
+        testConcurrentUpdate();
     }
 
     private void testConcurrentSelectForUpdate() throws Exception {
@@ -57,12 +53,7 @@ public class TestMvccMultiThreaded extends TestBase {
                     Connection conn = getConnection(getTestName());
                     Statement stat = conn.createStatement();
                     while(!stop) {
-                        try {
-                            stat.execute("select * from test where id=1 for update");
-                        } catch (SQLException e) {
-                            assertEquals(ErrorCode.DEADLOCK_1, e.getErrorCode());
-                            e.printStackTrace();
-                        }
+                        stat.execute("select * from test where id=1 for update");
                     }
                     conn.close();
                 }

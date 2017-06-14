@@ -153,8 +153,8 @@ public final class MVStore {
 
     private boolean closed;
 
-    private FileStore fileStore;
-    private boolean fileStoreIsProvided;
+    private final FileStore fileStore;
+    private final boolean fileStoreIsProvided;
 
     private final int pageSplitSize;
 
@@ -239,7 +239,7 @@ public final class MVStore {
     private int unsavedMemory;
     private int autoCommitMemory;
     private volatile boolean saveNeeded;
-    private final AtomicBoolean saveInProgress = new AtomicBoolean();
+    private final AtomicBoolean commitIsInProgress = new AtomicBoolean();
 
     /**
      * The time the store was created, in milliseconds since 1970.
@@ -298,14 +298,15 @@ public final class MVStore {
         Object o = config.get("compress");
         this.compressionLevel = o == null ? 0 : (Integer) o;
         String fileName = (String) config.get("fileName");
-        fileStore = (FileStore) config.get("fileStore");
+        FileStore fileStore = (FileStore) config.get("fileStore");
         fileStoreIsProvided = fileStore != null;
         if(fileStore == null && fileName != null) {
             fileStore = new FileStore();
         }
+        this.fileStore = fileStore;
         o = config.get("pageSplitSize");
         pageSplitSize = o != null         ? (Integer) o :
-                        fileStore == null ? 48 /*4 * 1024*/ :
+                        this.fileStore == null ? 48 /*4 * 1024*/ :
                                             16 * 1024;
         o = config.get("backgroundExceptionHandler");
         this.backgroundExceptionHandler = (UncaughtExceptionHandler) o;
@@ -315,12 +316,12 @@ public final class MVStore {
         c.put("id", 0);
         c.put("createVersion", currentVersion);
         meta.init(this, c);
-        if (fileStore == null) {
+        if (this.fileStore == null) {
             cache = null;
             cacheChunkRef = null;
             return;
         }
-        retentionTime = fileStore.getDefaultRetentionTime();
+        retentionTime = this.fileStore.getDefaultRetentionTime();
         boolean readOnly = config.containsKey("readOnly");
         o = config.get("cacheSize");
         int mb = o == null ? 16 : (Integer) o;
@@ -346,9 +347,9 @@ public final class MVStore {
         char[] encryptionKey = (char[]) config.get("encryptionKey");
         try {
             if (!fileStoreIsProvided) {
-                fileStore.open(fileName, readOnly, encryptionKey);
+                this.fileStore.open(fileName, readOnly, encryptionKey);
             }
-            if (fileStore.size() == 0) {
+            if (this.fileStore.size() == 0) {
                 creationTime = getTimeAbsolute();
                 lastCommitTime = creationTime;
                 storeHeader.put("H", 2);
@@ -874,7 +875,7 @@ public final class MVStore {
         if (f != null && !f.isReadOnly()) {
             stopBackgroundThread();
             if (hasUnsavedChanges()) {
-                commitAndSave();
+                commit();
             }
         }
         closeStore(true);
@@ -902,8 +903,8 @@ public final class MVStore {
         // the thread also synchronized on this, which
         // could result in a deadlock
         stopBackgroundThread();
-        closed = true;
         synchronized (this) {
+            closed = true;
             if (fileStore != null && shrinkIfPossible) {
                 shrinkFileIfPossible(0);
             }
@@ -921,14 +922,8 @@ public final class MVStore {
             meta = null;
             chunks.clear();
             maps.clear();
-            if (fileStore != null) {
-                try {
-                    if (!fileStoreIsProvided) {
-                        fileStore.close();
-                    }
-                } finally {
-                    fileStore = null;
-                }
+            if (fileStore != null && !fileStoreIsProvided) {
+                fileStore.close();
             }
         }
     }
@@ -995,84 +990,60 @@ public final class MVStore {
     /**
      * Commit the changes.
      * <p>
-     * For in-memory stores, this method increments the version.
+     * This method does nothing if there are no unsaved changes,
+     * otherwise it increments the current version
+     * and stores the data (for file based stores).
      * <p>
-     * For persistent stores, it also writes changes to disk. It does nothing if
-     * there are no unsaved changes, and returns the old version. It is not
-     * necessary to call this method when auto-commit is enabled (the default
+     * It is not necessary to call this method when auto-commit is enabled (the default
      * setting), as in this case it is automatically called from time to time or
      * when enough changes have accumulated. However, it may still be called to
      * flush all changes to disk.
-     *
-     * @return the new version
-     */
-    public /*synchronized*/ long commit() {
-        if (fileStore != null) {
-            return commitAndSave();
-        }
-        long v = ++currentVersion;
-        setWriteVersion(v);
-        return v;
-    }
-
-    /**
-     * Commit all changes and persist them to disk. This method does nothing if
-     * there are no unsaved changes, otherwise it increments the current version
-     * and stores the data (for file based stores).
      * <p>
      * At most one store operation may run at any time.
      *
      * @return the new version (incremented if there were changes)
      */
-    private /*synchronized*/ long commitAndSave() {
-        if (closed) {
-            return currentVersion;
-        }
-        if (fileStore == null) {
-            throw DataUtils.newIllegalStateException(
-                    DataUtils.ERROR_WRITING_FAILED,
-                    "This is an in-memory store");
-        }
-        if (currentStoreVersion >= 0) {
-            // store is possibly called within store, if the meta map changed
-            return currentVersion;
-        }
-        if (!hasUnsavedChanges()) {
-            return currentVersion;
-        }
-        if (fileStore.isReadOnly()) {
-            throw DataUtils.newIllegalStateException(
-                    DataUtils.ERROR_WRITING_FAILED, "This store is read-only");
-        }
-        if(saveInProgress.compareAndSet(false, true)) {
-            try {
-                currentStoreVersion = currentVersion;
-                currentStoreThread = Thread.currentThread();
-                return storeNow();
-            } finally {
-                // in any case reset the current store version,
-                // to allow closing the store
-                currentStoreVersion = -1;
-                currentStoreThread = null;
-                saveInProgress.set(false);
+    public long commit() {
+        // unlike synchronization, this will also prevent re-entrance,
+        // which may be possible, if the meta map have changed
+        if (commitIsInProgress.compareAndSet(false, true)) {
+            synchronized (this) {
+                try {
+                    currentStoreVersion = currentVersion;
+                    currentStoreThread = Thread.currentThread();
+                    if (!closed && hasUnsavedChanges()) {
+                        long v;
+                        if (fileStore == null) {
+                            v = ++currentVersion;
+                            setWriteVersion(v);
+                        } else {
+                            if (fileStore.isReadOnly()) {
+                                throw DataUtils.newIllegalStateException(
+                                        DataUtils.ERROR_WRITING_FAILED, "This store is read-only");
+                            }
+                            try {
+                                v = storeNow();
+                                assert v == currentVersion : v + " != " + currentVersion;
+                            } catch (IllegalStateException e) {
+                                panic(e);
+                            } catch (Throwable e) {
+                                panic(DataUtils.newIllegalStateException(DataUtils.ERROR_INTERNAL, e.toString(), e));
+                            }
+                        }
+                    }
+                } finally {
+                    // in any case reset the current store version,
+                    // to allow closing the store
+                    currentStoreVersion = -1;
+                    currentStoreThread = null;
+                    commitIsInProgress.set(false);
+                }
             }
         }
         return currentVersion;
     }
 
     private long storeNow() {
-        try {
-            return storeNowTry();
-        } catch (IllegalStateException e) {
-            panic(e);
-            return -1;
-        } catch (Throwable e) {
-            panic(DataUtils.newIllegalStateException(DataUtils.ERROR_INTERNAL, e.toString(), e));
-            return -1;
-        }
-    }
-
-    private long storeNowTry() {
         long time = getTimeSinceCreation();
         int freeDelay = retentionTime / 10;
         if (time >= lastFreeUnusedChunks + freeDelay) {
@@ -1292,7 +1263,7 @@ public final class MVStore {
 
         for (Iterator<Chunk> iterator = chunks.values().iterator(); iterator.hasNext(); ) {
             Chunk c = iterator.next();
-            if (!referenced.contains(c.id)) {
+            if (c.block != Long.MAX_VALUE && !referenced.contains(c.id)) {
                 if (canOverwriteChunk(c, time)) {
                     iterator.remove();
                     markMetaChanged();
@@ -1316,19 +1287,24 @@ public final class MVStore {
         DataUtils.checkArgument(testVersion > 0, "Collect references on version 0");
         long readCount = getFileStore().readCount;
         Set<Integer> referenced = New.hashSet();
-        for (Cursor<String, String> c = meta.cursor("root."); c.hasNext();) {
-            String key = c.next();
-            if (!key.startsWith("root.")) {
-                break;
+        MVMap.RootReference rootReference = meta.getRoot();
+//        for (MVMap.RootReference rootReference = meta.getRoot(); rootReference != null; rootReference = rootReference.previous) {
+            for (Cursor<String, String> c = new Cursor<>(meta, rootReference.root, "root.", true); c.hasNext(); ) {
+                String key = c.next();
+                if (!key.startsWith("root.")) {
+                    break;
+                }
+                long pos = DataUtils.parseHexLong(c.getValue());
+                if (pos != 0) {
+                    int mapId = DataUtils.parseHexInt(key.substring("root.".length()));
+//                    if(maps.contains(mapId)) {
+                        collectReferencedChunks(referenced, mapId, pos, 0);
+//                    }
+                }
             }
-            long pos = DataUtils.parseHexLong(c.getValue());
-            if (pos == 0) {
-                continue;
-            }
-            int mapId = DataUtils.parseHexInt(key.substring("root.".length()));
-            collectReferencedChunks(referenced, mapId, pos, 0);
-        }
+//        }
         long pos = lastChunk.metaRootPos;
+        assert meta.getId() == 0 : meta.getId();
         collectReferencedChunks(referenced, 0, pos, 0);
         readCount = fileStore.readCount - readCount;
         return referenced;
@@ -1344,8 +1320,7 @@ public final class MVStore {
         PageChildren refs = readPageChunkReferences(mapId, pos, -1);
         if (!refs.chunkList) {
             Set<Integer> target = New.hashSet();
-            for (int i = 0; i < refs.children.length; i++) {
-                long p = refs.children[i];
+            for (long p : refs.children) {
                 collectReferencedChunks(target, mapId, p, level + 1);
             }
             // we don't need a reference to this chunk
@@ -1368,9 +1343,9 @@ public final class MVStore {
     }
 
     private PageChildren readPageChunkReferences(int mapId, long pos, int parentChunk) {
-        if (DataUtils.getPageType(pos) == DataUtils.PAGE_TYPE_LEAF) {
-            return null;
-        }
+//        if (DataUtils.getPageType(pos) == DataUtils.PAGE_TYPE_LEAF) {
+//            return null;
+//        }
         PageChildren r;
         if (cacheChunkRef != null) {
             r = cacheChunkRef.get(pos);
@@ -1624,7 +1599,7 @@ public final class MVStore {
                 lastPage = p;
             }
         }
-        commitAndSave();
+        commit();
         return true;
     }
 
@@ -1737,7 +1712,7 @@ public final class MVStore {
 
         // update the metadata (store at the end of the file)
         reuseSpace = false;
-        commitAndSave();
+        commit();
         sync();
 
         // now re-use the empty space
@@ -1772,7 +1747,7 @@ public final class MVStore {
         }
 
         // update the metadata (within the file)
-        commitAndSave();
+        commit();
         sync();
         shrinkFileIfPossible(0);
     }
@@ -1936,7 +1911,7 @@ public final class MVStore {
             return;
         }
         freeUnusedChunks();
-        commitAndSave();
+        commit();
     }
 
     /**
@@ -2221,7 +2196,7 @@ public final class MVStore {
      * @param map the map
      */
     void beforeWrite(MVMap<?, ?> map) {
-        if (saveNeeded) {
+        if (saveNeeded && fileStore != null && !closed) {
 /*
             if (map == meta) {
                 // to, don't save while the metadata map is locked
@@ -2234,7 +2209,7 @@ public final class MVStore {
             saveNeeded = false;
             // check again, because it could have been written by now
             if (unsavedMemory > autoCommitMemory && autoCommitMemory > 0) {
-                commitAndSave();
+                commit();
             }
         }
     }
@@ -2513,9 +2488,7 @@ public final class MVStore {
             return;
         }
         try {
-            if (hasUnsavedChanges()) {
-                    commitAndSave();
-            }
+            commit();
             if (autoCompactFillRate > 0) {
                 // whether there were file read or write operations since
                 // the last time
@@ -2704,7 +2677,7 @@ public final class MVStore {
      * @return true if it is
      */
     public boolean isReadOnly() {
-        return fileStore == null ? false : fileStore.isReadOnly();
+        return fileStore != null && fileStore.isReadOnly();
     }
 
     public synchronized double getUpdateFailureRatio() {

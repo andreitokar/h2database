@@ -81,8 +81,8 @@ public class TestConcurrent extends TestMVStore {
                 }
             }
         };
+        MVMap<Integer, byte[]> map = s.openMap("data");
         try {
-            MVMap<Integer, byte[]> map = s.openMap("data");
             task.execute();
             for (int i = 0; i < 1000 && !task.isFinished(); i++) {
                 map.get(i % 1000);
@@ -114,6 +114,7 @@ public class TestConcurrent extends TestMVStore {
                         dataMap.put(i % 1000, i * 10);
                         s.commit();
                         i++;
+                        Thread.yield();
                     }
                 }
             };
@@ -284,6 +285,7 @@ public class TestConcurrent extends TestMVStore {
                 public void call() throws Exception {
                     while (!stop) {
                         s.compact(100, 1024 * 1024);
+                        Thread.yield();
                     }
                 }
             };
@@ -293,6 +295,7 @@ public class TestConcurrent extends TestMVStore {
                 public void call() throws Exception {
                     while (!stop) {
                         s.compact(100, 1024 * 1024);
+                        Thread.yield();
                     }
                 }
             };
