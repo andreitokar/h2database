@@ -223,7 +223,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         int attempt = 0;
         while(true) {
             RootReference rootReference = getRoot();
-            ++attempt;
 //            if(rootReference.version > version) {
 //                throw new IllegalStateException("Inconsistent versions, current:" + rootReference.version + ", new:" + version);
 //            }
@@ -233,6 +232,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                 continue;
             }
 
+            ++attempt;
             Page p = pos.page;
             int index = pos.index;
             CursorPos tip = pos;
@@ -253,15 +253,11 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                 switch (decision) {
                     case ABORT:
                         return result;
-                    case REMOVE:
+                    case REMOVE: {
                         if (index < 0) {
                             return result;
                         }
-                        if (!newRoot(rootReference, rootReference.root, writeVersion, attempt, true)) {
-                            decisionMaker.reset();
-                            try {
-                                Thread.sleep(20);
-                            } catch (InterruptedException ignore) {/**/}
+                        if (!lockRoot(decisionMaker, rootReference, attempt, 13)) {
                             continue;
                         }
                         needUnlock = true;
@@ -279,12 +275,9 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                         p = p.copy();
                         p.remove(index);
                         break;
-                    case PUT:
-                        if (!newRoot(rootReference, rootReference.root, writeVersion, attempt, true)) {
-                            decisionMaker.reset();
-                            try {
-                                Thread.sleep(0, 100000);
-                            } catch (InterruptedException ignore) {/**/}
+                    }
+                    case PUT: {
+                        if (!lockRoot(decisionMaker, rootReference, attempt, 16)) {
                             continue;
                         }
                         needUnlock = true;
@@ -323,6 +316,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                             p.setValue(index, value);
                         }
                         break;
+                    }
                 }
                 unsavedMemory += p.getMemory();
                 while (pos != null) {
@@ -349,6 +343,28 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                 }
             }
         }
+    }
+
+    private boolean lockRoot(DecisionMaker<? super V> decisionMaker, RootReference rootReference,
+                             int attempt, int shift) {
+        boolean success = newRoot(rootReference, rootReference.root, writeVersion, attempt, true);
+        if (!success) {
+            decisionMaker.reset();
+            if (attempt > 1) {
+                RootReference rf = getRoot();
+                long updateAttemptCounter = rf.updateAttemptCounter - rootReference.updateAttemptCounter;
+                assert updateAttemptCounter >= 0 : updateAttemptCounter;
+                long updateCounter = rf.updateCounter - rootReference.updateCounter;
+                assert updateCounter >= 0 : updateCounter;
+                assert updateAttemptCounter >= updateCounter : updateAttemptCounter + " >= " + updateCounter;
+                long nanos = rf.nanos - rootReference.nanos;
+                long pause = (updateAttemptCounter - updateCounter) * nanos >> shift;
+                try {
+                    Thread.sleep(pause / 1000000, (int) (pause % 1000000));
+                } catch (InterruptedException ignore) {/**/}
+            }
+        }
+        return success;
     }
 
     private static CursorPos traverseDown(Page p, Object key) {
@@ -764,10 +780,13 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         }
 
         RootReference previous = currentRoot;
-        long updateCounter = semaphor ? 0 : 1;
+        long updateCounter = 1;
         if(currentRoot != null) {
-            if(semaphor && currentRoot.semaphor) {
-                return false;
+            if(currentRoot.semaphor) {
+                if(semaphor) {
+                    return false;
+                }
+                updateCounter = 0;
             }
             long currentVersion = currentRoot.version;
 //            if (currentVersion > newVersion) {
@@ -1472,6 +1491,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         public  volatile RootReference previous;
         public           long          updateCounter;
         public           long          updateAttemptCounter;
+        public  final    long          nanos;
 
         private RootReference(Page root, long version, RootReference previous,
                               long updateCounter, long updateAttemptCounter,
@@ -1482,6 +1502,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             this.updateCounter = updateCounter;
             this.updateAttemptCounter = updateAttemptCounter;
             this.semaphor = semaphor;
+            this.nanos = System.nanoTime();
         }
 
         @Override
