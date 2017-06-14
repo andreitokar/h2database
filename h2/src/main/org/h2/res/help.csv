@@ -67,11 +67,11 @@ SHOW { SCHEMAS | TABLES [ FROM schemaName ] |
 ","
 Lists the schemas, tables, or the columns of a table."
 "Commands (DML)","WITH","
-WITH [ RECURSIVE ] name ( columnName [,...] )
-    AS ( select )
+WITH [ RECURSIVE ] { name [( columnName [,...] )]
+    AS ( select ) [,...] }
     select
 ","
-Can be used to create a recursive query."
+Can be used to create a recursive or non-recursive query (common table expression)."
 "Commands (DDL)","ALTER INDEX RENAME","
 ALTER INDEX [ IF EXISTS ] indexName RENAME TO newIndexName
 ","
@@ -149,9 +149,9 @@ ALTER VIEW [ IF EXISTS ] viewName RECOMPILE
 ","
 Recompiles a view after the underlying tables have been changed or created."
 "Commands (DDL)","ANALYZE","
-ANALYZE [ SAMPLE_SIZE rowCountInt ]
+ANALYZE [ TABLE tableName ] [ SAMPLE_SIZE rowCountInt ]
 ","
-Updates the selectivity statistics of all tables."
+Updates the selectivity statistics of tables."
 "Commands (DDL)","COMMENT","
 COMMENT ON
 { { COLUMN [ schemaName. ] tableName.columnName }

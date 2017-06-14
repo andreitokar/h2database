@@ -17,6 +17,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
+import java.util.List;
 import org.h2.api.ErrorCode;
 import org.h2.api.Trigger;
 import org.h2.command.ddl.AlterIndexRename;
@@ -3884,7 +3885,9 @@ public class Parser {
     private static int getSaveTokenType(String s, boolean supportOffsetFetch) {
         switch (s.charAt(0)) {
         case 'C':
-            if (s.equals("CURRENT_TIMESTAMP")) {
+            if (s.equals("CHECK")) {
+                return KEYWORD;
+            } else if (s.equals("CURRENT_TIMESTAMP")) {
                 return CURRENT_TIMESTAMP;
             } else if (s.equals("CURRENT_TIME")) {
                 return CURRENT_TIME;
@@ -4681,6 +4684,10 @@ public class Parser {
         return false;
     }
 
+    private boolean readIfAffinity() {
+        return readIf("AFFINITY") || readIf("SHARD");
+    }
+
     private CreateConstant parseCreateConstant() {
         boolean ifNotExists = readIfNotExists();
         String constantName = readIdentifierWithSchema();
@@ -4849,15 +4856,33 @@ public class Parser {
     }
 
     private Query parseWith() {
+        List<TableView> viewsCreated = new ArrayList<TableView>();
         readIf("RECURSIVE");
+        do {
+            viewsCreated.add(parseSingleCommonTableExpression());
+        } while (readIf(","));
+
+        Query q = parseSelectUnion();
+        q.setPrepareAlways(true);
+        return q;
+    }
+
+    private TableView parseSingleCommonTableExpression() {
         String tempViewName = readIdentifierWithSchema();
         Schema schema = getSchema();
         Table recursiveTable;
-        read("(");
         ArrayList<Column> columns = New.arrayList();
-        String[] cols = parseColumnList();
-        for (String c : cols) {
-            columns.add(new Column(c, Value.STRING));
+        String[] cols = null;
+
+        // column names are now optional - they can be inferred from the named
+        // query if not supplied
+        if (readIf("(")) {
+            cols = parseColumnList();
+            for (String c : cols) {
+                // we dont really know the type of the column, so string will
+                // have to do
+                columns.add(new Column(c, Value.STRING));
+            }
         }
         Table old = session.findLocalTempTable(tempViewName);
         if (old != null) {
@@ -4872,6 +4897,10 @@ public class Parser {
             }
             session.removeLocalTempTable(old);
         }
+        // this table is created as a work around because recursive
+        // table expressions need to reference something that look like
+        // themselves
+        // to work (its removed after creation in this method)
         CreateTableData data = new CreateTableData();
         data.id = database.allocateObjectId();
         data.columns = columns;
@@ -4884,7 +4913,7 @@ public class Parser {
         recursiveTable = schema.createTable(data);
         session.addLocalTempTable(recursiveTable);
         String querySQL;
-        Column[] columnTemplates = new Column[cols.length];
+        List<Column> columnTemplateList = new ArrayList<Column>();
         try {
             read("AS");
             read("(");
@@ -4893,22 +4922,32 @@ public class Parser {
             withQuery.prepare();
             querySQL = StringUtils.cache(withQuery.getPlanSQL());
             ArrayList<Expression> withExpressions = withQuery.getExpressions();
-            for (int i = 0; i < cols.length; ++i) {
-                columnTemplates[i] = new Column(cols[i], withExpressions.get(i).getType());
+            for (int i = 0; i < withExpressions.size(); ++i) {
+                String columnName = cols != null ? cols[i]
+                        : withExpressions.get(i).getColumnName();
+                columnTemplateList.add(new Column(columnName,
+                        withExpressions.get(i).getType()));
             }
         } finally {
             session.removeLocalTempTable(recursiveTable);
         }
         int id = database.allocateObjectId();
+        // No easy way to determine if this is a recursive query up front, so we just compile
+        // it twice - once without the flag set, and if we didn't see a recursive term,
+        // then we just compile it again.
         TableView view = new TableView(schema, id, tempViewName, querySQL,
-                parameters, columnTemplates, session, true);
+                parameters, columnTemplateList.toArray(new Column[0]), session,
+                true/* recursive */);
+        if (!view.isRecursiveQueryDetected()) {
+            view = new TableView(schema, id, tempViewName, querySQL, parameters,
+                    columnTemplateList.toArray(new Column[0]), session,
+                    false/* recursive */);
+        }
         view.setTableExpression(true);
         view.setTemporary(true);
         session.addLocalTempTable(view);
         view.setOnCommitDrop(true);
-        Query q = parseSelectUnion();
-        q.setPrepareAlways(true);
-        return q;
+        return view;
     }
 
     private CreateView parseCreateView(boolean force, boolean orReplace) {
@@ -5905,6 +5944,7 @@ public class Parser {
         String constraintName = null, comment = null;
         boolean ifNotExists = false;
         boolean allowIndexDefinition = database.getMode().indexDefinitionInCreateTable;
+        boolean allowAffinityKey = database.getMode().allowAffinityKey;
         if (readIf("CONSTRAINT")) {
             ifNotExists = readIfNotExists();
             constraintName = readIdentifierWithSchema(schema.getName());
@@ -5955,6 +5995,12 @@ public class Parser {
             if (readIf("USING")) {
                 read("BTREE");
             }
+            return command;
+        } else if (allowAffinityKey && readIfAffinity()) {
+            read("KEY");
+            read("(");
+            CreateIndex command = createAffinityIndex(schema, tableName, parseIndexColumnList());
+            command.setIfTableExists(ifTableExists);
             return command;
         }
         AlterTableAddConstraint command;
@@ -6123,6 +6169,9 @@ public class Parser {
                         if (readIf("CONSTRAINT")) {
                             constraintName = readColumnIdentifier();
                         }
+                        // For compatibility with Apache Ignite.
+                        boolean allowAffinityKey = database.getMode().allowAffinityKey;
+                        boolean affinity = allowAffinityKey && readIfAffinity();
                         if (readIf("PRIMARY")) {
                             read("KEY");
                             boolean hash = readIf("HASH");
@@ -6138,6 +6187,16 @@ public class Parser {
                             if (readIf("AUTO_INCREMENT")) {
                                 parseAutoIncrement(column);
                             }
+                            if (affinity) {
+                                CreateIndex idx = createAffinityIndex(schema, tableName, cols);
+                                command.addConstraintCommand(idx);
+                            }
+                        } else if (affinity) {
+                            read("KEY");
+                            IndexColumn[] cols = { new IndexColumn() };
+                            cols[0].columnName = column.getName();
+                            CreateIndex idx = createAffinityIndex(schema, tableName, cols);
+                            command.addConstraintCommand(idx);
                         } else if (readIf("UNIQUE")) {
                             AlterTableAddConstraint unique = new AlterTableAddConstraint(
                                     session, schema, false);
@@ -6254,6 +6313,14 @@ public class Parser {
             }
         }
         return command;
+    }
+
+    private CreateIndex createAffinityIndex(Schema schema, String tableName, IndexColumn[] indexColumns) {
+        CreateIndex idx = new CreateIndex(session, schema);
+        idx.setTableName(tableName);
+        idx.setIndexColumns(indexColumns);
+        idx.setAffinity(true);
+        return idx;
     }
 
     private static int getCompareType(int tokenType) {

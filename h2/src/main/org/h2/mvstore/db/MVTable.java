@@ -736,7 +736,6 @@ public class MVTable extends TableBase {
         if (n > 0) {
             nextAnalyze = n;
         }
-        int rows = session.getDatabase().getSettings().analyzeSample / 10;
         session.markTableForAnalyze(this);
     }
 
