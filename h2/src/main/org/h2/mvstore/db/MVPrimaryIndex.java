@@ -67,12 +67,11 @@ public class MVPrimaryIndex extends BaseIndex {
         for (int i = 0; i < columns.length; i++) {
             sortTypes[i] = SortOrder.ASCENDING;
         }
-        ValueDataType keyType = new ValueDataType(null, null, null);
         ValueDataType valueType = new ValueDataType(db.getCompareMode(), db,
                 sortTypes);
         mapName = "table." + getId();
         Transaction t = mvTable.getTransaction(null);
-        dataMap = t.openMap(mapName, keyType, valueType);
+        dataMap = t.openMap(mapName, ValueLong.Type.INSTANCE, valueType);
         t.commit();
         if (!table.isPersistData()) {
             dataMap.map.setVolatile(true);
@@ -129,9 +128,11 @@ public class MVPrimaryIndex extends BaseIndex {
         }
 
         TransactionMap<Value, Value> map = getMap(session);
-        Value key = ValueLong.get(row.getKey());
+        long rowKey = row.getKey();
+        ValueLong key = ValueLong.get(rowKey);
         try {
-            Value old = map.put(key, ValueArray.get(row.getValueList()));
+            Value v = row instanceof Value ? (Value)row : ValueArray.get(row.getValueList());
+            Value old = map.put(key, v);
             if (old != null) {
                 String sql = "PRIMARY KEY ON " + table.getSQL();
                 if (mainIndexColumn >= 0 && mainIndexColumn < indexColumns.length) {
@@ -141,14 +142,14 @@ public class MVPrimaryIndex extends BaseIndex {
                 e.setSource(this);
                 throw e;
             }
-
         } catch (IllegalStateException e) {
             throw mvTable.convertException(e);
         }
         // because it's possible to directly update the key using the _rowid_
         // syntax
-        if (row.getKey() > lastKey.get()) {
-            lastKey.set(row.getKey());
+        long last;
+        while (rowKey > (last = lastKey.get())) {
+            if(lastKey.compareAndSet(last, rowKey)) break;
         }
     }
 
@@ -277,9 +278,13 @@ public class MVPrimaryIndex extends BaseIndex {
             throw DbException.get(ErrorCode.ROW_NOT_FOUND_IN_PRIMARY_INDEX,
                     getSQL() + ": " + key);
         }
+        Row row = convertValueToRow(key, v);
+/*
         ValueArray array = (ValueArray) v;
-        Row row = session.createRow(array.getList(), 0);
+//        Row row = session.createRow(array.getList(), 0);
+        Row row = mvTable.createRow(array.getList(), 0);
         row.setKey(key);
+*/
         return row;
     }
 
@@ -442,6 +447,25 @@ public class MVPrimaryIndex extends BaseIndex {
         return dataMap.getInstance(t, Long.MAX_VALUE);
     }
 
+    private Row convertValueToRow(long key, Value value) {
+        return convertValueToRow(key, value, mvTable);
+    }
+
+    public static Row convertValueToRow(long key, Value value, MVTable mvTable) {
+        Row result;
+        if(value instanceof Row) {
+            result = (Row) value;
+            assert result.getKey() == key
+                 : result.getKey() + " != " + key;
+        } else {
+            ValueArray array = (ValueArray) value;
+            result = mvTable.createRow(array.getList(), 0);
+            result.setKey(key);
+        }
+        return result;
+    }
+
+
     /**
      * A cursor.
      */
@@ -463,9 +487,9 @@ public class MVPrimaryIndex extends BaseIndex {
         public Row get() {
             if (row == null) {
                 if (current != null) {
-                    ValueArray array = (ValueArray) current.getValue();
-                    row = session.createRow(array.getList(), 0);
-                    row.setKey(current.getKey().getLong());
+                    Value key = current.getKey();
+                    Value value = current.getValue();
+                    row = convertValueToRow(key.getLong(), value);
                 }
             }
             return row;

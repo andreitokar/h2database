@@ -8,6 +8,7 @@ package org.h2.value;
 import java.io.InputStream;
 import java.io.Reader;
 import java.math.BigDecimal;
+import java.nio.ByteBuffer;
 import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -15,6 +16,11 @@ import java.sql.Time;
 import java.sql.Timestamp;
 
 import org.h2.message.DbException;
+import org.h2.mvstore.WriteBuffer;
+import org.h2.mvstore.db.ValueDataType;
+import org.h2.mvstore.type.ExtendedDataType;
+import org.h2.result.SortOrder;
+import org.h2.store.DataHandler;
 
 /**
  * Implementation of NULL. NULL is not a regular data type.
@@ -172,4 +178,53 @@ public class ValueNull extends Value {
         return other == this;
     }
 
+
+    public static final class Type extends ValueDataType implements ExtendedDataType {
+
+        public static final Type INSTANCE = new Type(null, null, null);
+
+        public Type(CompareMode compareMode, DataHandler handler, int[] sortTypes) {
+            super(compareMode, handler, sortTypes);
+        }
+
+        @Override
+        public Object createStorage(int size) {
+            return null;
+        }
+
+        @Override
+        public Object clone(Object storage) {
+            return null;
+        }
+
+        @Override
+        public int getLength(Object storage) {
+            return 0;
+        }
+
+        @Override
+        public Object getValue(Object storage, int indx) {
+            return ValueNull.INSTANCE;
+        }
+
+        @Override
+        public void setValue(Object storage, int indx, Object value) {
+        }
+
+        @Override
+        public int getMemorySize(Object storage) {
+            return 0;
+        }
+
+        @Override
+        public int binarySearch(Object what, Object storage, int initialGuess) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void writeStorage(WriteBuffer buff, Object storage) {}
+
+        @Override
+        public void read(ByteBuffer buff, Object storage) {}
+    }
 }

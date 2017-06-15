@@ -5,12 +5,17 @@
  */
 package org.h2.mvstore.rtree;
 
+import org.h2.value.CompareMode;
+import org.h2.value.Value;
+
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
 import java.util.Arrays;
 
 /**
  * A unique spatial key.
  */
-public class SpatialKey {
+public class SpatialKey extends Value {
 
     private final long id;
     private final float[] minMax;
@@ -85,6 +90,46 @@ public class SpatialKey {
             buff.append(minMax[i]).append('/').append(minMax[i + 1]);
         }
         return buff.append(")").toString();
+    }
+
+    @Override
+    public String getSQL() {
+        return null;
+    }
+
+    @Override
+    public int getType() {
+        return Value.GEOMETRY;
+    }
+
+    @Override
+    public long getPrecision() {
+        return 0;
+    }
+
+    @Override
+    public int getDisplaySize() {
+        return 0;
+    }
+
+    @Override
+    public String getString() {
+        return toString();
+    }
+
+    @Override
+    public Object getObject() {
+        return this;
+    }
+
+    @Override
+    public void set(PreparedStatement prep, int parameterIndex) throws SQLException {
+
+    }
+
+    @Override
+    protected int compareSecure(Value v, CompareMode mode) {
+        return 0;
     }
 
     @Override

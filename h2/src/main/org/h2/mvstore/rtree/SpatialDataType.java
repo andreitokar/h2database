@@ -11,6 +11,7 @@ import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.WriteBuffer;
 import org.h2.mvstore.type.DataType;
 import org.h2.util.New;
+import org.h2.value.Value;
 
 /**
  * A spatial data type. This class supports up to 31 dimensions. Each dimension
@@ -107,7 +108,7 @@ public class SpatialDataType implements DataType {
     }
 
     @Override
-    public Object read(ByteBuffer buff) {
+    public Value read(ByteBuffer buff) {
         int flags = DataUtils.readVarInt(buff);
         if (flags == -1) {
             long id = DataUtils.readVarLong(buff);

@@ -217,11 +217,12 @@ public class UndoLogRecord {
         long key = buff.readLong();
         int sessionId = buff.readInt();
         int columnCount = buff.readInt();
-        Value[] values = new Value[columnCount];
+        Value[] values = new Value[columnCount];    //TODO: eliminate array creation
+        row = getTable().createRow(values, Row.MEMORY_CALCULATE);
         for (int i = 0; i < columnCount; i++) {
-            values[i] = buff.readValue();
+            Value value = buff.readValue();
+            row.setValue(i, value);
         }
-        row = getTable().getDatabase().createRow(values, Row.MEMORY_CALCULATE);
         row.setKey(key);
         row.setDeleted(deleted);
         row.setSessionId(sessionId);

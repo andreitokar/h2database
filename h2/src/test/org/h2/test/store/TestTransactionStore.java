@@ -44,22 +44,22 @@ public class TestTransactionStore extends TestBase {
     @Override
     public void test() throws Exception {
         FileUtils.createDirectories(getBaseDir());
-        testConcurrentAddRemove();
-        testConcurrentAdd();
-        testCountWithOpenTransactions();
-        testConcurrentUpdate();
-        testRepeatedChange();
-        testTransactionAge();
+//        testConcurrentAddRemove();
+//        testConcurrentAdd();
+//        testCountWithOpenTransactions();
+//        testConcurrentUpdate();
+//        testRepeatedChange();
+//        testTransactionAge();
         testStopWhileCommitting();
-        testGetModifiedMaps();
-        testKeyIterator();
-        testMultiStatement();
-        testTwoPhaseCommit();
-        testSavepoint();
-        testConcurrentTransactionsReadCommitted();
-        testSingleConnection();
-        testCompareWithPostgreSQL();
-        testStoreMultiThreadedReads();
+//        testGetModifiedMaps();
+//        testKeyIterator();
+//        testMultiStatement();
+//        testTwoPhaseCommit();
+//        testSavepoint();
+//        testConcurrentTransactionsReadCommitted();
+//        testSingleConnection();
+//        testCompareWithPostgreSQL();
+//        testStoreMultiThreadedReads();
     }
 
     private static void testConcurrentAddRemove() throws InterruptedException {
