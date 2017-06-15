@@ -4,8 +4,11 @@ import org.h2.result.Row;
 import org.h2.result.SearchRow;
 import org.h2.store.Data;
 import org.h2.value.*;
+import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
 import java.math.BigDecimal;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
 
 /**
  * Class RowStorage is the base class for all schema-aware auto-generated
@@ -45,6 +48,8 @@ public abstract class RowStorage extends Value implements Row, Cloneable {
 
     @Override
     public abstract int getMemory();
+
+    protected abstract int compareToSecure(RowStorage other, CompareMode mode);
 
     @Override
     public Value getValue(int index) {
@@ -169,50 +174,62 @@ public abstract class RowStorage extends Value implements Row, Cloneable {
     }
 
     @Override
-    protected int compareSecure(Value o, CompareMode mode) {
-        if(this == o) return 0;
-        RowStorage other = (RowStorage) o;
-        if(getClass() != o.getClass())
-        {
-            return Integer.compare(System.identityHashCode(this), System.identityHashCode(o));
-        }
-        int columnCount = getColumnCount();
-        for (int indx = 0; indx < columnCount; ++indx) {
-            Value value = getValue(indx);
-            Value otherValue = other.getValue(indx);
-            int comp = value.compareTo(otherValue, mode);
-            if (comp != 0) {
-                return comp;
+    public String getSQL() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("(");
+        for (int indx = 0; indx < getColumnCount(); ++indx) {
+            if(indx != 0) {
+                sb.append(", ");
             }
+            Value value = getValue(indx);
+            sb.append(value.getSQL());
         }
-        return 0;
+        sb.append(")");
+        return sb.toString();
     }
 
-    protected int _compareSecure(Value o, CompareMode mode) {
-        if(this == o) return 0;
-        RowStorage other = (RowStorage) o;
-        if(getClass() != o.getClass())
-        {
-            return Integer.compare(System.identityHashCode(this), System.identityHashCode(o));
-        }
-        return compareTo(other);
-    }
-
-    private int compareTo(RowStorage other) {
+    @Override
+    public int getDisplaySize() {
         int res = 0;
-        int columnCount = getColumnCount();
-        for (int indx = 0; indx < columnCount && res == 0; ++indx) {
-            res = Integer.compare(getInt(indx), other.getInt(indx));
+        for (int indx = 0; indx < getColumnCount(); ++indx) {
+            Value value = getValue(indx);
+            res += value.getDisplaySize();
         }
         return res;
     }
 
-    protected int getInt(int indx) {
-        return getInt(getValue(indx));
+    @Override
+    public String getString() {
+        return getSQL();
     }
 
-    protected long getLong(int indx) {
-        return getLong(getValue(indx));
+    @Override
+    public Object getObject() {
+        return this;
+    }
+
+    @Override
+    public void set(PreparedStatement prep, int parameterIndex) throws SQLException {
+        throw new NotImplementedException();
+    }
+
+    public int compare(Value o, CompareMode mode) {
+        if(this == o) return 0;
+        if(getClass() != o.getClass()) {
+            return Integer.compare(System.identityHashCode(this), System.identityHashCode(o));
+        }
+        RowStorage other = (RowStorage)o;
+        return compareToSecure(other, mode);
+    }
+
+    @Override
+    protected int compareSecure(Value o, CompareMode mode) {
+        if(this == o) return 0;
+        if(getClass() != o.getClass()) {
+            return Integer.compare(System.identityHashCode(this), System.identityHashCode(o));
+        }
+        RowStorage other = (RowStorage)o;
+        return compareToSecure(other, mode);
     }
 
     @Override
@@ -276,6 +293,27 @@ public abstract class RowStorage extends Value implements Row, Cloneable {
         return v == null ? 0 : v.getMemory();
     }
 
+    protected static int compare(BigDecimal one, BigDecimal two, CompareMode mode) {
+        return one == two ? 0 :
+                one == null ? -1 :
+                two == null ? 1 :
+                one.compareTo(two);
+    }
+
+    protected static int compare(byte[] one, byte[] two, CompareMode mode) {
+        return one == two ? 0 :
+                one == null ? -1 :
+                two == null ? 1 :
+                new String(one).compareTo(new String(two));
+    }
+
+    protected static int compare(String one, String two, CompareMode mode) {
+        return mode.compareString(one, two, false);
+    }
+
+    protected static int compare(Value one, Value two, CompareMode mode) {
+        return one.compareTo(two, mode);
+    }
 
     protected static int getInt(Value v)
     {

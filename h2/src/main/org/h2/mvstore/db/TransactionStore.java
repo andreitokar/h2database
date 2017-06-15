@@ -490,18 +490,15 @@ public final class TransactionStore {
             preparedTransactions.remove(txId);
         }
         t.closeIt();
-//        synchronized (this) {
-//            openTransactions.clear(t.transactionId);
-            if(t.transactionId < AVG_OPEN_TRANSACTIONS) {
-                transactions.set(t.transactionId, null);
-            } else {
-                spilledTransactions[t.transactionId - AVG_OPEN_TRANSACTIONS] = null;
-                int prospectiveLength = spilledTransactions.length >> 1;
-                if(prospectiveLength > AVG_OPEN_TRANSACTIONS && openTransactions.get().length() < prospectiveLength) {
-                    spilledTransactions = Arrays.copyOf(spilledTransactions, prospectiveLength);
-                }
+        if(t.transactionId < AVG_OPEN_TRANSACTIONS) {
+            transactions.set(t.transactionId, null);
+        } else {
+            spilledTransactions[t.transactionId - AVG_OPEN_TRANSACTIONS] = null;
+            int prospectiveLength = spilledTransactions.length >> 1;
+            if(prospectiveLength > AVG_OPEN_TRANSACTIONS && openTransactions.get().length() < prospectiveLength) {
+                spilledTransactions = Arrays.copyOf(spilledTransactions, prospectiveLength);
             }
-//        }
+        }
 
         boolean success;
         do {

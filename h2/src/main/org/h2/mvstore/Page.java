@@ -92,7 +92,7 @@ public final class Page {
      * @param map the map
      * @return the new page
      */
-    public static Page createEmpty(MVMap<?, ?> map, long version) {
+    public static Page createEmpty(MVMap<?, ?> map) {
         return create(map,
                 null, null,
                 null,

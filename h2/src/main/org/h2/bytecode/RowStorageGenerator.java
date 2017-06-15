@@ -29,10 +29,30 @@ public final class RowStorageGenerator {
 //        BOOLEAN(Value.BOOLEAN, "Z", 1, "getValueBoolean", "getBoolean"),
 //        BYTE(Value.BYTE,       "B", 1, "getValueByte", "getByte"),
 //        SHORT(Value.SHORT,     "S", 2, "getValueShort", "getShort"),
-        INT(Value.INT,         "I", 4, "getValueInt", "getInt"),
-        LONG(Value.LONG,       "J", 8, "getValueLong", "getLong"),
-        DOUBLE(Value.DOUBLE,   "D", 8, "getValueDouble", "getDouble"),
-        FLOAT(Value.FLOAT,     "F", 4, "getValueFloat", "getFloat"),
+        INT(Value.INT,         "I", 4, "getValueInt", "getInt") {
+            @Override
+            public void visitCompareTo(MethodVisitor mv, String className, int indx) {
+                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Integer", "compare", "(II)I", false);
+            }
+        },
+        LONG(Value.LONG,       "J", 8, "getValueLong", "getLong") {
+            @Override
+            public void visitCompareTo(MethodVisitor mv, String className, int indx) {
+                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Long", "compare", "(JJ)I", false);
+            }
+        },
+        DOUBLE(Value.DOUBLE,   "D", 8, "getValueDouble", "getDouble") {
+            @Override
+            public void visitCompareTo(MethodVisitor mv, String className, int indx) {
+                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Double", "compare", "(DD)I", false);
+            }
+        },
+        FLOAT(Value.FLOAT,     "F", 4, "getValueFloat", "getFloat") {
+            @Override
+            public void visitCompareTo(MethodVisitor mv, String className, int indx) {
+                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Float", "compare", "(FF)I", false);
+            }
+        },
         DECIMAL(Value.DECIMAL, "Ljava/math/BigDecimal;", Constants.MEMORY_OBJECT + Constants.MEMORY_POINTER, "getValueDecimal", "getDecimal", "d") {
             @Override
             public void visitGetMemory(MethodVisitor mv, String className, int indx) {
@@ -151,6 +171,11 @@ public final class RowStorageGenerator {
         }
 
         public void visitGetMemory(MethodVisitor mv, String className, int indx) {}
+
+        public void visitCompareTo(MethodVisitor mv, String className, int indx) {
+            mv.visitVarInsn(ALOAD, 2);
+            mv.visitMethodInsn(INVOKESTATIC, className, "compare", "(" + descriptor + descriptor + "Lorg/h2/value/CompareMode;)I", false);
+        }
     }
 
     public static void main(String[] args) {
@@ -179,11 +204,14 @@ public final class RowStorageGenerator {
             row.setKey(12345);
             System.out.println(row);
 
-            row.setValue(0, ValueInt.get(5));
-            row.setValue(1, ValueString.get("World"));
-            row.setValue(2, ValueDate.parse("2001-09-11"));
-            row.setValue(3, ValueInt.get(999));
-            System.out.println(row);
+            RowStorage rowTwo = row.clone();
+            rowTwo.setValue(0, ValueInt.get(5));
+            rowTwo.setValue(1, ValueString.get("World"));
+            rowTwo.setValue(2, ValueDate.parse("2001-09-11"));
+            rowTwo.setValue(3, ValueInt.get(999));
+            System.out.println(rowTwo);
+            System.out.println("Comparison result:" + row.compare(rowTwo, null));
+            System.out.println("Comparison result:" + rowTwo.compare(row, null));
         } catch (InstantiationException | IllegalAccessException | InvocationTargetException | NoSuchMethodException e) {
             e.printStackTrace();
         }
@@ -214,7 +242,7 @@ public final class RowStorageGenerator {
     }
 
     private static byte[] generateStorageBytes(int valueTypes[], String className) {
-        className = className.replace('.','/');
+        className = className.replace('.', '/');
         int fieldCount = valueTypes.length;
 
 //        ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES/* | ClassWriter.COMPUTE_MAXS*/);
@@ -317,6 +345,43 @@ public final class RowStorageGenerator {
         getMemoryVisitor.visitInsn(IRETURN);
         getMemoryVisitor.visitMaxs(2, 1);
         getMemoryVisitor.visitEnd();
+
+
+        MethodVisitor compareToVisitor = cw.visitMethod(ACC_PUBLIC, "compareToSecure", "(Lorg/h2/bytecode/RowStorage;Lorg/h2/value/CompareMode;)I", null, null);
+        compareToVisitor.visitCode();
+
+        compareToVisitor.visitVarInsn(ALOAD, 1);
+        compareToVisitor.visitTypeInsn(CHECKCAST, className);
+        compareToVisitor.visitVarInsn(ASTORE, 3);
+        compareToVisitor.visitInsn(ICONST_0);
+        compareToVisitor.visitVarInsn(ISTORE, 4);
+
+        Label retLabel = new Label();
+
+        for (int indx = 0; indx < fieldCount; indx++) {
+            ValueType valueType = ValueType.get(valueTypes[indx]);
+
+            compareToVisitor.visitVarInsn(ALOAD, 0);
+            compareToVisitor.visitFieldInsn(GETFIELD, className, valueType.getFieldName(indx), valueType.descriptor);
+            compareToVisitor.visitVarInsn(ALOAD, 3);
+            compareToVisitor.visitFieldInsn(GETFIELD, className, valueType.getFieldName(indx), valueType.descriptor);
+
+            valueType.visitCompareTo(compareToVisitor, className, indx);
+
+            compareToVisitor.visitVarInsn(ISTORE, 4);
+            compareToVisitor.visitVarInsn(ILOAD, 4);
+            compareToVisitor.visitJumpInsn(IFNE, retLabel);
+        }
+
+        compareToVisitor.visitLabel(retLabel);
+        compareToVisitor.visitFrame(F_APPEND, 2, new Object[]{ className, INTEGER }, 0, null);
+
+        compareToVisitor.visitVarInsn(ILOAD, 4);
+
+        compareToVisitor.visitInsn(IRETURN);
+        compareToVisitor.visitMaxs(5, 5);
+        compareToVisitor.visitEnd();
+
 
         cw.visitEnd();
 

@@ -175,9 +175,7 @@ public class MVPrimaryIndex extends BaseIndex {
                 throw DbException.get(ErrorCode.ROW_NOT_FOUND_WHEN_DELETING_1,
                         getSQL() + ": " + row.getKey());
             }
-            ValueArray array = (ValueArray)old;
-            Row result = session.createRow(array.getList(), 0);
-            result.setKey(row.getKey());
+            Row result = convertValueToRow(row.getKey(), old);
             return result;
         } catch (IllegalStateException e) {
             throw mvTable.convertException(e);
@@ -216,7 +214,8 @@ public class MVPrimaryIndex extends BaseIndex {
 
             TransactionMap<Value, Value> map = getMap(session);
             try {
-                Value old = map.put(ValueLong.get(key), ValueArray.get(newRow.getValueList()));
+                Value v = newRow instanceof Value ? (Value)newRow : ValueArray.get(newRow.getValueList());
+                Value old = map.put(ValueLong.get(key), v);
                 if (old == null) {
                     throw DbException.get(ErrorCode.ROW_NOT_FOUND_WHEN_DELETING_1,
                             getSQL() + ": " + key);
@@ -262,7 +261,7 @@ public class MVPrimaryIndex extends BaseIndex {
             }
         }
         TransactionMap<Value, Value> map = getMap(session);
-        return new MVStoreCursor(session, map.entryIterator(min), max);
+        return new MVStoreCursor(mvTable, map.entryIterator(min), max);
     }
 
     @Override
@@ -279,12 +278,6 @@ public class MVPrimaryIndex extends BaseIndex {
                     getSQL() + ": " + key);
         }
         Row row = convertValueToRow(key, v);
-/*
-        ValueArray array = (ValueArray) v;
-//        Row row = session.createRow(array.getList(), 0);
-        Row row = mvTable.createRow(array.getList(), 0);
-        row.setKey(key);
-*/
         return row;
     }
 
@@ -339,13 +332,12 @@ public class MVPrimaryIndex extends BaseIndex {
         TransactionMap<Value, Value> map = getMap(session);
         ValueLong v = (ValueLong) (first ? map.firstKey() : map.lastKey());
         if (v == null) {
-            return new MVStoreCursor(session, Collections
-                    .<Entry<Value, Value>> emptyList().iterator(), null);
+            return new MVStoreCursor(mvTable, Collections.<Entry<Value, Value>> emptyList().iterator(), null);
         }
         Value value = map.get(v);
         Entry<Value, Value> e = new DataUtils.MapEntry<Value, Value>(v, value);
         List<Entry<Value, Value>> list = Collections.singletonList(e);
-        MVStoreCursor c = new MVStoreCursor(session, list.iterator(), v);
+        MVStoreCursor c = new MVStoreCursor(mvTable, list.iterator(), v);
         c.next();
         return c;
     }
@@ -425,7 +417,7 @@ public class MVPrimaryIndex extends BaseIndex {
      */
     Cursor find(Session session, ValueLong first, ValueLong last) {
         TransactionMap<Value, Value> map = getMap(session);
-        return new MVStoreCursor(session, map.entryIterator(first), last);
+        return new MVStoreCursor(mvTable, map.entryIterator(first), last);
     }
 
     @Override
@@ -471,14 +463,14 @@ public class MVPrimaryIndex extends BaseIndex {
      */
     static final class MVStoreCursor implements Cursor {
 
-        private final Session session;
+        private final MVTable mvTable;
         private final Iterator<Entry<Value, Value>> it;
         private final ValueLong last;
         private Entry<Value, Value> current;
         private Row row;
 
-        public MVStoreCursor(Session session, Iterator<Entry<Value, Value>> it, ValueLong last) {
-            this.session = session;
+        public MVStoreCursor(MVTable mvTable, Iterator<Entry<Value, Value>> it, ValueLong last) {
+            this.mvTable = mvTable;
             this.it = it;
             this.last = last;
         }
@@ -489,7 +481,7 @@ public class MVPrimaryIndex extends BaseIndex {
                 if (current != null) {
                     Value key = current.getKey();
                     Value value = current.getValue();
-                    row = convertValueToRow(key.getLong(), value);
+                    row = convertValueToRow(key.getLong(), value, mvTable);
                 }
             }
             return row;
