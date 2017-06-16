@@ -169,6 +169,10 @@ public class MVTableEngine implements TableEngine {
             }
         }
 
+        public boolean isClosed() {
+            return store == null || store.isClosed();
+        }
+
         /**
          * Convert the illegal state exception to the correct database
          * exception.
@@ -237,7 +241,7 @@ public class MVTableEngine implements TableEngine {
          * Close the store, without persisting changes.
          */
         public void closeImmediately() {
-            if (store.isClosed()) {
+            if (isClosed()) {
                 return;
             }
             store.closeImmediately();
@@ -370,7 +374,7 @@ public class MVTableEngine implements TableEngine {
          */
         public void close(long maxCompactTime) {
             try {
-                if (!store.isClosed() && store.getFileStore() != null) {
+                if (!isClosed() && store.getFileStore() != null) {
                     boolean compactFully = false;
                     if (!store.getFileStore().isReadOnly()) {
                         transactionStore.close();
@@ -395,6 +399,9 @@ public class MVTableEngine implements TableEngine {
                 }
                 store.closeImmediately();
                 throw DbException.get(ErrorCode.IO_EXCEPTION_1, e, "Closing");
+            } finally {
+                transactionStore = null;
+                store = null;
             }
         }
 

@@ -199,7 +199,7 @@ public final class MVStore {
      * The metadata map. Write access to this map needs to be synchronized on
      * the store.
      */
-    private MVMap<String, String> meta;
+    private final MVMap<String, String> meta;
 
     private final ConcurrentHashMap<Integer, MVMap<?, ?>> maps =
             new ConcurrentHashMap<Integer, MVMap<?, ?>>();
@@ -919,7 +919,6 @@ public final class MVStore {
             for (MVMap<?, ?> m : New.arrayList(maps.values())) {
                 m.close();
             }
-            meta = null;
             chunks.clear();
             maps.clear();
             if (fileStore != null && !fileStoreIsProvided) {
@@ -1668,10 +1667,10 @@ public final class MVStore {
         long size = 0;
         for (Chunk c : move) {
             long chunkSize = c.len * (long) BLOCK_SIZE;
-            if (size + chunkSize > moveSize) {
+            size += chunkSize;
+            if (size > moveSize) {
                 break;
             }
-            size += chunkSize;
             count++;
         }
         // move the first block (so the first gap is moved),
@@ -2734,7 +2733,7 @@ public final class MVStore {
     /**
      * A builder for an MVStore.
      */
-    public static class Builder {
+    public static final class Builder {
 
         private final HashMap<String, Object> config = New.hashMap();
 

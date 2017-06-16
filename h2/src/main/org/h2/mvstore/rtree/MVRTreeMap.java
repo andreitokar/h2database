@@ -39,6 +39,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
         this.keyType = keyType;
     }
 
+    @Override
     public MVRTreeMap<V>cloneFromThis() {
         MVRTreeMap<V> res = new MVRTreeMap<>(keyType, getValueType());
         res.quadraticSplit = quadraticSplit;
@@ -144,7 +145,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
     }
 
     @Override
-    public V operateUnderLock(SpatialKey key, V value, DecisionMaker<? super V> decisionMaker) {
+    public V operate(SpatialKey key, V value, DecisionMaker<? super V> decisionMaker) {
         beforeWrite();
         int attempt = 0;
         while(true) {

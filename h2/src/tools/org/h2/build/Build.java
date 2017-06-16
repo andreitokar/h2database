@@ -210,7 +210,6 @@ public class Build extends BuildBase {
                 File.pathSeparator + "ext/org.osgi.core-4.2.0.jar" +
                 File.pathSeparator + "ext/org.osgi.enterprise-4.2.0.jar" +
                 File.pathSeparator + "ext/jts-core-1.14.0.jar" +
-                File.pathSeparator + "ext/asm-5.2.jar" +
                 File.pathSeparator + javaToolsJar;
         FileList files;
         if (clientOnly) {

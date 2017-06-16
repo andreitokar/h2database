@@ -208,27 +208,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         return operate(key, value, decisionMaker);
     }
 
-    public final V operate(K key, V value, DecisionMaker<? super V> decisionMaker) {
-//*
-        return operateUnderLock(key, value, decisionMaker);
-/*/
-        while (true) {
-            try {
-                if (updateSemaphore.tryAcquire(30, TimeUnit.SECONDS)) {
-                    try {
-                        return operateUnderLock(key, value, decisionMaker);
-                    } finally {
-                        updateSemaphore.release();
-                    }
-                }
-                throw DbException.get(ErrorCode.LOCK_TIMEOUT_1, "Unable to obtain update permit");
-            } catch (InterruptedException ignore) {
-            }
-        }
-//*/
-    }
-
-    public V operateUnderLock(K key, V value, DecisionMaker<? super V> decisionMaker) {
+    public V operate(K key, V value, DecisionMaker<? super V> decisionMaker) {
         beforeWrite();
         int attempt = 0;
         while(true) {
@@ -249,9 +229,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             pos = pos.parent;
             final V result = index < 0 ? null : (V)p.getValue(index);
             Decision decision = decisionMaker.decide(result, value);
-//            Decision decision = decisionMaker != null ? decisionMaker.decide(result, value) :
-//                                value == null         ? Decision.REMOVE :
-//                                                        Decision.PUT;
             if(rootReference != getRoot()) {
                 decisionMaker.reset();
                 continue;

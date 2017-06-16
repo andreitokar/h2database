@@ -1645,7 +1645,7 @@ public class Session extends SessionWithState {
      */
     public Transaction getTransaction() {
         if (transaction == null) {
-            if (database.getMvStore().getStore().isClosed()) {
+            if (database.getMvStore().isClosed()) {
                 database.shutdownImmediately();
                 throw DbException.get(ErrorCode.DATABASE_IS_CLOSED);
             }
