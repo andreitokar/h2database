@@ -1055,7 +1055,6 @@ public final class MVStore {
         int currentUnsavedPageCount = unsavedMemory;
         long storeVersion = currentStoreVersion;
         long version = ++currentVersion;
-        setWriteVersion(version);
         lastCommitTime = time;
         retainChunk = null;
 
