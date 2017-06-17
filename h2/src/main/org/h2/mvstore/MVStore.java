@@ -1693,17 +1693,17 @@ public final class MVStore {
             int chunkHeaderLen = readBuff.position();
             buff.position(chunkHeaderLen);
             buff.put(readBuff);
-            long end = getFileLengthInUse();
-            fileStore.markUsed(end, length);
+            long pos = getFileLengthInUse();
+            fileStore.markUsed(pos, length);
             fileStore.free(start, length);
-            c.block = end / BLOCK_SIZE;
+            c.block = pos / BLOCK_SIZE;
             c.next = 0;
             buff.position(0);
             c.writeChunkHeader(buff, chunkHeaderLen);
             buff.position(length - Chunk.FOOTER_LENGTH);
             buff.put(c.getFooterBytes());
             buff.position(0);
-            write(end, buff.getBuffer());
+            write(pos, buff.getBuffer());
             releaseWriteBuffer(buff);
             markMetaChanged();
             meta.put(Chunk.getMetaKey(c.id), c.asString());
@@ -1716,6 +1716,7 @@ public final class MVStore {
 
         // now re-use the empty space
         reuseSpace = true;
+        compactRewrite(Collections.singleton(lastChunk));
         for (Chunk c : move) {
             if (!chunks.containsKey(c.id)) {
                 // already removed during the
@@ -1727,14 +1728,15 @@ public final class MVStore {
             int length = c.len * BLOCK_SIZE;
             buff.limit(length);
             ByteBuffer readBuff = fileStore.readFully(start, length);
-            Chunk.readChunkHeader(readBuff, 0);
+            Chunk.readChunkHeader(readBuff, start);
             int chunkHeaderLen = readBuff.position();
             buff.position(chunkHeaderLen);
             buff.put(readBuff);
             long pos = fileStore.allocate(length);
             fileStore.free(start, length);
-            buff.position(0);
             c.block = pos / BLOCK_SIZE;
+            c.next = 0;
+            buff.position(0);
             c.writeChunkHeader(buff, chunkHeaderLen);
             buff.position(length - Chunk.FOOTER_LENGTH);
             buff.put(c.getFooterBytes());
@@ -1894,7 +1896,7 @@ public final class MVStore {
         return old;
     }
 
-    private void compactRewrite(ArrayList<Chunk> old) {
+    private void compactRewrite(Iterable<Chunk> old) {
         HashSet<Integer> set = New.hashSet();
         for (Chunk c : old) {
             set.add(c.id);
