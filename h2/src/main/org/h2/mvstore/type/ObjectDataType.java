@@ -17,6 +17,8 @@ import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.UUID;
+
+import org.h2.engine.Constants;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.WriteBuffer;
 import org.h2.result.SortOrder;
@@ -699,9 +701,11 @@ public class ObjectDataType implements DataType {
     /**
      * The type for integer objects.
      */
-    static class IntegerType extends AutoDetectDataType {
+    public static final class IntegerType extends AutoDetectDataType implements ExtendedDataType {
 
-        IntegerType(ObjectDataType base) {
+        public static final IntegerType INSTANCE = new IntegerType(null);
+
+        private IntegerType(ObjectDataType base) {
             super(base, TYPE_INT);
         }
 
@@ -717,7 +721,7 @@ public class ObjectDataType implements DataType {
 
         @Override
         public int getMemory(Object obj) {
-            return obj instanceof Integer ? 24 : super.getMemory(obj);
+            return obj instanceof Integer ? Constants.MEMORY_OBJECT : super.getMemory(obj);
         }
 
         @Override
@@ -727,6 +731,97 @@ public class ObjectDataType implements DataType {
                 return;
             }
             int x = (Integer) obj;
+            write(buff, x);
+        }
+
+        @Override
+        public Object read(ByteBuffer buff, int tag) {
+            return readInt(buff, tag);
+        }
+
+        @Override
+        public Object createStorage(int size) {
+            return new int[size];
+        }
+
+        @Override
+        public Object clone(Object storage) {
+            return ((int[])storage).clone();
+        }
+
+        @Override
+        public int getLength(Object storage) {
+            return ((int[])storage).length;
+        }
+
+        @Override
+        public Object getValue(Object storage, int indx) {
+            return ((int[])storage)[indx];
+        }
+
+        @Override
+        public void setValue(Object storage, int indx, Object value) {
+            ((int[])storage)[indx] = ((Integer)value);
+        }
+
+        @Override
+        public int getMemorySize(Object storage) {
+            return Constants.MEMORY_OBJECT + getLength(storage) * 4;
+        }
+
+        @Override
+        public int binarySearch(Object what, Object storage, int initialGuess) {
+            if (what == null) {
+                return -1;
+            }
+            int[] data = (int[]) storage;
+            int key = ((Integer) what);
+            int low = 0;
+            int high = data.length - 1;
+            // the cached index minus one, so that
+            // for the first time (when cachedCompare is 0),
+            // the default value is used
+            int x = initialGuess - 1;
+            if (x < 0 || x > high) {
+                x = high >>> 1;
+            }
+            return binarySearch(data, key, low, high, x);
+        }
+
+        private static int binarySearch(int[] data, int key, int low, int high, int x) {
+            while (low <= high) {
+                int compare = Integer.compare(key, data[x]);
+                if (compare > 0) {
+                    low = x + 1;
+                } else if (compare < 0) {
+                    high = x - 1;
+                } else {
+                    return x;
+                }
+                x = (low + high) >>> 1;
+            }
+            x = -(low + 1);
+            return x;
+        }
+
+        @Override
+        public void writeStorage(WriteBuffer buff, Object storage) {
+            int[] data = (int[]) storage;
+            for (int x : data) {
+                write(buff, x);
+            }
+        }
+
+        @Override
+        public void read(ByteBuffer buff, Object storage) {
+            int[] data = (int[]) storage;
+            for (int i = 0; i < data.length; i++) {
+                int tag = buff.get();
+                data[i] = readInt(buff, tag);
+            }
+        }
+
+        private static void write(WriteBuffer buff, int x) {
             if (x < 0) {
                 // -Integer.MIN_VALUE is smaller than 0
                 if (-x < 0 || -x > DataUtils.COMPRESSED_VAR_INT_MAX) {
@@ -743,8 +838,7 @@ public class ObjectDataType implements DataType {
             }
         }
 
-        @Override
-        public Object read(ByteBuffer buff, int tag) {
+        private static int readInt(ByteBuffer buff, int tag) {
             switch (tag) {
             case TYPE_INT:
                 return DataUtils.readVarInt(buff);
@@ -755,7 +849,6 @@ public class ObjectDataType implements DataType {
             }
             return tag - TAG_INTEGER_0_15;
         }
-
     }
 
     /**
@@ -763,11 +856,9 @@ public class ObjectDataType implements DataType {
      */
     public static final class LongType extends AutoDetectDataType implements ExtendedDataType  {
 
-        public LongType() {
-            this(new ObjectDataType());
-        }
+        public static final LongType INSTANCE = new LongType(null);
 
-        LongType(ObjectDataType base) {
+        private LongType(ObjectDataType base) {
             super(base, TYPE_LONG);
         }
 
@@ -872,9 +963,12 @@ public class ObjectDataType implements DataType {
             if (x < 0 || x > high) {
                 x = high >>> 1;
             }
+            return binarySearch(data, key, low, high, x);
+        }
+
+        private static int binarySearch(long[] data, long key, int low, int high, int x) {
             while (low <= high) {
                 int compare = Long.compare(key, data[x]);
-//                if(isDescending) compare = -compare;
                 if (compare > 0) {
                     low = x + 1;
                 } else if (compare < 0) {
@@ -1178,9 +1272,11 @@ public class ObjectDataType implements DataType {
     /**
      * The type for string objects.
      */
-    static class StringType extends AutoDetectDataType {
+    public static final class StringType extends AutoDetectDataType implements ExtendedDataType {
 
-        StringType(ObjectDataType base) {
+        public static final StringType INSTANCE = new StringType(null);
+
+        private StringType(ObjectDataType base) {
             super(base, TYPE_STRING);
         }
 
@@ -1189,7 +1285,7 @@ public class ObjectDataType implements DataType {
             if (!(obj instanceof String)) {
                 return super.getMemory(obj);
             }
-            return 24 + 2 * obj.toString().length();
+            return Constants.MEMORY_OBJECT + 2 * obj.toString().length();
         }
 
         @Override
@@ -1207,6 +1303,102 @@ public class ObjectDataType implements DataType {
                 return;
             }
             String s = (String) obj;
+            write(buff, s);
+        }
+
+        @Override
+        public Object read(ByteBuffer buff, int tag) {
+            return readString(buff, tag);
+        }
+
+        @Override
+        public Object createStorage(int size) {
+            return new String[size];
+        }
+
+        @Override
+        public Object clone(Object storage) {
+            return ((String[])storage).clone();
+        }
+
+        @Override
+        public int getLength(Object storage) {
+            return ((String[])storage).length;
+        }
+
+        @Override
+        public Object getValue(Object storage, int indx) {
+            return ((String[])storage)[indx];
+        }
+
+        @Override
+        public void setValue(Object storage, int indx, Object value) {
+            ((String[])storage)[indx] = ((String)value);
+        }
+
+        @Override
+        public int getMemorySize(Object storage) {
+            String[] data = (String[]) storage;
+            int size = 0;
+            for (String s : data) {
+                size += s.length();
+            }
+            return size * 2 + data.length * (Constants.MEMORY_POINTER + Constants.MEMORY_OBJECT);
+        }
+
+        @Override
+        public int binarySearch(Object what, Object storage, int initialGuess) {
+            if (what == null) {
+                return -1;
+            }
+            String[] data = (String[]) storage;
+            String key = ((String) what);
+            int low = 0;
+            int high = data.length - 1;
+            // the cached index minus one, so that
+            // for the first time (when cachedCompare is 0),
+            // the default value is used
+            int x = initialGuess - 1;
+            if (x < 0 || x > high) {
+                x = high >>> 1;
+            }
+            return binarySearch(data, key, low, high, x);
+        }
+
+        private static int binarySearch(String[] data, String key, int low, int high, int x) {
+            while (low <= high) {
+                int compare = key.compareTo(data[x]);
+                if (compare > 0) {
+                    low = x + 1;
+                } else if (compare < 0) {
+                    high = x - 1;
+                } else {
+                    return x;
+                }
+                x = (low + high) >>> 1;
+            }
+            x = -(low + 1);
+            return x;
+        }
+
+        @Override
+        public void writeStorage(WriteBuffer buff, Object storage) {
+            String[] data = (String[]) storage;
+            for (String x : data) {
+                write(buff, x);
+            }
+        }
+
+        @Override
+        public void read(ByteBuffer buff, Object storage) {
+            String[] data = (String[]) storage;
+            for (int i = 0; i < data.length; i++) {
+                int tag = buff.get();
+                data[i] = readString(buff, tag);
+            }
+        }
+
+        private static void write(WriteBuffer buff, String s) {
             int len = s.length();
             if (len <= 15) {
                 buff.put((byte) (TAG_STRING_0_15 + len));
@@ -1216,8 +1408,7 @@ public class ObjectDataType implements DataType {
             buff.putStringData(s, len);
         }
 
-        @Override
-        public Object read(ByteBuffer buff, int tag) {
+        private static String readString(ByteBuffer buff, int tag) {
             int len;
             if (tag == TYPE_STRING) {
                 len = DataUtils.readVarInt(buff);
@@ -1226,7 +1417,6 @@ public class ObjectDataType implements DataType {
             }
             return DataUtils.readString(buff, len);
         }
-
     }
 
     /**

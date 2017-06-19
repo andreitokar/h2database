@@ -5,10 +5,19 @@
  */
 package org.h2.value;
 
+import java.nio.ByteBuffer;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 
+import com.sun.tools.internal.jxc.ap.Const;
+import org.h2.engine.Constants;
 import org.h2.engine.SysProperties;
+import org.h2.mvstore.DataUtils;
+import org.h2.mvstore.WriteBuffer;
+import org.h2.mvstore.db.ValueDataType;
+import org.h2.mvstore.type.ExtendedDataType;
+import org.h2.result.SortOrder;
+import org.h2.store.DataHandler;
 import org.h2.util.MathUtils;
 import org.h2.util.StringUtils;
 
@@ -166,4 +175,102 @@ public class ValueString extends Value {
         return ValueString.get(s);
     }
 
+
+    public static final class Type extends ValueDataType implements ExtendedDataType {
+
+        public static final ValueInt.Type INSTANCE = new ValueInt.Type(null, null, null);
+
+        public Type(CompareMode compareMode, DataHandler handler, int[] sortTypes) {
+            super(compareMode, handler, sortTypes);
+        }
+
+        @Override
+        public Object createStorage(int size) {
+            return new String[size];
+        }
+
+        @Override
+        public Object clone(Object storage) {
+            return ((String[])storage).clone();
+        }
+
+        @Override
+        public int getLength(Object storage) {
+            return ((String[])storage).length;
+        }
+
+        @Override
+        public Object getValue(Object storage, int indx) {
+            return ValueString.get(((String[])storage)[indx]);
+        }
+
+        @Override
+        public void setValue(Object storage, int indx, Object value) {
+            ((String[])storage)[indx] = ((Value)value).getString();
+        }
+
+        @Override
+        public int getMemorySize(Object storage) {
+            int size = 0;
+            for (String s : ((String[]) storage)) {
+                size += s.length();
+            }
+            size *= 2;
+            size += getLength(storage) * (Constants.MEMORY_POINTER + Constants.MEMORY_OBJECT);
+            return size;
+        }
+
+        @Override
+        public int binarySearch(Object what, Object storage, int initialGuess) {
+            if (what == null) {
+                return -1;
+            }
+            if (what == ValueNull.INSTANCE) {
+                int sortType = SortOrder.ASCENDING;
+                return SortOrder.compareNull(true, sortType);
+            }
+            String[] data = (String[]) storage;
+            String key = ((Value) what).getString();
+            int low = 0;
+            int high = data.length - 1;
+            // the cached index minus one, so that
+            // for the first time (when cachedCompare is 0),
+            // the default value is used
+            int x = initialGuess - 1;
+            if (x < 0 || x > high) {
+                x = high >>> 1;
+            }
+            while (low <= high) {
+                int compare = key.compareTo(data[x]);
+                if (compare > 0) {
+                    low = x + 1;
+                } else if (compare < 0) {
+                    high = x - 1;
+                } else {
+                    return x;
+                }
+                x = (low + high) >>> 1;
+            }
+            x = -(low + 1);
+            return x;
+        }
+
+        @Override
+        public void writeStorage(WriteBuffer buff, Object storage) {
+            String[] data = (String[]) storage;
+            for (String x : data) {
+                buff.putVarInt(x.length());
+                buff.putStringData(x, x.length());
+            }
+        }
+
+        @Override
+        public void read(ByteBuffer buff, Object storage) {
+            String[] data = (String[]) storage;
+            for (int i = 0; i < data.length; i++) {
+                int len = DataUtils.readVarInt(buff);
+                data[i] = DataUtils.readString(buff, len);
+            }
+        }
+    }
 }

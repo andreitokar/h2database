@@ -14,9 +14,14 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
 
+import org.h2.mvstore.MVMap;
 import org.h2.mvstore.MVStore;
+import org.h2.mvstore.db.ValueDataType;
+import org.h2.mvstore.type.ObjectDataType;
 import org.h2.test.TestBase;
 import org.h2.util.New;
+import org.h2.value.ValueInt;
+import org.h2.value.ValueString;
 
 /**
  * Tests the performance and memory usage claims in the documentation.
@@ -153,15 +158,27 @@ public class TestMVStoreBenchmark extends TestBase {
         long hash = 0, tree = 0, mv = 0;
         for (int i = 0; i < 5; i++) {
             Map<Integer, String> map;
+/*
             MVStore store = MVStore.open(null);
             map = store.openMap("test");
+/*/
+            MVStore store = new MVStore.Builder().pageSplitSize(64).autoCommitDisabled().open();
+            MVMap.Builder<Integer, String> builder = new MVMap.Builder<Integer, String>()
+                    .keyType(ObjectDataType.IntegerType.INSTANCE)
+                    .valueType(ObjectDataType.StringType.INSTANCE);
+            map = store.openMap("test", builder);
+//*/
             mv = testPerformance(map, size);
+            store.close();
+
             map = new HashMap<Integer, String>(size);
             // map = new ConcurrentHashMap<Integer, String>(size);
             hash = testPerformance(map, size);
+
             map = new TreeMap<Integer, String>();
             // map = new ConcurrentSkipListMap<Integer, String>();
             tree = testPerformance(map, size);
+
             if (hash < tree && mv < tree * 1.5) {
                 break;
             }
