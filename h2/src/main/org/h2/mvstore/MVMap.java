@@ -218,9 +218,9 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 //            }
 
             CursorPos pos = traverseDown(rootReference.root, key);
-            if(rootReference != getRoot()) {
-                continue;
-            }
+//            if(rootReference != getRoot()) {
+//                continue;
+//            }
 
             ++attempt;
             Page p = pos.page;
@@ -229,25 +229,33 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             pos = pos.parent;
             final V result = index < 0 ? null : (V)p.getValue(index);
             Decision decision = decisionMaker.decide(result, value);
-            if(rootReference != getRoot()) {
-                decisionMaker.reset();
-                continue;
-            }
+//            if(attempt > 1 && rootReference != getRoot()) {
+//                decisionMaker.reset();
+//                continue;
+//            }
 
             int unsavedMemory = 0;
             boolean needUnlock = false;
             try {
                 switch (decision) {
                     case ABORT:
+                        if(rootReference != getRoot()) {
+                            decisionMaker.reset();
+                            continue;
+                        }
                         return result;
                     case REMOVE: {
                         if (index < 0) {
+                            if(rootReference != getRoot()) {
+                                decisionMaker.reset();
+                                continue;
+                            }
                             return result;
                         }
-                        if (!lockRoot(decisionMaker, rootReference, attempt, 13)) {
+//                        needUnlock = attempt > 1;
+                        if (/*needUnlock &&*/ !lockRoot(decisionMaker, rootReference, attempt, 13)) {
                             continue;
                         }
-                        needUnlock = true;
                         if (p.getTotalCount() == 1 && pos != null) {
                             p = pos.page;
                             index = pos.index;
@@ -264,10 +272,10 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                         break;
                     }
                     case PUT: {
-                        if (!lockRoot(decisionMaker, rootReference, attempt, 16)) {
+//                        needUnlock = attempt > 1;
+                        if (/*needUnlock &&*/ !lockRoot(decisionMaker, rootReference, attempt, 16)) {
                             continue;
                         }
-                        needUnlock = true;
                         value = (V) decisionMaker.selectValue(result, value);
                         if (index < 0) {
                             index = -index - 1;
@@ -276,7 +284,10 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                             int pageSplitSize = store.getPageSplitSize();
                             while (p.getMemory() > pageSplitSize && p.getKeyCount() > (p.isLeaf() ? 1 : 2)) {
                                 long totalCount = p.getTotalCount();
-                                int at = p.getKeyCount() / 2;
+                                int at = p.getKeyCount() >> 1;
+//                                int at = index < (p.getKeyCount() >> 2) ? p.getKeyCount() / 3 :
+//                                        index < (3 * p.getKeyCount() >> 2) ? 2 * p.getKeyCount() / 3 :
+//                                                p.getKeyCount() / 2;
                                 Object k = p.getKey(at);
                                 Page split = p.split(at);
                                 unsavedMemory += p.getMemory();
@@ -315,7 +326,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                     unsavedMemory += p.getMemory();
                     pos = pos.parent;
                 }
-                needUnlock = !newRoot(null, p, writeVersion, 0, false);
+                needUnlock = !newRoot(null, p, writeVersion, attempt, false);
                 assert !needUnlock : rootReference + " -> " + getRoot();
                 while (tip != null) {
                     tip.page.removePage();
@@ -335,7 +346,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
     private boolean lockRoot(DecisionMaker<? super V> decisionMaker, RootReference rootReference,
                              int attempt, int shift) {
-        boolean success = newRoot(rootReference, rootReference.root, writeVersion, attempt, true);
+        boolean success = newRoot(rootReference, rootReference.root, writeVersion, 0, true);
         if (!success) {
             decisionMaker.reset();
             if (attempt > 1) {
@@ -757,7 +768,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     /**
      * Use the new root page from now on.
      *
-     * @param oldRoot the old root reference, will use the current root reference, if nuul is specified
+     * @param oldRoot the old root reference, will use the current root reference, if null is specified
      * @param newRoot the new root page
      */
     protected final boolean newRoot(RootReference oldRoot, Page newRoot, long newVersion,
@@ -770,18 +781,17 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         RootReference previous = currentRoot;
         long updateCounter = 1;
         if(currentRoot != null) {
-            if(currentRoot.semaphor) {
-                if(semaphor) {
+            if(semaphor) {
+                if(currentRoot.semaphor) {
                     return false;
                 }
                 updateCounter = 0;
+                attemptUpdateCounter = 0;
             }
             long currentVersion = currentRoot.version;
 //            if (currentVersion > newVersion) {
 //                throw new IllegalStateException("Illegal root version change from " + currentVersion + " to " + newVersion);
 //            }
-
-//            removeUnusedOldVersions();
 
             if (currentVersion == newVersion) {
                 previous = currentRoot.previous;
