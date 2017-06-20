@@ -162,7 +162,7 @@ public class TestMVStoreBenchmark extends TestBase {
             MVStore store = MVStore.open(null);
             map = store.openMap("test");
 /*/
-            MVStore store = new MVStore.Builder().pageSplitSize(64).autoCommitDisabled().open();
+            MVStore store = new MVStore.Builder()/*.pageSplitSize(64).autoCommitDisabled()*/.open();
             MVMap.Builder<Integer, String> builder = new MVMap.Builder<Integer, String>()
                     .keyType(ObjectDataType.IntegerType.INSTANCE)
                     .valueType(ObjectDataType.StringType.INSTANCE);

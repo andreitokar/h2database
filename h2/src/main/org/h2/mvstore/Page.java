@@ -31,7 +31,7 @@ import org.h2.util.New;
  * leaf: values (one for each key)
  * node: children (1 more than keys)
  */
-public final class Page {
+public final class Page implements Cloneable {
 
     /**
      * An empty object array.
@@ -319,7 +319,8 @@ public final class Page {
     }
 
     public Page copy(boolean countRemoval) {
-        Page newPage = create(map, keys, values, children, totalCount, memory);
+//        Page newPage = create(map, keys, values, children, totalCount, memory);
+        Page newPage = clone();
         // mark the old as deleted
         if(countRemoval) {
             removePage();
@@ -327,8 +328,20 @@ public final class Page {
                 map.store.registerUnsavedPage(newPage.getMemory());
             }
         }
-        newPage.cachedCompare = cachedCompare;
+//        newPage.cachedCompare = cachedCompare;
         return newPage;
+    }
+
+    @Override
+    protected Page clone() {
+        Page clone;
+        try {
+            clone = (Page) super.clone();
+        } catch (CloneNotSupportedException impossible) {
+            throw new RuntimeException(impossible);
+        }
+        clone.pos = 0;
+        return clone;
     }
 
     /**

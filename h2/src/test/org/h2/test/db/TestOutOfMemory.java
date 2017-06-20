@@ -89,7 +89,7 @@ public class TestOutOfMemory extends TestBase {
             }
             store.closeImmediately();
             store = MVStore.open(fileName);
-            map = store.openMap("test");
+//            map = store.openMap("test");
             store.close();
         } finally {
             // just in case, otherwise if this test suffers a spurious failure,
