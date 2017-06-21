@@ -1424,7 +1424,7 @@ public class TestMVStore extends TestBase {
         // after node modification, whereas before it was on a way down
         // and before node modification
 //        assertEquals(117120, s.getUnsavedMemory());
-        assertEquals(132930, s.getUnsavedMemory());
+        assertEquals(97266, s.getUnsavedMemory());
         s.commit();
         assertEquals(2, s.getFileStore().getWriteCount());
         s.close();
@@ -1436,7 +1436,7 @@ public class TestMVStore extends TestBase {
         s.commit();
         // ensure only nodes are read, but not leaves
 //        assertEquals(45, s.getFileStore().getReadCount());
-        assertEquals(56, s.getFileStore().getReadCount());
+        assertEquals(30, s.getFileStore().getReadCount());
         assertTrue(s.getFileStore().getWriteCount() < 5);
         s.close();
     }

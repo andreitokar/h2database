@@ -1,12 +1,15 @@
 package org.h2.bytecode;
 
 import org.h2.engine.Constants;
+import org.h2.store.fs.FileUtils;
 import org.h2.value.*;
 import jdk.internal.org.objectweb.asm.ClassVisitor;
 import jdk.internal.org.objectweb.asm.ClassWriter;
 import jdk.internal.org.objectweb.asm.Label;
 import jdk.internal.org.objectweb.asm.MethodVisitor;
 
+import java.io.IOException;
+import java.io.OutputStream;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.util.HashMap;
@@ -179,7 +182,7 @@ public final class RowStorageGenerator {
     }
 
     public static void main(String[] args) {
-        int[] valueTypes = { Value.INT, Value.STRING, Value.UNKNOWN, Value.LONG };
+        int[] valueTypes = { Value.INT, Value.STRING, Value.UNKNOWN, Value.LONG, Value.DOUBLE };
 //*
         String className = getClassName(valueTypes);
         byte classBytes[] = generateStorageBytes(valueTypes, className);
@@ -197,7 +200,8 @@ public final class RowStorageGenerator {
                     ValueInt.get(3),
                     ValueString.get("Hello"),
                     ValueDate.fromMillis(System.currentTimeMillis()),
-                    ValueLong.get(77)
+                    ValueLong.get(77),
+                    ValueDouble.get(3.62)
             };
             RowStorage row = constructor.newInstance();
             row.setValues(initargs);
@@ -208,7 +212,8 @@ public final class RowStorageGenerator {
             rowTwo.setValue(0, ValueInt.get(5));
             rowTwo.setValue(1, ValueString.get("World"));
             rowTwo.setValue(2, ValueDate.parse("2001-09-11"));
-            rowTwo.setValue(3, ValueInt.get(999));
+            rowTwo.setValue(3, ValueLong.get(999));
+            rowTwo.setValue(4, ValueDouble.get(4.12));
             System.out.println(rowTwo);
             System.out.println("Comparison result:" + row.compare(rowTwo, null));
             System.out.println("Comparison result:" + rowTwo.compare(row, null));
@@ -224,6 +229,16 @@ public final class RowStorageGenerator {
             clazz = Class.forName(className, true, DynamicClassLoader.INSTANCE);
         } catch (ClassNotFoundException e) {
             byte[] classBytes = generateStorageBytes(valueTypes, className);
+
+            OutputStream outputStream = null;
+            try {
+                outputStream = FileUtils.newOutputStream("generated/" + className.replace('.', '/') + ".classs", false);
+                outputStream.write(classBytes);
+            } catch (IOException ex) {
+                throw new RuntimeException(ex);
+            } finally {
+                if(outputStream != null) try { outputStream.close(); } catch (IOException ignore) {/**/}
+            }
 //            className = className.replace('.','/');
             clazz = DynamicClassLoader.INSTANCE.defineClass(className, classBytes);
         }
@@ -353,12 +368,17 @@ public final class RowStorageGenerator {
         compareToVisitor.visitVarInsn(ALOAD, 1);
         compareToVisitor.visitTypeInsn(CHECKCAST, className);
         compareToVisitor.visitVarInsn(ASTORE, 3);
-        compareToVisitor.visitInsn(ICONST_0);
-        compareToVisitor.visitVarInsn(ISTORE, 4);
+//        compareToVisitor.visitInsn(ICONST_0);
+//        compareToVisitor.visitVarInsn(ISTORE, 4);
 
         Label retLabel = new Label();
 
         for (int indx = 0; indx < fieldCount; indx++) {
+            if(indx != 0) {
+                compareToVisitor.visitVarInsn(ILOAD, 4);
+                compareToVisitor.visitJumpInsn(IFNE, retLabel);
+            }
+
             ValueType valueType = ValueType.get(valueTypes[indx]);
 
             compareToVisitor.visitVarInsn(ALOAD, 0);
@@ -369,8 +389,6 @@ public final class RowStorageGenerator {
             valueType.visitCompareTo(compareToVisitor, className, indx);
 
             compareToVisitor.visitVarInsn(ISTORE, 4);
-            compareToVisitor.visitVarInsn(ILOAD, 4);
-            compareToVisitor.visitJumpInsn(IFNE, retLabel);
         }
 
         compareToVisitor.visitLabel(retLabel);

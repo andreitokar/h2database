@@ -45,7 +45,7 @@ public final class CompactRowFactory extends RowFactory {
     public Row createRow(Value[] data, int memory) {
         if(instance == null)
         {
-            return RowFactory.DEFAULT.createRow(data, memory);
+            return RowFactory.getDefaultRowFactory().createRow(data, memory);
         }
         RowStorage rowStorage = instance.clone();
         rowStorage.setValues(data);

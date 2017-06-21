@@ -349,7 +349,9 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         boolean success = lockRoot(rootReference);
         if (!success) {
             decisionMaker.reset();
-            if (attempt > 2) {
+            if (attempt == 3) {
+                Thread.yield();
+            } else if(attempt > 3) {
                 RootReference rf = getRoot();
                 long updateAttemptCounter = rf.updateAttemptCounter - rootReference.updateAttemptCounter;
                 assert updateAttemptCounter >= 0 : updateAttemptCounter;
@@ -367,9 +369,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
     private boolean lockRoot(RootReference rootReference) {
         return !rootReference.semaphore
-                && root.compareAndSet(rootReference,
-                                    new RootReference(rootReference.root, rootReference.version, rootReference.previous,
-                                                  rootReference.updateCounter, rootReference.updateAttemptCounter, true));
+            && root.compareAndSet(rootReference, new RootReference(rootReference));
     }
 
     private static CursorPos traverseDown(Page p, Object key) {
@@ -1520,6 +1520,15 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             this.updateCounter = updateCounter;
             this.updateAttemptCounter = updateAttemptCounter;
             this.semaphore = semaphore;
+        }
+
+        private RootReference(RootReference r) {
+            this.root = r.root;
+            this.version = r.version;
+            this.previous = r.previous;
+            this.updateCounter = r.updateCounter;
+            this.updateAttemptCounter = r.updateAttemptCounter;
+            this.semaphore = true;
         }
 
         @Override

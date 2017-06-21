@@ -198,7 +198,7 @@ public class Database implements DataHandler {
     private boolean queryStatistics;
     private int queryStatisticsMaxEntries = Constants.QUERY_STATISTICS_MAX_ENTRIES;
     private QueryStatisticsData queryStatisticsData;
-    private RowFactory rowFactory = RowFactory.DEFAULT;
+    private RowFactory rowFactory = RowFactory.getRowFactory();
 
     public Database(ConnectionInfo ci, String cipher) {
         String name = ci.getName();

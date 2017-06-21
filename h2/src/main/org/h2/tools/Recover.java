@@ -953,7 +953,7 @@ public class Recover extends Tool implements DataHandler {
             } else if (x == PageLog.ADD) {
                 int sessionId = in.readVarInt();
                 setStorage(in.readVarInt());
-                Row row = PageLog.readRow(RowFactory.DEFAULT, in, s);
+                Row row = PageLog.readRow(RowFactory.getRowFactory(), in, s);
                 writer.println("-- session " + sessionId +
                         " table " + storageId +
                         " + " + row.toString());

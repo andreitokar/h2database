@@ -1064,7 +1064,7 @@ public class ObjectDataType implements DataType {
     /**
      * The type for double objects.
      */
-    static class DoubleType extends AutoDetectDataType {
+    static final class DoubleType extends AutoDetectDataType implements ExtendedDataType {
 
         DoubleType(ObjectDataType base) {
             super(base, TYPE_DOUBLE);
@@ -1092,6 +1092,10 @@ public class ObjectDataType implements DataType {
                 return;
             }
             double x = (Double) obj;
+            write(buff, x);
+        }
+
+        private static void write(WriteBuffer buff, double x) {
             long d = Double.doubleToLongBits(x);
             if (d == ObjectDataType.DOUBLE_ZERO_BITS) {
                 buff.put((byte) TAG_DOUBLE_0);
@@ -1111,6 +1115,10 @@ public class ObjectDataType implements DataType {
 
         @Override
         public Object read(ByteBuffer buff, int tag) {
+            return readDouble(buff, tag);
+        }
+
+        private static double readDouble(ByteBuffer buff, int tag) {
             switch (tag) {
             case TAG_DOUBLE_0:
                 return 0d;
@@ -1119,10 +1127,89 @@ public class ObjectDataType implements DataType {
             case TAG_DOUBLE_FIXED:
                 return buff.getDouble();
             }
-            return Double.longBitsToDouble(Long.reverse(DataUtils
-                    .readVarLong(buff)));
+            return Double.longBitsToDouble(Long.reverse(DataUtils.readVarLong(buff)));
         }
 
+        @Override
+        public Object createStorage(int size) {
+            return new double[size];
+        }
+
+        @Override
+        public Object clone(Object storage) {
+            return ((double[])storage).clone();
+        }
+
+        @Override
+        public int getLength(Object storage) {
+            return ((double[])storage).length;
+        }
+
+        @Override
+        public Object getValue(Object storage, int indx) {
+            return ((double[])storage)[indx];
+        }
+
+        @Override
+        public void setValue(Object storage, int indx, Object value) {
+            ((double[])storage)[indx] = ((Double)value);
+        }
+
+        @Override
+        public int getMemorySize(Object storage) {
+            return getLength(storage) * 8;
+        }
+
+        @Override
+        public int binarySearch(Object what, Object storage, int initialGuess) {
+            if (what == null) {
+                return -1;
+            }
+            double[] data = (double[]) storage;
+            double key = ((Long) what);
+            int low = 0;
+            int high = data.length - 1;
+            // the cached index minus one, so that
+            // for the first time (when cachedCompare is 0),
+            // the default value is used
+            int x = initialGuess - 1;
+            if (x < 0 || x > high) {
+                x = high >>> 1;
+            }
+            return binarySearch(data, key, low, high, x);
+        }
+
+        private static int binarySearch(double[] data, double key, int low, int high, int x) {
+            while (low <= high) {
+                int compare = Double.compare(key, data[x]);
+                if (compare > 0) {
+                    low = x + 1;
+                } else if (compare < 0) {
+                    high = x - 1;
+                } else {
+                    return x;
+                }
+                x = (low + high) >>> 1;
+            }
+            x = -(low + 1);
+            return x;
+        }
+
+        @Override
+        public void writeStorage(WriteBuffer buff, Object storage) {
+            double[] data = (double[]) storage;
+            for (double x : data) {
+                write(buff, x);
+            }
+        }
+
+        @Override
+        public void read(ByteBuffer buff, Object storage) {
+            double[] data = (double[]) storage;
+            for (int i = 0; i < data.length; i++) {
+                data[i] = readDouble(buff, buff.get());
+            }
+        }
     }
 
     /**

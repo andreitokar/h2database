@@ -22,6 +22,7 @@ import org.h2.mvstore.db.TransactionStore;
 import org.h2.mvstore.db.TransactionStore.Change;
 import org.h2.mvstore.db.TransactionStore.Transaction;
 import org.h2.mvstore.db.TransactionStore.TransactionMap;
+import org.h2.mvstore.type.ObjectDataType;
 import org.h2.store.fs.FileUtils;
 import org.h2.test.TestBase;
 import org.h2.util.New;
@@ -350,7 +351,7 @@ public class TestTransactionStore extends TestBase {
             for (int back = 0; back < 100; back++) {
                 int minus = r.nextInt(10);
                 s.rollbackTo(Math.max(0, s.getCurrentVersion() - minus));
-                MVMap<?, ?> undo = s.openMap("undoLog");
+                MVMap<?, ?> undo = TransactionStore.openUndoLog(s, new ObjectDataType());
                 if (undo.size() > 0) {
                     break;
                 }

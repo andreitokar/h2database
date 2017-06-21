@@ -1104,6 +1104,7 @@ public final class MVStore {
         ArrayList<MVMap<?, ?>> list = New.arrayList(maps.values());
         ArrayList<Page> changed = New.arrayList();
         for (MVMap<?, ?> m : list) {
+            m.setWriteVersion(version);
             if (m.getCreateVersion() <= storeVersion && // if map was created after storing started, skip it
                     !m.isVolatile() &&
                     m.getVersion() >= lastStoredVersion) {
@@ -1814,11 +1815,10 @@ public final class MVStore {
 
         for (Chunk c : chunks.values()) {
             // ignore young chunks, because we don't optimize those
-            if (c.time + retentionTime > time) {
-                continue;
+            if (c.time + retentionTime <= time) {
+                maxLengthSum += c.maxLen;
+                maxLengthLiveSum += c.maxLenLive;
             }
-            maxLengthSum += c.maxLen;
-            maxLengthLiveSum += c.maxLenLive;
         }
         if (maxLengthLiveSum < 0) {
             // no old data
@@ -1841,12 +1841,11 @@ public final class MVStore {
             // only look at chunk older than the retention time
             // (it's possible to compact chunks earlier, but right
             // now we don't do that)
-            if (c.time + retentionTime > time) {
-                continue;
+            if (c.time + retentionTime <= time) {
+                long age = last.version - c.version + 1;
+                c.collectPriority = (int) (c.getFillRate() * 1000 / Math.max(1,age));
+                old.add(c);
             }
-            long age = last.version - c.version + 1;
-            c.collectPriority = (int) (c.getFillRate() * 1000 / Math.max(1,age));
-            old.add(c);
         }
         if (old.isEmpty()) {
             return null;
@@ -1856,11 +1855,9 @@ public final class MVStore {
         Collections.sort(old, new Comparator<Chunk>() {
             @Override
             public int compare(Chunk o1, Chunk o2) {
-                int comp = new Integer(o1.collectPriority).
-                        compareTo(o2.collectPriority);
+                int comp = Integer.compare(o1.collectPriority, o2.collectPriority);
                 if (comp == 0) {
-                    comp = new Long(o1.maxLenLive).
-                        compareTo(o2.maxLenLive);
+                    comp = Long.compare(o1.maxLenLive, o2.maxLenLive);
                 }
                 return comp;
             }

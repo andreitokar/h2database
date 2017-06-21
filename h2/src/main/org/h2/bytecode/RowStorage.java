@@ -19,7 +19,7 @@ import java.sql.SQLException;
  *
  * @author <a href='mailto:andrei.tokar@gmail.com'>Andrei Tokar</a>
  */
-public abstract class RowStorage extends Value implements Row, Cloneable {
+public class RowStorage extends Value implements Row, Cloneable {
 
     private static final int DELETED_BIT_MASK = Integer.MIN_VALUE;
     private static final byte[] NULL_BYTES = {};
@@ -30,7 +30,7 @@ public abstract class RowStorage extends Value implements Row, Cloneable {
     private int  version;
     private int  sessionId;
 
-    protected RowStorage() {}   // keep it for auto-generated subclasses
+    public RowStorage() {}   // keep it for auto-generated subclasses
 
     public final void setValues(Value values[]) {
         int valuesCount = values == null ? 0 : values.length;
@@ -44,12 +44,18 @@ public abstract class RowStorage extends Value implements Row, Cloneable {
     }
 
     @Override
-    public abstract int getColumnCount();
+    public int getColumnCount() {
+        return 0;
+    }
 
     @Override
-    public abstract int getMemory();
+    public int getMemory() {
+        return 0;
+    }
 
-    protected abstract int compareToSecure(RowStorage other, CompareMode mode);
+    protected int compareToSecure(RowStorage other, CompareMode mode) {
+        return 0;
+    }
 
     @Override
     public Value getValue(int index) {
@@ -348,7 +354,7 @@ public abstract class RowStorage extends Value implements Row, Cloneable {
     }
 
 
-    protected static Double getDouble(Value v)
+    protected static double getDouble(Value v)
     {
         return v == null ? Double.NEGATIVE_INFINITY : v == ValueNull.INSTANCE ? Double.NaN : v.getFloat();
     }

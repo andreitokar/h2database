@@ -6,6 +6,7 @@
 package org.h2.result;
 
 import org.h2.table.Column;
+import org.h2.table.CompactRowFactory;
 import org.h2.value.Value;
 
 /**
@@ -14,10 +15,21 @@ import org.h2.value.Value;
  * @author Sergi Vladykin
  */
 public abstract class RowFactory {
-    /**
-     * Default implementation of row factory.
-     */
-    public static final RowFactory DEFAULT = new DefaultRowFactory();
+
+    private static final class Holder {
+        static final RowFactory DEFAULT = new DefaultRowFactory();
+        static final RowFactory EFFECTIVE = new DefaultRowFactory();
+//        static final RowFactory EFFECTIVE = new CompactRowFactory();
+    }
+
+    public static RowFactory getDefaultRowFactory() {
+        return Holder.DEFAULT;
+    }
+
+    public static RowFactory getRowFactory() {
+        return Holder.EFFECTIVE;
+    }
+
 
     public RowFactory createRowFactory(Column columns[]) {
         return this;
@@ -35,7 +47,7 @@ public abstract class RowFactory {
     /**
      * Default implementation of row factory.
      */
-    static final class DefaultRowFactory extends RowFactory {
+    private static final class DefaultRowFactory extends RowFactory {
         @Override
         public Row createRow(Value[] data, int memory) {
             return new RowImpl(data, memory);

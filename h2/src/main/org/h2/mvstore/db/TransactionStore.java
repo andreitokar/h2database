@@ -103,18 +103,25 @@ public final class TransactionStore {
         preparedTransactions = store.openMap("openTransactions",
                 new MVMap.Builder<Integer, Object[]>());
 
+        undoLog = openUndoLog(store, dataType);
+    }
+
+    public static MVMap<Long, Record> openUndoLog(MVStore store, DataType dataType) {
         VersionedValueType oldValueType = new VersionedValueType(dataType);
         RecordType undoLogValueType = new RecordType(dataType, oldValueType);
 
         MVMap.Builder<Long, Record> builder =
                 new MVMap.Builder<Long, Record>().
                 valueType(undoLogValueType);
-        undoLog = store.openMap("undoLog", builder);
+        MVMap<Long, Record> undoLog = store.openMap("undoLog", builder);
+/*
         if (undoLog.getValueType() != undoLogValueType) {
             throw DataUtils.newIllegalStateException(
                     DataUtils.ERROR_TRANSACTION_CORRUPT,
                     "Undo map open with a different value type");
         }
+*/
+        return undoLog;
     }
 
     /**

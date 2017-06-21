@@ -76,7 +76,7 @@ public abstract class Table extends SchemaObjectBase {
     private boolean checkForeignKeyConstraints = true;
     private boolean onCommitDrop, onCommitTruncate;
     private volatile Row nullRow;
-    private RowFactory rowFactory = RowFactory.DEFAULT;
+    private RowFactory rowFactory = RowFactory.getRowFactory();
 
     public Table(Schema schema, int id, String name, boolean persistIndexes,
             boolean persistData) {
