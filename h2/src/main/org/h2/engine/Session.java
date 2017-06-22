@@ -30,6 +30,7 @@ import org.h2.message.Trace;
 import org.h2.message.TraceSystem;
 import org.h2.mvstore.db.MVPrimaryIndex;
 import org.h2.mvstore.db.MVTable;
+import org.h2.mvstore.db.MVTableEngine;
 import org.h2.mvstore.db.TransactionStore.Change;
 import org.h2.mvstore.db.TransactionStore.Transaction;
 import org.h2.result.ResultInterface;
@@ -813,6 +814,9 @@ public class Session extends SessionWithState {
                     savepoints.remove(name);
                 }
             }
+        }
+        if(queryCache != null) {
+            queryCache.clear();
         }
     }
 

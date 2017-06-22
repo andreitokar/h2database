@@ -19,6 +19,7 @@ import java.util.Map.Entry;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.h2.compress.CompressDeflate;
 import org.h2.compress.CompressLZF;
@@ -230,6 +231,9 @@ public final class MVStore {
      * The version of the last stored chunk, or -1 if nothing was stored so far.
      */
     private long lastStoredVersion = -1;
+
+//    private long oldestVersionToKeep = -1;
+    private final AtomicLong oldestVersionToKeep = new AtomicLong(-1);
 
     /**
      * The estimated memory used by unsaved pages. This number is not accurate,
@@ -1287,7 +1291,9 @@ public final class MVStore {
         long readCount = getFileStore().readCount;
         Set<Integer> referenced = New.hashSet();
         MVMap.RootReference rootReference = meta.getRoot();
-//        for (MVMap.RootReference rootReference = meta.getRoot(); rootReference != null; rootReference = rootReference.previous) {
+        long oldestVersionToKeep = this.oldestVersionToKeep.get();
+//        for (MVMap.RootReference rootReference = meta.getRoot(); rootReference != null && rootReference.version >= oldestVersionToKeep; rootReference = rootReference.previous) {
+            assert rootReference.version >= oldestVersionToKeep : rootReference.version + " >= " + oldestVersionToKeep;
             for (Cursor<String, String> c = new Cursor<>(meta, rootReference.root, "root.", true); c.hasNext(); ) {
                 String key = c.next();
                 if (!key.startsWith("root.")) {
@@ -1300,8 +1306,8 @@ public final class MVStore {
                         collectReferencedChunks(referenced, mapId, pos, 0);
 //                    }
                 }
-            }
-//        }
+//            }
+        }
         long pos = lastChunk.metaRootPos;
         assert meta.getId() == 0 : meta.getId();
         collectReferencedChunks(referenced, 0, pos, 0);
@@ -1971,19 +1977,21 @@ public final class MVStore {
             }
         }
 
-        Chunk c = getChunk(pos);
-        long version = currentVersion;
-        if (map == meta && currentStoreVersion >= 0) {
-            if (Thread.currentThread() == currentStoreThread) {
-                // if the meta map is modified while storing,
-                // then this freed page needs to be registered
-                // with the stored chunk, so that the old chunk
-                // can be re-used
-                version = currentStoreVersion;
+        Chunk c = getChunkIfFound(pos);
+        if(c != null) {
+            long version = currentVersion;
+            if (map == meta && currentStoreVersion >= 0) {
+                if (Thread.currentThread() == currentStoreThread) {
+                    // if the meta map is modified while storing,
+                    // then this freed page needs to be registered
+                    // with the stored chunk, so that the old chunk
+                    // can be re-used
+                    version = currentStoreVersion;
+                }
             }
+            registerFreePage(version, c.id,
+                    DataUtils.getPageMaxLength(pos), 1);
         }
-        registerFreePage(version, c.id,
-                DataUtils.getPageMaxLength(pos), 1);
     }
 
     private void registerFreePage(long version, int chunkId,
@@ -2106,7 +2114,16 @@ public final class MVStore {
      *
      * @return the version
      */
-    long getOldestVersionToKeep() {
+    public long getOldestVersionToKeep() {
+/*
+        long v = oldestVersionToKeep.get();
+        if(fileStore != null) {
+            long storeVersion = currentStoreVersion;
+            if (storeVersion > -1) {
+                v = Math.min(v, storeVersion);
+            }
+        }
+/*/
         long v = currentVersion;
         if (fileStore == null) {
             return v - versionsToKeep;
@@ -2115,7 +2132,17 @@ public final class MVStore {
         if (storeVersion > -1) {
             v = Math.min(v, storeVersion);
         }
+//*/
         return v;
+    }
+
+    public void setOldestVersionToKeep(long oldestVersionToKeep) {
+        boolean success;
+        do {
+            long current = this.oldestVersionToKeep.get();
+            success = current >= oldestVersionToKeep ||
+                      this.oldestVersionToKeep.compareAndSet(current, oldestVersionToKeep);
+        } while (!success);
     }
 
     /**

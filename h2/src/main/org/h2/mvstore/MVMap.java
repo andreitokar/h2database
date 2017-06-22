@@ -349,19 +349,21 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         boolean success = lockRoot(rootReference);
         if (!success) {
             decisionMaker.reset();
-            if (attempt == 3) {
-                Thread.yield();
-            } else if(attempt > 3) {
-                RootReference rf = getRoot();
-                long updateAttemptCounter = rf.updateAttemptCounter - rootReference.updateAttemptCounter;
-                assert updateAttemptCounter >= 0 : updateAttemptCounter;
-                long updateCounter = rf.updateCounter - rootReference.updateCounter;
-                assert updateCounter >= 0 : updateCounter;
-                assert updateAttemptCounter >= updateCounter : updateAttemptCounter + " >= " + updateCounter;
-                long pause = (updateAttemptCounter - updateCounter) * 500000 >> shift;
-                try {
-                    Thread.sleep(pause / 1000000, (int) (pause % 1000000));
-                } catch (InterruptedException ignore) {/**/}
+            if(attempt > 2) {
+                if (attempt == 3) {
+                    Thread.yield();
+                } else {
+                    RootReference rf = getRoot();
+                    long updateAttemptCounter = rf.updateAttemptCounter - rootReference.updateAttemptCounter;
+                    assert updateAttemptCounter >= 0 : updateAttemptCounter;
+                    long updateCounter = rf.updateCounter - rootReference.updateCounter;
+                    assert updateCounter >= 0 : updateCounter;
+                    assert updateAttemptCounter >= updateCounter : updateAttemptCounter + " >= " + updateCounter;
+                    long pause = (updateAttemptCounter - updateCounter) * 500000 >> shift;
+                    try {
+                        Thread.sleep(pause / 1000000, (int) (pause % 1000000));
+                    } catch (InterruptedException ignore) {/**/}
+                }
             }
         }
         return success;
@@ -902,6 +904,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @return whether rewriting was successful
      */
     final boolean rewrite(Set<Integer> set) {
+//*
         // read from old version, to avoid concurrent reads
         long previousVersion = store.getCurrentVersion() - 1;
         if (previousVersion < createVersion) {
@@ -916,8 +919,10 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             // TODO should not rely on exception handling
             return true;
         }
+//*/
         try {
             rewrite(readMap.getRootPage(), set);
+//            rewrite(getRootPage(), set);
             return true;
         } catch (IllegalStateException e) {
             // TODO should not rely on exception handling

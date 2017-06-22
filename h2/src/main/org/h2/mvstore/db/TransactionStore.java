@@ -13,6 +13,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
@@ -538,6 +539,23 @@ public final class TransactionStore {
                 spilledTransactions[transactionId - AVG_OPEN_TRANSACTIONS];
     }
 
+    private void updateOldestVersion() {
+        long result = Long.MAX_VALUE;
+        BitSet bitSet = openTransactions.get();
+        for(int i = bitSet.nextSetBit(0); i >= 0; i = bitSet.nextSetBit(i + 1)) {
+            Transaction tx = getTransaction(i);
+            if(tx != null) {
+                long oldestStoreVersion = tx.oldestStoreVersion;
+                if(oldestStoreVersion < result) {
+                    result = oldestStoreVersion;
+                }
+            }
+        }
+        if(result != Long.MAX_VALUE) {
+            this.store.setOldestVersionToKeep(result);
+        }
+    }
+
     /**
      * Rollback to an old savepoint.
      *
@@ -688,6 +706,8 @@ public final class TransactionStore {
          */
         long logId;
 
+        private long oldestStoreVersion = Long.MAX_VALUE;
+
         private int status;
 
         private String name;
@@ -762,6 +782,13 @@ public final class TransactionStore {
          * @return the savepoint id
          */
         public long setSavepoint() {
+
+//            long oldestStoreVersion = this.oldestStoreVersion;
+//            this.oldestStoreVersion = store.store.getCurrentVersion();
+//            if (oldestStoreVersion <= store.store.getOldestVersionToKeep()) {
+//                store.updateOldestVersion();
+//            }
+
             return logId;
         }
 
@@ -1338,7 +1365,7 @@ public final class TransactionStore {
                 Record d = (Record) Page.get(undoLogRootPage, id);
                 assert d != null : getTransactionId(id)+"/"+getLogId(id);
                 assert d.mapId == map.getId() : d.mapId + " != " + map.getId();
-                assert map.areValuesEqual(map.getKeyType(), d.key, key);
+                assert map.areValuesEqual(map.getKeyType(), d.key, key) : d.key + " <> " + key;
                 data = d.oldValue;
             }
         }
