@@ -211,28 +211,32 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     public V operate(K key, V value, DecisionMaker<? super V> decisionMaker) {
         beforeWrite();
         int attempt = 0;
+        RootReference oldRootReference = null;
         while(true) {
             RootReference rootReference = getRoot();
+            int contention = 0;
+            if (oldRootReference != null) {
+                long updateAttemptCounter = rootReference.updateAttemptCounter - oldRootReference.updateAttemptCounter;
+                assert updateAttemptCounter >= 0 : updateAttemptCounter;
+                long updateCounter = rootReference.updateCounter - oldRootReference.updateCounter;
+                assert updateCounter >= 0 : updateCounter;
+                assert updateAttemptCounter >= updateCounter : updateAttemptCounter + " >= " + updateCounter;
+                contention = (int)((updateAttemptCounter+1) / (updateCounter+1));
+            }
+            oldRootReference = rootReference;
+
 //            if(rootReference.version > version) {
 //                throw new IllegalStateException("Inconsistent versions, current:" + rootReference.version + ", new:" + version);
 //            }
 
-            CursorPos pos = traverseDown(rootReference.root, key);
-//            if(rootReference != getRoot()) {
-//                continue;
-//            }
-
             ++attempt;
+            CursorPos pos = traverseDown(rootReference.root, key);
             Page p = pos.page;
             int index = pos.index;
             CursorPos tip = pos;
             pos = pos.parent;
             final V result = index < 0 ? null : (V)p.getValue(index);
             Decision decision = decisionMaker.decide(result, value);
-//            if(attempt > 1 && rootReference != getRoot()) {
-//                decisionMaker.reset();
-//                continue;
-//            }
 
             int unsavedMemory = 0;
             boolean needUnlock = false;
@@ -248,7 +252,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                         if (index < 0) {
                             return result;
                         }
-                        if (attempt > 1 && !(needUnlock = lockRoot(decisionMaker, rootReference, attempt, 13))) {
+                        if (attempt > 1 && !(needUnlock = lockRoot(decisionMaker, rootReference, attempt, contention))) {
                             continue;
                         }
                         if (p.getTotalCount() == 1 && pos != null) {
@@ -267,7 +271,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                         break;
                     }
                     case PUT: {
-                        if (attempt > 1 && !(needUnlock = lockRoot(decisionMaker, rootReference, attempt, 16))) {
+                        if (attempt > 1 && !(needUnlock = lockRoot(decisionMaker, rootReference, attempt, contention))) {
                             continue;
                         }
                         value = decisionMaker.selectValue(result, value);
@@ -345,23 +349,16 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     }
 
     private boolean lockRoot(DecisionMaker<? super V> decisionMaker, RootReference rootReference,
-                             int attempt, int shift) {
+                             int attempt, int contention) {
         boolean success = lockRoot(rootReference);
         if (!success) {
             decisionMaker.reset();
-            if(attempt > 2) {
-                if (attempt == 3) {
+            if(attempt > 3) {
+                if (attempt <= 10) {
                     Thread.yield();
                 } else {
-                    RootReference rf = getRoot();
-                    long updateAttemptCounter = rf.updateAttemptCounter - rootReference.updateAttemptCounter;
-                    assert updateAttemptCounter >= 0 : updateAttemptCounter;
-                    long updateCounter = rf.updateCounter - rootReference.updateCounter;
-                    assert updateCounter >= 0 : updateCounter;
-                    assert updateAttemptCounter >= updateCounter : updateAttemptCounter + " >= " + updateCounter;
-                    long pause = (updateAttemptCounter - updateCounter) * 500000 >> shift;
                     try {
-                        Thread.sleep(pause / 1000000, (int) (pause % 1000000));
+                        Thread.sleep(0, 1000 / contention + 500);
                     } catch (InterruptedException ignore) {/**/}
                 }
             }

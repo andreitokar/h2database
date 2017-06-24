@@ -170,6 +170,10 @@ public class FreeSpaceBitSet {
         return getPos(set.nextClearBit(0));
     }
 
+    public long getLast() {
+        return getPos(set.previousSetBit(set.size()) + 1);
+    }
+
     @Override
     public String toString() {
         StringBuilder buff = new StringBuilder();

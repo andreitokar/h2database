@@ -1302,9 +1302,7 @@ public final class MVStore {
                 long pos = DataUtils.parseHexLong(c.getValue());
                 if (pos != 0) {
                     int mapId = DataUtils.parseHexInt(key.substring("root.".length()));
-//                    if(maps.contains(mapId)) {
-                        collectReferencedChunks(referenced, mapId, pos, 0);
-//                    }
+                    collectReferencedChunks(referenced, mapId, pos, 0);
                 }
 //            }
         }
@@ -1540,6 +1538,12 @@ public final class MVStore {
      * @return the position
      */
     private long getFileLengthInUse() {
+        long result = fileStore.getLast();
+        assert result == _getFileLengthInUse() : result + " != " + _getFileLengthInUse();
+        return result;
+    }
+
+    private long _getFileLengthInUse() {
         long size = 2;
         for (Chunk c : chunks.values()) {
             if (c.len != Integer.MAX_VALUE) {
