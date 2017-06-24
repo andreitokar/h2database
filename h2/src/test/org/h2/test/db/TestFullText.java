@@ -44,15 +44,18 @@ public class TestFullText extends TestBase {
      * @param a ignored
      */
     public static void main(String... a) throws Exception {
-        TestBase.createCaller().init().test();
+        TestBase init = TestBase.createCaller().init();
+        init.test();
+        init.config.multiThreaded = true;
+        init.test();
+        init.config.memory = true;
+        init.test();
+        init.config.multiThreaded = false;
+        init.test();
     }
 
     @Override
     public void test() throws Exception {
-        if (config.multiThreaded) {
-            // It is even mentioned in the docs that this is not supported
-            return;
-        }
         testUuidPrimaryKey(false);
         testAutoAnalyze();
         testNativeFeatures();
@@ -252,7 +255,7 @@ public class TestFullText extends TestBase {
         deleteDb("fullText");
         ArrayList<Connection> connList = new ArrayList<Connection>();
         try {
-            int len = 1;
+            int len = 2;
             Task[] task = new Task[len];
             for (int i = 0; i < len; i++) {
                 final Connection conn = getConnection("fullText", connList);

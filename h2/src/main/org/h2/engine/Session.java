@@ -28,9 +28,11 @@ import org.h2.jdbc.JdbcConnection;
 import org.h2.message.DbException;
 import org.h2.message.Trace;
 import org.h2.message.TraceSystem;
+import org.h2.mvstore.MVMap;
 import org.h2.mvstore.db.MVPrimaryIndex;
 import org.h2.mvstore.db.MVTable;
 import org.h2.mvstore.db.MVTableEngine;
+import org.h2.mvstore.db.TransactionStore;
 import org.h2.mvstore.db.TransactionStore.Change;
 import org.h2.mvstore.db.TransactionStore.Transaction;
 import org.h2.result.ResultInterface;
@@ -57,7 +59,8 @@ import org.h2.value.ValueString;
  * mode, this object resides on the server side and communicates with a
  * SessionRemote object on the client side.
  */
-public class Session extends SessionWithState {
+public class Session extends SessionWithState implements TransactionStore.RollbackListener {
+
     public enum State { INIT, RUNNING, BLOCKED, SLEEP, CLOSED }
 
     /**
@@ -775,34 +778,7 @@ public class Session extends SessionWithState {
         }
         if (transaction != null) {
             long savepointId = savepoint == null ? 0 : savepoint.transactionSavepoint;
-/*
             transaction.rollbackToSavepoint(savepointId);
-/*/
-            HashMap<String, MVTable> tableMap =
-                    database.getMvStore().getTables();
-            Iterator<Change> it = transaction.getChanges(savepointId);
-            while (it.hasNext()) {
-                Change c = it.next();
-                MVTable t = tableMap.get(c.mapName);
-                if (t != null) {
-                    long key = ((ValueLong) c.key).getLong();
-                    Value value = (Value) c.value;
-                    short op;
-                    Row row;
-                    if (value == null) {
-                        op = UndoLogRecord.INSERT;
-                        row = t.getRow(this, key);
-                    } else {
-                        op = UndoLogRecord.DELETE;
-//                        row = t.createRow(value.getList(), Row.MEMORY_CALCULATE);
-                        row = MVPrimaryIndex.convertValueToRow(key, value, t);
-                    }
-//                    row.setKey(key);
-                    UndoLogRecord log = new UndoLogRecord(t, op, row);
-                    log.undo(this);
-                }
-            }
-//*/
         }
         if (savepoints != null) {
             String[] names = new String[savepoints.size()];
@@ -1653,7 +1629,7 @@ public class Session extends SessionWithState {
                 database.shutdownImmediately();
                 throw DbException.get(ErrorCode.DATABASE_IS_CLOSED);
             }
-            transaction = database.getMvStore().getTransactionStore().begin();
+            transaction = database.getMvStore().getTransactionStore().begin(this);
             transaction.setOwnerId(id);
             startStatement = -1;
         }
@@ -1736,6 +1712,28 @@ public class Session extends SessionWithState {
 
     public int getBlockingSessionId() {
         return transaction == null ? 0 : transaction.getBlockerId();
+    }
+
+    @Override
+    public void onRollback(MVMap<Object, TransactionStore.VersionedValue> map, Object key,
+                           TransactionStore.VersionedValue existingValue,
+                           TransactionStore.VersionedValue restoredValue) {
+        // Here we are relying on the fact that map which backs tabel's primary index
+        // has the same name as the table itself
+        MVTable table = database.getMvStore().getTable(map.getName());
+        if(table != null) {
+            long recKey = ((ValueLong)key).getLong();
+            Row oldRow = getRowFromVersionedValue(table, recKey, existingValue);
+            Row newRow = getRowFromVersionedValue(table, recKey, restoredValue);
+            table.fireAfterRow(this, oldRow, newRow, true);
+        }
+    }
+
+    private static Row getRowFromVersionedValue(MVTable table, long recKey,
+                                                TransactionStore.VersionedValue versionedValue) {
+
+        Value value = versionedValue == null ? null : (Value)versionedValue.value;
+        return value == null ? null : MVPrimaryIndex.convertValueToRow(recKey, value, table);
     }
 
     /**

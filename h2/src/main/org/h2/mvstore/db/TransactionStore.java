@@ -93,7 +93,7 @@ public final class TransactionStore {
 
     /**
      * Create a new transaction store.
-     *  @param store the store
+     * @param store the store
      * @param dataType the data type for map keys and values
      * @param timeoutMillis wait for Tx to commit in multithread mode, 0 otherwise
      */
@@ -130,7 +130,11 @@ public final class TransactionStore {
      * If the transaction store is corrupt, this method can throw an exception,
      * in which case the store can only be used for reading.
      */
-    public synchronized void init() {
+    public void init() {
+        init(RollbackListener.NONE);
+    }
+
+    public synchronized void init(RollbackListener listener) {
         if(!init) {
             init = true;
             // remove all temporary maps
@@ -161,7 +165,7 @@ public final class TransactionStore {
                     name = (String) data[1];
                 }
                 Transaction t = new Transaction(this, transactionId, status,
-                        name, logId);
+                                                name, logId, listener);
                 boolean success;
                 do {
                     BitSet original = openTransactions.get();
@@ -260,6 +264,10 @@ public final class TransactionStore {
      * @return the transaction
      */
     public Transaction begin() {
+        return begin(RollbackListener.NONE);
+    }
+
+    public Transaction begin(RollbackListener listener) {
         if (!init) {
             throw DataUtils.newIllegalStateException(
                     DataUtils.ERROR_TRANSACTION_ILLEGAL_STATE,
@@ -281,7 +289,8 @@ public final class TransactionStore {
             success = openTransactions.compareAndSet(original, clone);
         } while(!success);
         int status = Transaction.STATUS_OPEN;
-        Transaction transaction = new Transaction(this, transactionId, status, null, 0);
+        Transaction transaction = new Transaction(this, transactionId, status,
+                                                  null, 0, listener);
         registerTransaction(transaction);
         return transaction;
     }
@@ -566,7 +575,7 @@ public final class TransactionStore {
         long toOperationId = getOperationId(t.getId(), toLogId);
         for (long logId = t.logId - 1; logId >= toLogId; logId--) {
             Long undoKey = getOperationId(t.getId(), logId);
-            undoLog.operate(undoKey, null, new RollbackDecisionMaker(this, toOperationId));
+            undoLog.operate(undoKey, null, new RollbackDecisionMaker(this, toOperationId, t.listener));
         }
     }
 
@@ -696,6 +705,8 @@ public final class TransactionStore {
          */
         final TransactionStore store;
 
+        final RollbackListener listener;
+
         /**
          * The transaction id.
          */
@@ -717,12 +728,13 @@ public final class TransactionStore {
         private int ownerId;
 
         private Transaction(TransactionStore store, int transactionId, int status,
-                            String name, long logId) {
+                            String name, long logId, RollbackListener listener) {
             this.store = store;
             this.transactionId = transactionId;
             this.status = status;
             this.name = name;
             this.logId = logId;
+            this.listener = listener;
         }
 
         private Transaction(Transaction tx) {
@@ -733,6 +745,7 @@ public final class TransactionStore {
             this.logId = tx.logId;
             this.blockingTransactionId = tx.blockingTransactionId;
             this.ownerId = tx.ownerId;
+            this.listener = RollbackListener.NONE;
         }
 
         public int getId() {
@@ -2061,31 +2074,45 @@ public final class TransactionStore {
         }
     }
 
+    public interface RollbackListener {
+        RollbackListener NONE = new RollbackListener() {
+            @Override
+            public void onRollback(MVMap<Object, VersionedValue> map, Object key, VersionedValue existingValue, VersionedValue restoredValue) {
+
+            }
+        };
+        void onRollback(MVMap<Object,VersionedValue> map, Object key,
+                        VersionedValue existingValue, VersionedValue restoredValue);
+    }
+
     private static final class RollbackDecisionMaker extends MVMap.DecisionMaker<Record> {
         private final TransactionStore store;
-        private final long toOperationId;
-        private MVMap.Decision decision;
+        private final long             toOperationId;
+        private final RollbackListener listener;
+        private       MVMap.Decision   decision;
 
-        private RollbackDecisionMaker(TransactionStore store, long toOperationId) {
+        private RollbackDecisionMaker(TransactionStore store, long toOperationId, RollbackListener listener) {
             this.store = store;
             this.toOperationId = toOperationId;
+            this.listener = listener;
         }
 
         @Override
         public MVMap.Decision decide(Record existingValue, Record providedValue) {
             assert decision == null;
             assert existingValue != null;
-            VersionedValue oldValue = existingValue.oldValue;
+            VersionedValue valueToRestore = existingValue.oldValue;
             long operationId;
-            if(oldValue == null ||
-                    (operationId = oldValue.operationId) == 0 ||
+            if(valueToRestore == null ||
+                    (operationId = valueToRestore.operationId) == 0 ||
                     getTransactionId(operationId) == getTransactionId(toOperationId)
                             && getLogId(operationId) <= getLogId(toOperationId)) {
                 int mapId = existingValue.mapId;
                 MVMap<Object, VersionedValue> map = store.openMap(mapId);
                 if(map != null) {
                     Object key = existingValue.key;
-                    map.operate(key, oldValue, MVMap.DecisionMaker.DEFAULT);
+                    VersionedValue previousValue = map.operate(key, valueToRestore, MVMap.DecisionMaker.DEFAULT);
+                    listener.onRollback(map, key, previousValue, valueToRestore);
                 }
             }
             decision = MVMap.Decision.REMOVE;

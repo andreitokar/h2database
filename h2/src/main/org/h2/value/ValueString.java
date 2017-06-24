@@ -9,7 +9,6 @@ import java.nio.ByteBuffer;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 
-import com.sun.tools.internal.jxc.ap.Const;
 import org.h2.engine.Constants;
 import org.h2.engine.SysProperties;
 import org.h2.mvstore.DataUtils;

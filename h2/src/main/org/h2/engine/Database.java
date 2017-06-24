@@ -723,6 +723,9 @@ public class Database implements DataHandler {
         systemUser.setAdmin(true);
         systemSession = new Session(this, systemUser, ++nextSessionId);
         lobSession = new Session(this, systemUser, ++nextSessionId);
+        if(mvStore != null) {
+            mvStore.getTransactionStore().init(systemSession);
+        }
         CreateTableData data = new CreateTableData();
         ArrayList<Column> cols = data.columns;
         Column columnId = new Column("ID", Value.INT);
@@ -758,10 +761,8 @@ public class Database implements DataHandler {
             records.add(rec);
         }
         Collections.sort(records);
-        synchronized (systemSession) {
-            for (MetaRecord rec : records) {
-                rec.execute(this, systemSession, eventListener);
-            }
+        for (MetaRecord rec : records) {
+            rec.execute(this, systemSession, eventListener);
         }
         systemSession.commit(true);
         if (mvStore != null) {
@@ -1459,7 +1460,7 @@ public class Database implements DataHandler {
         r.setValue(0, ValueInt.get(id));
         Cursor cursor = metaIdIndex.find(session, r, r);
         if (cursor.next()) {
-            DbException.throwInternalError();
+            throw DbException.throwInternalError();
         }
     }
 

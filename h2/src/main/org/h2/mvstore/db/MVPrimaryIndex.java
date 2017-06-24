@@ -275,7 +275,7 @@ public class MVPrimaryIndex extends BaseIndex {
         Value v = map.get(ValueLong.get(key));
         if (v == null) {
             throw DbException.get(ErrorCode.ROW_NOT_FOUND_IN_PRIMARY_INDEX,
-                    getSQL() + ": " + key);
+                    getSQL(), String.valueOf(key));
         }
         Row row = convertValueToRow(key, v);
         return row;

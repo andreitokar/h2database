@@ -180,13 +180,11 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
             if(newRoot(rootReference, p, writeVersion, attempt, false)) {
                 return result;
             }
-            if(decisionMaker != null) {
-                decisionMaker.reset();
-            }
+            decisionMaker.reset();
         }
     }
 
-    private V operate(Page p, Object key, Object value, DecisionMaker decisionMaker) {
+    private V operate(Page p, Object key, V value, DecisionMaker<? super V> decisionMaker) {
         V result = null;
         if (p.isLeaf()) {
             int indx = -1;
@@ -196,9 +194,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
                 }
             }
             result = indx < 0 ? null : (V)p.getValue(indx);
-            Decision decision = decisionMaker != null ? decisionMaker.decide(result, value) :
-                                value == null         ? Decision.REMOVE :
-                                                        Decision.PUT;
+            Decision decision = decisionMaker.decide(result, value);
             switch (decision) {
                 case ABORT: break;
                 case REMOVE:
@@ -207,9 +203,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
                     }
                     break;
                 case PUT:
-                    if(decisionMaker != null) {
-                        value = decisionMaker.selectValue(result, value);
-                    }
+                    value = decisionMaker.selectValue(result, value);
                     if(indx < 0) {
                         p.insertLeaf(p.getKeyCount(), key, value);
                     } else {
@@ -235,9 +229,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
                     result = operate(c, key, value, decisionMaker);
                     p.setChild(i, c);
                     if (oldSize == c.getTotalCount()) {
-                        if(decisionMaker != null) {
-                            decisionMaker.reset();
-                        }
+                        decisionMaker.reset();
                         continue;
                     }
                     if (c.getTotalCount() == 0) {

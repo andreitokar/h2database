@@ -958,7 +958,7 @@ public final class Page implements Cloneable {
         return removed;
     }
 
-    Object createKeyStorage(int size)
+    private Object createKeyStorage(int size)
     {
         return map.getExtendedKeyType().createStorage(size);
     }
@@ -973,8 +973,8 @@ public final class Page implements Cloneable {
      */
     public static final class PageReference {
 
-        public static PageReference EMPTY = new PageReference(null, 0, 0);
-        public static PageReference SINGLE_EMPTY[] = {EMPTY};
+        public static final PageReference EMPTY = new PageReference(null, 0, 0);
+        public static final PageReference SINGLE_EMPTY[] = {EMPTY};
 
         /**
          * The position, if known, or 0.
@@ -984,27 +984,26 @@ public final class Page implements Cloneable {
         /**
          * The page, if in memory, or null.
          */
-        final Page page;
+        private final Page page;
 
         /**
          * The descendant count for this child page.
          */
-        final long count;
+        private final long count;
 
         public PageReference(Page page) {
             this(page, page.pos, page.totalCount);
         }
 
-        public PageReference(long pos, long count) {
+        private PageReference(long pos, long count) {
             this(null, pos, count);
         }
 
-        public PageReference(Page page, long pos, long count) {
+        private PageReference(Page page, long pos, long count) {
             this.page = page;
             this.pos = pos;
             this.count = count;
         }
-
     }
 
     /**
@@ -1018,7 +1017,7 @@ public final class Page implements Cloneable {
         /**
          * An empty array of type long.
          */
-        public static final long[] EMPTY_ARRAY = new long[0];
+        private static final long[] EMPTY_ARRAY = new long[0];
 
         /**
          * The position of the page.

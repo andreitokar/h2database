@@ -187,7 +187,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         };
 
         public abstract Decision decide(V existingValue, V providedValue);
-        public V selectValue(V existingValue, V providedValue) {
+        public <T extends V> T selectValue(T existingValue, T providedValue) {
             return providedValue;
         }
         public void reset() {}
@@ -270,7 +270,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                         if (attempt > 1 && !(needUnlock = lockRoot(decisionMaker, rootReference, attempt, 16))) {
                             continue;
                         }
-                        value = (V) decisionMaker.selectValue(result, value);
+                        value = decisionMaker.selectValue(result, value);
                         if (index < 0) {
                             index = -index - 1;
                             p = p.copy();
@@ -707,7 +707,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     @Override
     public boolean remove(Object key, Object value) {
         EqualsDecisionMaker<V> decisionMaker = new EqualsDecisionMaker<V>(valueType, (V)value);
-        V result = operate((K)key, null, decisionMaker);
+        operate((K)key, null, decisionMaker);
         return decisionMaker.decision != Decision.ABORT;
     }
 
@@ -1489,10 +1489,8 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         @Override
         public Decision decide(V existingValue, V providedValue) {
             assert decision == null;
-//            if(decision == null) {
-                decision = !areValuesEqual(dataType, expectedValue, existingValue) ? Decision.ABORT :
-                                                providedValue == null ? Decision.REMOVE : Decision.PUT;
-//            }
+            decision = !areValuesEqual(dataType, expectedValue, existingValue) ? Decision.ABORT :
+                                            providedValue == null ? Decision.REMOVE : Decision.PUT;
             return decision;
         }
 

@@ -109,15 +109,15 @@ public class TestOutOfMemory extends TestBase {
                     "select x, space(10000000) from system_range(1, 1000)");
             fail();
         } catch (SQLException e) {
-            assertTrue(ErrorCode.OUT_OF_MEMORY == e.getErrorCode() || ErrorCode.GENERAL_ERROR_1 == e.getErrorCode());
-//            assertEquals(ErrorCode.GENERAL_ERROR_1, e.getErrorCode());
+            assertTrue("Unexpected error code: " + e.getErrorCode(),
+                        ErrorCode.OUT_OF_MEMORY == e.getErrorCode() || ErrorCode.GENERAL_ERROR_1 == e.getErrorCode());
         }
         try {
             conn.close();
             fail();
         } catch (SQLException e) {
-            assertTrue(ErrorCode.OUT_OF_MEMORY == e.getErrorCode() || ErrorCode.GENERAL_ERROR_1 == e.getErrorCode());
-//            assertEquals(ErrorCode.GENERAL_ERROR_1, e.getErrorCode());
+            assertTrue("Unexpected error code: " + e.getErrorCode(),
+                        ErrorCode.OUT_OF_MEMORY == e.getErrorCode() || ErrorCode.GENERAL_ERROR_1 == e.getErrorCode());
         }
         conn = DriverManager.getConnection(url);
         stat = conn.createStatement();

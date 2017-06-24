@@ -160,10 +160,8 @@ public class MVTableEngine implements TableEngine {
                 if (!db.getSettings().reuseSpace) {
                     store.setReuseSpace(false);
                 }
-                this.transactionStore = new TransactionStore(
-                        store,
-                        new ValueDataType(null, db, null), 10000);
-                transactionStore.init();
+                this.transactionStore = new TransactionStore(store,
+                                                new ValueDataType(null, db, null), 10000);
             } catch (IllegalStateException e) {
                 throw convertIllegalStateException(e);
             }
@@ -211,8 +209,8 @@ public class MVTableEngine implements TableEngine {
             return transactionStore;
         }
 
-        public HashMap<String, MVTable> getTables() {
-            return new HashMap<String, MVTable>(tableMap);
+        public MVTable getTable(String tableName) {
+            return tableMap.get(tableName);
         }
 
         /**
