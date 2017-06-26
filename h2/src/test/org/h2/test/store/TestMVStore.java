@@ -50,16 +50,16 @@ public class TestMVStore extends TestBase {
 
     @Override
     public void test() throws Exception {
-        testRemoveMapRollback();
-        testProvidedFileStoreNotOpenedAndClosed();
-        testVolatileMap();
-        testEntrySet();
-        testCompressEmptyPage();
-        testCompressed();
-        testFileFormatExample();
-        testMaxChunkLength();
-        testCacheInfo();
-        testRollback();
+//        testRemoveMapRollback();
+//        testProvidedFileStoreNotOpenedAndClosed();
+//        testVolatileMap();
+//        testEntrySet();
+//        testCompressEmptyPage();
+//        testCompressed();
+//        testFileFormatExample();
+//        testMaxChunkLength();
+//        testCacheInfo();
+//        testRollback();
         testVersionsToKeep();
         testVersionsToKeep2();
         testRemoveMap();
@@ -314,6 +314,7 @@ public class TestMVStore extends TestBase {
 
     private void testVersionsToKeep() throws Exception {
         MVStore s = new MVStore.Builder().open();
+        assertEquals(5, s.getVersionsToKeep());
         MVMap<Integer, Integer> map;
         map = s.openMap("data");
         for (int i = 0; i < 20; i++) {

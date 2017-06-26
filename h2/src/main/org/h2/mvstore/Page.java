@@ -8,7 +8,6 @@ package org.h2.mvstore;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.HashSet;
-import java.util.Set;
 
 import org.h2.compress.Compressor;
 import org.h2.mvstore.type.ExtendedDataType;
@@ -385,6 +384,7 @@ public final class Page implements Cloneable {
         return isLeaf() ? splitLeaf(at) : splitNode(at);
     }
 
+    @SuppressWarnings("SuspiciousSystemArraycopy")
     private Page splitLeaf(int at) {
         int b = getKeyCount() - at;
         Object aKeys = createKeyStorage(at);
@@ -408,6 +408,7 @@ public final class Page implements Cloneable {
         return newPage;
     }
 
+    @SuppressWarnings("SuspiciousSystemArraycopy")
     private Page splitNode(int at) {
         int b = getKeyCount() - at;
         Object aKeys = createKeyStorage(at);
@@ -1114,9 +1115,10 @@ public final class Page implements Cloneable {
             }
             int len = DataUtils.readVarInt(buff);
             int type = buff.get();
-            boolean node = (type & 1) == DataUtils.PAGE_TYPE_NODE;
-            if (!node) {
-                return null;
+            if ((type & 1) != DataUtils.PAGE_TYPE_NODE) {
+                throw DataUtils.newIllegalStateException(
+                        DataUtils.ERROR_FILE_CORRUPT,
+                        "Position {0} expected to be a non-leaf", pos);
             }
             long[] children = new long[len + 1];
             for (int i = 0; i <= len; i++) {
@@ -1148,18 +1150,6 @@ public final class Page implements Cloneable {
             }
         }
 
-        /**
-         * Collect the set of chunks referenced directly by this page.
-         *
-         * @param target the target set
-         */
-        void collectReferencedChunks(Set<Integer> target) {
-            target.add(DataUtils.getPageChunkId(pos));
-            for (long p : children) {
-                target.add(DataUtils.getPageChunkId(p));
-            }
-        }
-
         private void removeChild(int index) {
             if (index == 0 && children.length == 1) {
                 children = EMPTY_ARRAY;
@@ -1169,7 +1159,5 @@ public final class Page implements Cloneable {
             DataUtils.copyExcept(children, c2, children.length, index);
             children = c2;
         }
-
     }
-
 }

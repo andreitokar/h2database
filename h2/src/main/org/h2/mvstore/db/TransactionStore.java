@@ -796,11 +796,11 @@ public final class TransactionStore {
          */
         public long setSavepoint() {
 
-//            long oldestStoreVersion = this.oldestStoreVersion;
-//            this.oldestStoreVersion = store.store.getCurrentVersion();
-//            if (oldestStoreVersion <= store.store.getOldestVersionToKeep()) {
-//                store.updateOldestVersion();
-//            }
+            long oldestStoreVersion = this.oldestStoreVersion;
+            this.oldestStoreVersion = store.store.getCurrentVersion();
+            if (oldestStoreVersion <= store.store.getOldestVersionToKeep()) {
+                store.updateOldestVersion();
+            }
 
             return logId;
         }

@@ -30,6 +30,8 @@ import org.h2.mvstore.type.StringDataType;
 import org.h2.util.MathUtils;
 import org.h2.util.New;
 
+import static org.h2.mvstore.MVMap.INITIAL_VERSION;
+
 /*
 
 TODO:
@@ -144,6 +146,7 @@ public final class MVStore {
      * is incorrect.
      */
     private static final int MARKED_FREE = 10000000;
+    private static final long NOT_SET = Long.MAX_VALUE;
 
     /**
      * The background thread, if any.
@@ -230,10 +233,9 @@ public final class MVStore {
     /**
      * The version of the last stored chunk, or -1 if nothing was stored so far.
      */
-    private long lastStoredVersion = -1;
+    private long lastStoredVersion = INITIAL_VERSION;
 
-//    private long oldestVersionToKeep = -1;
-    private final AtomicLong oldestVersionToKeep = new AtomicLong(-1);
+    private final AtomicLong oldestVersionToKeep = new AtomicLong(NOT_SET);
 
     /**
      * The estimated memory used by unsaved pages. This number is not accurate,
@@ -460,7 +462,7 @@ public final class MVStore {
             x = Integer.toHexString(id);
             meta.put(MVMap.getMapKey(id), map.asString(name));
             meta.put("name." + name, x);
-            map.setRootPos(0, -1);
+            map.setRootPos(0);
             @SuppressWarnings("unchecked")
             M existingMap = (M)maps.putIfAbsent(id, map);
             if(existingMap != null) {
@@ -484,7 +486,7 @@ public final class MVStore {
                 config.put("id", id);
                 map.init(this, config);
                 long root = getRootPos(meta, id);
-                map.setRootPos(root, -1);
+                map.setRootPos(root);
                 maps.put(id, map);
 
             }
@@ -536,7 +538,6 @@ public final class MVStore {
 
     private MVMap<String, String> getMetaMap(long version) {
         Chunk c = getChunkForVersion(version);
-//        DataUtils.checkArgument(c != null, "Unknown version {0}", version);
         if(c == null || c.block == Long.MAX_VALUE) {
             return meta;
         } else {
@@ -574,7 +575,7 @@ public final class MVStore {
         metaChanged = true;
     }
 
-    private synchronized void readStoreHeader() {
+    private void readStoreHeader() {
         Chunk newest = null;
         boolean validStoreHeader = false;
         // find out which chunk and version are the newest
@@ -617,9 +618,7 @@ public final class MVStore {
                         newest = test;
                     }
                 }
-            } catch (Exception e) {
-                continue;
-            }
+            } catch (Exception ignore) {/**/}
         }
         if (!validStoreHeader) {
             throw DataUtils.newIllegalStateException(
@@ -731,12 +730,12 @@ public final class MVStore {
             // no valid chunk
             lastMapId = 0;
             currentVersion = 0;
-            meta.setRootPos(0, -1);
+            meta.setRootPos(0);
         } else {
             lastMapId = last.mapId;
             currentVersion = last.version;
             chunks.put(last.id, last);
-            meta.setRootPos(last.metaRootPos, -1);
+            meta.setRootPos(last.metaRootPos);
         }
         setWriteVersion(currentVersion);
     }
@@ -932,17 +931,6 @@ public final class MVStore {
     }
 
     /**
-     * Whether the chunk at the given position is live.
-     *
-     * @param chunkId the chunk id
-     * @return true if it is live
-     */
-    boolean isChunkLive(int chunkId) {
-        String s = meta.get(Chunk.getMetaKey(chunkId));
-        return s != null;
-    }
-
-    /**
      * Get the chunk for the given position.
      *
      * @param pos the position
@@ -984,9 +972,7 @@ public final class MVStore {
             map.setWriteVersion(version);
         }
         MVMap<String, String> m = meta;
-        if (m == null) {
-            checkOpen();
-        }
+        assert m != null;
         m.setWriteVersion(version);
     }
 
@@ -1108,12 +1094,12 @@ public final class MVStore {
         ArrayList<MVMap<?, ?>> list = New.arrayList(maps.values());
         ArrayList<Page> changed = New.arrayList();
         for (MVMap<?, ?> m : list) {
-            m.setWriteVersion(version);
+            MVMap.RootReference rootReference = m.setWriteVersion(version);
             if (m.getCreateVersion() <= storeVersion && // if map was created after storing started, skip it
                     !m.isVolatile() &&
                     m.getVersion() >= lastStoredVersion) {
 
-                Page rootPage = m.openVersion(storeVersion).getRootPage();
+                Page rootPage = rootReference.root;
                 if (rootPage.getPos() == 0 ||
                         // after deletion previously saved leaf
                         // may pop up as a root, but we stiil need
@@ -1290,12 +1276,15 @@ public final class MVStore {
         DataUtils.checkArgument(testVersion > 0, "Collect references on version 0");
         long readCount = getFileStore().readCount;
         Set<Integer> referenced = New.hashSet();
-        MVMap.RootReference rootReference = meta.getRoot();
+//        MVMap.RootReference rootReference = meta.getRoot();
         long oldestVersionToKeep = this.oldestVersionToKeep.get();
-//        for (MVMap.RootReference rootReference = meta.getRoot(); rootReference != null && rootReference.version >= oldestVersionToKeep; rootReference = rootReference.previous) {
-            assert rootReference.version >= oldestVersionToKeep : rootReference.version + " >= " + oldestVersionToKeep;
+        for (MVMap.RootReference rootReference = meta.getRoot();
+                rootReference != null && (rootReference.version >= oldestVersionToKeep || rootReference.version < 0);
+                rootReference = rootReference.previous) {
+            assert rootReference.version >= oldestVersionToKeep || rootReference.version < 0 : rootReference.version + " >= " + oldestVersionToKeep;
             for (Cursor<String, String> c = new Cursor<>(meta, rootReference.root, "root.", true); c.hasNext(); ) {
                 String key = c.next();
+                assert key != null;
                 if (!key.startsWith("root.")) {
                     break;
                 }
@@ -1304,7 +1293,7 @@ public final class MVStore {
                     int mapId = DataUtils.parseHexInt(key.substring("root.".length()));
                     collectReferencedChunks(referenced, mapId, pos, 0);
                 }
-//            }
+            }
         }
         long pos = lastChunk.metaRootPos;
         assert meta.getId() == 0 : meta.getId();
@@ -1320,7 +1309,7 @@ public final class MVStore {
         if (DataUtils.getPageType(pos) == DataUtils.PAGE_TYPE_LEAF) {
             return;
         }
-        PageChildren refs = readPageChunkReferences(mapId, pos, -1);
+        PageChildren refs = readPageChunkReferences(mapId, pos);
         if (!refs.chunkList) {
             Set<Integer> target = New.hashSet();
             for (long p : refs.children) {
@@ -1345,10 +1334,7 @@ public final class MVStore {
         }
     }
 
-    private PageChildren readPageChunkReferences(int mapId, long pos, int parentChunk) {
-//        if (DataUtils.getPageType(pos) == DataUtils.PAGE_TYPE_LEAF) {
-//            return null;
-//        }
+    private PageChildren readPageChunkReferences(int mapId, long pos) {
         PageChildren r;
         if (cacheChunkRef != null) {
             r = cacheChunkRef.get(pos);
@@ -1381,12 +1367,7 @@ public final class MVStore {
                 cacheChunkRef.put(pos, r, r.getMemory());
             }
         }
-        if (r.children.length == 0) {
-            int chunk = DataUtils.getPageChunkId(pos);
-            if (chunk == parentChunk) {
-                return null;
-            }
-        }
+//        assert r.children.length > 0;
         return r;
     }
 
@@ -1565,8 +1546,7 @@ public final class MVStore {
         }
         for (MVMap<?, ?> m : maps.values()) {
             if (!m.isClosed()) {
-                long v = m.getVersion();
-                if (v >= 0 && v > lastStoredVersion) {
+                if(m.hasChangesSince(lastStoredVersion)) {
                     return true;
                 }
             }
@@ -2119,24 +2099,17 @@ public final class MVStore {
      * @return the version
      */
     public long getOldestVersionToKeep() {
-/*
+        long storeVersion = lastStoredVersion;
         long v = oldestVersionToKeep.get();
-        if(fileStore != null) {
-            long storeVersion = currentStoreVersion;
-            if (storeVersion > -1) {
-                v = Math.min(v, storeVersion);
+        if(v == NOT_SET) {
+            v = currentVersion;
+            if (fileStore == null) {
+                return Math.max(v - versionsToKeep+1, INITIAL_VERSION);
             }
         }
-/*/
-        long v = currentVersion;
-        if (fileStore == null) {
-            return v - versionsToKeep;
-        }
-        long storeVersion = currentStoreVersion;
-        if (storeVersion > -1) {
+        if (storeVersion != INITIAL_VERSION) {
             v = Math.min(v, storeVersion);
         }
-//*/
         return v;
     }
 
@@ -2295,7 +2268,7 @@ public final class MVStore {
             meta.rollbackRoot(version);
             meta.clear();
 */
-            meta.setRoot(Page.createEmpty(meta), version);
+            meta.setRoot(Page.createEmpty(meta), 0);
 
             chunks.clear();
             if (fileStore != null) {
@@ -2367,7 +2340,7 @@ public final class MVStore {
                 maps.remove(id);
             } else {
                 if (loadFromFile) {
-                    m.setRootPos(getRootPos(meta, id), -1);
+                    m.setRootPos(getRootPos(meta, id));
                 }
             }
         }
