@@ -235,7 +235,7 @@ public final class MVStore {
      */
     private long lastStoredVersion = INITIAL_VERSION;
 
-    private final AtomicLong oldestVersionToKeep = new AtomicLong(NOT_SET);
+    public final AtomicLong oldestVersionToKeep = new AtomicLong(NOT_SET);
 
     /**
      * The estimated memory used by unsaved pages. This number is not accurate,
@@ -1277,11 +1277,11 @@ public final class MVStore {
         long readCount = getFileStore().readCount;
         Set<Integer> referenced = New.hashSet();
 //        MVMap.RootReference rootReference = meta.getRoot();
-        long oldestVersionToKeep = this.oldestVersionToKeep.get();
+//        long oldestVersionToKeep = this.oldestVersionToKeep.get();
         for (MVMap.RootReference rootReference = meta.getRoot();
-                rootReference != null && (rootReference.version >= oldestVersionToKeep || rootReference.version < 0);
+                rootReference != null; // && (rootReference.version >= oldestVersionToKeep || rootReference.version < 0);
                 rootReference = rootReference.previous) {
-            assert rootReference.version >= oldestVersionToKeep || rootReference.version < 0 : rootReference.version + " >= " + oldestVersionToKeep;
+//            assert rootReference.version >= oldestVersionToKeep || rootReference.version < 0 : rootReference.version + " >= " + oldestVersionToKeep;
             for (Cursor<String, String> c = new Cursor<>(meta, rootReference.root, "root.", true); c.hasNext(); ) {
                 String key = c.next();
                 assert key != null;
@@ -2099,14 +2099,15 @@ public final class MVStore {
      * @return the version
      */
     public long getOldestVersionToKeep() {
-        long storeVersion = lastStoredVersion;
         long v = oldestVersionToKeep.get();
         if(v == NOT_SET) {
             v = currentVersion;
             if (fileStore == null) {
-                return Math.max(v - versionsToKeep+1, INITIAL_VERSION);
+                return Math.max(v - versionsToKeep, INITIAL_VERSION);
             }
         }
+
+        long storeVersion = lastStoredVersion;
         if (storeVersion != INITIAL_VERSION) {
             v = Math.min(v, storeVersion);
         }
@@ -2197,7 +2198,7 @@ public final class MVStore {
      * @param map the map
      */
     void beforeWrite(MVMap<?, ?> map) {
-        if (saveNeeded && fileStore != null && !closed) {
+        if (saveNeeded && fileStore != null && !closed && autoCommitDelay > 0) {
 /*
             if (map == meta) {
                 // to, don't save while the metadata map is locked
@@ -2262,13 +2263,7 @@ public final class MVStore {
             for (MVMap<?, ?> m : maps.values()) {
                 m.close();
             }
-/*
-            currentVersion = version;
-            setWriteVersion(version);
-            meta.rollbackRoot(version);
-            meta.clear();
-*/
-            meta.setRoot(Page.createEmpty(meta), 0);
+            meta.setInitialRoot(Page.createEmpty(meta), 0);
 
             chunks.clear();
             if (fileStore != null) {

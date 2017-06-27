@@ -177,7 +177,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
                     store.registerUnsavedPage(p.getMemory());
                 }
             }
-            if(newRoot(rootReference, p, -1, attempt)) {
+            if(updateRoot(rootReference, p, attempt)) {
                 return result;
             }
             decisionMaker.reset();

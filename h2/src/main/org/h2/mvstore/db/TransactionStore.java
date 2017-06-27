@@ -798,7 +798,7 @@ public final class TransactionStore {
 
             long oldestStoreVersion = this.oldestStoreVersion;
             this.oldestStoreVersion = store.store.getCurrentVersion();
-            if (oldestStoreVersion <= store.store.getOldestVersionToKeep()) {
+            if (oldestStoreVersion <= store.store.oldestVersionToKeep.get()) {
                 store.updateOldestVersion();
             }
 

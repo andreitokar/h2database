@@ -44,14 +44,7 @@ public class TestFullText extends TestBase {
      * @param a ignored
      */
     public static void main(String... a) throws Exception {
-        TestBase init = TestBase.createCaller().init();
-        init.test();
-        init.config.multiThreaded = true;
-        init.test();
-        init.config.memory = true;
-        init.test();
-        init.config.multiThreaded = false;
-        init.test();
+        TestBase.createCaller().init().test();
     }
 
     @Override

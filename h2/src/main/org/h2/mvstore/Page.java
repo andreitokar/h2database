@@ -1005,6 +1005,13 @@ public final class Page implements Cloneable {
             this.pos = pos;
             this.count = count;
         }
+
+        @Override
+        public String toString() {
+            return "Cnt:" + count + ", pos:" + DataUtils.getPageChunkId(pos) +
+                    "-" + DataUtils.getPageOffset(pos) + ":" + DataUtils.getPageMaxLength(pos) +
+                    (DataUtils.getPageType(pos) == 0 ? " leaf" : " node") + ", " + page;
+        }
     }
 
     /**
