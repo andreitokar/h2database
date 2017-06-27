@@ -326,7 +326,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                     unlockRoot(p, attempt);
                     needUnlock = false;
                 } else if(!updateRoot(rootReference, p, attempt)) {
-                    needUnlock = false;
                     decisionMaker.reset();
                     continue;
                 }
@@ -646,8 +645,8 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         int attempt = 0;
         do {
             rootReference = getRoot();
-            rootReference.root.removeAllRecursive();
         } while (!updateRoot(rootReference, Page.createEmpty(this), ++attempt));
+        rootReference.root.removeAllRecursive();
     }
 
     /**
@@ -874,12 +873,13 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
     /**
      * Set the position of the root page.
-     *  @param rootPos the position, 0 for empty
+     * @param rootPos the position, 0 for empty
+     * @param version to set for this map
      *
      */
-    final void setRootPos(long rootPos) {
+    final void setRootPos(long rootPos, long version) {
         Page root = readOrCreateRootPage(rootPos);
-        setInitialRoot(root, INITIAL_VERSION);
+        setInitialRoot(root, version);
         setWriteVersion(store.getCurrentVersion());
     }
 
@@ -1306,7 +1306,10 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     public final long getVersion() {
         RootReference rootReference = getRoot();
         RootReference previous = rootReference.previous;
-        return previous != null && previous.root == rootReference.root ? previous.version : rootReference.version;
+        return previous != null
+                && previous.root == rootReference.root
+                && previous.version != INITIAL_VERSION ? previous.version :
+                                                         rootReference.version;
     }
 
     final boolean hasChangesSince(long version) {
@@ -1367,6 +1370,9 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         int attempt = 0;
         while(true) {
             RootReference rootReference = getRoot();
+            if(rootReference.version >= writeVersion) {
+                return rootReference;
+            }
             RootReference updatedRootReference = new RootReference(rootReference, writeVersion, ++attempt);
             if(root.compareAndSet(rootReference, updatedRootReference)) {
                 return updatedRootReference;
@@ -1570,8 +1576,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         private RootReference(RootReference r, long version, int attempt) {
             RootReference previous = r;
             RootReference tmp;
-            Page root = r.root;
-            while ((tmp = previous.previous) != null && tmp.root == root) {
+            while ((tmp = previous.previous) != null && tmp.root == r.root) {
                 previous = tmp;
             }
             this.root = r.root;

@@ -228,7 +228,7 @@ public final class MVStore {
 
     private final UncaughtExceptionHandler backgroundExceptionHandler;
 
-    private long currentVersion;
+    private long currentVersion; // = INITIAL_VERSION + 1;
 
     /**
      * The version of the last stored chunk, or -1 if nothing was stored so far.
@@ -462,7 +462,7 @@ public final class MVStore {
             x = Integer.toHexString(id);
             meta.put(MVMap.getMapKey(id), map.asString(name));
             meta.put("name." + name, x);
-            map.setRootPos(0);
+            map.setRootPos(0, lastStoredVersion);
             @SuppressWarnings("unchecked")
             M existingMap = (M)maps.putIfAbsent(id, map);
             if(existingMap != null) {
@@ -486,9 +486,8 @@ public final class MVStore {
                 config.put("id", id);
                 map.init(this, config);
                 long root = getRootPos(meta, id);
-                map.setRootPos(root);
+                map.setRootPos(root, lastStoredVersion);
                 maps.put(id, map);
-
             }
         }
         return map;
@@ -730,12 +729,12 @@ public final class MVStore {
             // no valid chunk
             lastMapId = 0;
             currentVersion = 0;
-            meta.setRootPos(0);
+            meta.setRootPos(0, INITIAL_VERSION);
         } else {
             lastMapId = last.mapId;
             currentVersion = last.version;
             chunks.put(last.id, last);
-            meta.setRootPos(last.metaRootPos);
+            meta.setRootPos(last.metaRootPos, lastStoredVersion);
         }
         setWriteVersion(currentVersion);
     }
@@ -1102,7 +1101,7 @@ public final class MVStore {
                 Page rootPage = rootReference.root;
                 if (rootPage.getPos() == 0 ||
                         // after deletion previously saved leaf
-                        // may pop up as a root, but we stiil need
+                        // may pop up as a root, but we still need
                         // to save new root pos in meta
                         rootPage.isLeaf()) {
                     changed.add(rootPage);
@@ -1276,12 +1275,18 @@ public final class MVStore {
         DataUtils.checkArgument(testVersion > 0, "Collect references on version 0");
         long readCount = getFileStore().readCount;
         Set<Integer> referenced = New.hashSet();
-//        MVMap.RootReference rootReference = meta.getRoot();
-//        long oldestVersionToKeep = this.oldestVersionToKeep.get();
+        long oldestVersionToKeep = getOldestVersionToKeep();
+
+        collectReferencedChunks(referenced, meta.getId(), lastChunk.metaRootPos, 0);
+
         for (MVMap.RootReference rootReference = meta.getRoot();
-                rootReference != null; // && (rootReference.version >= oldestVersionToKeep || rootReference.version < 0);
+                rootReference != null && (rootReference.version >= oldestVersionToKeep || rootReference.version == INITIAL_VERSION);
                 rootReference = rootReference.previous) {
-//            assert rootReference.version >= oldestVersionToKeep || rootReference.version < 0 : rootReference.version + " >= " + oldestVersionToKeep;
+
+            if(rootReference.root.getPos() != 0) {
+                collectReferencedChunks(referenced, meta.getId(), rootReference.root.getPos(), 0);
+            }
+
             for (Cursor<String, String> c = new Cursor<>(meta, rootReference.root, "root.", true); c.hasNext(); ) {
                 String key = c.next();
                 assert key != null;
@@ -1295,9 +1300,6 @@ public final class MVStore {
                 }
             }
         }
-        long pos = lastChunk.metaRootPos;
-        assert meta.getId() == 0 : meta.getId();
-        collectReferencedChunks(referenced, 0, pos, 0);
         readCount = fileStore.readCount - readCount;
         return referenced;
     }
@@ -2263,7 +2265,7 @@ public final class MVStore {
             for (MVMap<?, ?> m : maps.values()) {
                 m.close();
             }
-            meta.setInitialRoot(Page.createEmpty(meta), 0);
+            meta.setInitialRoot(Page.createEmpty(meta), INITIAL_VERSION);
 
             chunks.clear();
             if (fileStore != null) {
@@ -2335,7 +2337,7 @@ public final class MVStore {
                 maps.remove(id);
             } else {
                 if (loadFromFile) {
-                    m.setRootPos(getRootPos(meta, id));
+                    m.setRootPos(getRootPos(meta, id), version);
                 }
             }
         }
@@ -2347,7 +2349,7 @@ public final class MVStore {
             }
         }
         currentVersion = version;
-        setWriteVersion(version);
+        setWriteVersion(version);       // TODO: remove this as redundant
     }
 
     private static long getRootPos(MVMap<String, String> map, int mapId) {
