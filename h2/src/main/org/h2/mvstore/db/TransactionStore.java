@@ -885,14 +885,18 @@ public final class TransactionStore {
          * Commit the transaction. Afterwards, this transaction is closed.
          */
         public void commit() {
-            checkNotClosed();
-            if(!store.committingTransactions.get().get(transactionId) /*|| getStatus() != Transaction.STATUS_COMMITTING*/) {
-                assert store.openTransactions.get().get(transactionId) : this + " " + store.openTransactions;
-                assert getStatus() == Transaction.STATUS_OPEN ||
-                       getStatus() == Transaction.STATUS_PREPARED && store.preparedTransactions.get(transactionId) != null ||
-                       // this case is only possible if called from initTransactions()
-                       getStatus() == Transaction.STATUS_COMMITTING : getStatus();
-                store.commit(this);
+            if(logId > 0) {
+                checkNotClosed();
+                if (!store.committingTransactions.get().get(transactionId) /*|| getStatus() != Transaction.STATUS_COMMITTING*/) {
+                    assert store.openTransactions.get().get(transactionId) : this + " " + store.openTransactions;
+                    assert getStatus() == Transaction.STATUS_OPEN ||
+                            getStatus() == Transaction.STATUS_PREPARED && store.preparedTransactions.get(transactionId) != null ||
+                            // this case is only possible if called from initTransactions()
+                            getStatus() == Transaction.STATUS_COMMITTING : getStatus();
+                    store.commit(this);
+                }
+            } else {
+                store.endTransaction(this);
             }
         }
 
@@ -912,8 +916,10 @@ public final class TransactionStore {
          * Roll the transaction back. Afterwards, this transaction is closed.
          */
         public void rollback() {
-            checkNotClosed();
-            store.rollbackTo(this, 0);
+            if(logId > 0) {
+                checkNotClosed();
+                store.rollbackTo(this, 0);
+            }
             store.endTransaction(this);
         }
 
@@ -951,7 +957,16 @@ public final class TransactionStore {
             }
         }
 
-        private synchronized void closeIt() {
+        private void closeIt() {
+            if(logId > 0) {
+                _closeIt();
+            }
+            else {
+                status = STATUS_CLOSED;
+            }
+        }
+
+        private synchronized void _closeIt() {
             status = STATUS_CLOSED;
             notifyAll();
         }

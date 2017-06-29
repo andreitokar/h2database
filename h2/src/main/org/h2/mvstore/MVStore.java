@@ -1278,9 +1278,30 @@ public final class MVStore {
         long oldestVersionToKeep = getOldestVersionToKeep();
 
         collectReferencedChunks(referenced, meta.getId(), lastChunk.metaRootPos, 0);
+/*
+        MVMap.RootReference rootReference = meta.getRoot();
+        do {
+            if(rootReference.root.getPos() != 0) {
+                collectReferencedChunks(referenced, meta.getId(), rootReference.root.getPos(), 0);
+            }
 
+            for (Cursor<String, String> c = new Cursor<>(meta, rootReference.root, "root.", true); c.hasNext(); ) {
+                String key = c.next();
+                assert key != null;
+                if (!key.startsWith("root.")) {
+                    break;
+                }
+                long pos = DataUtils.parseHexLong(c.getValue());
+                if (pos != 0) {
+                    int mapId = DataUtils.parseHexInt(key.substring("root.".length()));
+                    collectReferencedChunks(referenced, mapId, pos, 0);
+                }
+            }
+        } while(rootReference.version >= oldestVersionToKeep && (rootReference = rootReference.previous) != null);
+
+/*/
         for (MVMap.RootReference rootReference = meta.getRoot();
-                rootReference != null && (rootReference.version >= oldestVersionToKeep || rootReference.version == INITIAL_VERSION);
+                rootReference != null && (rootReference.version >= oldestVersionToKeep/* || rootReference.version == INITIAL_VERSION*/);
                 rootReference = rootReference.previous) {
 
             if(rootReference.root.getPos() != 0) {
@@ -1299,7 +1320,12 @@ public final class MVStore {
                     collectReferencedChunks(referenced, mapId, pos, 0);
                 }
             }
+
+//            if(rootReference.version < oldestVersionToKeep) {
+//                break;
+//            }
         }
+//*/
         readCount = fileStore.readCount - readCount;
         return referenced;
     }
@@ -2110,8 +2136,8 @@ public final class MVStore {
         }
 
         long storeVersion = lastStoredVersion;
-        if (storeVersion != INITIAL_VERSION) {
-            v = Math.min(v, storeVersion);
+        if (storeVersion < v && storeVersion != INITIAL_VERSION) {
+            v = storeVersion;
         }
         return v;
     }
