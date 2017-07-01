@@ -375,7 +375,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             RootReference updatedRootReference = new RootReference(rootReference, newRoot, attempt);
             success = root.compareAndSet(rootReference, updatedRootReference);
         } while(!success);
-        removeUnusedOldVersions();
     }
 
     private static CursorPos traverseDown(Page p, Object key) {
@@ -808,9 +807,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         RootReference updatedRootReference = new RootReference(newRootPage, newVersion, previous, updateCounter,
                 attemptUpdateCounter, false);
         boolean success = root.compareAndSet(currentRoot, updatedRootReference);
-        if(success) {
-            removeUnusedOldVersions();
-        }
         return success ? updatedRootReference : null;
     }
 
@@ -1139,12 +1135,12 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * Forget those old versions that are no longer needed.
      */
     final void removeUnusedOldVersions() {
-        long oldest = store.getOldestVersionToKeep();
+        long oldest = store.getOldestVersionToKeep(this);
         RootReference rootReference = getRoot();
         RootReference previous;
         while ((previous = rootReference.previous) != null) {
-            if (rootReference.version < oldest) {
-                rootReference.previous = null;
+            if (previous.version < oldest) {
+                previous.previous = null;
                 break;
             }
             rootReference = previous;
@@ -1261,6 +1257,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         DataUtils.checkArgument(version >= createVersion,
                 "Unknown version {0}; this map was created in version is {1}",
                 version, createVersion);
+        removeUnusedOldVersions();
         RootReference rootReference = getRoot();
         boolean persistent = store.getFileStore() != null;
         while (rootReference != null && (rootReference.version > version)) {
@@ -1375,6 +1372,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             }
             RootReference updatedRootReference = new RootReference(rootReference, writeVersion, ++attempt);
             if(root.compareAndSet(rootReference, updatedRootReference)) {
+                removeUnusedOldVersions();
                 return updatedRootReference;
             }
         }

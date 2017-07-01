@@ -13,7 +13,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
@@ -31,7 +32,7 @@ import org.h2.util.New;
 /**
  * A store that supports concurrent MVCC read-committed transactions.
  */
-public final class TransactionStore {
+public final class TransactionStore implements MVStore.VersionChangeListener {
 
     private static final int AVG_OPEN_TRANSACTIONS = 0x100;
 
@@ -75,6 +76,8 @@ public final class TransactionStore {
     private volatile Transaction[] spilledTransactions = new Transaction[AVG_OPEN_TRANSACTIONS];
     private final AtomicReference<BitSet> openTransactions = new AtomicReference<>(new BitSet());
     private final AtomicReference<BitSet> committingTransactions = new AtomicReference<>(new BitSet());
+    private final ConcurrentLinkedQueue<TxCounter> versions = new ConcurrentLinkedQueue<>();
+    private volatile TxCounter currentTxCounter = new TxCounter(MVMap.INITIAL_VERSION);
 
 
     /**
@@ -105,6 +108,7 @@ public final class TransactionStore {
                 new MVMap.Builder<Integer, Object[]>());
 
         undoLog = openUndoLog(store, dataType);
+        this.store.setVersionChangeListener(this);
     }
 
     public static MVMap<Long, Record> openUndoLog(MVStore store, DataType dataType) {
@@ -164,8 +168,6 @@ public final class TransactionStore {
                     status = (Integer) data[0];
                     name = (String) data[1];
                 }
-                Transaction t = new Transaction(this, transactionId, status,
-                                                name, logId, listener);
                 boolean success;
                 do {
                     BitSet original = openTransactions.get();
@@ -174,7 +176,7 @@ public final class TransactionStore {
                     clone.set(transactionId);
                     success = openTransactions.compareAndSet(original, clone);
                 } while(!success);
-                registerTransaction(t);
+                registerTransaction(transactionId, status, name, logId, listener);
 
                 key = undoLog.ceilingKey(getOperationId(transactionId + 1, 0));
             }
@@ -289,14 +291,13 @@ public final class TransactionStore {
             success = openTransactions.compareAndSet(original, clone);
         } while(!success);
         int status = Transaction.STATUS_OPEN;
-        Transaction transaction = new Transaction(this, transactionId, status,
-                                                  null, 0, listener);
-        registerTransaction(transaction);
+        Transaction transaction = registerTransaction(transactionId, status, null, 0, listener);
         return transaction;
     }
 
-    private void registerTransaction(Transaction transaction) {
-        int transactionId = transaction.transactionId;
+    private Transaction registerTransaction(int transactionId, int status, String name,
+                                     long logId, RollbackListener listener) {
+        Transaction transaction = new Transaction(this, transactionId, status, name, logId, listener);
         if(transactionId < AVG_OPEN_TRANSACTIONS) {
             transactions.set(transactionId, transaction);
         } else {
@@ -307,6 +308,7 @@ public final class TransactionStore {
             }
             spilledTransactions[transactionId] = transaction;
         }
+        return transaction;
     }
 
     /**
@@ -507,6 +509,7 @@ public final class TransactionStore {
             preparedTransactions.remove(txId);
         }
         t.closeIt();
+        clearTxSavePoint(t.txCounter);
         if(t.transactionId < AVG_OPEN_TRANSACTIONS) {
             transactions.set(t.transactionId, null);
         } else {
@@ -546,23 +549,6 @@ public final class TransactionStore {
         return  transactionId < AVG_OPEN_TRANSACTIONS ?
                 transactions.get(transactionId) :
                 spilledTransactions[transactionId - AVG_OPEN_TRANSACTIONS];
-    }
-
-    private void updateOldestVersion() {
-        long result = Long.MAX_VALUE;
-        BitSet bitSet = openTransactions.get();
-        for(int i = bitSet.nextSetBit(0); i >= 0; i = bitSet.nextSetBit(i + 1)) {
-            Transaction tx = getTransaction(i);
-            if(tx != null) {
-                long oldestStoreVersion = tx.oldestStoreVersion;
-                if(oldestStoreVersion < result) {
-                    result = oldestStoreVersion;
-                }
-            }
-        }
-        if(result != Long.MAX_VALUE) {
-            this.store.setOldestVersionToKeep(result);
-        }
     }
 
     /**
@@ -645,6 +631,48 @@ public final class TransactionStore {
         };
     }
 
+    private void clearTxSavePoint(TxCounter txCounter) {
+        if(txCounter != null) {
+            if(txCounter.counter.decrementAndGet() < 0) {
+                while ((txCounter = versions.peek()) != null
+                        && txCounter.counter.get() < 0) {
+                    versions.remove(txCounter);
+                }
+                store.setOldestVersionToKeep(txCounter == null ? currentTxCounter.version : txCounter.version);
+            }
+        }
+    }
+
+    private TxCounter registerTxSavePoint() {
+        TxCounter txCounter;
+        while(true) {
+            txCounter = currentTxCounter;
+            txCounter.counter.incrementAndGet();
+            if(txCounter == currentTxCounter) {
+                break;
+            }
+            txCounter.counter.decrementAndGet();
+        }
+        return txCounter;
+    }
+
+    @Override
+    public void onVersionChange(long version) {
+        TxCounter txCounter = this.currentTxCounter;
+        versions.add(txCounter);
+        currentTxCounter = new TxCounter(version);
+        txCounter.counter.decrementAndGet();
+    }
+
+    public static final class TxCounter {
+        private final long version;
+        private final AtomicInteger counter = new AtomicInteger();
+
+        public TxCounter(long version) {
+            this.version = version;
+        }
+    }
+
     /**
      * A change in a map.
      */
@@ -717,8 +745,6 @@ public final class TransactionStore {
          */
         long logId;
 
-        private long oldestStoreVersion = Long.MAX_VALUE;
-
         private int status;
 
         private String name;
@@ -726,6 +752,8 @@ public final class TransactionStore {
         private int blockingTransactionId;
 
         private int ownerId;
+
+        private TxCounter txCounter;
 
         private Transaction(TransactionStore store, int transactionId, int status,
                             String name, long logId, RollbackListener listener) {
@@ -745,6 +773,7 @@ public final class TransactionStore {
             this.logId = tx.logId;
             this.blockingTransactionId = tx.blockingTransactionId;
             this.ownerId = tx.ownerId;
+            this.txCounter = tx.txCounter;
             this.listener = RollbackListener.NONE;
         }
 
@@ -795,12 +824,9 @@ public final class TransactionStore {
          * @return the savepoint id
          */
         public long setSavepoint() {
-
-            long oldestStoreVersion = this.oldestStoreVersion;
-            this.oldestStoreVersion = store.store.getCurrentVersion();
-            if (oldestStoreVersion <= store.store.oldestVersionToKeep.get()) {
-                store.updateOldestVersion();
-            }
+            TxCounter lastTxCounter = txCounter;
+            txCounter = store.registerTxSavePoint();
+            store.clearTxSavePoint(lastTxCounter);
 
             return logId;
         }

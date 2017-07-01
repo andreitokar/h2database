@@ -230,6 +230,8 @@ public final class MVStore {
 
     private long currentVersion; // = INITIAL_VERSION + 1;
 
+    private VersionChangeListener versionChangeListener;
+
     /**
      * The version of the last stored chunk, or -1 if nothing was stored so far.
      */
@@ -737,6 +739,9 @@ public final class MVStore {
             meta.setRootPos(last.metaRootPos, lastStoredVersion);
         }
         setWriteVersion(currentVersion);
+        if(versionChangeListener != null) {
+            versionChangeListener.onVersionChange(currentVersion);
+        }
     }
 
     private void verifyLastChunks() {
@@ -1004,6 +1009,9 @@ public final class MVStore {
                         if (fileStore == null) {
                             v = ++currentVersion;
                             setWriteVersion(v);
+                            if(versionChangeListener != null) {
+                                versionChangeListener.onVersionChange(currentVersion);
+                            }
                         } else {
                             if (fileStore.isReadOnly()) {
                                 throw DataUtils.newIllegalStateException(
@@ -1032,6 +1040,7 @@ public final class MVStore {
     }
 
     private long storeNow() {
+        assert Thread.holdsLock(this);
         long time = getTimeSinceCreation();
         int freeDelay = retentionTime / 10;
         if (time >= lastFreeUnusedChunks + freeDelay) {
@@ -1128,6 +1137,10 @@ public final class MVStore {
             }
         }
         meta.setWriteVersion(version);
+
+        if(versionChangeListener != null) {
+            versionChangeListener.onVersionChange(currentVersion);
+        }
 
         Page metaRoot = meta.getRootPage();
         metaRoot.writeUnsavedRecursive(c, buff);
@@ -1275,7 +1288,7 @@ public final class MVStore {
         DataUtils.checkArgument(testVersion > 0, "Collect references on version 0");
         long readCount = getFileStore().readCount;
         Set<Integer> referenced = New.hashSet();
-        long oldestVersionToKeep = getOldestVersionToKeep();
+        long oldestVersionToKeep = getOldestVersionToKeep(null);
 
         collectReferencedChunks(referenced, meta.getId(), lastChunk.metaRootPos, 0);
 /*
@@ -2126,17 +2139,18 @@ public final class MVStore {
      *
      * @return the version
      */
-    public long getOldestVersionToKeep() {
+    public long getOldestVersionToKeep(MVMap map) {
         long v = oldestVersionToKeep.get();
         if(v == NOT_SET) {
-            v = currentVersion;
+            v = map == null ? currentVersion : map.getVersion();
             if (fileStore == null) {
-                return Math.max(v - versionsToKeep, INITIAL_VERSION);
+                v = Math.max(v - versionsToKeep, INITIAL_VERSION);
+                return v;
             }
         }
 
         long storeVersion = lastStoredVersion;
-        if (storeVersion < v && storeVersion != INITIAL_VERSION) {
+        if (storeVersion < v /*&& storeVersion != INITIAL_VERSION*/) {
             v = storeVersion;
         }
         return v;
@@ -2716,6 +2730,14 @@ public final class MVStore {
             updateAttemptCounter += root.updateAttemptCounter;
         }
         return updateAttemptCounter == 0 ? 0 : 1 - ((double)updateCounter / updateAttemptCounter);
+    }
+
+    public synchronized void setVersionChangeListener(VersionChangeListener versionChangeListener) {
+        this.versionChangeListener = versionChangeListener;
+    }
+
+    public interface VersionChangeListener {
+        void onVersionChange(long version);
     }
 
     /**
