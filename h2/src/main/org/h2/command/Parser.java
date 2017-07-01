@@ -554,7 +554,6 @@ public class Parser {
         if (readIf("TABLE")) {
             Table table = readTableOrView();
             command.setTable(table);
-            command.setTop(readPositiveInt());
         }
         if (readIf("SAMPLE_SIZE")) {
             command.setTop(readPositiveInt());
@@ -2212,6 +2211,7 @@ public class Parser {
                 r = new CompareLike(database, r, b, esc, false);
             } else if (readIf("REGEXP")) {
                 Expression b = readConcat();
+                recompileAlways = true;
                 r = new CompareLike(database, r, b, null, true);
             } else if (readIf("IS")) {
                 if (readIf("NOT")) {
