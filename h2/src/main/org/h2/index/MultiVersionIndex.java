@@ -16,6 +16,7 @@ import org.h2.result.Row;
 import org.h2.result.SearchRow;
 import org.h2.result.SortOrder;
 import org.h2.schema.Schema;
+import org.h2.table.AbstractTable;
 import org.h2.table.Column;
 import org.h2.table.IndexColumn;
 import org.h2.table.RegularTable;
@@ -262,7 +263,7 @@ public class MultiVersionIndex implements Index {
     }
 
     @Override
-    public String getCreateSQLForCopy(Table forTable, String quotedName) {
+    public String getCreateSQLForCopy(AbstractTable forTable, String quotedName) {
         return base.getCreateSQLForCopy(forTable, quotedName);
     }
 

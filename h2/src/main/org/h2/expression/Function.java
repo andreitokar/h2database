@@ -37,10 +37,10 @@ import org.h2.security.BlockCipher;
 import org.h2.security.CipherFactory;
 import org.h2.security.SHA256;
 import org.h2.store.fs.FileUtils;
+import org.h2.table.AbstractTable;
 import org.h2.table.Column;
 import org.h2.table.ColumnResolver;
 import org.h2.table.LinkSchema;
-import org.h2.table.Table;
 import org.h2.table.TableFilter;
 import org.h2.tools.CompressTool;
 import org.h2.tools.Csv;
@@ -1160,7 +1160,7 @@ public class Function extends Expression implements FunctionCall {
     private static long getDiskSpaceUsed(Session session, Value v0) {
         Parser p = new Parser(session);
         String sql = v0.getString();
-        Table table = p.parseTableName(sql);
+        AbstractTable table = p.parseTableName(sql);
         return table.getDiskSpaceUsed();
     }
 
@@ -1881,11 +1881,9 @@ public class Function extends Expression implements FunctionCall {
             break;
         }
         calendar = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
-//        calendar.setTime(d1);
         calendar.setTimeInMillis(t1);
         int year1 = calendar.get(Calendar.YEAR);
         int month1 = calendar.get(Calendar.MONTH);
-//        calendar.setTime(d2);
         calendar.setTimeInMillis(t2);
         int year2 = calendar.get(Calendar.YEAR);
         int month2 = calendar.get(Calendar.MONTH);
