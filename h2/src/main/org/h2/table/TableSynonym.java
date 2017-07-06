@@ -84,6 +84,11 @@ public class TableSynonym extends AbstractTable {
     }
 
     @Override
+    public Row createRow(Value[] data, int memory) {
+        return getSynonymFor().createRow(data, memory);
+    }
+
+    @Override
     public SearchRow getTemplateSimpleRow(boolean singleColumn) {
         return getSynonymFor().getTemplateSimpleRow(singleColumn);
     }
@@ -119,8 +124,8 @@ public class TableSynonym extends AbstractTable {
     }
 
     @Override
-    public void removeRow(Session session, Row row) {
-        getSynonymFor().removeRow(session, row);
+    public Row removeRow(Session session, Row row) {
+        return getSynonymFor().removeRow(session, row);
     }
 
     @Override

@@ -2150,7 +2150,7 @@ public final class MVStore {
         }
 
         long storeVersion = lastStoredVersion;
-        if (storeVersion < v /*&& storeVersion != INITIAL_VERSION*/) {
+        if (storeVersion < v && storeVersion != INITIAL_VERSION) {
             v = storeVersion;
         }
         return v;

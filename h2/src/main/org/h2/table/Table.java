@@ -25,6 +25,7 @@ import org.h2.index.IndexType;
 import org.h2.message.DbException;
 import org.h2.message.Trace;
 import org.h2.result.Row;
+import org.h2.result.RowFactory;
 import org.h2.result.RowList;
 import org.h2.result.SearchRow;
 import org.h2.result.SimpleRow;
@@ -112,6 +113,20 @@ public abstract class Table extends AbstractTable {
     @SuppressWarnings("unused")
     public Row getRow(Session session, long key) {
         return null;
+    }
+
+    /**
+     * Update a row to the table and all indexes.
+     *
+     * @param session the session
+     * @param oldRow the row to update
+     * @param newRow the row with updated values (_rowid_ suppose to be the same)
+     * @throws DbException if a constraint was violated
+     */
+    public void updateRow(Session session, Row oldRow, Row newRow) {
+        newRow.setKey(oldRow.getKey());
+        removeRow(session, oldRow);
+        addRow(session, newRow);
     }
 
     /**

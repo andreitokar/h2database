@@ -80,7 +80,7 @@ public abstract class AbstractTable extends SchemaObjectBase {
      * @param session the session
      * @param row the row
      */
-    public abstract void removeRow(Session session, Row row);
+    public abstract Row removeRow(Session session, Row row);
 
     /**
      * Remove all rows from the table and indexes.
@@ -292,6 +292,8 @@ public abstract class AbstractTable extends SchemaObjectBase {
                                                                   ArrayList<Column> columnsToDrop);
 
     public abstract Row getTemplateRow();
+
+    public abstract Row createRow(Value[] data, int memory);
 
     /**
      * Get a new simple row object.
