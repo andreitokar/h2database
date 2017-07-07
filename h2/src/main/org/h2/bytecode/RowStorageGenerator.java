@@ -232,7 +232,7 @@ public final class RowStorageGenerator {
 
             OutputStream outputStream = null;
             try {
-                outputStream = FileUtils.newOutputStream("generated/" + className.replace('.', '/') + ".classs", false);
+                outputStream = FileUtils.newOutputStream("generated/" + className.replace('.', '/') + ".class", false);
                 outputStream.write(classBytes);
             } catch (IOException ex) {
                 throw new RuntimeException(ex);

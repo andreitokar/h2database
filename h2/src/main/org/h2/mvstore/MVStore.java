@@ -1007,8 +1007,10 @@ public final class MVStore {
                     if (!closed && hasUnsavedChanges()) {
                         long v;
                         if (fileStore == null) {
+                            lastStoredVersion = currentVersion;
                             v = ++currentVersion;
                             setWriteVersion(v);
+                            metaChanged = false;
                             if(versionChangeListener != null) {
                                 versionChangeListener.onVersionChange(currentVersion);
                             }

@@ -633,11 +633,10 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
 
     private void clearTxSavePoint(TxCounter txCounter) {
         if(txCounter != null) {
-            if(txCounter.counter.decrementAndGet() < 0) {
+            if(txCounter.counter.decrementAndGet() <= 0) {
                 while ((txCounter = versions.peek()) != null
-                        && txCounter.counter.get() < 0) {
-                    versions.remove(txCounter);
-                }
+                        && txCounter.counter.get() < 0
+                        && versions.remove(txCounter)) {/**/}
                 store.setOldestVersionToKeep(txCounter == null ? currentTxCounter.version : txCounter.version);
             }
         }
@@ -647,8 +646,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
         TxCounter txCounter;
         while(true) {
             txCounter = currentTxCounter;
-            txCounter.counter.incrementAndGet();
-            if(txCounter == currentTxCounter) {
+            if(txCounter.counter.incrementAndGet() > 0) {
                 break;
             }
             txCounter.counter.decrementAndGet();
@@ -824,9 +822,9 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
          * @return the savepoint id
          */
         public long setSavepoint() {
-            TxCounter lastTxCounter = txCounter;
-            txCounter = store.registerTxSavePoint();
-            store.clearTxSavePoint(lastTxCounter);
+            if(txCounter == null) {
+                txCounter = store.registerTxSavePoint();
+            }
 
             return logId;
         }

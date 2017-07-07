@@ -671,7 +671,7 @@ public class TestConcurrent extends TestMVStore {
                 Iterator<Integer> it = map.keyIterator(r.nextInt(len));
                 long old = s.getCurrentVersion();
                 s.commit();
-                while (map.getVersion() == old) {
+                if (map.getVersion() == old) {
                     Thread.yield();
                 }
                 while (it.hasNext()) {
