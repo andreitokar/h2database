@@ -36,7 +36,6 @@ public final class Page implements Cloneable {
      * An empty object array.
      */
     public static final Object[] EMPTY_OBJECT_ARRAY = new Object[0];
-    private static final int IN_MEMORY = Integer.MIN_VALUE;
 
     public final MVMap<?, ?> map;
     private long pos;
@@ -126,12 +125,10 @@ public final class Page implements Cloneable {
         MVStore store = map.store;
         if(store.getFileStore() == null) {
             p.memory = IN_MEMORY;
+        } else if (memory == 0) {
+            p.recalculateMemory();
         } else {
-            if (memory == 0) {
-                p.recalculateMemory();
-            } else {
-                p.addMemory(memory);
-            }
+            p.addMemory(memory);
         }
         return p;
     }
@@ -381,7 +378,11 @@ public final class Page implements Cloneable {
      * @return the page with the entries after the split index
      */
     Page split(int at) {
-        return isLeaf() ? splitLeaf(at) : splitNode(at);
+        Page page = isLeaf() ? splitLeaf(at) : splitNode(at);
+        if(isPersistent()) {
+            recalculateMemory();
+        }
+        return page;
     }
 
     @SuppressWarnings("SuspiciousSystemArraycopy")
@@ -404,7 +405,6 @@ public final class Page implements Cloneable {
                 bKeys, bValues,
                 null,
                 b, 0);
-        recalculateMemory();
         return newPage;
     }
 
@@ -436,7 +436,6 @@ public final class Page implements Cloneable {
                 bKeys, null,
                 bChildren,
                 t, 0);
-        recalculateMemory();
         return newPage;
     }
 
@@ -585,10 +584,8 @@ public final class Page implements Cloneable {
             setValue(index, value);
         }
         totalCount++;
-        if(isPersistent()) {
-            addMemory(map.getKeyType().getMemory(key) +
-                    map.getValueType().getMemory(value));
-        }
+        addMemory(map.getKeyType().getMemory(key) +
+                map.getValueType().getMemory(value));
     }
 
     /**
@@ -613,10 +610,8 @@ public final class Page implements Cloneable {
         children = newChildren;
 
         totalCount += childPage.totalCount;
-        if(isPersistent()) {
-            addMemory(map.getKeyType().getMemory(key) +
-                    DataUtils.PAGE_MEMORY_CHILD);
-        }
+        addMemory(map.getKeyType().getMemory(key) +
+                DataUtils.PAGE_MEMORY_CHILD);
     }
 
     /**
@@ -902,10 +897,6 @@ public final class Page implements Cloneable {
         return pos != 0 ? (int) (pos | (pos >>> 32)) : super.hashCode();
     }
 
-    private boolean isPersistent() {
-        return memory != IN_MEMORY;
-    }
-
     public int getMemory() {
         if (isPersistent()) {
             if (MVStore.ASSERT) {
@@ -922,10 +913,6 @@ public final class Page implements Cloneable {
     }
 
     private void addMemory(int mem) {
-        if(!isPersistent()) {
-            throw DataUtils.newIllegalStateException(
-                    DataUtils.ERROR_INTERNAL, "Memory calculation error2");
-        }
         memory += mem;
     }
 
