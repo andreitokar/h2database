@@ -751,19 +751,19 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
     private void rollbackRoot(long version)
     {
-        while(true) {
-            RootReference rootReference = getRoot();
-            if(rootReference.version < version) {
-                break;
+        RootReference rootReference = getRoot();
+        RootReference previous;
+        while (rootReference.version >= version && (previous = rootReference.previous) != null) {
+            if (root.compareAndSet(rootReference, previous)) {
+                rootReference = previous;
             }
-            root.compareAndSet(rootReference, rootReference.previous);
         }
         setWriteVersion(version);
     }
 
     /**
      * Use the new root page from now on.
-     *  @param oldRoot the old root reference, will use the current root reference, if null is specified
+     * @param oldRoot the old root reference, will use the current root reference, if null is specified
      * @param newRoot the new root page
      */
     protected final boolean updateRoot(RootReference oldRoot, Page newRoot, int attemptUpdateCounter) {
