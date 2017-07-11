@@ -7,6 +7,8 @@ package org.h2.command;
 
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.concurrent.TimeUnit;
+
 import org.h2.api.ErrorCode;
 import org.h2.engine.Constants;
 import org.h2.engine.Database;
@@ -299,7 +301,7 @@ public abstract class Command implements CommandInterface {
             throw e;
         }
         long now = System.nanoTime();
-        if (start != 0 && now - start > session.getLockTimeout() * 1000000) {
+        if (start != 0 && now - start > TimeUnit.MILLISECONDS.toNanos(session.getLockTimeout())) {
             throw DbException.get(ErrorCode.LOCK_TIMEOUT_1, e.getCause(), "");
         }
         return start == 0 ? now : start;

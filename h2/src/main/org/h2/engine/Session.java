@@ -165,10 +165,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
         this.undoLog = new UndoLog(this);
         this.user = user;
         this.id = id;
-        Setting setting = database.findSetting(
-                SetTypes.getTypeName(SetTypes.DEFAULT_LOCK_TIMEOUT));
-        this.lockTimeout = setting == null ?
-                Constants.INITIAL_LOCK_TIMEOUT : setting.getIntValue();
+        this.lockTimeout = (int)database.getLockTimeout();
         this.currentSchemaName = Constants.SCHEMA_MAIN;
     }
 
@@ -1630,7 +1627,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
                 database.shutdownImmediately();
                 throw DbException.get(ErrorCode.DATABASE_IS_CLOSED);
             }
-            transaction = database.getMvStore().getTransactionStore().begin(this);
+            transaction = database.getMvStore().getTransactionStore().begin(this, this.lockTimeout);
             transaction.setOwnerId(id);
             startStatement = -1;
         }

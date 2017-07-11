@@ -40,7 +40,8 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
      * The store.
      */
     final MVStore store;
-    private final int timeoutMillis;
+
+    private final long timeoutMillis;
 
     /**
      * The persisted map of prepared transactions.
@@ -98,9 +99,9 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
      * Create a new transaction store.
      * @param store the store
      * @param dataType the data type for map keys and values
-     * @param timeoutMillis wait for Tx to commit in multithread mode, 0 otherwise
+     * @param timeoutMillis lock aquisition timeout in milliseconds, 0 means no wait
      */
-    public TransactionStore(MVStore store, DataType dataType, int timeoutMillis) {
+    public TransactionStore(MVStore store, DataType dataType, long timeoutMillis) {
         this.store = store;
         this.dataType = dataType;
         this.timeoutMillis = timeoutMillis;
@@ -176,7 +177,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
                     clone.set(transactionId);
                     success = openTransactions.compareAndSet(original, clone);
                 } while(!success);
-                registerTransaction(transactionId, status, name, logId, listener);
+                registerTransaction(transactionId, status, name, logId, timeoutMillis, listener);
 
                 key = undoLog.ceilingKey(getOperationId(transactionId + 1, 0));
             }
@@ -266,10 +267,10 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
      * @return the transaction
      */
     public Transaction begin() {
-        return begin(RollbackListener.NONE);
+        return begin(RollbackListener.NONE, timeoutMillis);
     }
 
-    public Transaction begin(RollbackListener listener) {
+    public Transaction begin(RollbackListener listener, long timeoutMillis) {
         if (!init) {
             throw DataUtils.newIllegalStateException(
                     DataUtils.ERROR_TRANSACTION_ILLEGAL_STATE,
@@ -291,13 +292,16 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
             success = openTransactions.compareAndSet(original, clone);
         } while(!success);
         int status = Transaction.STATUS_OPEN;
-        Transaction transaction = registerTransaction(transactionId, status, null, 0, listener);
+        if(timeoutMillis <= 0) {
+            timeoutMillis = this.timeoutMillis;
+        }
+        Transaction transaction = registerTransaction(transactionId, status, null, 0, timeoutMillis, listener);
         return transaction;
     }
 
     private Transaction registerTransaction(int transactionId, int status, String name,
-                                     long logId, RollbackListener listener) {
-        Transaction transaction = new Transaction(this, transactionId, status, name, logId, listener);
+                                     long logId, long timeoutMillis, RollbackListener listener) {
+        Transaction transaction = new Transaction(this, transactionId, status, name, logId, timeoutMillis, listener);
         if(transactionId < AVG_OPEN_TRANSACTIONS) {
             transactions.set(transactionId, transaction);
         } else {
@@ -747,6 +751,8 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
 
         private String name;
 
+        private final long timeoutMillis;
+
         private int blockingTransactionId;
 
         private int ownerId;
@@ -754,12 +760,13 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
         private TxCounter txCounter;
 
         private Transaction(TransactionStore store, int transactionId, int status,
-                            String name, long logId, RollbackListener listener) {
+                            String name, long logId, long timeoutMillis, RollbackListener listener) {
             this.store = store;
             this.transactionId = transactionId;
             this.status = status;
             this.name = name;
             this.logId = logId;
+            this.timeoutMillis = timeoutMillis;
             this.listener = listener;
         }
 
@@ -769,6 +776,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
             this.status = tx.status;
             this.name = tx.name;
             this.logId = tx.logId;
+            this.timeoutMillis = tx.timeoutMillis;
             this.blockingTransactionId = tx.blockingTransactionId;
             this.ownerId = tx.ownerId;
             this.txCounter = tx.txCounter;
@@ -995,12 +1003,12 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
             notifyAll();
         }
 
-        public boolean waitFor(Transaction toWaitFor, long millis) {
+        public boolean waitFor(Transaction toWaitFor) {
             checkOpen();
             synchronized (this) {
                 blockingTransactionId = toWaitFor.transactionId;
             }
-            return toWaitFor.waitForThisToEnd(millis);
+            return toWaitFor.waitForThisToEnd(timeoutMillis);
         }
 
         private synchronized boolean waitForThisToEnd(long millis) {
@@ -1208,7 +1216,6 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
         private V set(K key, V value) {
             TxDecisionMaker decisionMaker = new TxDecisionMaker(map.getId(), key, transaction);
             Transaction blockingTransaction;
-            int timeoutMillis = transaction.store.timeoutMillis;
             do {
                 transaction.checkNotClosed();
 //                synchronized (transaction) {
@@ -1228,7 +1235,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
                         " is missing, open: " + transaction.store.openTransactions.get().get(decisionMaker.blockingId) +
                         ", committing: " + transaction.store.committingTransactions.get().get(decisionMaker.blockingId);
                 decisionMaker.reset();
-            } while (timeoutMillis > 0 && transaction.waitFor(blockingTransaction, timeoutMillis));
+            } while (transaction.waitFor(blockingTransaction));
             throw DataUtils.newIllegalStateException(DataUtils.ERROR_TRANSACTION_LOCKED, "Entry is locked in " + map.getName());
         }
 

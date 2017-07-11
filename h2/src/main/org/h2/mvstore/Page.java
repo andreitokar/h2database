@@ -36,6 +36,7 @@ public final class Page implements Cloneable {
      * An empty object array.
      */
     public static final Object[] EMPTY_OBJECT_ARRAY = new Object[0];
+    private static final int IN_MEMORY = Integer.MIN_VALUE;
 
     public final MVMap<?, ?> map;
     private long pos;
@@ -51,7 +52,7 @@ public final class Page implements Cloneable {
     private int cachedCompare;
 
     /**
-     * The estimated memory used.
+     * The estimated memory used in persistent case, IN_MEMORY marker value otherwise.
      */
     private int memory;
 
@@ -895,6 +896,10 @@ public final class Page implements Cloneable {
     @Override
     public int hashCode() {
         return pos != 0 ? (int) (pos | (pos >>> 32)) : super.hashCode();
+    }
+
+    private boolean isPersistent() {
+        return memory != IN_MEMORY;
     }
 
     public int getMemory() {
