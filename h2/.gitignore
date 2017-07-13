@@ -14,3 +14,4 @@ test.out.txt
 *.log
 target/
 !/src/main/org/h2/server/web/res/error.jsp
+/generated/
