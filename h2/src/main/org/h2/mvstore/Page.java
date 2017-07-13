@@ -585,8 +585,10 @@ public final class Page implements Cloneable {
             setValue(index, value);
         }
         totalCount++;
-        addMemory(map.getKeyType().getMemory(key) +
-                map.getValueType().getMemory(value));
+        if (isPersistent()) {
+            addMemory(map.getKeyType().getMemory(key) +
+                    map.getValueType().getMemory(value));
+        }
     }
 
     /**
@@ -611,8 +613,10 @@ public final class Page implements Cloneable {
         children = newChildren;
 
         totalCount += childPage.totalCount;
-        addMemory(map.getKeyType().getMemory(key) +
-                DataUtils.PAGE_MEMORY_CHILD);
+        if (isPersistent()) {
+            addMemory(map.getKeyType().getMemory(key) +
+                    DataUtils.PAGE_MEMORY_CHILD);
+        }
     }
 
     /**

@@ -643,6 +643,7 @@ public class RegularTable extends TableBase {
                     }
                 }
             }
+            Session lockExclusiveSession = this.lockExclusiveSession;
             if (error == null && lockExclusiveSession != null) {
                 Table t = lockExclusiveSession.getWaitForLock();
                 if (t != null) {
