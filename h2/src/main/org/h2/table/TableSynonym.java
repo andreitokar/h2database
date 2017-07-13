@@ -29,6 +29,8 @@ public class TableSynonym extends AbstractTable {
 
     private CreateSynonymData data;
 
+    private AbstractTable synonymFor;
+
     public TableSynonym(CreateSynonymData data) {
         initSchemaObjectBase(data.schema, data.id, data.synonymName, Trace.TABLE);
         this.data = data;
@@ -39,7 +41,7 @@ public class TableSynonym extends AbstractTable {
     }
 
     private AbstractTable getSynonymFor() {
-        return data.synonymForSchema.getTableOrView(data.session, data.synonymFor);
+        return synonymFor;
     }
 
     @Override
@@ -55,7 +57,7 @@ public class TableSynonym extends AbstractTable {
 
     @Override
     public int getType() {
-        return getSynonymFor().getType();
+        return TABLE_OR_VIEW;
     }
 
     @Override
@@ -270,6 +272,7 @@ public class TableSynonym extends AbstractTable {
 
     @Override
     public void removeChildrenAndResources(Session session) {
+        synonymFor.removeSynonym(this);
         database.removeMeta(session, getId());
     }
 
@@ -417,6 +420,11 @@ public class TableSynonym extends AbstractTable {
     }
 
     @Override
+    public void removeSynonym(TableSynonym synonym) {
+        throw DbException.getUnsupportedException("SYNONYM");
+    }
+
+    @Override
     public void removeConstraint(Constraint constraint) {
         getSynonymFor().removeConstraint(constraint);
     }
@@ -429,6 +437,11 @@ public class TableSynonym extends AbstractTable {
     @Override
     public void addView(TableView view) {
         getSynonymFor().addView(view);
+    }
+
+    @Override
+    public void addSynonym(TableSynonym synonym) {
+        throw DbException.getUnsupportedException("SYNONYM");
     }
 
     @Override
@@ -476,9 +489,18 @@ public class TableSynonym extends AbstractTable {
         getSynonymFor().fireAfterRow(session, oldRow, newRow, rollback);
     }
 
+    public void updateSynonymFor() {
+        if (synonymFor != null) {
+            synonymFor.removeSynonym(this);
+        }
+        synonymFor = data.synonymForSchema.getTableOrView(data.session, data.synonymFor);
+        synonymFor.addSynonym(this);
+    }
+
     @Override
     public boolean isGlobalTemporary() {
         return getSynonymFor().isGlobalTemporary();
     }
+
 
 }
