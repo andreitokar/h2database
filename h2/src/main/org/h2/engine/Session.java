@@ -42,7 +42,6 @@ import org.h2.schema.Schema;
 import org.h2.store.DataHandler;
 import org.h2.store.InDoubtTransaction;
 import org.h2.store.LobStorageFrontend;
-import org.h2.table.AbstractTable;
 import org.h2.table.SubQueryInfo;
 import org.h2.table.Table;
 import org.h2.table.TableFilter;
@@ -377,7 +376,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
      *
      * @param table the table
      */
-    public void removeLocalTempTable(AbstractTable table) {
+    public void removeLocalTempTable(Table table) {
         modificationId++;
         localTempTables.remove(table.getName());
         synchronized (database) {
@@ -864,7 +863,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
      * @param operation the operation type (see {@link UndoLogRecord})
      * @param row the row
      */
-    public void log(AbstractTable table, short operation, Row row) {
+    public void log(Table table, short operation, Row row) {
         if (table.isMVStore()) {
             return;
         }
