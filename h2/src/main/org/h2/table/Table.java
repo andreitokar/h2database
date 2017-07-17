@@ -183,7 +183,7 @@ public abstract class Table extends SchemaObjectBase {
      * @param session the session
      * @param row the row
      */
-    public abstract void removeRow(Session session, Row row);
+    public abstract Row removeRow(Session session, Row row);
 
     /**
      * Remove all rows from the table and indexes.
