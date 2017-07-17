@@ -272,9 +272,12 @@ public class ValueLong extends Value {
         }
 
         @Override
-        public int binarySearch(Object what, Object storage, int initialGuess) {
-//            return Arrays.binarySearch((long[]) storage, ((Value)key).getLong());
+        public int getMemory(Object obj) {
+            return obj instanceof ValueLong ? 8 : super.getMemory(obj);
+        }
 
+        @Override
+        public int binarySearch(Object what, Object storage, int initialGuess) {
             if (what == null) {
                 return -1;
             }

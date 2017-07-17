@@ -169,10 +169,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
                         new Page.PageReference(split),
                         Page.PageReference.EMPTY
                 };
-                p = Page.create(this,
-                        keys, null,
-                        children,
-                        totalCount, 0);
+                p = Page.create(this, keys, null, children, 2, totalCount, 0);
                 if(store.getFileStore() != null) {
                     store.registerUnsavedPage(p.getMemory());
                 }
@@ -426,9 +423,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
             values = null;
             refs = Page.PageReference.SINGLE_EMPTY;
         }
-        Page page = Page.create(this,
-                Page.EMPTY_OBJECT_ARRAY, values,
-                refs, 0, 0);
+        Page page = Page.create(this, Page.EMPTY_OBJECT_ARRAY, values, refs, 0, 0, 0);
         if(store.getFileStore() != null)
         {
             store.registerUnsavedPage(page.getMemory());

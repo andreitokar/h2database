@@ -318,6 +318,11 @@ public class Constants {
     public static final int MEMORY_OBJECT = 24;
 
     /**
+     * The memory needed by an array.
+     */
+    public static final int MEMORY_ARRAY = 24;
+
+    /**
      * The memory needed by an object of class PageBtree.
      */
     public static final int MEMORY_PAGE_BTREE =

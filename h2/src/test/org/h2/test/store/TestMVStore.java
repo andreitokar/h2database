@@ -301,7 +301,7 @@ public class TestMVStore extends TestBase {
             s.commit();
             if (i < 50) {
                 assertEquals(0, s.getCacheSizeUsed());
-            } else if (i > 300) {
+            } else if (i > 350) {
                 assertTrue(s.getCacheSizeUsed() >= 1);
             }
         }
@@ -1426,7 +1426,8 @@ public class TestMVStore extends TestBase {
         // after node modification, whereas before it was on a way down
         // and before node modification
 //        assertEquals(117120, s.getUnsavedMemory());
-        assertEquals(97266, s.getUnsavedMemory());
+//        assertEquals(97266, s.getUnsavedMemory());
+        assertEquals(72606, s.getUnsavedMemory());
         s.commit();
         assertEquals(2, s.getFileStore().getWriteCount());
         s.close();
@@ -1438,7 +1439,8 @@ public class TestMVStore extends TestBase {
         s.commit();
         // ensure only nodes are read, but not leaves
 //        assertEquals(45, s.getFileStore().getReadCount());
-        assertEquals(30, s.getFileStore().getReadCount());
+//        assertEquals(30, s.getFileStore().getReadCount());
+        assertEquals(18, s.getFileStore().getReadCount());
         assertTrue(s.getFileStore().getWriteCount() < 5);
         s.close();
     }

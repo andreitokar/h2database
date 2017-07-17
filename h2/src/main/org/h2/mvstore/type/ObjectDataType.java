@@ -515,7 +515,8 @@ public class ObjectDataType implements DataType {
 
         @Override
         public int getMemory(Object obj) {
-            return obj == null ? 0 : super.getMemory(obj);
+            return obj == null ? Constants.MEMORY_POINTER :
+                                 super.getMemory(obj);
         }
 
         @Override
@@ -555,7 +556,8 @@ public class ObjectDataType implements DataType {
 
         @Override
         public int getMemory(Object obj) {
-            return obj instanceof Boolean ? 0 : super.getMemory(obj);
+            return obj instanceof Boolean ? Constants.MEMORY_POINTER :
+                                            super.getMemory(obj);
         }
 
         @Override
@@ -596,7 +598,8 @@ public class ObjectDataType implements DataType {
 
         @Override
         public int getMemory(Object obj) {
-            return obj instanceof Byte ? 0 : super.getMemory(obj);
+            return obj instanceof Byte ? Constants.MEMORY_POINTER + Constants.MEMORY_OBJECT :
+                                         super.getMemory(obj);
         }
 
         @Override
@@ -637,7 +640,8 @@ public class ObjectDataType implements DataType {
 
         @Override
         public int getMemory(Object obj) {
-            return obj instanceof Character ? 24 : super.getMemory(obj);
+            return obj instanceof Character ? Constants.MEMORY_POINTER + Constants.MEMORY_OBJECT :
+                                              super.getMemory(obj);
         }
 
         @Override
@@ -678,7 +682,8 @@ public class ObjectDataType implements DataType {
 
         @Override
         public int getMemory(Object obj) {
-            return obj instanceof Short ? 24 : super.getMemory(obj);
+            return obj instanceof Short ? Constants.MEMORY_POINTER + Constants.MEMORY_OBJECT :
+                                          super.getMemory(obj);
         }
 
         @Override
@@ -721,7 +726,7 @@ public class ObjectDataType implements DataType {
 
         @Override
         public int getMemory(Object obj) {
-            return obj instanceof Integer ? Constants.MEMORY_OBJECT : super.getMemory(obj);
+            return obj instanceof Integer ? 4 : super.getMemory(obj);
         }
 
         @Override
@@ -766,7 +771,7 @@ public class ObjectDataType implements DataType {
 
         @Override
         public int getMemorySize(Object storage) {
-            return Constants.MEMORY_OBJECT + getLength(storage) * 4;
+            return getLength(storage) * 4;
         }
 
         @Override
@@ -874,7 +879,7 @@ public class ObjectDataType implements DataType {
 
         @Override
         public int getMemory(Object obj) {
-            return obj instanceof Long ? 30 : super.getMemory(obj);
+            return obj instanceof Long ? 8 : super.getMemory(obj);
         }
 
         @Override
@@ -1020,7 +1025,8 @@ public class ObjectDataType implements DataType {
 
         @Override
         public int getMemory(Object obj) {
-            return obj instanceof Float ? 24 : super.getMemory(obj);
+            return obj instanceof Float ? Constants.MEMORY_POINTER + Constants.MEMORY_OBJECT :
+                                          super.getMemory(obj);
         }
 
         @Override
@@ -1082,7 +1088,7 @@ public class ObjectDataType implements DataType {
 
         @Override
         public int getMemory(Object obj) {
-            return obj instanceof Double ? 30 : super.getMemory(obj);
+            return obj instanceof Double ? 8 : super.getMemory(obj);
         }
 
         @Override
@@ -1372,7 +1378,7 @@ public class ObjectDataType implements DataType {
             if (!(obj instanceof String)) {
                 return super.getMemory(obj);
             }
-            return Constants.MEMORY_OBJECT + 2 * obj.toString().length();
+            return Constants.MEMORY_POINTER + Constants.MEMORY_OBJECT + 2 * obj.toString().length();
         }
 
         @Override
@@ -1517,7 +1523,7 @@ public class ObjectDataType implements DataType {
 
         @Override
         public int getMemory(Object obj) {
-            return obj instanceof UUID ? 40 : super.getMemory(obj);
+            return obj instanceof UUID ? Constants.MEMORY_POINTER + 40 : super.getMemory(obj);
         }
 
         @Override
@@ -1561,7 +1567,7 @@ public class ObjectDataType implements DataType {
 
         @Override
         public int getMemory(Object obj) {
-            return isDate(obj) ? 40 : super.getMemory(obj);
+            return isDate(obj) ? Constants.MEMORY_POINTER + 40 : super.getMemory(obj);
         }
 
         @Override

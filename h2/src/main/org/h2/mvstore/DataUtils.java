@@ -19,6 +19,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.h2.engine.Constants;
+import org.h2.schema.Constant;
 import org.h2.util.New;
 
 /**
@@ -144,7 +145,10 @@ public final class DataUtils {
     /**
      * The estimated number of bytes used per page object.
      */
-    public static final int PAGE_MEMORY = 128;
+    public static final int PAGE_MEMORY = Constants.MEMORY_OBJECT + 2 * Constants.MEMORY_POINTER + 22; //128;
+    public static final int PAGE_LEAF_MEMORY = PAGE_MEMORY + Constants.MEMORY_POINTER;
+    public static final int PAGE_NODE_MEMORY = PAGE_MEMORY + Constants.MEMORY_POINTER + 8;
+    public static final int PAGE_LEAF_EMPTY_MEMORY = PAGE_LEAF_MEMORY + 2 * Constants.MEMORY_ARRAY;
 
     /**
      * The estimated number of bytes used per child entry.

@@ -237,7 +237,7 @@ public final class MVStore {
      */
     private long lastStoredVersion = INITIAL_VERSION;
 
-    public final AtomicLong oldestVersionToKeep = new AtomicLong(NOT_SET);
+    private final AtomicLong oldestVersionToKeep = new AtomicLong(NOT_SET);
 
     /**
      * The estimated memory used by unsaved pages. This number is not accurate,
@@ -1968,7 +1968,7 @@ public final class MVStore {
             }
             long maxPos = (c.block + c.len) * BLOCK_SIZE;
             p = Page.read(fileStore, pos, map, filePos, maxPos);
-            cachePage(pos, p, p.getMemory());
+            cachePage(p);
         }
         return p;
     }
@@ -2663,14 +2663,11 @@ public final class MVStore {
 
     /**
      * Put the page in the cache.
-     *
-     * @param pos the page position
      * @param page the page
-     * @param memory the memory used
      */
-    void cachePage(long pos, Page page, int memory) {
+    void cachePage(Page page) {
         if (cache != null) {
-            cache.put(pos, page, memory);
+            cache.put(page.getPos(), page, page.getMemory());
         }
     }
 

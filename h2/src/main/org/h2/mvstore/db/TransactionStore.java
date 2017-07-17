@@ -1848,7 +1848,8 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
         public int getMemory(Object obj) {
             if(obj == null) return 0;
             VersionedValue v = (VersionedValue) obj;
-            return valueType.getMemory(v.value) + 8;
+            return Constants.MEMORY_OBJECT + 8 + Constants.MEMORY_POINTER +
+                    valueType.getMemory(v.value);
         }
 
         @Override
@@ -1954,7 +1955,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
         @Override
         public int getMemory(Object obj) {
             Record record = (Record) obj;
-            return 4 + 2 * Constants.MEMORY_POINTER +
+            return Constants.MEMORY_OBJECT + 4 + 3 * Constants.MEMORY_POINTER +
                     keyType.getMemory(record.key) +
                     valueType.getMemory(record.oldValue);
         }

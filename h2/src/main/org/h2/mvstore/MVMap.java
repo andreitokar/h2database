@@ -17,6 +17,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.h2.engine.Constants;
 import org.h2.mvstore.type.DataType;
 import org.h2.mvstore.type.ExtendedDataType;
 import org.h2.mvstore.type.ObjectDataType;
@@ -221,11 +222,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                 contention = (int)((updateAttemptCounter+1) / (updateCounter+1));
             }
             oldRootReference = rootReference;
-
-//            if(rootReference.version > version) {
-//                throw new IllegalStateException("Inconsistent versions, current:" + rootReference.version + ", new:" + version);
-//            }
-
             ++attempt;
             CursorPos pos = traverseDown(rootReference.root, key);
             Page p = pos.page;
@@ -281,9 +277,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                                     && p.getKeyCount() > (p.isLeaf() ? 1 : 2)) {
                                 long totalCount = p.getTotalCount();
                                 int at = p.getKeyCount() >> 1;
-//                                int at = index < (p.getKeyCount() >> 2) ? p.getKeyCount() / 3 :
-//                                        index < (3 * p.getKeyCount() >> 2) ? 2 * p.getKeyCount() / 3 :
-//                                                p.getKeyCount() / 2;
                                 Object k = p.getKey(at);
                                 Page split = p.split(at);
                                 unsavedMemory += p.getMemory();
@@ -295,7 +288,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                                             new Page.PageReference(p),
                                             new Page.PageReference(split)
                                     };
-                                    p = Page.create(this, keys, null, children, totalCount, 0);
+                                    p = Page.create(this, keys, null, children, 1, totalCount, 0);
                                     break;
                                 }
                                 Page c = p;
@@ -1389,7 +1382,8 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     }
 
     private Page copy(Page source, CursorPos parent) {
-        Page target = Page.create(this, source);
+        Page target = source.copy(this);
+        store.registerUnsavedPage(target.getMemory());
         if (!source.isLeaf()) {
             CursorPos pos = new CursorPos(target, 0, parent);
             for (int i = 0; i < getChildPageCount(target); i++) {
@@ -1651,8 +1645,8 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
         @Override
         public int getMemorySize(Object storage) {
-            int mem = 0;
             Object data[] = (Object[])storage;
+            int mem = 0;
             for (Object key : data) {
                 mem += dataType.getMemory(key);
             }
