@@ -125,6 +125,9 @@ public class TestStreamStore extends TestBase {
     }
 
     private void testReadCount() throws IOException {
+        if (config.memory) {
+            return;
+        }
         String fileName = getBaseDir() + "/testReadCount.h3";
         FileUtils.delete(fileName);
         MVStore s = new MVStore.Builder().

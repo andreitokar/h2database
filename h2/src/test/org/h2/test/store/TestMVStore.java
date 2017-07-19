@@ -815,6 +815,9 @@ public class TestMVStore extends TestBase {
     }
 
     private void testCacheSize() {
+        if (config.memory) {
+            return;
+        }
         String fileName = getBaseDir() + "/" + getTestName();
         FileUtils.delete(fileName);
         MVStore s;
@@ -830,7 +833,8 @@ public class TestMVStore extends TestBase {
         }
         s.close();
         int[] expectedReadsForCacheSize = {
-                3407, 2590, 1924, 1440, 1330, 956, 918
+//              3407, 2590, 1924, 1440, 1330, 956, 918
+                1880, 1789, 1616, 1374, 970, 711, 541
         };
         for (int cacheSize = 0; cacheSize <= 6; cacheSize += 4) {
             int cacheMB = 1 + 3 * cacheSize;
@@ -1427,7 +1431,7 @@ public class TestMVStore extends TestBase {
         // and before node modification
 //        assertEquals(117120, s.getUnsavedMemory());
 //        assertEquals(97266, s.getUnsavedMemory());
-        assertEquals(72606, s.getUnsavedMemory());
+        assertEquals(64252, s.getUnsavedMemory());
         s.commit();
         assertEquals(2, s.getFileStore().getWriteCount());
         s.close();
@@ -1440,7 +1444,7 @@ public class TestMVStore extends TestBase {
         // ensure only nodes are read, but not leaves
 //        assertEquals(45, s.getFileStore().getReadCount());
 //        assertEquals(30, s.getFileStore().getReadCount());
-        assertEquals(18, s.getFileStore().getReadCount());
+        assertEquals(10, s.getFileStore().getReadCount());
         assertTrue(s.getFileStore().getWriteCount() < 5);
         s.close();
     }

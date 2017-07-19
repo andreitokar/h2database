@@ -82,11 +82,15 @@ public class CacheLongKeyLIRS<V> {
      * Remove all entries.
      */
     public void clear() {
-        long max = Math.max(1, maxMemory / segmentCount);
+        long max = getMaxItemSize();
         for (int i = 0; i < segmentCount; i++) {
             segments[i] = new Segment<V>(
                     max, stackMoveDistance, 8, nonResidentQueueSize);
         }
+    }
+
+    public long getMaxItemSize() {
+        return Math.max(1, maxMemory / segmentCount);
     }
 
     private Entry<V> find(long key) {

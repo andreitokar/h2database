@@ -129,6 +129,7 @@ public class TestMVStoreBenchmark extends TestBase {
     }
 
     static long getMemory() {
+/*
         try {
             LinkedList<byte[]> list = new LinkedList<byte[]>();
             while (true) {
@@ -137,6 +138,7 @@ public class TestMVStoreBenchmark extends TestBase {
         } catch (OutOfMemoryError e) {
             // ok
         }
+*/
         for (int i = 0; i < 16; i++) {
             System.gc();
             try {

@@ -162,6 +162,8 @@ public final class MVStore {
 
     private final int pageSplitSize;
 
+    private final int keysPerPage;
+
     /**
      * The page cache. The default size is 16 MB, and the average size is 2 KB.
      * It is split in 16 segments. The stack move distance is 2% of the expected
@@ -314,8 +316,10 @@ public final class MVStore {
         this.fileStore = fileStore;
         o = config.get("pageSplitSize");
         pageSplitSize = o != null         ? (Integer) o :
-                        this.fileStore == null ? 48 /*4 * 1024*/ :
-                                            16 * 1024;
+                        fileStore != null ? 16 * 1024 :
+                                            4 * 1024;
+        o = config.get("keysPerPage");
+        keysPerPage = o != null ? (Integer)o : 48;
         o = config.get("backgroundExceptionHandler");
         this.backgroundExceptionHandler = (UncaughtExceptionHandler) o;
         meta = new MVMap<String, String>(StringDataType.INSTANCE,
@@ -2064,6 +2068,14 @@ public final class MVStore {
 
     public int getPageSplitSize() {
         return pageSplitSize;
+    }
+
+    public int getKeysPerPage() {
+        return keysPerPage;
+    }
+
+    public long getMaxPageSize() {
+        return cache == null ? Long.MAX_VALUE : cache.getMaxItemSize() >> 4;
     }
 
     public boolean getReuseSpace() {

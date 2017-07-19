@@ -272,8 +272,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                             index = -index - 1;
                             p = p.copy();
                             p.insertLeaf(index, key, value);
-                            int pageSplitSize = store.getPageSplitSize();
-                            while (p.getMemory() > (p.isLeaf() ? pageSplitSize << 1 : pageSplitSize)
+                            while (p.getKeyCount() > store.getKeysPerPage() || p.getMemory() > store.getMaxPageSize()
                                     && p.getKeyCount() > (p.isLeaf() ? 1 : 2)) {
                                 long totalCount = p.getTotalCount();
                                 int at = p.getKeyCount() >> 1;
