@@ -17,7 +17,6 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicReference;
 
-import org.h2.engine.Constants;
 import org.h2.mvstore.type.DataType;
 import org.h2.mvstore.type.ExtendedDataType;
 import org.h2.mvstore.type.ObjectDataType;
@@ -287,7 +286,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                                             new Page.PageReference(p),
                                             new Page.PageReference(split)
                                     };
-                                    p = Page.create(this, keys, null, children, 1, totalCount, 0);
+                                    p = Page.create(this, keys, null, children, totalCount, 0);
                                     break;
                                 }
                                 Page c = p;
@@ -1614,32 +1613,20 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
         @Override
         public int getLength(Object storage) {
-/*
-            return Array.getLength(storage);
-/*/
             Object data[] = (Object[])storage;
             return data.length;
-//*/
         }
 
         @Override
         public Object getValue(Object storage, int indx) {
-/*
-            return Array.get(storage, indx);
-/*/
             Object data[] = (Object[])storage;
             return data[indx];
-//*/
         }
 
         @Override
         public void setValue(Object storage, int indx, Object value) {
-/*
-            Array.set(storage, indx, value);
-/*/
             Object data[] = (Object[])storage;
             data[indx] = value;
-//*/
         }
 
         @Override
