@@ -2761,7 +2761,7 @@ public final class MVStore {
         private final MVStore store;
         private final int sleep;
 
-        BackgroundWriterThread(MVStore store, int sleep, String fileStoreName) {
+        private BackgroundWriterThread(MVStore store, int sleep, String fileStoreName) {
             super("MVStore background writer " + fileStoreName);
             this.store = store;
             this.sleep = sleep;
