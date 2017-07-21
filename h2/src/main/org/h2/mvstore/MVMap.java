@@ -271,10 +271,11 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                             index = -index - 1;
                             p = p.copy();
                             p.insertLeaf(index, key, value);
-                            while (p.getKeyCount() > store.getKeysPerPage() || p.getMemory() > store.getMaxPageSize()
-                                    && p.getKeyCount() > (p.isLeaf() ? 1 : 2)) {
+                            int keyCount;
+                            while ((keyCount = p.getKeyCount()) > store.getKeysPerPage() || p.getMemory() > store.getMaxPageSize()
+                                    && keyCount > (p.isLeaf() ? 1 : 2)) {
                                 long totalCount = p.getTotalCount();
-                                int at = p.getKeyCount() >> 1;
+                                int at = keyCount >> 1;
                                 Object k = p.getKey(at);
                                 Page split = p.split(at);
                                 unsavedMemory += p.getMemory();
@@ -892,34 +893,8 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @return whether rewriting was successful
      */
     final boolean rewrite(Set<Integer> set) {
-/*
-        // read from old version, to avoid concurrent reads
-        long previousVersion = store.getCurrentVersion() - 1;
-        if (previousVersion < createVersion) {
-            // a new map
-            return true;
-        }
-        MVMap<K, V> readMap;
-        try {
-            readMap = openVersion(previousVersion);
-        } catch (IllegalArgumentException e) {
-            // unknown version: ok
-            // TODO should not rely on exception handling
-            return true;
-        }
-//*/
-        try {
-//            rewrite(readMap.getRootPage(), set);
-            rewrite(getRootPage(), set);
-            return true;
-        } catch (IllegalStateException e) {
-            // TODO should not rely on exception handling
-            if (DataUtils.getErrorCode(e.getMessage()) == DataUtils.ERROR_CHUNK_NOT_FOUND) {
-                // ignore
-                return false;
-            }
-            throw e;
-        }
+        rewrite(getRootPage(), set);
+        return true;
     }
 
     private int rewrite(Page p, Set<Integer> set) {

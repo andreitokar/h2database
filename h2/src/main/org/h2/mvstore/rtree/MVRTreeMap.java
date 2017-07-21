@@ -113,8 +113,9 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
      * @return the value, or null if not found
      */
     public V get(Page p, Object key) {
+        int keyCount = p.getKeyCount();
         if (!p.isLeaf()) {
-            for (int i = 0; i < p.getKeyCount(); i++) {
+            for (int i = 0; i < keyCount; i++) {
                 if (contains(p, i, key)) {
                     V o = get(p.getChildPage(i), key);
                     if (o != null) {
@@ -123,7 +124,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
                 }
             }
         } else {
-            for (int i = 0; i < p.getKeyCount(); i++) {
+            for (int i = 0; i < keyCount; i++) {
                 if (keyType.equals(p.getKey(i), key)) {
                     return (V)p.getValue(i);
                 }
@@ -186,7 +187,8 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
         V result = null;
         if (p.isLeaf()) {
             int indx = -1;
-            for (int i = 0; i < p.getKeyCount(); i++) {
+            int keyCount = p.getKeyCount();
+            for (int i = 0; i < keyCount; i++) {
                 if (keyType.equals(p.getKey(i), key)) {
                     indx = i;
                 }
@@ -294,7 +296,8 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
 
     private Object getBounds(Page x) {
         Object bounds = keyType.createBoundingBox(x.getKey(0));
-        for (int i = 1; i < x.getKeyCount(); i++) {
+        int keyCount = x.getKeyCount();
+        for (int i = 1; i < keyCount; i++) {
             keyType.increaseBounds(bounds, x.getKey(i));
         }
         return bounds;
@@ -325,7 +328,8 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
 
     private Page splitLinear(Page p) {
         ArrayList<Object> keys = New.arrayList();
-        for (int i = 0; i < p.getKeyCount(); i++) {
+        int keyCount = p.getKeyCount();
+        for (int i = 0; i < keyCount; i++) {
             keys.add(p.getKey(i));
         }
         int[] extremes = keyType.getExtremes(keys);
@@ -364,9 +368,10 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
         Page splitB = newPage(p.isLeaf());
         float largest = Float.MIN_VALUE;
         int ia = 0, ib = 0;
-        for (int a = 0; a < p.getKeyCount(); a++) {
+        int keyCount = p.getKeyCount();
+        for (int a = 0; a < keyCount; a++) {
             Object objA = p.getKey(a);
-            for (int b = 0; b < p.getKeyCount(); b++) {
+            for (int b = 0; b < keyCount; b++) {
                 if (a == b) {
                     continue;
                 }
@@ -389,7 +394,8 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
         while (p.getKeyCount() > 0) {
             float diff = 0, bestA = 0, bestB = 0;
             int best = 0;
-            for (int i = 0; i < p.getKeyCount(); i++) {
+            keyCount = p.getKeyCount();
+            for (int i = 0; i < keyCount; i++) {
                 Object o = p.getKey(i);
                 float incA = keyType.getAreaIncrease(boundsA, o);
                 float incB = keyType.getAreaIncrease(boundsB, o);
@@ -454,7 +460,8 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
      */
     public void addNodeKeys(ArrayList<SpatialKey> list, Page p) {
         if (p != null && !p.isLeaf()) {
-            for (int i = 0; i < p.getKeyCount(); i++) {
+            int keyCount = p.getKeyCount();
+            for (int i = 0; i < keyCount; i++) {
                 list.add((SpatialKey) p.getKey(i));
                 addNodeKeys(list, p.getChildPage(i));
             }

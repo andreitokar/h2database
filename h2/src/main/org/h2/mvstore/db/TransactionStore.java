@@ -64,8 +64,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
     /**
      * The map of maps.
      */
-    private final ConcurrentHashMap<Integer, MVMap<Object, VersionedValue>> maps =
-            new ConcurrentHashMap<Integer, MVMap<Object, VersionedValue>>();
+    private final ConcurrentHashMap<Integer, MVMap<Object, VersionedValue>> maps = new ConcurrentHashMap<>();
 
     private final DataType dataType;
 
@@ -73,7 +72,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
     private boolean init;
 
     private int maxTransactionId = 0xffff;
-    private final AtomicReferenceArray<Transaction> transactions = new AtomicReferenceArray<Transaction>(AVG_OPEN_TRANSACTIONS);
+    private final AtomicReferenceArray<Transaction> transactions = new AtomicReferenceArray<>(AVG_OPEN_TRANSACTIONS);
     private volatile Transaction[] spilledTransactions = new Transaction[AVG_OPEN_TRANSACTIONS];
     private final AtomicReference<BitSet> openTransactions = new AtomicReference<>(new BitSet());
     private final AtomicReference<BitSet> committingTransactions = new AtomicReference<>(new BitSet());
@@ -505,9 +504,8 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
      */
     void endTransaction(Transaction t) {
         int txId = t.getId();
-        Long ceilingKey;
-        assert (ceilingKey = undoLog.ceilingKey(getOperationId(txId, 0))) == null || getTransactionId(ceilingKey) != txId :
-                "undoLog has leftovers for " + txId + " : " + getTransactionId(ceilingKey) + "/" + getLogId(ceilingKey);
+
+        assert verifyUndoIsEmptyForTx(txId);
 
         if (t.getStatus() >= Transaction.STATUS_PREPARED) {
             preparedTransactions.remove(txId);
@@ -532,6 +530,8 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
             success = openTransactions.compareAndSet(original, clone);
         } while(!success);
 
+        assert verifyUndoIsEmptyWhenIdle();
+
         if (store.getAutoCommitDelay() == 0) {
             store.commit();
             return;
@@ -547,6 +547,23 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
                 store.commit();
             }
         }
+    }
+
+    private boolean verifyUndoIsEmptyForTx(int txId) {
+        Long ceilingKey = ceilingKey = undoLog.ceilingKey(getOperationId(txId, 0));
+        assert ceilingKey == null || getTransactionId(ceilingKey) != txId :
+                "undoLog has leftovers for " + txId + " : " + getTransactionId(ceilingKey) + "/" + getLogId(ceilingKey);
+        return true;
+    }
+
+    private boolean verifyUndoIsEmptyWhenIdle() {
+        // if there is no open transaction, undo log suppose to be empty
+        Page undLogRootPage = undoLog.getRootPage();
+        long count = undLogRootPage.getTotalCount();
+        assert count == 0
+            || openTransactions.get().cardinality() > 0
+            || undLogRootPage != undoLog.getRootPage() : count + " orphan undoLog entries";
+        return true;
     }
 
     private Transaction getTransaction(int transactionId) {
@@ -857,6 +874,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
         void logUndo() {
             checkOpen();
             store.logUndo(this, --logId);
+            assert logId > 0 || store.verifyUndoIsEmptyForTx(transactionId);
         }
 
         /**
@@ -942,6 +960,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
             checkNotClosed();
             store.rollbackTo(this, savepointId);
             logId = savepointId;
+            assert logId > 0 || store.verifyUndoIsEmptyForTx(transactionId);
         }
 
         /**
@@ -1424,7 +1443,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
                 Record d = (Record) Page.get(undoLogRootPage, id);
                 assert d != null : getTransactionId(id)+"/"+getLogId(id);
                 assert d.mapId == map.getId() : d.mapId + " != " + map.getId();
-                assert map.areValuesEqual(map.getKeyType(), d.key, key) : d.key + " <> " + key;
+                assert MVMap.areValuesEqual(map.getKeyType(), d.key, key) : d.key + " <> " + key;
                 data = d.oldValue;
             }
         }
@@ -1543,67 +1562,8 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
          *            included
          * @return the iterator
          */
-        public Iterator<K> keyIterator(final K from, final boolean includeUncommitted) {
-            return new Iterator<K>() {
-                private K current;
-                private final BitSet committingTransactions;
-                private final Page undoLogRootPage;
-                private final Cursor<K, VersionedValue> cursor;
-
-                {
-                    BitSet committingTransactions;
-                    MVMap.RootReference mapRootReference;
-                    MVMap.RootReference undoLogRootReference;
-                    do {
-                        committingTransactions = transaction.store.committingTransactions.get();
-                        mapRootReference = map.getRoot();
-                        undoLogRootReference = transaction.store.undoLog.getRoot();
-                    } while(mapRootReference != map.getRoot() || committingTransactions != transaction.store.committingTransactions.get());
-                    this.committingTransactions = committingTransactions;
-                    this.undoLogRootPage = undoLogRootReference.root;
-                    this.cursor = new Cursor<K, VersionedValue>(map, mapRootReference.root, from, true);
-                }
-
-                private void fetchNext() {
-                    while (cursor.hasNext()) {
-                        K key = cursor.next();
-                        current = key;
-                        if (includeUncommitted) {
-                            return;
-                        }
-                        VersionedValue data = cursor.getValue();
-                        data = getValue(key, readLogId, undoLogRootPage, committingTransactions, data);
-                        if(data != null && data.value != null) {
-                            return;
-                        }
-                    }
-                    current = null;
-                }
-
-                @Override
-                public boolean hasNext() {
-                    if(current == null) {
-                        fetchNext();
-                    }
-                    return current != null;
-                }
-
-                @Override
-                public K next() {
-                    if(!hasNext()) {
-                        return null;
-                    }
-                    K result = current;
-                    current = null;
-                    return result;
-                }
-
-                @Override
-                public void remove() {
-                    throw DataUtils.newUnsupportedOperationException(
-                            "Removing is not supported");
-                }
-            };
+        public Iterator<K> keyIterator(K from, boolean includeUncommitted) {
+            return new KeyIterator<K>(this, from, includeUncommitted);
         }
 
         /**
@@ -1613,66 +1573,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
          * @return the iterator
          */
         public Iterator<Entry<K, V>> entryIterator(final K from) {
-            return new Iterator<Entry<K, V>>() {
-                private Entry<K, V> current;
-                private final BitSet committingTransactions;
-                private final Page undoLogRootPage;
-                private final Cursor<K, VersionedValue> cursor;
-
-                {
-                    BitSet committingTransactions;
-                    MVMap.RootReference mapRootReference;
-                    MVMap.RootReference undoLogRootReference;
-                    do {
-                        committingTransactions = transaction.store.committingTransactions.get();
-                        mapRootReference = map.getRoot();
-                        undoLogRootReference = transaction.store.undoLog.getRoot();
-                    } while(mapRootReference != map.getRoot() || committingTransactions != transaction.store.committingTransactions.get());
-                    this.committingTransactions = committingTransactions;
-                    this.undoLogRootPage = undoLogRootReference.root;
-                    this.cursor = new Cursor<K, VersionedValue>(map, mapRootReference.root, from, true);
-                }
-
-                private void fetchNext() {
-                    while (cursor.hasNext()) {
-                        K key = cursor.next();
-                        VersionedValue data = cursor.getValue();
-                        data = getValue(key, readLogId, undoLogRootPage, committingTransactions, data);
-                        if (data != null && data.value != null) {
-                            @SuppressWarnings("unchecked")
-                            V value = (V) data.value;
-                            current = new DataUtils.MapEntry<K, V>(key, value);
-                            return;
-                        }
-                    }
-                    current = null;
-                }
-
-                @Override
-                public boolean hasNext() {
-                    if(current == null) {
-                        fetchNext();
-                    }
-                    return current != null;
-                }
-
-                @Override
-                public Entry<K, V> next() {
-                    if(!hasNext()) {
-                        return null;
-                    }
-                    Entry<K, V> result = current;
-                    current = null;
-                    return result;
-                }
-
-                @Override
-                public void remove() {
-                    throw DataUtils.newUnsupportedOperationException(
-                            "Removing is not supported");
-                }
-            };
-
+            return new EntryIterator<K,V>(this, from);
         }
 
         /**
@@ -2174,6 +2075,111 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
         @Override
         public String toString() {
             return "rollback ";
+        }
+    }
+
+    private static final class KeyIterator<K> extends TMIterator<K,K> {
+        private final boolean includeUncommitted;
+
+        public KeyIterator(TransactionMap<K, ?> transactionMap, K from, boolean includeUncommitted) {
+            super(transactionMap, from);
+            this.includeUncommitted = includeUncommitted;
+        }
+
+        @Override
+        protected void fetchNext() {
+            while (cursor.hasNext()) {
+                K key = cursor.next();
+                current = key;
+                VersionedValue data = cursor.getValue();
+                if (!includeUncommitted) {
+                    data = getCommittedValue(key, data);
+                }
+                if(data != null && data.value != null) {
+                    return;
+                }
+            }
+            current = null;
+        }
+    }
+
+    private static final class EntryIterator<K,V> extends TMIterator<K,Entry<K,V>> {
+
+        public EntryIterator(TransactionMap<K, ?> transactionMap, K from) {
+            super(transactionMap, from);
+        }
+
+        @Override
+        protected void fetchNext() {
+            while (cursor.hasNext()) {
+                K key = cursor.next();
+                VersionedValue data = cursor.getValue();
+                data = getCommittedValue(key, data);
+                if (data != null && data.value != null) {
+                    @SuppressWarnings("unchecked")
+                    V value = (V) data.value;
+                    current = new DataUtils.MapEntry<K, V>(key, value);
+                    return;
+                }
+            }
+            current = null;
+        }
+    }
+
+    private abstract static class TMIterator<K,X> implements Iterator<X> {
+        private   final TransactionMap<K,?>       transactionMap;
+        private   final BitSet                    committingTransactions;
+        private   final Page                      undoLogRootPage;
+        protected final Cursor<K, VersionedValue> cursor;
+        protected       X                         current;
+
+        protected TMIterator(TransactionMap<K,?> transactionMap, K from)
+        {
+            this.transactionMap = transactionMap;
+            TransactionStore store = transactionMap.transaction.store;
+            MVMap<K, VersionedValue> map = transactionMap.map;
+            BitSet committingTransactions;
+            MVMap.RootReference mapRootReference;
+            MVMap.RootReference undoLogRootReference;
+            do {
+                committingTransactions = store.committingTransactions.get();
+                mapRootReference = map.getRoot();
+                undoLogRootReference = store.undoLog.getRoot();
+            } while(mapRootReference != map.getRoot() || committingTransactions != store.committingTransactions.get());
+            this.committingTransactions = committingTransactions;
+            this.undoLogRootPage = undoLogRootReference.root;
+            this.cursor = new Cursor<K, VersionedValue>(map, mapRootReference.root, from, true);
+        }
+
+        protected abstract void fetchNext();
+
+        @Override
+        public final boolean hasNext() {
+            if(current == null) {
+                fetchNext();
+            }
+            return current != null;
+        }
+
+        @Override
+        public final X next() {
+            if(!hasNext()) {
+                return null;
+            }
+            X result = current;
+            current = null;
+            return result;
+        }
+
+        @Override
+        public final void remove() {
+            throw DataUtils.newUnsupportedOperationException(
+                    "Removing is not supported");
+        }
+
+        protected final VersionedValue getCommittedValue(K key, VersionedValue data) {
+            return transactionMap.getValue(key, transactionMap.readLogId, undoLogRootPage,
+                                           committingTransactions, data);
         }
     }
 }

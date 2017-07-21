@@ -419,7 +419,6 @@ public abstract class Page implements Cloneable {
     protected final void insertKey(int index, Object key) {
         ExtendedDataType keyType = map.getExtendedKeyType();
         int keyCount = getKeyCount();
-        assert keyCount == keyType.getLength(keys);
         Object newKeys = createKeyStorage(keyCount + 1);
         DataUtils.copyWithGap(keys, newKeys, keyCount, index);
         keys = newKeys;
@@ -437,17 +436,16 @@ public abstract class Page implements Cloneable {
      */
     public void remove(int index) {
         ExtendedDataType keyType = map.getExtendedKeyType();
-        int keyLength = getKeyCount();
-        assert keyLength == keyType.getLength(keys);
-        if(index == keyLength) {
+        int keyCount = getKeyCount();
+        if(index == keyCount) {
             --index;
         }
         if(isPersistent()) {
             Object old = getKey(index);
             addMemory(-keyType.getMemory(old));
         }
-        Object newKeys = createKeyStorage(keyLength - 1);
-        DataUtils.copyExcept(keys, newKeys, keyLength, index);
+        Object newKeys = createKeyStorage(keyCount - 1);
+        DataUtils.copyExcept(keys, newKeys, keyCount, index);
         keys = newKeys;
     }
 
@@ -1022,15 +1020,15 @@ public abstract class Page implements Cloneable {
 
         @Override
         public void remove(int index) {
-            int keyLength = getKeyCount();
+            int keyCount = getKeyCount();
             super.remove(index);
             if (values != null) {
                 if(isPersistent()) {
                     Object old = getValue(index);
                     addMemory(-map.getValueType().getMemory(old));
                 }
-                Object newValues = createValueStorage(keyLength - 1);
-                DataUtils.copyExcept(values, newValues, keyLength, index);
+                Object newValues = createValueStorage(keyCount - 1);
+                DataUtils.copyExcept(values, newValues, keyCount, index);
                 values = newValues;
             }
         }
@@ -1189,7 +1187,8 @@ public abstract class Page implements Cloneable {
         public long getTotalCount() {
             if (MVStore.ASSERT) {
                 long check = 0;
-                for (int i = 0; i <= getKeyCount(); i++) {
+                int keyCount = getKeyCount();
+                for (int i = 0; i <= keyCount; i++) {
                     check += children[i].count;
                 }
                 if (check != totalCount) {
@@ -1303,11 +1302,12 @@ public abstract class Page implements Cloneable {
 
         @Override
         protected void writeChildren(WriteBuffer buff, boolean withCounts) {
-            for (int i = 0; i <= getKeyCount(); i++) {
+            int keyCount = getKeyCount();
+            for (int i = 0; i <= keyCount; i++) {
                 buff.putLong(children[i].pos);
             }
             if(withCounts) {
-                for (int i = 0; i <= getKeyCount(); i++) {
+                for (int i = 0; i <= keyCount; i++) {
                     buff.putVarLong(children[i].count);
                 }
             }
@@ -1353,7 +1353,7 @@ public abstract class Page implements Cloneable {
         @Override
         public int getRawChildPageCount() {
             assert children.length == getKeyCount() + 1;
-            return getKeyCount() + 1;
+            return children.length;
         }
 
         @Override
