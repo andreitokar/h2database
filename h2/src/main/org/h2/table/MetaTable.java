@@ -2022,15 +2022,14 @@ public class MetaTable extends Table {
     }
 
     private void add(ArrayList<Row> rows, String... strings) {
-        Value[] values = new Value[strings.length];    // TODO: eliminate creation
+        Row row = getTemplateRow();
         for (int i = 0; i < strings.length; i++) {
             String s = strings[i];
-            Value v = (s == null) ? (Value) ValueNull.INSTANCE : ValueString.get(s);
+            Value v = (s == null) ? ValueNull.INSTANCE : ValueString.get(s);
             Column col = columns[i];
             v = col.convert(v);
-            values[i] = v;
+            row.setValue(i, v);
         }
-        Row row = createRow(values, 1);
         row.setKey(rows.size());
         rows.add(row);
     }

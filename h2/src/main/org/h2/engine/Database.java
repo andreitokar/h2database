@@ -1666,19 +1666,6 @@ public class Database implements DataHandler {
      * @param session the session
      * @param obj the database object
      */
-    public void _updateMeta(Session session, DbObject obj) {
-        lockMeta(session);
-        synchronized (this) {
-            int id = obj.getId();
-            removeMeta(session, id);
-            addMeta(session, obj);
-            // for temporary objects
-            if (id > 0) {
-                objectIds.set(id);
-            }
-        }
-    }
-
     public synchronized void updateMeta(Session session, DbObject obj) {
         assert !starting;
         int id = obj.getId();
@@ -1749,9 +1736,7 @@ public class Database implements DataHandler {
             }
         }
         obj.checkRename();
-//        int id = obj.getId();
         lockMeta(session);
-//        removeMeta(session, id);
         map.remove(obj.getName());
         obj.rename(newName);
         map.put(newName, obj);
@@ -2211,7 +2196,15 @@ public class Database implements DataHandler {
     public void setLockMode(int lockMode) {
         switch (lockMode) {
         case Constants.LOCK_MODE_OFF:
-            // combination of LOCK_MODE=0 and MULTI_THREADED should be Ok now
+            if (multiThreaded && !multiVersion) {
+                // currently the combination of MVCC=FALSE, LOCK_MODE=0 and MULTI_THREADED
+                // is not supported. also see code in
+                // JdbcDatabaseMetaData#supportsTransactionIsolationLevel(int)
+                throw DbException.get(
+                        ErrorCode.UNSUPPORTED_SETTING_COMBINATION,
+                        "LOCK_MODE=0 & MULTI_THREADED");
+            }
+            break;
         case Constants.LOCK_MODE_READ_COMMITTED:
         case Constants.LOCK_MODE_TABLE:
         case Constants.LOCK_MODE_TABLE_GC:
