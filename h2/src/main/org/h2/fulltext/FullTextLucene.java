@@ -13,6 +13,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
@@ -96,27 +97,23 @@ public class FullTextLucene extends FullText {
      * @param conn the connection
      */
     public static void init(Connection conn) throws SQLException {
-        Statement stat = conn.createStatement();
-        stat.execute("CREATE SCHEMA IF NOT EXISTS " + SCHEMA);
-        stat.execute("CREATE TABLE IF NOT EXISTS " + SCHEMA +
-                ".INDEXES(SCHEMA VARCHAR, TABLE VARCHAR, " +
-                "COLUMNS VARCHAR, PRIMARY KEY(SCHEMA, TABLE))");
-        stat.execute("CREATE ALIAS IF NOT EXISTS FTL_CREATE_INDEX FOR \"" +
-                FullTextLucene.class.getName() + ".createIndex\"");
-        stat.execute("CREATE ALIAS IF NOT EXISTS FTL_DROP_INDEX FOR \"" +
-                FullTextLucene.class.getName() + ".dropIndex\"");
-        stat.execute("CREATE ALIAS IF NOT EXISTS FTL_SEARCH FOR \"" +
-                FullTextLucene.class.getName() + ".search\"");
-        stat.execute("CREATE ALIAS IF NOT EXISTS FTL_SEARCH_DATA FOR \"" +
-                FullTextLucene.class.getName() + ".searchData\"");
-        stat.execute("CREATE ALIAS IF NOT EXISTS FTL_REINDEX FOR \"" +
-                FullTextLucene.class.getName() + ".reindex\"");
-        stat.execute("CREATE ALIAS IF NOT EXISTS FTL_DROP_ALL FOR \"" +
-                FullTextLucene.class.getName() + ".dropAll\"");
-        try {
-            getIndexAccess(conn);
-        } catch (SQLException e) {
-            throw convertException(e);
+        try (Statement stat = conn.createStatement()) {
+            stat.execute("CREATE SCHEMA IF NOT EXISTS " + SCHEMA);
+            stat.execute("CREATE TABLE IF NOT EXISTS " + SCHEMA +
+                    ".INDEXES(SCHEMA VARCHAR, TABLE VARCHAR, " +
+                    "COLUMNS VARCHAR, PRIMARY KEY(SCHEMA, TABLE))");
+            stat.execute("CREATE ALIAS IF NOT EXISTS FTL_CREATE_INDEX FOR \"" +
+                    FullTextLucene.class.getName() + ".createIndex\"");
+            stat.execute("CREATE ALIAS IF NOT EXISTS FTL_DROP_INDEX FOR \"" +
+                    FullTextLucene.class.getName() + ".dropIndex\"");
+            stat.execute("CREATE ALIAS IF NOT EXISTS FTL_SEARCH FOR \"" +
+                    FullTextLucene.class.getName() + ".search\"");
+            stat.execute("CREATE ALIAS IF NOT EXISTS FTL_SEARCH_DATA FOR \"" +
+                    FullTextLucene.class.getName() + ".searchData\"");
+            stat.execute("CREATE ALIAS IF NOT EXISTS FTL_REINDEX FOR \"" +
+                    FullTextLucene.class.getName() + ".reindex\"");
+            stat.execute("CREATE ALIAS IF NOT EXISTS FTL_DROP_ALL FOR \"" +
+                    FullTextLucene.class.getName() + ".dropAll\"");
         }
     }
 
@@ -159,11 +156,9 @@ public class FullTextLucene extends FullText {
         prep.setString(1, schema);
         prep.setString(2, table);
         int rowCount = prep.executeUpdate();
-        if (rowCount == 0) {
-            return;
+        if (rowCount != 0) {
+            reindex(conn);
         }
-
-        reindex(conn);
     }
 
     /**
@@ -250,10 +245,7 @@ public class FullTextLucene extends FullText {
      * @return the converted SQL exception
      */
     protected static SQLException convertException(Exception e) {
-        SQLException e2 = new SQLException(
-                "Error while indexing document", "FULLTEXT");
-        e2.initCause(e);
-        return e2;
+        return new SQLException("Error while indexing document", "FULLTEXT", e);
     }
 
     /**
@@ -263,8 +255,8 @@ public class FullTextLucene extends FullText {
      * @param schema the schema name
      * @param table the table name
      */
-    protected static void createTrigger(Connection conn, String schema,
-            String table) throws SQLException {
+    private static void createTrigger(Connection conn, String schema,
+                                      String table) throws SQLException {
         createOrDropTrigger(conn, schema, table, true);
     }
 
@@ -351,8 +343,8 @@ public class FullTextLucene extends FullText {
      * @param schema the schema name
      * @param table the table name
      */
-    protected static void indexExistingRows(Connection conn, String schema,
-            String table) throws SQLException {
+    private static void indexExistingRows(Connection conn, String schema,
+                                          String table) throws SQLException {
         FullTextLucene.FullTextTrigger existing = new FullTextLucene.FullTextTrigger();
         existing.init(conn, schema, null, table, false, Trigger.INSERT);
         String sql = "SELECT * FROM " + StringUtils.quoteIdentifier(schema) +
@@ -477,16 +469,16 @@ public class FullTextLucene extends FullText {
     /**
      * Trigger updates the index when a inserting, updating, or deleting a row.
      */
-    public static class FullTextTrigger implements Trigger {
+    public static final class FullTextTrigger implements Trigger {
 
-        protected String schema;
-        protected String table;
-        protected int[] keys;
-        protected int[] indexColumns;
-        protected String[] columns;
-        protected int[] columnTypes;
-        protected String indexPath;
-        protected IndexAccess indexAccess;
+        private String schema;
+        private String table;
+        private int[] keys;
+        private int[] indexColumns;
+        private String[] columns;
+        private int[] columnTypes;
+        private String indexPath;
+        private IndexAccess indexAccess;
 
         /**
          * INTERNAL
@@ -539,9 +531,8 @@ public class FullTextLucene extends FullText {
             if (rs.next()) {
                 String cols = rs.getString(1);
                 if (cols != null) {
-                    for (String s : StringUtils.arraySplit(cols, ',', true)) {
-                        indexList.add(s);
-                    }
+                    Collections.addAll(indexList,
+                            StringUtils.arraySplit(cols, ',', true));
                 }
             }
             if (indexList.size() == 0) {
@@ -696,31 +687,33 @@ public class FullTextLucene extends FullText {
          */
         final IndexWriter writer;
 
+        /**
+         * Map of usage counters for outstanding searchers.
+         */
         private final Map<IndexSearcher,Integer> counters = New.hashMap();
 
-        private int counter;
         /**
-         * The index reader.
+         * Usage counter for current searcher.
          */
-        private IndexReader reader;
+        private int counter;
 
         /**
          * The index searcher.
          */
         private IndexSearcher searcher;
 
-        public IndexAccess(IndexWriter writer) throws IOException {
+        private IndexAccess(IndexWriter writer) throws IOException {
             this.writer = writer;
-            reader = IndexReader.open(writer, true);
+            IndexReader reader = IndexReader.open(writer, true);
             searcher = new IndexSearcher(reader);
         }
 
-        public synchronized IndexSearcher getSearcher() {
+        private synchronized IndexSearcher getSearcher() {
             ++counter;
             return searcher;
         }
 
-        public synchronized void returnSearcher(IndexSearcher searcher) {
+        private synchronized void returnSearcher(IndexSearcher searcher) {
             if (this.searcher == searcher) {
                 --counter;
                 assert counter >= 0;
