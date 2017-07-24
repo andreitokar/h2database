@@ -117,7 +117,9 @@ public class TestOutOfMemory extends TestBase {
             fail();
         } catch (SQLException e) {
             assertTrue("Unexpected error code: " + e.getErrorCode(),
-                        ErrorCode.OUT_OF_MEMORY == e.getErrorCode() || ErrorCode.GENERAL_ERROR_1 == e.getErrorCode());
+                        ErrorCode.OUT_OF_MEMORY == e.getErrorCode()
+                     || ErrorCode.DATABASE_IS_CLOSED == e.getErrorCode()
+                     || ErrorCode.GENERAL_ERROR_1 == e.getErrorCode());
         }
         conn = DriverManager.getConnection(url);
         stat = conn.createStatement();

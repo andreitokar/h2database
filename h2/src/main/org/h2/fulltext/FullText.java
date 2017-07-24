@@ -969,12 +969,15 @@ public class FullText {
 
         private static boolean isMultiThread(Connection conn)
                 throws SQLException {
+            return true;
+/*
             try (Statement stat = conn.createStatement()) {
                 ResultSet rs = stat.executeQuery(
                                 "SELECT value FROM information_schema.settings" +
                                 " WHERE name = 'MULTI_THREADED'");
                 return rs.next() && !"0".equals(rs.getString(1));
             }
+*/
         }
 
         /**
