@@ -5,7 +5,9 @@
  */
 package org.h2.engine;
 
-import java.util.HashMap;
+import java.util.Collections;
+import java.util.Map;
+
 import org.h2.api.ErrorCode;
 import org.h2.command.CommandInterface;
 import org.h2.command.Parser;
@@ -27,7 +29,8 @@ import org.h2.util.Utils;
 public class Engine implements SessionFactory {
 
     private static final Engine INSTANCE = new Engine();
-    private static final HashMap<String, Database> DATABASES = New.hashMap();
+    private static final Map<String, Database> DATABASES =
+                        Collections.synchronizedMap(New.<String, Database>hashMap());
 
     private volatile long wrongPasswordDelay =
             SysProperties.DELAY_WRONG_PASSWORD_MIN;
