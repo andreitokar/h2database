@@ -887,10 +887,8 @@ public final class TransactionStore {
                 Cursor<K, VersionedValue> cursor = map.cursor(null);
                 while (cursor.hasNext()) {
                     VersionedValue data;
-//                    synchronized (transaction.store.undoLog) {
-                        K key = cursor.next();
-                        data = getValue(key, readLogId, cursor.getValue());
-//                    }
+                    K key = cursor.next();
+                    data = getValue(key, readLogId, cursor.getValue());
                     if (data != null && data.value != null) {
                         size++;
                     }
@@ -1362,40 +1360,38 @@ public final class TransactionStore {
 
                 private void fetchNext() {
                     while (cursor.hasNext()) {
-//                        synchronized (getUndoLog()) {
-                            K k;
-                            try {
-                                k = cursor.next();
-                            } catch (IllegalStateException e) {
-                                // TODO this is a bit ugly
-                                if (DataUtils.getErrorCode(e.getMessage()) ==
-                                        DataUtils.ERROR_CHUNK_NOT_FOUND) {
-                                    cursor = map.cursor(currentKey);
-                                    // we (should) get the current key again,
-                                    // we need to ignore that one
-                                    if (!cursor.hasNext()) {
-                                        break;
-                                    }
-                                    cursor.next();
-                                    if (!cursor.hasNext()) {
-                                        break;
-                                    }
-                                    k = cursor.next();
-                                } else {
-                                    throw e;
+                        K k;
+                        try {
+                            k = cursor.next();
+                        } catch (IllegalStateException e) {
+                            // TODO this is a bit ugly
+                            if (DataUtils.getErrorCode(e.getMessage()) ==
+                                    DataUtils.ERROR_CHUNK_NOT_FOUND) {
+                                cursor = map.cursor(currentKey);
+                                // we (should) get the current key again,
+                                // we need to ignore that one
+                                if (!cursor.hasNext()) {
+                                    break;
                                 }
+                                cursor.next();
+                                if (!cursor.hasNext()) {
+                                    break;
+                                }
+                                k = cursor.next();
+                            } else {
+                                throw e;
                             }
-                            final K key = k;
-                            VersionedValue data = cursor.getValue();
-                            data = getValue(key, readLogId, data);
-                            if (data != null && data.value != null) {
-                                @SuppressWarnings("unchecked")
-                                final V value = (V) data.value;
-                                current = new DataUtils.MapEntry<K, V>(key, value);
-                                currentKey = key;
-                                return;
-                            }
-//                        }
+                        }
+                        final K key = k;
+                        VersionedValue data = cursor.getValue();
+                        data = getValue(key, readLogId, data);
+                        if (data != null && data.value != null) {
+                            @SuppressWarnings("unchecked")
+                            final V value = (V) data.value;
+                            current = new DataUtils.MapEntry<K, V>(key, value);
+                            currentKey = key;
+                            return;
+                        }
                     }
                     current = null;
                     currentKey = null;

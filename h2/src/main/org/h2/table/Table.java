@@ -73,6 +73,7 @@ public abstract class Table extends SchemaObjectBase {
     private ArrayList<Constraint> constraints;
     private ArrayList<Sequence> sequences;
     private ArrayList<TableView> views;
+    private ArrayList<TableSynonym> synonyms;
     private boolean checkForeignKeyConstraints = true;
     private boolean onCommitDrop, onCommitTruncate;
     private volatile Row nullRow;
@@ -334,7 +335,6 @@ public abstract class Table extends SchemaObjectBase {
         return null;
     }
 
-    @Override
     public String getCreateSQLForCopy(Table table, String quotedName) {
         throw DbException.throwInternalError(toString());
     }
@@ -396,6 +396,9 @@ public abstract class Table extends SchemaObjectBase {
         }
         if (views != null) {
             children.addAll(views);
+        }
+        if (synonyms != null) {
+            children.addAll(synonyms);
         }
         ArrayList<Right> rights = database.getAllRights();
         for (Right right : rights) {
@@ -523,6 +526,11 @@ public abstract class Table extends SchemaObjectBase {
             TableView view = views.get(0);
             views.remove(0);
             database.removeSchemaObject(session, view);
+        }
+        while (synonyms != null && synonyms.size() > 0) {
+            TableSynonym synonym = synonyms.get(0);
+            synonyms.remove(0);
+            database.removeSchemaObject(session, synonym);
         }
         while (triggers != null && triggers.size() > 0) {
             TriggerObject trigger = triggers.get(0);
@@ -838,6 +846,15 @@ public abstract class Table extends SchemaObjectBase {
     }
 
     /**
+     * Remove the given view from the list.
+     *
+     * @param synonym the synonym to remove
+     */
+    public void removeSynonym(TableSynonym synonym) {
+        remove(synonyms, synonym);
+    }
+
+    /**
      * Remove the given constraint from the list.
      *
      * @param constraint the constraint to remove
@@ -871,6 +888,15 @@ public abstract class Table extends SchemaObjectBase {
      */
     public void addView(TableView view) {
         views = add(views, view);
+    }
+
+    /**
+     * Add a synonym to this table.
+     *
+     * @param synonym the synonym to add
+     */
+    public void addSynonym(TableSynonym synonym) {
+        synonyms = add(synonyms, synonym);
     }
 
     /**

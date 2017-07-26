@@ -14,8 +14,9 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Time;
 import java.sql.Timestamp;
-
+import org.h2.engine.Mode;
 import org.h2.message.DbException;
+import org.h2.table.Column;
 import org.h2.mvstore.WriteBuffer;
 import org.h2.mvstore.db.ValueDataType;
 import org.h2.mvstore.type.ExtendedDataType;
@@ -138,7 +139,7 @@ public class ValueNull extends Value {
     }
 
     @Override
-    public Value convertTo(int type) {
+    public Value convertTo(int type, int precision, Mode mode, Column column) {
         return this;
     }
 

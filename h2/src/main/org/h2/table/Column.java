@@ -163,14 +163,27 @@ public class Column {
      * @return the value
      */
     public Value convert(Value v) {
+        return convert(v, null);
+    }
+
+    /**
+     * Convert a value to this column's type using the given {@link Mode}.
+     * <p>
+     * Use this method in case the conversion is Mode-dependent.
+     *
+     * @param v the value
+     * @param mode the database {@link Mode} to use
+     * @return the value
+     */
+    public Value convert(Value v, Mode mode) {
         try {
-            return v.convertTo(type);
+            return v.convertTo(type, MathUtils.convertLongToInt(precision), mode, this);
         } catch (DbException e) {
             if (e.getErrorCode() == ErrorCode.DATA_CONVERSION_ERROR_1) {
                 String target = (table == null ? "" : table.getName() + ": ") +
                         getCreateSQL();
                 throw DbException.get(
-                        ErrorCode.DATA_CONVERSION_ERROR_1,
+                        ErrorCode.DATA_CONVERSION_ERROR_1, e,
                         v.getSQL() + " (" + target + ")");
             }
             throw e;
@@ -376,11 +389,11 @@ public class Column {
                 if (s.length() > 127) {
                     s = s.substring(0, 128) + "...";
                 }
-                throw DbException.get(ErrorCode.ENUM_VALUE_NOT_PERMITTED_1,
+                throw DbException.get(ErrorCode.ENUM_VALUE_NOT_PERMITTED,
                         getCreateSQL(), s);
             }
 
-            value = ValueEnum.get(enumerators, value);
+            value = ValueEnum.get(enumerators, value.getInt());
         }
         updateSequenceIfRequired(session, value);
         return value;

@@ -69,7 +69,7 @@ public class Analyze extends DefineCommand {
      * @param manual whether the command was called by the user
      */
     public static void analyzeTable(Session session, Table table, int sample,
-            boolean manual) {
+                                    boolean manual) {
         if (table.getTableType() != TableType.TABLE ||
                 table.isHidden() || session == null) {
             return;

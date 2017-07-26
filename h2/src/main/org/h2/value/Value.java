@@ -20,9 +20,11 @@ import java.sql.Timestamp;
 import java.sql.Types;
 import org.h2.api.ErrorCode;
 import org.h2.engine.Constants;
+import org.h2.engine.Mode;
 import org.h2.engine.SysProperties;
 import org.h2.message.DbException;
 import org.h2.store.DataHandler;
+import org.h2.table.Column;
 import org.h2.tools.SimpleResultSet;
 import org.h2.util.DateTimeUtils;
 import org.h2.util.JdbcUtils;
@@ -541,6 +543,35 @@ public abstract class Value {
      * @return the converted value
      */
     public Value convertTo(int targetType) {
+        // Use -1 to indicate "default behaviour" where value conversion should not
+        // depend on any datatype precision.
+        return convertTo(targetType, -1, null);
+    }
+
+    /**
+     * Compare a value to the specified type.
+     *
+     * @param targetType the type of the returned value
+     * @param precision the precision of the column to convert this value to.
+     *        The special constant <code>-1</code> is used to indicate that
+     *        the precision plays no role when converting the value
+     * @return the converted value
+     */
+    public final Value convertTo(int targetType, int precision, Mode mode) {
+        return convertTo(targetType, precision, mode, null);
+    }
+
+    /**
+     * Compare a value to the specified type.
+     *
+     * @param targetType the type of the returned value
+     * @param precision the precision of the column to convert this value to.
+     *        The special constant <code>-1</code> is used to indicate that
+     *        the precision plays no role when converting the value
+     * @param column the column that contains the ENUM datatype enumerators, for dealing with ENUM conversions
+     * @return the converted value
+     */
+    public Value convertTo(int targetType, int precision, Mode mode, Column column) {
         // converting NULL is done in ValueNull
         // converting BLOB to CLOB and vice versa is done in ValueLob
         if (getType() == targetType) {
@@ -566,6 +597,7 @@ public abstract class Value {
                 case BYTES:
                 case JAVA_OBJECT:
                 case UUID:
+                case ENUM:
                     throw DbException.get(
                             ErrorCode.DATA_CONVERSION_ERROR_1, getString());
                 }
@@ -577,6 +609,7 @@ public abstract class Value {
                     return ValueByte.get(getBoolean().booleanValue() ? (byte) 1 : (byte) 0);
                 case SHORT:
                     return ValueByte.get(convertToByte(getShort()));
+                case ENUM:
                 case INT:
                     return ValueByte.get(convertToByte(getInt()));
                 case LONG:
@@ -601,6 +634,7 @@ public abstract class Value {
                     return ValueShort.get(getBoolean().booleanValue() ? (short) 1 : (short) 0);
                 case BYTE:
                     return ValueShort.get(getByte());
+                case ENUM:
                 case INT:
                     return ValueShort.get(convertToShort(getInt()));
                 case LONG:
@@ -653,6 +687,7 @@ public abstract class Value {
                     return ValueLong.get(getByte());
                 case SHORT:
                     return ValueLong.get(getShort());
+                case ENUM:
                 case INT:
                     return ValueLong.get(getInt());
                 case DECIMAL:
@@ -684,6 +719,7 @@ public abstract class Value {
                     return ValueDecimal.get(BigDecimal.valueOf(getByte()));
                 case SHORT:
                     return ValueDecimal.get(BigDecimal.valueOf(getShort()));
+                case ENUM:
                 case INT:
                     return ValueDecimal.get(BigDecimal.valueOf(getInt()));
                 case LONG:
@@ -727,6 +763,7 @@ public abstract class Value {
                     return ValueDouble.get(getBigDecimal().doubleValue());
                 case FLOAT:
                     return ValueDouble.get(getFloat());
+                case ENUM:
                 case TIMESTAMP_TZ:
                     throw DbException.get(
                             ErrorCode.DATA_CONVERSION_ERROR_1, getString());
@@ -749,6 +786,7 @@ public abstract class Value {
                     return ValueFloat.get(getBigDecimal().floatValue());
                 case DOUBLE:
                     return ValueFloat.get((float) getDouble());
+                case ENUM:
                 case TIMESTAMP_TZ:
                     throw DbException.get(
                             ErrorCode.DATA_CONVERSION_ERROR_1, getString());
@@ -768,6 +806,9 @@ public abstract class Value {
                 case TIMESTAMP_TZ:
                     return ValueDate.fromDateValue(
                             ((ValueTimestampTimeZone) this).getDateValue());
+                case ENUM:
+                    throw DbException.get(
+                            ErrorCode.DATA_CONVERSION_ERROR_1, getString());
                 }
                 break;
             }
@@ -783,6 +824,9 @@ public abstract class Value {
                 case TIMESTAMP_TZ:
                     return ValueTime.fromNanos(
                             ((ValueTimestampTimeZone) this).getTimeNanos());
+                case ENUM:
+                    throw DbException.get(
+                            ErrorCode.DATA_CONVERSION_ERROR_1, getString());
                 }
                 break;
             }
@@ -798,6 +842,9 @@ public abstract class Value {
                     return ValueTimestamp.fromDateValueAndNanos(
                             ((ValueTimestampTimeZone) this).getDateValue(),
                             ((ValueTimestampTimeZone) this).getTimeNanos());
+                case ENUM:
+                    throw DbException.get(
+                            ErrorCode.DATA_CONVERSION_ERROR_1, getString());
                 }
                 break;
             }
@@ -840,6 +887,7 @@ public abstract class Value {
                             (byte) x
                     });
                 }
+                case ENUM:
                 case TIMESTAMP_TZ:
                     throw DbException.get(
                             ErrorCode.DATA_CONVERSION_ERROR_1, getString());
@@ -852,6 +900,7 @@ public abstract class Value {
                 case BLOB:
                     return ValueJavaObject.getNoCopy(
                             null, getBytesNoCopy(), getDataHandler());
+                case ENUM:
                 case TIMESTAMP_TZ:
                     throw DbException.get(
                             ErrorCode.DATA_CONVERSION_ERROR_1, getString());
@@ -860,9 +909,19 @@ public abstract class Value {
             }
             case ENUM: {
                 switch (getType()) {
+                    case BYTE:
+                    case SHORT:
                     case INT:
+                    case LONG:
+                    case DECIMAL:
+                        return ValueEnum.get(column.getEnumerators(), getInt());
                     case STRING:
-                        return this;
+                    case STRING_IGNORECASE:
+                    case STRING_FIXED:
+                        return ValueEnum.get(column.getEnumerators(), getString());
+                    default:
+                        throw DbException.get(
+                                ErrorCode.DATA_CONVERSION_ERROR_1, getString());
                 }
             }
             case BLOB: {
@@ -947,7 +1006,7 @@ public abstract class Value {
             case DATE:
                 return ValueDate.parse(s.trim());
             case TIMESTAMP:
-                return ValueTimestamp.parse(s.trim());
+                return ValueTimestamp.parse(s.trim(), mode);
             case TIMESTAMP_TZ:
                 return ValueTimestampTimeZone.parse(s.trim());
             case BYTES:
@@ -956,13 +1015,12 @@ public abstract class Value {
             case JAVA_OBJECT:
                 return ValueJavaObject.getNoCopy(null,
                         StringUtils.convertHexToBytes(s.trim()), getDataHandler());
-            case ENUM:
             case STRING:
                 return ValueString.get(s);
             case STRING_IGNORECASE:
                 return ValueStringIgnoreCase.get(s);
             case STRING_FIXED:
-                return ValueStringFixed.get(s);
+                return ValueStringFixed.get(s, precision, mode);
             case DOUBLE:
                 return ValueDouble.get(Double.parseDouble(s.trim()));
             case FLOAT:

@@ -11,7 +11,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
-import org.h2.api.ErrorCode;
 import org.h2.jdbc.JdbcSQLException;
 import org.h2.test.TestBase;
 import org.h2.util.IOUtils;
@@ -103,10 +102,7 @@ public class TestMvccMultiThreaded2 extends TestBase {
                         if (now - start > 1000 * 60)
                             done = true;
                     } catch (JdbcSQLException e1) {
-                        // skip DUPLICATE_KEY_1 to just focus on this bug.
-                        if (e1.getErrorCode() != ErrorCode.DUPLICATE_KEY_1) {
-                            throw e1;
-                        }
+                        throw e1;
                     }
                 }
             } catch (SQLException e) {

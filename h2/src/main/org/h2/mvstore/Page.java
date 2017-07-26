@@ -8,8 +8,6 @@ package org.h2.mvstore;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.HashSet;
-import java.util.Set;
-
 import org.h2.compress.Compressor;
 import org.h2.mvstore.type.ExtendedDataType;
 import org.h2.util.New;
@@ -54,7 +52,7 @@ public final class Page {
     private int cachedCompare;
 
     /**
-     * The estimated memory used.
+     * The estimated memory used in persistent case, IN_MEMORY marker value otherwise.
      */
     private int memory;
 
@@ -349,7 +347,11 @@ public final class Page {
      * @return the page with the entries after the split index
      */
     Page split(int at) {
-        return isLeaf() ? splitLeaf(at) : splitNode(at);
+        Page page = isLeaf() ? splitLeaf(at) : splitNode(at);
+        if(isPersistent()) {
+            recalculateMemory();
+        }
+        return page;
     }
 
     private Page splitLeaf(int at) {
@@ -371,10 +373,6 @@ public final class Page {
                 bKeys, bValues,
                 null,
                 b, 0);
-        if(isPersistent()) {
-            recalculateMemory();
-            newPage.recalculateMemory();
-        }
         return newPage;
     }
 
@@ -405,10 +403,6 @@ public final class Page {
                 bKeys, null,
                 bChildren,
                 t, 0);
-        if(isPersistent()) {
-            recalculateMemory();
-            newPage.recalculateMemory();
-        }
         return newPage;
     }
 
@@ -1122,18 +1116,6 @@ public final class Page {
                     continue;
                 }
                 removeChild(i--);
-            }
-        }
-
-        /**
-         * Collect the set of chunks referenced directly by this page.
-         *
-         * @param target the target set
-         */
-        void collectReferencedChunks(Set<Integer> target) {
-            target.add(DataUtils.getPageChunkId(pos));
-            for (long p : children) {
-                target.add(DataUtils.getPageChunkId(p));
             }
         }
 
