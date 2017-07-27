@@ -919,10 +919,12 @@ public final class MVStore {
             if (fileStore != null && shrinkIfPossible) {
                 shrinkFileIfPossible(0);
             }
+/*
             int updateFailureRatio = (int)(10000 * getUpdateFailureRatio());
             if(updateFailureRatio != 0) {
                 System.out.println("UpdateFailurePercent: " + updateFailureRatio / 100 + "." + updateFailureRatio % 100 + "%");
             }
+*/
             // release memory early - this is important when called
             // because of out of memory
             cache = null;

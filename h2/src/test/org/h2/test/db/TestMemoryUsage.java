@@ -118,11 +118,11 @@ public class TestMemoryUsage extends TestBase {
     }
 
     private void testClob() throws SQLException {
-        if (config.memory || !config.big) {
+        if (config.memory || !config.big || config.networked) {
             return;
         }
         deleteDb("memoryUsageClob");
-        conn = getConnection("memoryUsageClob");
+        conn = getConnection("memoryUsageClob;WRITE_DELAY=0");
         Statement stat = conn.createStatement();
         stat.execute("SET MAX_LENGTH_INPLACE_LOB 8192");
         stat.execute("SET CACHE_SIZE 8000");

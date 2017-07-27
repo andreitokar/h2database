@@ -431,7 +431,7 @@ public class MVPrimaryIndex extends BaseIndex {
      * @param session the session
      * @return the map
      */
-    TransactionMap<Value, Value> getMap(Session session) {
+    private TransactionMap<Value, Value> getMap(Session session) {
         if (session == null) {
             return dataMap;
         }

@@ -145,7 +145,7 @@ public class TestCache extends TestBase implements CacheWriter {
         Connection conn;
         Statement stat;
         ResultSet rs;
-        conn = getConnection("cache;CACHE_SIZE=16384");
+        conn = getConnection("cache;CACHE_SIZE=16384;WRITE_DELAY=0");
         stat = conn.createStatement();
         // test DataOverflow
         stat.execute("create table test(id int primary key, data varchar)");
@@ -155,7 +155,7 @@ public class TestCache extends TestBase implements CacheWriter {
         conn = null;
         long before = getRealMemory();
 
-        conn = getConnection("cache;CACHE_SIZE=16384;DB_CLOSE_ON_EXIT=FALSE");
+        conn = getConnection("cache;CACHE_SIZE=16384;DB_CLOSE_ON_EXIT=FALSE;WRITE_DELAY=0");
         stat = conn.createStatement();
 
         //  -XX:+HeapDumpOnOutOfMemoryError

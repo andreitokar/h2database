@@ -546,6 +546,8 @@ kill -9 `jps -l | grep "org.h2.test." | cut -d " " -f 1`
                 new TestHaltApp().runTest(test);
             } else if ("timer".equals(args[0])) {
                 new TestTimer().runTest(test);
+            } else if ("tksm".equals(args[0])) {
+                new TestKillRestartMulti().runTest(test);
             }
         } else {
             test.testAll();
@@ -557,6 +559,12 @@ kill -9 `jps -l | grep "org.h2.test." | cut -d " " -f 1`
     private void testAll() throws Exception {
         runTests();
         if (!fast) {
+            TestPerformance.main("-init", "-db", "1", "-size", "1000");
+            System.gc();
+            System.gc();
+            System.gc();
+            Thread.sleep(1000);
+            TestPerformance.main("-init", "-db", "1", "-size", "1000");
             Profiler prof = new Profiler();
             prof.depth = 16;
             prof.interval = 1;
@@ -564,6 +572,11 @@ kill -9 `jps -l | grep "org.h2.test." | cut -d " " -f 1`
             TestPerformance.main("-init", "-db", "1", "-size", "1000");
             prof.stopCollecting();
             System.out.println(prof.getTop(5));
+            TestPerformance.main("-init", "-db", "1", "-size", "1000");
+            System.gc();
+            System.gc();
+            System.gc();
+            Thread.sleep(1000);
             TestPerformance.main("-init", "-db", "1", "-size", "1000");
         }
     }

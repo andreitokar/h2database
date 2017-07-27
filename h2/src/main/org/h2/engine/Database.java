@@ -16,6 +16,8 @@ import java.util.Set;
 import java.util.StringTokenizer;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+
 import org.h2.api.DatabaseEventListener;
 import org.h2.api.ErrorCode;
 import org.h2.api.JavaObjectSerializer;
@@ -192,7 +194,7 @@ public class Database implements DataHandler {
     private MVTableEngine.Store mvStore;
     private int retentionTime;
     private boolean allowBuiltinAliasOverride;
-    private DbException backgroundException;
+    private final AtomicReference<DbException> backgroundException = new AtomicReference<>();
     private JavaObjectSerializer javaObjectSerializer;
     private String javaObjectSerializerName;
     private volatile boolean javaObjectSerializerInitialized;
@@ -2067,22 +2069,15 @@ public class Database implements DataHandler {
     }
 
     private void throwLastBackgroundException() {
-        if (backgroundException != null) {
-            // we don't care too much about concurrency here,
-            // we just want to make sure the exception is _normally_
-            // not just logged to the .trace.db file
-            DbException b = backgroundException;
-            backgroundException = null;
-            if (b != null) {
-                // wrap the exception, so we see it was thrown here
-                throw DbException.get(b.getErrorCode(), b, b.getMessage());
-            }
+        DbException b = backgroundException.getAndSet(null);
+        if (b != null) {
+            // wrap the exception, so we see it was thrown here
+            throw DbException.get(b.getErrorCode(), b, b.getMessage());
         }
     }
 
     public void setBackgroundException(DbException e) {
-        if (backgroundException == null) {
-            backgroundException = e;
+        if (backgroundException.compareAndSet(null, e)) {
             TraceSystem t = getTraceSystem();
             if (t != null) {
                 t.getTrace(Trace.DATABASE).error(e, "flush");
@@ -2104,7 +2099,7 @@ public class Database implements DataHandler {
             try {
                 mvStore.flush();
             } catch (RuntimeException e) {
-                backgroundException = DbException.convert(e);
+                backgroundException.compareAndSet(null, DbException.convert(e));
                 throw e;
             }
         }

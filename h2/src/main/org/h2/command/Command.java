@@ -273,12 +273,14 @@ public abstract class Command implements CommandInterface {
                 database.shutdownImmediately();
                 throw e;
             }
-            database.checkPowerOff();
-            if (s.getErrorCode() == ErrorCode.DEADLOCK_1) {
-                session.rollback();
-            } else {
-                session.rollbackTo(rollback, false);
-            }
+            try {
+                database.checkPowerOff();
+                if (s.getErrorCode() == ErrorCode.DEADLOCK_1) {
+                    session.rollback();
+                } else {
+                    session.rollbackTo(rollback, false);
+                }
+            } catch(DbException ignore) {/**/}
             throw e;
         } finally {
             try {

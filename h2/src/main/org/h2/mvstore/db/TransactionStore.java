@@ -116,8 +116,9 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
         RecordType undoLogValueType = new RecordType(dataType, oldValueType);
 
         MVMap.Builder<Long, Record> builder =
-                new MVMap.Builder<Long, Record>().
-                valueType(undoLogValueType);
+                new MVMap.Builder<Long, Record>()
+                        .keyType(ObjectDataType.LongType.INSTANCE)
+                        .valueType(undoLogValueType);
         MVMap<Long, Record> undoLog = store.openMap("undoLog", builder);
 /*
         if (undoLog.getValueType() != undoLogValueType) {
@@ -550,7 +551,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
     }
 
     private boolean verifyUndoIsEmptyForTx(int txId) {
-        Long ceilingKey = ceilingKey = undoLog.ceilingKey(getOperationId(txId, 0));
+        Long ceilingKey = undoLog.ceilingKey(getOperationId(txId, 0));
         assert ceilingKey == null || getTransactionId(ceilingKey) != txId :
                 "undoLog has leftovers for " + txId + " : " + getTransactionId(ceilingKey) + "/" + getLogId(ceilingKey);
         return true;
