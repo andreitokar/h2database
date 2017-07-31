@@ -310,7 +310,8 @@ public class TestMVTableEngine extends TestBase {
     private void testLowRetentionTime() throws SQLException {
         deleteDb(getTestName());
         Connection conn = getConnection(
-                getTestName() + ";RETENTION_TIME=10;WRITE_DELAY=10");
+                getTestName() + ";RETENTION_TIME=1;WRITE_DELAY=10");
+//                getTestName() + ";RETENTION_TIME=10;WRITE_DELAY=10;LAZY_QUERY_EXECUTION=0;ANALYZE_AUTO=0");
         Statement stat = conn.createStatement();
         Connection conn2 = getConnection(getTestName());
         Statement stat2 = conn2.createStatement();

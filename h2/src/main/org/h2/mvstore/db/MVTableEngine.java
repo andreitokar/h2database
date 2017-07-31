@@ -249,7 +249,7 @@ public class MVTableEngine implements TableEngine {
          * Commit all transactions that are in the committing state, and
          * rollback all open transactions.
          */
-        public void initTransactions() {
+        public void endLeftoverTransactions() {
             List<Transaction> list = transactionStore.getOpenTransactions();
             for (Transaction t : list) {
                 if(t.getStatus() == Transaction.STATUS_COMMITTING) {

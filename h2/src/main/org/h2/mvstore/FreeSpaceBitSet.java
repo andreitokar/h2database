@@ -115,6 +115,8 @@ public class FreeSpaceBitSet {
     public void markUsed(long pos, int length) {
         int start = getBlock(pos);
         int blocks = getBlockCount(length);
+        assert set.nextSetBit(start) == -1 || set.nextSetBit(start) >= start + blocks :
+                                                start + "/" + blocks + " " + this;
         set.set(start, start + blocks);
     }
 
@@ -127,6 +129,7 @@ public class FreeSpaceBitSet {
     public void free(long pos, int length) {
         int start = getBlock(pos);
         int blocks = getBlockCount(length);
+        assert set.nextClearBit(start) >= start + blocks : start + "/" + blocks + " " + this;
         set.clear(start, start + blocks);
     }
 
@@ -171,7 +174,7 @@ public class FreeSpaceBitSet {
     }
 
     public long getLast() {
-        return getPos(set.previousSetBit(set.size()) + 1);
+        return getPos(set.previousSetBit(set.size()-1) + 1);
     }
 
     @Override

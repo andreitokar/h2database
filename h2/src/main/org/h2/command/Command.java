@@ -192,6 +192,7 @@ public abstract class Command implements CommandInterface {
                 // wait
             }
         }
+        session.startStatementWithinTransaction();
         session.setCurrentCommand(this);
         try {
             while (true) {
@@ -248,6 +249,7 @@ public abstract class Command implements CommandInterface {
             }
         }
         Session.Savepoint rollback = session.setSavepoint();
+        session.startStatementWithinTransaction();
         session.setCurrentCommand(this);
         try {
             while (true) {

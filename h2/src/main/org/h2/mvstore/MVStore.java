@@ -397,6 +397,10 @@ public final class MVStore {
         throw e;
     }
 
+    public IllegalStateException getPanicException() {
+        return panicException;
+    }
+
     /**
      * Open a store in exclusive mode. For a file-based store, the parent
      * directory must already exist.
@@ -707,6 +711,7 @@ public final class MVStore {
             int length = c.len * BLOCK_SIZE;
             fileStore.markUsed(start, length);
         }
+        assert fileStore.getLast() == _getFileLengthInUse() : fileStore.getLast() + " != " + _getFileLengthInUse();
     }
 
     private void loadChunkMeta() {
@@ -1144,13 +1149,14 @@ public final class MVStore {
                 meta.put(key, Long.toHexString(root));
             }
         }
-        meta.setWriteVersion(version);
+        MVMap.RootReference metaRootReference = meta.setWriteVersion(version);
 
         if(versionChangeListener != null) {
             versionChangeListener.onVersionChange(currentVersion);
         }
 
-        Page metaRoot = meta.getRootPage();
+//        Page metaRoot = meta.getRootPage();
+        Page metaRoot = metaRootReference.root;
         metaRoot.writeUnsavedRecursive(c, buff);
 
         int chunkLength = buff.position();
@@ -1181,6 +1187,7 @@ public final class MVStore {
 
         c.block = filePos / BLOCK_SIZE;
         c.len = length / BLOCK_SIZE;
+        assert fileStore.getLast() == _getFileLengthInUse() : fileStore.getLast() + " != " + _getFileLengthInUse();
         c.metaRootPos = metaRoot.getPos();
         // calculate and set the likely next position
         if (reuseSpace) {
@@ -1188,6 +1195,7 @@ public final class MVStore {
             long predictedNextStart = fileStore.allocate(
                     predictBlocks * BLOCK_SIZE);
             fileStore.free(predictedNextStart, predictBlocks * BLOCK_SIZE);
+            assert fileStore.getLast() == _getFileLengthInUse() : fileStore.getLast() + " != " + _getFileLengthInUse();
             c.next = predictedNextStart / BLOCK_SIZE;
         } else {
             // just after this chunk
@@ -1280,6 +1288,7 @@ public final class MVStore {
                     long start = c.block * BLOCK_SIZE;
                     int length = c.len * BLOCK_SIZE;
                     fileStore.free(start, length);
+                    assert fileStore.getLast() == _getFileLengthInUse() : fileStore.getLast() + " != " + _getFileLengthInUse();
                 } else {
                     if (c.unused == 0) {
                         c.unused = time;
@@ -1325,8 +1334,9 @@ public final class MVStore {
                 rootReference != null && (rootReference.version >= oldestVersionToKeep/* || rootReference.version == INITIAL_VERSION*/);
                 rootReference = rootReference.previous) {
 
-            if(rootReference.root.getPos() != 0) {
-                collectReferencedChunks(referenced, meta.getId(), rootReference.root.getPos(), 0);
+            long pos = rootReference.root.getPos();
+            if(pos != 0) {
+                collectReferencedChunks(referenced, meta.getId(), pos, 0);
             }
 
             for (Cursor<String, String> c = new Cursor<>(meta, rootReference.root, "root.", true); c.hasNext(); ) {
@@ -1335,7 +1345,7 @@ public final class MVStore {
                 if (!key.startsWith("root.")) {
                     break;
                 }
-                long pos = DataUtils.parseHexLong(c.getValue());
+                pos = DataUtils.parseHexLong(c.getValue());
                 if (pos != 0) {
                     int mapId = DataUtils.parseHexInt(key.substring("root.".length()));
                     collectReferencedChunks(referenced, mapId, pos, 0);
@@ -1345,6 +1355,7 @@ public final class MVStore {
 //            if(rootReference.version < oldestVersionToKeep) {
 //                break;
 //            }
+            assert !referenced.isEmpty();
         }
 //*/
         readCount = fileStore.readCount - readCount;
@@ -1734,7 +1745,9 @@ public final class MVStore {
             buff.put(readBuff);
             long pos = getFileLengthInUse();
             fileStore.markUsed(pos, length);
+            assert fileStore.getLast() == _getFileLengthInUse() : fileStore.getLast() + " != " + _getFileLengthInUse();
             fileStore.free(start, length);
+            assert fileStore.getLast() == _getFileLengthInUse() : fileStore.getLast() + " != " + _getFileLengthInUse();
             c.block = pos / BLOCK_SIZE;
             c.next = 0;
             buff.position(0);
@@ -1772,7 +1785,9 @@ public final class MVStore {
             buff.position(chunkHeaderLen);
             buff.put(readBuff);
             long pos = fileStore.allocate(length);
+            assert fileStore.getLast() == _getFileLengthInUse() : fileStore.getLast() + " != " + _getFileLengthInUse();
             fileStore.free(start, length);
+            assert fileStore.getLast() == _getFileLengthInUse() : fileStore.getLast() + " != " + _getFileLengthInUse();
             c.block = pos / BLOCK_SIZE;
             c.next = 0;
             buff.position(0);
@@ -2176,7 +2191,8 @@ public final class MVStore {
         boolean success;
         do {
             long current = this.oldestVersionToKeep.get();
-            success = current >= oldestVersionToKeep ||
+//            assert oldestVersionToKeep >= current || current == NOT_SET : oldestVersionToKeep + " < " + current;
+            success = oldestVersionToKeep <= current && current != NOT_SET ||
                       this.oldestVersionToKeep.compareAndSet(current, oldestVersionToKeep);
         } while (!success);
     }
@@ -2369,6 +2385,7 @@ public final class MVStore {
                 long start = c.block * BLOCK_SIZE;
                 int length = c.len * BLOCK_SIZE;
                 fileStore.free(start, length);
+                assert fileStore.getLast() == _getFileLengthInUse() : fileStore.getLast() + " != " + _getFileLengthInUse();
                 // overwrite the chunk,
                 // so it is not be used later on
                 WriteBuffer buff = getWriteBuffer();

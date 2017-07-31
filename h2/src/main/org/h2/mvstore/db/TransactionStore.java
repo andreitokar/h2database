@@ -653,6 +653,33 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
         };
     }
 
+    /**
+     * Register opened transaction.
+     * This would increment usage counter for the current version.
+     * This version (and all after it) should not be dropped until all
+     * transactions involved are closed and usage counter goes to zero.
+     * @return TxCounter to be decremented when transaction closed.
+     */
+    private TxCounter registerTxSavePoint() {
+        TxCounter txCounter;
+        while(true) {
+            txCounter = currentTxCounter;
+            if(txCounter.counter.getAndIncrement() >= 0) {
+                break;
+            }
+            // The only way for counter to be negative
+            // if it was retrieved right before onVersionChange()
+            // and now onVersionChange() is done.
+            // Thit version is available for reclamation now
+            // and should not be used here, so restore count
+            // not to upset accounting and try again with a new
+            // version (currentTxCounter should have changed).
+            assert txCounter != currentTxCounter : txCounter;
+            txCounter.counter.decrementAndGet();
+        }
+        return txCounter;
+    }
+
     private void clearTxSavePoint(TxCounter txCounter) {
         if(txCounter != null) {
             if(txCounter.counter.decrementAndGet() <= 0) {
@@ -662,18 +689,6 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
                 store.setOldestVersionToKeep(txCounter == null ? currentTxCounter.version : txCounter.version);
             }
         }
-    }
-
-    private TxCounter registerTxSavePoint() {
-        TxCounter txCounter;
-        while(true) {
-            txCounter = currentTxCounter;
-            if(txCounter.counter.incrementAndGet() > 0) {
-                break;
-            }
-            txCounter.counter.decrementAndGet();
-        }
-        return txCounter;
     }
 
     @Override
@@ -688,8 +703,13 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
         private final long version;
         private final AtomicInteger counter = new AtomicInteger();
 
-        public TxCounter(long version) {
+        private TxCounter(long version) {
             this.version = version;
+        }
+
+        @Override
+        public String toString() {
+            return "v=" + version + " / cnt=" + counter;
         }
     }
 
@@ -848,11 +868,20 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
          * @return the savepoint id
          */
         public long setSavepoint() {
-            if(txCounter == null) {
-                txCounter = store.registerTxSavePoint();
-            }
-
             return logId;
+        }
+
+        public void markStatementStart() {
+            markStatementEnd();
+            txCounter = store.registerTxSavePoint();
+        }
+
+        public void markStatementEnd() {
+            TxCounter counter = txCounter;
+            txCounter = null;
+            if(counter != null) {
+                store.clearTxSavePoint(counter);
+            }
         }
 
         /**

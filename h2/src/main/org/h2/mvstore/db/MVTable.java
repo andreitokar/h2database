@@ -82,8 +82,7 @@ public class MVTable extends TableBase {
     private volatile Session lockExclusiveSession;
 
     // using a ConcurrentHashMap as a set
-    private final ConcurrentHashMap<Session, Session> lockSharedSessions =
-            new ConcurrentHashMap<Session, Session>();
+    private final ConcurrentHashMap<Session,Session> lockSharedSessions = new ConcurrentHashMap<>();
 
     /**
      * The queue of sessions waiting to lock the table. It is a FIFO queue to
@@ -708,16 +707,14 @@ public class MVTable extends TableBase {
         Transaction t = getTransaction(session);
         long savepoint = t.setSavepoint();
         try {
-            for (int i = 0, size = indexes.size(); i < size; i++) {
-                Index index = indexes.get(i);
+            for (Index index : indexes) {
                 index.add(session, row);
             }
         } catch (Throwable e) {
             t.rollbackToSavepoint(savepoint);
             DbException de = DbException.convert(e);
             if (de.getErrorCode() == ErrorCode.DUPLICATE_KEY_1) {
-                for (int j = 0; j < indexes.size(); j++) {
-                    Index index = indexes.get(j);
+                for (Index index : indexes) {
                     if (index.getIndexType().isUnique() &&
                             index instanceof MultiVersionIndex) {
                         MultiVersionIndex mv = (MultiVersionIndex) index;

@@ -762,8 +762,12 @@ public class Database implements DataHandler {
         metaIdIndex = meta.addIndex(systemSession, "SYS_ID",
                 0, pkCols, IndexType.createPrimaryKey(
                 false, false), true, null);
+        systemSession.commit(true);
         objectIds.set(0);
         starting = true;
+        if (mvStore != null) {
+            mvStore.endLeftoverTransactions();
+        }
         Cursor cursor = metaIdIndex.find(systemSession, null, null);
         ArrayList<MetaRecord> records = New.arrayList();
         while (cursor.next()) {
@@ -775,9 +779,7 @@ public class Database implements DataHandler {
         for (MetaRecord rec : records) {
             rec.execute(this, systemSession, eventListener);
         }
-        systemSession.commit(true);
         if (mvStore != null) {
-            mvStore.initTransactions();
             mvStore.removeTemporaryMaps(objectIds);
         }
         recompileInvalidViews(systemSession);
@@ -2084,6 +2086,15 @@ public class Database implements DataHandler {
             }
         }
     }
+
+    public Throwable getBackgroundException() {
+        IllegalStateException exception = mvStore.getStore().getPanicException();
+        if(exception != null) {
+            return exception;
+        }
+        return backgroundException.get();
+    }
+
 
     /**
      * Flush all pending changes to the transaction log.

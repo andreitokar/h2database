@@ -762,8 +762,8 @@ public final class DataUtils {
         int size = arguments.length;
         if (size > 0) {
             Object o = arguments[size - 1];
-            if (o instanceof Exception) {
-                e.initCause((Exception) o);
+            if (o instanceof Throwable) {
+                e.initCause((Throwable) o);
             }
         }
         return e;
@@ -780,6 +780,7 @@ public final class DataUtils {
     public static String formatMessage(int errorCode, String message,
             Object... arguments) {
         // convert arguments to strings, to avoid locale specific formatting
+        arguments = arguments.clone();
         for (int i = 0; i < arguments.length; i++) {
             Object a = arguments[i];
             if (!(a instanceof Exception)) {

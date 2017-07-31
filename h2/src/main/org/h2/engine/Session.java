@@ -1622,18 +1622,22 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
      */
     public Transaction getTransaction() {
         if (transaction == null) {
-            if (database.getMvStore().isClosed()) {
-                database.shutdownImmediately();
-                throw DbException.get(ErrorCode.DATABASE_IS_CLOSED);
+            MVTableEngine.Store mvStore = database.getMvStore();
+            if(mvStore != null) {
+                if (mvStore.isClosed()) {
+                    Throwable backgroundException = database.getBackgroundException();
+                    database.shutdownImmediately();
+                    throw DbException.get(ErrorCode.DATABASE_IS_CLOSED, backgroundException);
+                }
+                transaction = mvStore.getTransactionStore().begin(this, this.lockTimeout);
+                transaction.setOwnerId(id);
             }
-            transaction = database.getMvStore().getTransactionStore().begin(this, this.lockTimeout);
-            transaction.setOwnerId(id);
             startStatement = -1;
         }
         return transaction;
     }
 
-    public long getStatementSavepoint() {
+    private long getStatementSavepoint() {
         if (startStatement == -1) {
             startStatement = getTransaction().setSavepoint();
         }
@@ -1644,6 +1648,10 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
      * Start a new statement within a transaction.
      */
     public void startStatementWithinTransaction() {
+        Transaction transaction = getTransaction();
+        if(transaction != null) {
+            transaction.markStatementStart();
+        }
         startStatement = -1;
     }
 
@@ -1652,6 +1660,9 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
      * set, and deletes all temporary files held by the result sets.
      */
     public void endStatement() {
+        if(transaction != null) {
+            transaction.markStatementEnd();
+        }
         startStatement = -1;
         closeTemporaryResults();
     }
@@ -1717,12 +1728,15 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
                            TransactionStore.VersionedValue restoredValue) {
         // Here we are relying on the fact that map which backs tabel's primary index
         // has the same name as the table itself
-        MVTable table = database.getMvStore().getTable(map.getName());
-        if(table != null) {
-            long recKey = ((ValueLong)key).getLong();
-            Row oldRow = getRowFromVersionedValue(table, recKey, existingValue);
-            Row newRow = getRowFromVersionedValue(table, recKey, restoredValue);
-            table.fireAfterRow(this, oldRow, newRow, true);
+        MVTableEngine.Store mvStore = database.getMvStore();
+        if(mvStore != null) {
+            MVTable table = mvStore.getTable(map.getName());
+            if (table != null) {
+                long recKey = ((ValueLong) key).getLong();
+                Row oldRow = getRowFromVersionedValue(table, recKey, existingValue);
+                Row newRow = getRowFromVersionedValue(table, recKey, restoredValue);
+                table.fireAfterRow(this, oldRow, newRow, true);
+            }
         }
     }
 
