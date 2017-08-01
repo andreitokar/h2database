@@ -793,7 +793,7 @@ kill -9 `jps -l | grep "org.h2.test." | cut -d " " -f 1`
         addTest(new TestBatchUpdates());
         addTest(new TestCallableStatement());
         addTest(new TestCancel());
-        addTest(new TestConcurrentConnectionUsage());
+//        addTest(new TestConcurrentConnectionUsage());
         addTest(new TestConnection());
         addTest(new TestDatabaseEventListener());
         addTest(new TestJavaObject());

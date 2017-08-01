@@ -217,11 +217,13 @@ public class CreateTable extends SchemaCommand {
                 }
             }
         } catch (DbException e) {
-            db.checkPowerOff();
-            db.removeSchemaObject(session, table);
-            if (!transactional) {
-                session.commit(true);
-            }
+            try {
+                db.checkPowerOff();
+                db.removeSchemaObject(session, table);
+                if (!transactional) {
+                    session.commit(true);
+                }
+            } catch (Throwable ignore) {/**/}
             throw e;
         }
         return 0;

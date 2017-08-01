@@ -904,7 +904,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
         void logUndo() {
             checkOpen();
             store.logUndo(this, --logId);
-            assert logId > 0 || store.verifyUndoIsEmptyForTx(transactionId);
+            assert hasChanges() || store.verifyUndoIsEmptyForTx(transactionId);
         }
 
         /**
@@ -965,7 +965,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
          * Commit the transaction. Afterwards, this transaction is closed.
          */
         public void commit() {
-            if(logId > 0) {
+            if(hasChanges()) {
                 checkNotClosed();
                 if (!store.committingTransactions.get().get(transactionId) /*|| getStatus() != Transaction.STATUS_COMMITTING*/) {
                     assert store.openTransactions.get().get(transactionId) : this + " " + store.openTransactions;
@@ -990,14 +990,14 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
             checkNotClosed();
             store.rollbackTo(this, savepointId);
             logId = savepointId;
-            assert logId > 0 || store.verifyUndoIsEmptyForTx(transactionId);
+            assert hasChanges() || store.verifyUndoIsEmptyForTx(transactionId);
         }
 
         /**
          * Roll the transaction back. Afterwards, this transaction is closed.
          */
         public void rollback() {
-            if(logId > 0) {
+            if(hasChanges()) {
                 checkNotClosed();
                 store.rollbackTo(this, 0);
             }
@@ -1039,7 +1039,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
         }
 
         private void closeIt() {
-            if(logId > 0) {
+            if(hasChanges()) {
                 _closeIt();
             }
             else {
@@ -1083,6 +1083,10 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
          */
         public <K, V> void removeMap(TransactionMap<K, V> map) {
             store.removeMap(map);
+        }
+
+        public boolean hasChanges() {
+            return logId > 0;
         }
 
         @Override

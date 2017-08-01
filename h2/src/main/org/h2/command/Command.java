@@ -282,7 +282,7 @@ public abstract class Command implements CommandInterface {
                 } else {
                     session.rollbackTo(rollback, false);
                 }
-            } catch(DbException ignore) {/**/}
+            } catch(Throwable ignore) {/**/}
             throw e;
         } finally {
             try {
@@ -346,8 +346,7 @@ public abstract class Command implements CommandInterface {
     public void reuse() {
         canReuse = false;
         ArrayList<? extends ParameterInterface> parameters = getParameters();
-        for (int i = 0, size = parameters.size(); i < size; i++) {
-            ParameterInterface param = parameters.get(i);
+        for (ParameterInterface param : parameters) {
             param.setValue(null, true);
         }
     }

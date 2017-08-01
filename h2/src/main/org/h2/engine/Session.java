@@ -20,7 +20,6 @@ import org.h2.command.Parser;
 import org.h2.command.Prepared;
 import org.h2.command.ddl.Analyze;
 import org.h2.command.dml.Query;
-import org.h2.command.dml.SetTypes;
 import org.h2.constraint.Constraint;
 import org.h2.index.Index;
 import org.h2.index.ViewIndex;
@@ -33,7 +32,6 @@ import org.h2.mvstore.db.MVPrimaryIndex;
 import org.h2.mvstore.db.MVTable;
 import org.h2.mvstore.db.MVTableEngine;
 import org.h2.mvstore.db.TransactionStore;
-import org.h2.mvstore.db.TransactionStore.Change;
 import org.h2.mvstore.db.TransactionStore.Transaction;
 import org.h2.result.ResultInterface;
 import org.h2.result.Row;
@@ -49,7 +47,6 @@ import org.h2.table.TableType;
 import org.h2.util.New;
 import org.h2.util.SmallLRUCache;
 import org.h2.value.Value;
-import org.h2.value.ValueArray;
 import org.h2.value.ValueLong;
 import org.h2.value.ValueNull;
 import org.h2.value.ValueString;
@@ -1587,7 +1584,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
 
     public Value getTransactionId() {
         if (database.getMvStore() != null) {
-            if (transaction == null) {
+            if (transaction == null || !transaction.hasChanges()) {
                 return ValueNull.INSTANCE;
             }
             return ValueString.get(Long.toString(getTransaction().getId()));

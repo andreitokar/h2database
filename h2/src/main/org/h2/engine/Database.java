@@ -1241,7 +1241,6 @@ public class Database implements DataHandler {
             if (closing) {
                 return;
             }
-            throwLastBackgroundException();
             if (fileLockMethod == FileLock.LOCK_SERIALIZED &&
                     !reconnectChangePending) {
                 // another connection may have written something - don't write

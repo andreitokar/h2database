@@ -194,6 +194,10 @@ public class MVTableEngine implements TableEngine {
                 throw DbException.get(
                         ErrorCode.IO_EXCEPTION_1,
                         e, fileName);
+            } else if (errorCode == DataUtils.ERROR_INTERNAL) {
+                throw DbException.get(
+                        ErrorCode.GENERAL_ERROR_1,
+                        e, fileName);
             }
             throw DbException.get(
                     ErrorCode.FILE_CORRUPTED_1,

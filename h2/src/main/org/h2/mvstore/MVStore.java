@@ -698,9 +698,7 @@ public final class MVStore {
         }
         setLastChunk(newest);
         loadChunkMeta();
-        // read all chunk headers and footers within the retention time,
-        // to detect unwritten data after a power failure
-        verifyLastChunks();
+        fileStore.clear();
         // build the free space list
         for (Chunk c : chunks.values()) {
             if (c.pageCountLive == 0) {
@@ -712,6 +710,9 @@ public final class MVStore {
             fileStore.markUsed(start, length);
         }
         assert fileStore.getLast() == _getFileLengthInUse() : fileStore.getLast() + " != " + _getFileLengthInUse();
+        // read all chunk headers and footers within the retention time,
+        // to detect unwritten data after a power failure
+        verifyLastChunks();
     }
 
     private void loadChunkMeta() {
@@ -756,7 +757,7 @@ public final class MVStore {
     private void verifyLastChunks() {
         long time = getTimeSinceCreation();
         assert lastChunk == null || chunks.containsKey(lastChunk.id) : lastChunk;
-        ArrayList<Integer> ids = new ArrayList<Integer>(chunks.keySet());
+        ArrayList<Integer> ids = new ArrayList<>(chunks.keySet());
         Collections.sort(ids);
         int newestValidChunk = -1;
         Chunk old = null;
@@ -1745,9 +1746,7 @@ public final class MVStore {
             buff.put(readBuff);
             long pos = getFileLengthInUse();
             fileStore.markUsed(pos, length);
-            assert fileStore.getLast() == _getFileLengthInUse() : fileStore.getLast() + " != " + _getFileLengthInUse();
             fileStore.free(start, length);
-            assert fileStore.getLast() == _getFileLengthInUse() : fileStore.getLast() + " != " + _getFileLengthInUse();
             c.block = pos / BLOCK_SIZE;
             c.next = 0;
             buff.position(0);

@@ -146,6 +146,8 @@ public class TestMvccMultiThreaded extends TestBase {
 
         for (int i = 0; i < len; i++) {
             final int x = i;
+            // Recent changes exposed race condition in this test itself.
+            // Without preliminary record locking, counter will be off.
             connList[x].setAutoCommit(false);
             tasks[i] = new Task() {
                 @Override

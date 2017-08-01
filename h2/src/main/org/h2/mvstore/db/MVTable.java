@@ -711,7 +711,9 @@ public class MVTable extends TableBase {
                 index.add(session, row);
             }
         } catch (Throwable e) {
-            t.rollbackToSavepoint(savepoint);
+            try {
+                t.rollbackToSavepoint(savepoint);
+            } catch (Throwable ignore) {/**/}
             DbException de = DbException.convert(e);
             if (de.getErrorCode() == ErrorCode.DUPLICATE_KEY_1) {
                 for (Index index : indexes) {
