@@ -1119,7 +1119,8 @@ public final class MVStore {
             MVMap.RootReference rootReference = m.setWriteVersion(version);
             if (m.getCreateVersion() <= storeVersion && // if map was created after storing started, skip it
                     !m.isVolatile() &&
-                    m.getVersion() >= lastStoredVersion) {
+                    m.hasChangesSince(lastStoredVersion)) {
+//                    m.getVersion() > lastStoredVersion) {
 
                 Page rootPage = rootReference.root;
                 if (rootPage.getPos() == 0 ||
@@ -2451,6 +2452,10 @@ public final class MVStore {
      */
     public long getCurrentVersion() {
         return currentVersion;
+    }
+
+    public long getLastStoredVersion() {
+        return lastStoredVersion;
     }
 
     /**

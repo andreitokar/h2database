@@ -378,14 +378,14 @@ public abstract class Page implements Cloneable {
     public final void setKey(int index, Object key) {
         ExtendedDataType extendedKeyType = map.getExtendedKeyType();
         keys = extendedKeyType.clone(keys);
-//        if(isPersistent()) {
-//            int mem = extendedKeyType.getMemory(key);
-//            Object old = extendedKeyType.getValue(keys, index);
-//            if (old != null) {
-//                mem -= extendedKeyType.getMemory(old);
-//            }
-//            addMemory(mem);
-//        }
+        if(isPersistent()) {
+            int mem = extendedKeyType.getMemory(key);
+            Object old = extendedKeyType.getValue(keys, index);
+            if (old != null) {
+                mem -= extendedKeyType.getMemory(old);
+            }
+            addMemory(mem);
+        }
         extendedKeyType.setValue(keys, index, key);
     }
 
@@ -424,9 +424,9 @@ public abstract class Page implements Cloneable {
         keys = newKeys;
         keyType.setValue(keys, index, key);
 
-//        if (isPersistent()) {
-//            addMemory(keyType.getMemory(key));
-//        }
+        if (isPersistent()) {
+            addMemory(keyType.getMemory(key));
+        }
     }
 
     /**
@@ -440,10 +440,10 @@ public abstract class Page implements Cloneable {
         if(index == keyCount) {
             --index;
         }
-//        if(isPersistent()) {
-//            Object old = getKey(index);
-//            addMemory(-keyType.getMemory(old));
-//        }
+        if(isPersistent()) {
+            Object old = getKey(index);
+            addMemory(-keyType.getMemory(old));
+        }
         Object newKeys = createKeyStorage(keyCount - 1);
         DataUtils.copyExcept(keys, newKeys, keyCount, index);
         keys = newKeys;
@@ -915,8 +915,7 @@ public abstract class Page implements Cloneable {
 
         private Leaf(MVMap<?, ?> map, Object keys, Object values) {
             super(map, keys);
-            assert values != null;
-            assert map.getExtendedValueType().getLength(values) == getKeyCount();
+            assert values == null || map.getExtendedValueType().getLength(values) == getKeyCount();
             this.values = values;
         }
 
@@ -983,10 +982,10 @@ public abstract class Page implements Cloneable {
             ExtendedDataType valueType = map.getExtendedValueType();
             values = valueType.clone(values);
             Object old = setValueInternal(index, value);
-//            if(isPersistent()) {
-//                addMemory(valueType.getMemory(value) -
-//                          valueType.getMemory(old));
-//            }
+            if(isPersistent()) {
+                addMemory(valueType.getMemory(value) -
+                          valueType.getMemory(old));
+            }
             return old;
         }
 
@@ -1008,9 +1007,9 @@ public abstract class Page implements Cloneable {
                 values = newValues;
                 setValueInternal(index, value);
             }
-//            if (isPersistent()) {
-//                addMemory(map.getValueType().getMemory(value));
-//            }
+            if (isPersistent()) {
+                addMemory(map.getValueType().getMemory(value));
+            }
         }
 
         @Override
@@ -1023,10 +1022,10 @@ public abstract class Page implements Cloneable {
             int keyCount = getKeyCount();
             super.remove(index);
             if (values != null) {
-//                if(isPersistent()) {
-//                    Object old = getValue(index);
-//                    addMemory(-map.getValueType().getMemory(old));
-//                }
+                if(isPersistent()) {
+                    Object old = getValue(index);
+                    addMemory(-map.getValueType().getMemory(old));
+                }
                 Object newValues = createValueStorage(keyCount - 1);
                 DataUtils.copyExcept(values, newValues, keyCount, index);
                 values = newValues;
@@ -1236,17 +1235,17 @@ public abstract class Page implements Cloneable {
             children = newChildren;
 
             totalCount += childPage.getTotalCount();
-//            if (isPersistent()) {
-//                addMemory(Constants.MEMORY_POINTER + DataUtils.PAGE_MEMORY_CHILD);
-//            }
+            if (isPersistent()) {
+                addMemory(Constants.MEMORY_POINTER + DataUtils.PAGE_MEMORY_CHILD);
+            }
         }
 
         @Override
         public void remove(int index) {
             super.remove(index);
-//            if(isPersistent()) {
-//                addMemory(-(Constants.MEMORY_POINTER + DataUtils.PAGE_MEMORY_CHILD));
-//            }
+            if(isPersistent()) {
+                addMemory(-(Constants.MEMORY_POINTER + DataUtils.PAGE_MEMORY_CHILD));
+            }
             long countOffset = children[index].count;
 
             int childCount = children.length;

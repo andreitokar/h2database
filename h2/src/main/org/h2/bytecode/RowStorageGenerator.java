@@ -1,5 +1,6 @@
 package org.h2.bytecode;
 
+import com.sun.org.apache.bcel.internal.generic.INVOKESTATIC;
 import org.h2.engine.Constants;
 import org.h2.store.fs.FileUtils;
 import org.h2.value.*;
@@ -27,6 +28,8 @@ import static jdk.internal.org.objectweb.asm.Opcodes.*;
  */
 public final class RowStorageGenerator {
 
+
+    private static final String PARENT_CLASS_NAME_SLASHED = "org/h2/bytecode/RowStorage";
 
     public enum ValueType {
 //        BOOLEAN(Value.BOOLEAN, "Z", 1, "getValueBoolean", "getBoolean"),
@@ -183,9 +186,10 @@ public final class RowStorageGenerator {
 
     public static void main(String[] args) {
         int[] valueTypes = { Value.INT, Value.STRING, Value.UNKNOWN, Value.LONG, Value.DOUBLE };
+        int indexes[] = null;
 //*
-        String className = getClassName(valueTypes);
-        byte classBytes[] = generateStorageBytes(valueTypes, className);
+        String className = getClassName(valueTypes, indexes);
+        byte classBytes[] = generateStorageBytes(valueTypes, indexes, className);
         className = className.substring(className.lastIndexOf('.') + 1);
         try (java.io.FileOutputStream out = new java.io.FileOutputStream(new java.io.File(className + ".class"))) {
             out.write(classBytes);
@@ -193,7 +197,7 @@ public final class RowStorageGenerator {
             e.printStackTrace();
         }
 //*/
-        Class<? extends RowStorage> cls = generateStorageClass(valueTypes);
+        Class<? extends RowStorage> cls = generateStorageClass(valueTypes, indexes);
         try {
             Constructor<? extends RowStorage> constructor = cls.getConstructor();
             Value[] initargs = {
@@ -215,20 +219,20 @@ public final class RowStorageGenerator {
             rowTwo.setValue(3, ValueLong.get(999));
             rowTwo.setValue(4, ValueDouble.get(4.12));
             System.out.println(rowTwo);
-            System.out.println("Comparison result:" + row.compare(rowTwo, null));
-            System.out.println("Comparison result:" + rowTwo.compare(row, null));
+            System.out.println("Comparison result:" + row.compareSecure(rowTwo, null));
+            System.out.println("Comparison result:" + rowTwo.compareSecure(row, null));
         } catch (InstantiationException | IllegalAccessException | InvocationTargetException | NoSuchMethodException e) {
             e.printStackTrace();
         }
     }
 
-    public static Class<? extends RowStorage> generateStorageClass(int valueTypes[]) {
-        String className = getClassName(valueTypes);
+    public static Class<? extends RowStorage> generateStorageClass(int valueTypes[], int indexes[]) {
+        String className = getClassName(valueTypes, indexes);
         Class<?> clazz;
         try {
             clazz = Class.forName(className, true, DynamicClassLoader.INSTANCE);
         } catch (ClassNotFoundException e) {
-            byte[] classBytes = generateStorageBytes(valueTypes, className);
+            byte[] classBytes = generateStorageBytes(valueTypes, indexes, className);
 
             OutputStream outputStream = null;
             try {
@@ -239,38 +243,50 @@ public final class RowStorageGenerator {
             } finally {
                 if(outputStream != null) try { outputStream.close(); } catch (IOException ignore) {/**/}
             }
-//            className = className.replace('.','/');
             clazz = DynamicClassLoader.INSTANCE.defineClass(className, classBytes);
         }
         //noinspection unchecked
         return (Class<? extends RowStorage>)clazz;
     }
 
-    private static String getClassName(int[] valueTypes) {
+    private static String getClassName(int[] valueTypes, int indexes[]) {
         StringBuilder sb = new StringBuilder(80);
         sb.append("org.h2.bytecode.RowStorage");
         for (int type : valueTypes) {
             ValueType valueType = ValueType.get(type);
             sb.append(valueType.getClassNameSuffix());
         }
+        if (indexes != null) {
+            for (int index : indexes) {
+                sb.append('_').append(index);
+            }
+        }
         return sb.toString();
     }
 
-    private static byte[] generateStorageBytes(int valueTypes[], String className) {
+    private static byte[] generateStorageBytes(int[] valueTypes, int[] indexes, String className) {
         className = className.replace('.', '/');
         int fieldCount = valueTypes.length;
+        Map<Integer,Integer> map = null;
+        if (indexes != null) {
+            map = new HashMap<>();
+            for (int i = 0; i < indexes.length; i++) {
+                int index = indexes[i];
+                map.put(i, index);
+            }
+        }
 
 //        ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES/* | ClassWriter.COMPUTE_MAXS*/);
         ClassWriter cw = new ClassWriter(0);
 
-        cw.visit(V1_7, ACC_PUBLIC | ACC_FINAL | ACC_SUPER, className, null, "org/h2/bytecode/RowStorage", null);
+        cw.visit(V1_7, ACC_PUBLIC | ACC_FINAL | ACC_SUPER, className, null, PARENT_CLASS_NAME_SLASHED, null);
 
         MethodVisitor mv;
 
         mv = cw.visitMethod(ACC_PUBLIC, "<init>", "()V", null, null);
         mv.visitCode();
         mv.visitVarInsn(ALOAD, 0);
-        mv.visitMethodInsn(INVOKESPECIAL, "org/h2/bytecode/RowStorage", "<init>", "()V", false);
+        mv.visitMethodInsn(INVOKESPECIAL, PARENT_CLASS_NAME_SLASHED, "<init>", "()V", false);
         mv.visitInsn(RETURN);
         mv.visitMaxs(1, 1);
         mv.visitEnd();
@@ -280,7 +296,7 @@ public final class RowStorageGenerator {
         mv.visitCode();
         mv.visitVarInsn(ALOAD, 0);
         mv.visitVarInsn(ALOAD, 1);
-        mv.visitMethodInsn(INVOKESPECIAL, "org/h2/bytecode/RowStorage", "<init>", "([Lorg/h2/value/Value;)V", false);
+        mv.visitMethodInsn(INVOKESPECIAL, PARENT_CLASS_NAME_SLASHED, "<init>", "([Lorg/h2/value/Value;)V", false);
         mv.visitInsn(RETURN);
         mv.visitMaxs(2, 2);
         mv.visitEnd();
@@ -306,25 +322,40 @@ public final class RowStorageGenerator {
         int memory = Constants.MEMORY_OBJECT;
         for (int i = 0; i < fieldCount; i++) {
             int type = valueTypes[i];
-            ValueType valueType = ValueType.get(type);
-            memory += valueType.getMemory();
+            Integer indx = map == null ? Integer.valueOf(i) : map.get(i);
+            if (indx != null) {
+                ValueType valueType = ValueType.get(type);
+                memory += valueType.getMemory();
 
-            valueType.visitFieldCreation(cw, i);
+                valueType.visitFieldCreation(cw, i);
 
-            gmv.visitLabel(getLabels[i]);
-            gmv.visitFrame(F_SAME, 0, null, 0, null);
-            valueType.visitGetter(gmv, className, i);
+                gmv.visitLabel(getLabels[i]);
+                gmv.visitFrame(F_SAME, 0, null, 0, null);
+                valueType.visitGetter(gmv, className, i);
 
-            smv.visitLabel(setLabels[i]);
-            smv.visitFrame(F_SAME, 0, null, 0, null);
-            valueType.visitSetter(smv, className, i);
+                smv.visitLabel(setLabels[i]);
+                smv.visitFrame(F_SAME, 0, null, 0, null);
+                valueType.visitSetter(smv, className, i);
+            }
         }
 
+        if (map != null) {
+            for (int i = 0; i < fieldCount; i++) {
+                Integer indx = map.get(i);
+                if (indx == null) {
+                    gmv.visitLabel(getLabels[i]);
+                    smv.visitLabel(getLabels[i]);
+                }
+            }
+            gmv.visitFrame(F_SAME, 0, null, 0, null);
+            gmv.visitMethodInsn(INVOKESTATIC, PARENT_CLASS_NAME_SLASHED, "getNullValue", "()Lorg/h2/value/Value;", false);
+            gmv.visitInsn(ARETURN);
+        }
         gmv.visitLabel(defaultGetLabel);
         gmv.visitFrame(F_SAME, 0, null, 0, null);
         gmv.visitVarInsn(ALOAD, 0);
         gmv.visitVarInsn(ILOAD, 1);
-        gmv.visitMethodInsn(INVOKESPECIAL, "org/h2/bytecode/RowStorage", "getValue", "(I)Lorg/h2/value/Value;", false);
+        gmv.visitMethodInsn(INVOKESPECIAL, PARENT_CLASS_NAME_SLASHED, "getValue", "(I)Lorg/h2/value/Value;", false);
         gmv.visitInsn(ARETURN);
         gmv.visitMaxs(2, 2);
         gmv.visitEnd();
@@ -334,7 +365,7 @@ public final class RowStorageGenerator {
         smv.visitVarInsn(ALOAD, 0);
         smv.visitVarInsn(ILOAD, 1);
         smv.visitVarInsn(ALOAD, 2);
-        smv.visitMethodInsn(INVOKESPECIAL, "org/h2/bytecode/RowStorage", "setValue", "(ILorg/h2/value/Value;)V", false);
+        smv.visitMethodInsn(INVOKESPECIAL, PARENT_CLASS_NAME_SLASHED, "setValue", "(ILorg/h2/value/Value;)V", false);
         smv.visitInsn(RETURN);
         smv.visitMaxs(3, 3);
         smv.visitEnd();
@@ -352,9 +383,12 @@ public final class RowStorageGenerator {
         getMemoryVisitor.visitCode();
         getMemoryVisitor.visitIntInsn(SIPUSH, memory);
 
-        for (int indx = 0; indx < fieldCount; indx++) {
-            ValueType valueType = ValueType.get(valueTypes[indx]);
-            valueType.visitGetMemory(getMemoryVisitor, className, indx);
+        for (int i = 0; i < fieldCount; i++) {
+            Integer indx = map == null ? Integer.valueOf(i) : map.get(i);
+            if (indx != null) {
+                ValueType valueType = ValueType.get(valueTypes[indx]);
+                valueType.visitGetMemory(getMemoryVisitor, className, indx);
+            }
         }
 
         getMemoryVisitor.visitInsn(IRETURN);
@@ -362,7 +396,8 @@ public final class RowStorageGenerator {
         getMemoryVisitor.visitEnd();
 
 
-        MethodVisitor compareToVisitor = cw.visitMethod(ACC_PUBLIC, "compareToSecure", "(Lorg/h2/bytecode/RowStorage;Lorg/h2/value/CompareMode;)I", null, null);
+        MethodVisitor compareToVisitor = cw.visitMethod(ACC_PUBLIC, "compareToSecure",
+                    "(L" + PARENT_CLASS_NAME_SLASHED + ";Lorg/h2/value/CompareMode;)I", null, null);
         compareToVisitor.visitCode();
 
         compareToVisitor.visitVarInsn(ALOAD, 1);
@@ -373,22 +408,45 @@ public final class RowStorageGenerator {
 
         Label retLabel = new Label();
 
-        for (int indx = 0; indx < fieldCount; indx++) {
-            if(indx != 0) {
-                compareToVisitor.visitVarInsn(ILOAD, 4);
-                compareToVisitor.visitJumpInsn(IFNE, retLabel);
+        if (indexes == null) {
+            for (int indx = 0; indx < fieldCount; indx++) {
+                if (indx != 0) {
+                    compareToVisitor.visitVarInsn(ILOAD, 4);
+                    compareToVisitor.visitJumpInsn(IFNE, retLabel);
+                }
+
+                ValueType valueType = ValueType.get(valueTypes[indx]);
+
+                compareToVisitor.visitVarInsn(ALOAD, 0);
+                compareToVisitor.visitFieldInsn(GETFIELD, className, valueType.getFieldName(indx), valueType.descriptor);
+                compareToVisitor.visitVarInsn(ALOAD, 3);
+                compareToVisitor.visitFieldInsn(GETFIELD, className, valueType.getFieldName(indx), valueType.descriptor);
+
+                valueType.visitCompareTo(compareToVisitor, className, indx);
+
+                compareToVisitor.visitVarInsn(ISTORE, 4);
+            }
+        } else {
+            boolean cont = false;
+            for (int indx : indexes) {
+                if (cont) {
+                    compareToVisitor.visitVarInsn(ILOAD, 4);
+                    compareToVisitor.visitJumpInsn(IFNE, retLabel);
+                }
+                cont = true;
+
+                ValueType valueType = ValueType.get(valueTypes[indx]);
+
+                compareToVisitor.visitVarInsn(ALOAD, 0);
+                compareToVisitor.visitFieldInsn(GETFIELD, className, valueType.getFieldName(indx), valueType.descriptor);
+                compareToVisitor.visitVarInsn(ALOAD, 3);
+                compareToVisitor.visitFieldInsn(GETFIELD, className, valueType.getFieldName(indx), valueType.descriptor);
+
+                valueType.visitCompareTo(compareToVisitor, className, indx);
+
+                compareToVisitor.visitVarInsn(ISTORE, 4);
             }
 
-            ValueType valueType = ValueType.get(valueTypes[indx]);
-
-            compareToVisitor.visitVarInsn(ALOAD, 0);
-            compareToVisitor.visitFieldInsn(GETFIELD, className, valueType.getFieldName(indx), valueType.descriptor);
-            compareToVisitor.visitVarInsn(ALOAD, 3);
-            compareToVisitor.visitFieldInsn(GETFIELD, className, valueType.getFieldName(indx), valueType.descriptor);
-
-            valueType.visitCompareTo(compareToVisitor, className, indx);
-
-            compareToVisitor.visitVarInsn(ISTORE, 4);
         }
 
         compareToVisitor.visitLabel(retLabel);

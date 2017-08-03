@@ -1269,10 +1269,9 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     public final long getVersion() {
         RootReference rootReference = getRoot();
         RootReference previous = rootReference.previous;
-        return previous != null
-                && previous.root == rootReference.root
-                && previous.version != INITIAL_VERSION ? previous.version :
-                                                         rootReference.version;
+        return previous == null || previous.root != rootReference.root ?
+                rootReference.version :
+                previous.version == INITIAL_VERSION ? store.getLastStoredVersion() : previous.version;
     }
 
     final boolean hasChangesSince(long version) {

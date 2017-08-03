@@ -449,7 +449,7 @@ public abstract class Table extends SchemaObjectBase {
             }
             columnMap.put(columnName, col);
         }
-        rowFactory = database.getRowFactory().createRowFactory(columns);
+        rowFactory = database.getRowFactory().createRowFactory(columns, null);
     }
 
     /**

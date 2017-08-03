@@ -12,6 +12,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.h2.result.Row;
 import org.h2.result.RowFactory;
 import org.h2.result.RowImpl;
+import org.h2.result.SearchRow;
 import org.h2.table.CompactRowFactory;
 import org.h2.test.TestBase;
 import org.h2.value.Value;
@@ -80,6 +81,11 @@ public class TestRowFactory extends TestBase {
         public Row createRow(Value[] data, int memory) {
             COUNTER.incrementAndGet();
             return new RowImpl(data, memory);
+        }
+
+        @Override
+        public SearchRow createRow() {
+            return null;
         }
     }
 }

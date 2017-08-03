@@ -31,7 +31,7 @@ public abstract class RowFactory {
     }
 
 
-    public RowFactory createRowFactory(Column columns[]) {
+    public RowFactory createRowFactory(Column columns[], int indexes[]) {
         return this;
     }
 
@@ -44,6 +44,8 @@ public abstract class RowFactory {
      */
     public abstract Row createRow(Value[] data, int memory);
 
+    public abstract SearchRow createRow();
+
     /**
      * Default implementation of row factory.
      */
@@ -51,6 +53,11 @@ public abstract class RowFactory {
         @Override
         public Row createRow(Value[] data, int memory) {
             return new RowImpl(data, memory);
+        }
+
+        @Override
+        public SearchRow createRow() {
+            return null;
         }
     }
 }

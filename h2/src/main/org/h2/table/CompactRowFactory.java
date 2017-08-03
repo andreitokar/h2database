@@ -4,6 +4,7 @@ import org.h2.bytecode.RowStorage;
 import org.h2.bytecode.RowStorageGenerator;
 import org.h2.result.Row;
 import org.h2.result.RowFactory;
+import org.h2.result.SearchRow;
 import org.h2.value.Value;
 
 /**
@@ -26,12 +27,12 @@ public final class CompactRowFactory extends RowFactory {
     }
 
     @Override
-    public RowFactory createRowFactory(Column[] columns) {
+    public RowFactory createRowFactory(Column[] columns, int[] indexes) {
         int types[] = new int[columns.length];
         for (int i = 0; i < types.length; i++) {
             types[i] = columns[i].getType();
         }
-        Class<? extends RowStorage> clazz = RowStorageGenerator.generateStorageClass(types);
+        Class<? extends RowStorage> clazz = RowStorageGenerator.generateStorageClass(types, indexes);
         RowStorage rowStorage;
         try {
             rowStorage = clazz.newInstance();
@@ -49,6 +50,16 @@ public final class CompactRowFactory extends RowFactory {
         }
         RowStorage rowStorage = instance.clone();
         rowStorage.setValues(data);
+        return rowStorage;
+    }
+
+    @Override
+    public SearchRow createRow() {
+        if(instance == null)
+        {
+            return RowFactory.getDefaultRowFactory().createRow();
+        }
+        RowStorage rowStorage = instance.clone();
         return rowStorage;
     }
 }

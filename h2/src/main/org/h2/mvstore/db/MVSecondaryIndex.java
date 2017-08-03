@@ -22,6 +22,7 @@ import org.h2.mvstore.MVMap;
 import org.h2.mvstore.db.TransactionStore.Transaction;
 import org.h2.mvstore.db.TransactionStore.TransactionMap;
 import org.h2.result.Row;
+import org.h2.result.RowFactory;
 import org.h2.result.SearchRow;
 import org.h2.result.SortOrder;
 import org.h2.table.Column;
@@ -45,6 +46,7 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
     final MVTable mvTable;
 
     private final int keyColumns;
+    private final RowFactory rowFactory;
     private final String mapName;
     private TransactionMap<Value, Value> dataMap;
 
@@ -64,6 +66,8 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
             sortTypes[i] = columns[i].sortType;
         }
         sortTypes[keyColumns - 1] = SortOrder.ASCENDING;
+
+        rowFactory = database.getRowFactory().createRowFactory(table.getColumns(), columnIds);
         ValueDataType keyType = new ValueDataType(
                 db.getCompareMode(), db, sortTypes);
 //        ValueDataType valueType = new ValueDataType(null, null, null);
@@ -80,7 +84,7 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
     public void addRowsToBuffer(List<Row> rows, String bufferName) {
         MVMap<Value, Value> map = openMap(bufferName);
         for (Row row : rows) {
-            ValueArray key = convertToKey(row);
+            Value key = convertToKey(row);
             map.put(key, ValueNull.INSTANCE);
         }
     }
@@ -127,8 +131,8 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
                     // don't change the original value
                     array = array.clone();
                     array[keyColumns - 1] = ValueLong.get(Long.MIN_VALUE);
-                    ValueArray unique = ValueArray.get(array);
-                    SearchRow row = convertToSearchRow((ValueArray) v);
+                    Value unique = ValueArray.get(array);
+                    SearchRow row = convertToSearchRow(v);
                     checkUnique(row, dataMap, unique);
                 }
 
@@ -161,9 +165,11 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
             sortTypes[i] = indexColumns[i].sortType;
         }
         sortTypes[keyColumns - 1] = SortOrder.ASCENDING;
+
         ValueDataType keyType = new ValueDataType(
                 database.getCompareMode(), database, sortTypes);
-        ValueDataType valueType = new ValueDataType(null, null, null);
+//        ValueDataType valueType = new ValueDataType(null, null, null);
+        ValueDataType valueType = ValueNull.Type.INSTANCE;
         MVMap.Builder<Value, Value> builder =
                 new MVMap.Builder<Value, Value>().keyType(keyType).valueType(valueType);
         MVMap<Value, Value> map = database.getMvStore().
@@ -182,23 +188,22 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
     @Override
     public void add(Session session, Row row) {
         TransactionMap<Value, Value> map = getMap(session);
-        ValueArray array = convertToKey(row);
-        ValueArray unique = null;
+        Value key = convertToKey(row);
+        Value unique = null;
         if (indexType.isUnique()) {
             // this will detect committed entries only
-            unique = convertToKey(row);
-            unique.getList()[keyColumns - 1] = ValueLong.get(Long.MIN_VALUE);
+            unique = convertToKey(row, true);
             checkUnique(row, map, unique);
         }
         try {
-            map.put(array, ValueNull.INSTANCE);
+            map.put(key, ValueNull.INSTANCE);
         } catch (IllegalStateException e) {
             throw mvTable.convertException(e);
         }
         if (indexType.isUnique()) {
             Iterator<Value> it = map.keyIterator(unique, true);
             while (it.hasNext()) {
-                ValueArray k = (ValueArray) it.next();
+                Value k = it.next();
                 SearchRow r2 = convertToSearchRow(k);
                 if (compareRows(row, r2) != 0) {
                     break;
@@ -219,10 +224,10 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
         }
     }
 
-    private void checkUnique(SearchRow row, TransactionMap<Value, Value> map, ValueArray unique) {
+    private void checkUnique(SearchRow row, TransactionMap<Value,Value> map, Value unique) {
         Iterator<Value> it = map.keyIterator(unique, true);
         while (it.hasNext()) {
-            ValueArray k = (ValueArray) it.next();
+            Value k = it.next();
             SearchRow r2 = convertToSearchRow(k);
             if (compareRows(row, r2) != 0) {
                 break;
@@ -237,7 +242,7 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
 
     @Override
     public void remove(Session session, Row row) {
-        ValueArray array = convertToKey(row);
+        Value array = convertToKey(row);
         TransactionMap<Value, Value> map = getMap(session);
         try {
             Value old = map.remove(array);
@@ -256,10 +261,7 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
     }
 
     private Cursor find(Session session, SearchRow first, boolean bigger, SearchRow last) {
-        ValueArray min = convertToKey(first);
-        if (min != null) {
-            min.getList()[keyColumns - 1] = ValueLong.get(Long.MIN_VALUE);
-        }
+        Value min = convertToKey(first, true);
         TransactionMap<Value, Value> map = getMap(session);
         if (bigger && min != null) {
             // search for the next: first skip 1, then 2, 4, 8, until
@@ -310,21 +312,39 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
         return new MVStoreCursor(session, map.keyIterator(min), last);
     }
 
-    private ValueArray convertToKey(SearchRow r) {
+    private Value convertToKey(SearchRow r) {
+        return convertToKey(r, false);
+    }
+
+    private Value convertToKey(SearchRow r, boolean min) {
         if (r == null) {
             return null;
         }
-        Value[] array = new Value[keyColumns];
-        for (int i = 0; i < columns.length; i++) {
-            Column c = columns[i];
-            int idx = c.getColumnId();
-            Value v = r.getValue(idx);
-            if (v != null) {
-                array[i] = v.convertTo(c.getType());
+        SearchRow row = rowFactory.createRow();
+        if (row instanceof Value) {
+            for (int i = 0; i < columns.length; i++) {
+                Column c = columns[i];
+                int idx = c.getColumnId();
+                Value v = r.getValue(idx);
+                if (v != null) {
+                    row.setValue(i, v.convertTo(c.getType()));
+                }
             }
+            row.setKey(min ? Long.MIN_VALUE : r.getKey());
+            return (Value)row;
+        } else {
+            Value[] array = new Value[keyColumns];
+            for (int i = 0; i < columns.length; i++) {
+                Column c = columns[i];
+                int idx = c.getColumnId();
+                Value v = r.getValue(idx);
+                if (v != null) {
+                    array[i] = v.convertTo(c.getType());
+                }
+            }
+            array[keyColumns - 1] = ValueLong.get(r.getKey());
+            return ValueArray.get(array);
         }
-        array[keyColumns - 1] = ValueLong.get(r.getKey());
-        return ValueArray.get(array);
     }
 
     /**
@@ -333,8 +353,11 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
      * @param key the index key
      * @return the row
      */
-    SearchRow convertToSearchRow(ValueArray key) {
-        Value[] array = key.getList();
+    private SearchRow convertToSearchRow(Value key) {
+        if(key instanceof SearchRow) {
+            return (SearchRow) key;
+        }
+        Value[] array = ((ValueArray)key).getList();
         SearchRow searchRow = mvTable.getTemplateRow();
         searchRow.setKey((array[array.length - 1]).getLong());
         Column[] cols = getColumns();
@@ -473,7 +496,6 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
         private final Iterator<Value> it;
         private final SearchRow last;
         private Value current;
-        private SearchRow searchRow;
         private Row row;
 
         public MVStoreCursor(Session session, Iterator<Value> it, SearchRow last) {
@@ -495,21 +517,14 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
 
         @Override
         public SearchRow getSearchRow() {
-            if (searchRow == null) {
-                if (current != null) {
-                    searchRow = convertToSearchRow((ValueArray) current);
-                }
-            }
-            return searchRow;
+            return current == null ? null : convertToSearchRow(current);
         }
 
         @Override
         public boolean next() {
             current = it.hasNext() ? it.next() : null;
-            searchRow = null;
             if (current != null) {
                 if (last != null && compareRows(getSearchRow(), last) > 0) {
-                    searchRow = null;
                     current = null;
                 }
             }

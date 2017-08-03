@@ -584,6 +584,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
         for (long logId = t.logId - 1; logId >= toLogId; logId--) {
             Long undoKey = getOperationId(t.getId(), logId);
             undoLog.operate(undoKey, null, new RollbackDecisionMaker(this, toOperationId, t.listener));
+            t.logId = logId;
         }
     }
 
@@ -987,9 +988,9 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
          * @param savepointId the savepoint id
          */
         public void rollbackToSavepoint(long savepointId) {
-            checkNotClosed();
+            checkOpen();
             store.rollbackTo(this, savepointId);
-            logId = savepointId;
+            assert logId == savepointId : logId + " != " + savepointId;
             assert hasChanges() || store.verifyUndoIsEmptyForTx(transactionId);
         }
 
@@ -998,7 +999,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
          */
         public void rollback() {
             if(hasChanges()) {
-                checkNotClosed();
+                checkOpen();
                 store.rollbackTo(this, 0);
             }
             store.endTransaction(this);
@@ -2082,22 +2083,25 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
         @Override
         public MVMap.Decision decide(Record existingValue, Record providedValue) {
             assert decision == null;
-            assert existingValue != null;
-            VersionedValue valueToRestore = existingValue.oldValue;
-            long operationId;
-            if(valueToRestore == null ||
-                    (operationId = valueToRestore.operationId) == 0 ||
-                    getTransactionId(operationId) == getTransactionId(toOperationId)
-                            && getLogId(operationId) <= getLogId(toOperationId)) {
-                int mapId = existingValue.mapId;
-                MVMap<Object, VersionedValue> map = store.openMap(mapId);
-                if(map != null) {
-                    Object key = existingValue.key;
-                    VersionedValue previousValue = map.operate(key, valueToRestore, MVMap.DecisionMaker.DEFAULT);
-                    listener.onRollback(map, key, previousValue, valueToRestore);
+            if (existingValue != null) {
+                VersionedValue valueToRestore = existingValue.oldValue;
+                long operationId;
+                if (valueToRestore == null ||
+                        (operationId = valueToRestore.operationId) == 0 ||
+                        getTransactionId(operationId) == getTransactionId(toOperationId)
+                                && getLogId(operationId) <= getLogId(toOperationId)) {
+                    int mapId = existingValue.mapId;
+                    MVMap<Object, VersionedValue> map = store.openMap(mapId);
+                    if (map != null) {
+                        Object key = existingValue.key;
+                        VersionedValue previousValue = map.operate(key, valueToRestore, MVMap.DecisionMaker.DEFAULT);
+                        listener.onRollback(map, key, previousValue, valueToRestore);
+                    }
                 }
+                decision = MVMap.Decision.REMOVE;
+            } else {
+                decision = MVMap.Decision.ABORT;
             }
-            decision = MVMap.Decision.REMOVE;
             return decision;
         }
 

@@ -219,15 +219,6 @@ public class RowStorage extends Value implements Row, Cloneable {
         throw new NotImplementedException();
     }
 
-    public int compare(Value o, CompareMode mode) {
-        if(this == o) return 0;
-        if(getClass() != o.getClass()) {
-            return Integer.compare(System.identityHashCode(this), System.identityHashCode(o));
-        }
-        RowStorage other = (RowStorage)o;
-        return compareToSecure(other, mode);
-    }
-
     @Override
     protected int compareSecure(Value o, CompareMode mode) {
         if(this == o) return 0;
@@ -282,6 +273,10 @@ public class RowStorage extends Value implements Row, Cloneable {
     }
 
     /////////////////////////////////////////////////////////////////////
+
+    protected static Value getNullValue() {
+        return ValueNull.INSTANCE;
+    }
 
     protected static int getMemory(byte v[]) {
         return v == null ? 0 : v.length;

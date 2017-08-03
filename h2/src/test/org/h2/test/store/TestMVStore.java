@@ -834,8 +834,8 @@ public class TestMVStore extends TestBase {
         s.close();
         int[] expectedReadsForCacheSize = {
 //              3407, 2590, 1924, 1440, 1330, 956, 918
-//                1880, 1789, 1616, 1374, 970, 711, 541
-                3504, 1789, 1616, 1374, 237, 711, 541
+                1880, 1789, 1616, 1374, 970, 711, 541
+//                3504, 1789, 1616, 1374, 237, 711, 541
         };
         for (int cacheSize = 0; cacheSize <= 6; cacheSize += 4) {
             int cacheMB = 1 + 3 * cacheSize;
@@ -1432,8 +1432,8 @@ public class TestMVStore extends TestBase {
         // and before node modification
 //        assertEquals(117120, s.getUnsavedMemory());
 //        assertEquals(97266, s.getUnsavedMemory());
-//        assertEquals(64252, s.getUnsavedMemory());
-        assertEquals(62146, s.getUnsavedMemory());
+        assertEquals(64252, s.getUnsavedMemory());
+//        assertEquals(62146, s.getUnsavedMemory());
         s.commit();
         assertEquals(2, s.getFileStore().getWriteCount());
         s.close();
