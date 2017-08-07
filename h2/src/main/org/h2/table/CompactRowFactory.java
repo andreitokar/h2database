@@ -2,6 +2,8 @@ package org.h2.table;
 
 import org.h2.bytecode.RowStorage;
 import org.h2.bytecode.RowStorageGenerator;
+import org.h2.engine.Database;
+import org.h2.mvstore.type.DataType;
 import org.h2.result.Row;
 import org.h2.result.RowFactory;
 import org.h2.result.SearchRow;
@@ -17,17 +19,31 @@ import org.h2.value.Value;
  */
 public final class CompactRowFactory extends RowFactory {
     private final RowStorage instance;
+    private final DataType dataType;
 
     public CompactRowFactory() {
-        instance = null;
+        this(null, null);
     }
 
-    private CompactRowFactory(RowStorage instance) {
+    private CompactRowFactory(RowStorage instance, DataType dataType) {
         this.instance = instance;
+        this.dataType = dataType;
     }
 
     @Override
-    public RowFactory createRowFactory(Column[] columns, int[] indexes) {
+    public RowFactory createRowFactory(Database db, Column[] columns, IndexColumn indexColumns[]) {
+        int indexes[] = null;
+        int sortTypes[] = null;
+        if (indexColumns != null) {
+            int len = indexColumns.length;
+            indexes = new int[len];
+            sortTypes = new int[len];
+            for (int i = 0; i < len; i++) {
+                IndexColumn indexColumn = indexColumns[i];
+                indexes[i] = indexColumn.column.getColumnId();
+                sortTypes[i] = indexColumn.sortType;
+            }
+        }
         int types[] = new int[columns.length];
         for (int i = 0; i < types.length; i++) {
             types[i] = columns[i].getType();
@@ -39,7 +55,8 @@ public final class CompactRowFactory extends RowFactory {
         } catch (Exception e) {
             throw new IllegalStateException("CompactRowFactory failure ", e);
         }
-        return new CompactRowFactory(rowStorage);
+        return new CompactRowFactory(rowStorage,
+                                     new RowStorage.Type(db.getCompareMode(), db, sortTypes));
     }
 
     @Override
@@ -59,7 +76,15 @@ public final class CompactRowFactory extends RowFactory {
         {
             return RowFactory.getDefaultRowFactory().createRow();
         }
-        RowStorage rowStorage = instance.clone();
-        return rowStorage;
+        return instance.clone();
+    }
+
+    @Override
+    public DataType getDataType() {
+        if(dataType == null)
+        {
+            return RowFactory.getDefaultRowFactory().getDataType();
+        }
+        return dataType;
     }
 }

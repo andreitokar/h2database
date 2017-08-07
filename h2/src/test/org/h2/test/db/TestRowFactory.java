@@ -5,17 +5,30 @@
  */
 package org.h2.test.db;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import org.h2.bytecode.RowStorage;
+import org.h2.bytecode.RowStorageGenerator;
+import org.h2.mvstore.type.DataType;
 import org.h2.result.Row;
 import org.h2.result.RowFactory;
 import org.h2.result.RowImpl;
 import org.h2.result.SearchRow;
+import org.h2.result.SortOrder;
 import org.h2.table.CompactRowFactory;
 import org.h2.test.TestBase;
+import org.h2.value.CompareMode;
 import org.h2.value.Value;
+import org.h2.value.ValueDate;
+import org.h2.value.ValueDouble;
+import org.h2.value.ValueInt;
+import org.h2.value.ValueLong;
+import org.h2.value.ValueString;
 
 /**
  * Test {@link RowFactory} setting.
@@ -35,6 +48,12 @@ public class TestRowFactory extends TestBase {
 
     @Override
     public void test() throws Exception {
+        testMyRowFactory();
+        tetRowStorage();
+        testCompactRowFactory();
+    }
+
+    public void testMyRowFactory() throws Exception {
         deleteDb("rowFactory");
         Connection conn = getConnection("rowFactory;ROW_FACTORY=\"" +
                 MyTestRowFactory.class.getName() + '"');
@@ -46,9 +65,79 @@ public class TestRowFactory extends TestBase {
         assertTrue(MyTestRowFactory.COUNTER.get() >= 1000);
         conn.close();
         deleteDb("rowFactory");
-
-        testCompactRowFactory();
     }
+
+    public void tetRowStorage() {
+        int[] valueTypes = { Value.INT, Value.STRING, Value.UNKNOWN, Value.LONG, Value.DOUBLE };
+        Class<? extends RowStorage> cls = generateClass(valueTypes, null);
+        Class<? extends RowStorage> icls = generateClass(valueTypes, new int[]{3, 0, 1});
+
+        try {
+            Constructor<? extends RowStorage> constructor = cls.getConstructor();
+            Value[] initargs = {
+                    ValueInt.get(3),
+                    ValueString.get("Hello"),
+                    ValueDate.parse("2017-08-04"),
+                    ValueLong.get(77),
+                    ValueDouble.get(3.62)
+            };
+            RowStorage row = constructor.newInstance();
+            row.setValues(initargs);
+            row.setKey(12345);
+            assertEquals("Row{12345/0 3, 'Hello', DATE '2017-08-04', 77, 3.619999885559082}", row.toString());
+
+            RowStorage rowTwo = row.clone();
+            rowTwo.setValue(0, ValueInt.get(5));
+            rowTwo.setValue(1, ValueString.get("World"));
+            rowTwo.setValue(2, ValueDate.parse("2001-09-11"));
+            rowTwo.setValue(3, ValueLong.get(999));
+            rowTwo.setValue(4, ValueDouble.get(4.12));
+            assertEquals("Row{12345/0 5, 'World', DATE '2001-09-11', 999, 4.119999885559082}", rowTwo.toString());
+            CompareMode compareMode = CompareMode.getInstance(null, 0);
+            RowStorage.Type type = new RowStorage.Type(compareMode, null, null);
+            assertEquals(-1, type.compare(row,rowTwo));
+            assertEquals(1, type.compare(rowTwo, row));
+
+            RowStorage irowTwo = icls.getConstructor().newInstance();
+            irowTwo.setValue(0, ValueInt.get(5));
+            irowTwo.setValue(1, ValueString.get("World"));
+            irowTwo.setValue(3, ValueLong.get(999));
+            try {
+                irowTwo.setValue(4, ValueDouble.get(4.12));
+                fail();
+            } catch(Throwable ignore) {/**/}
+            irowTwo.setKey(987);
+            assertEquals("Row{987/0 5, 'World', NULL, 999, NULL}", irowTwo.toString());
+            RowStorage.Type itype = new RowStorage.Type(compareMode, null, new int[]{SortOrder.ASCENDING, SortOrder.ASCENDING, SortOrder.ASCENDING});
+            assertEquals(0, itype.compare(irowTwo, irowTwo));
+            assertEquals(0, itype.compare(irowTwo, rowTwo));
+            assertEquals(1, itype.compare(irowTwo, row));
+
+            RowStorage irow = icls.getConstructor().newInstance();
+            irow.copyFrom(row);
+            assertEquals("Row{0/0 3, 'Hello', NULL, 77, NULL}", irow.toString());
+            assertEquals(-1, itype.compare(irow, irowTwo));
+            assertEquals(0, itype.compare(irow, row));
+            assertEquals(1, itype.compare(row, irow));  // assuming NULL sorted low
+        } catch (InstantiationException | IllegalAccessException | InvocationTargetException | NoSuchMethodException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private static Class<? extends RowStorage> generateClass(int[] valueTypes, int indexes[]) {
+        //*
+        String className = RowStorageGenerator.getClassName(valueTypes, indexes);
+        byte classBytes[] = RowStorageGenerator.generateStorageBytes(valueTypes, indexes, className);
+        className = className.substring(className.lastIndexOf('.') + 1);
+        try (java.io.FileOutputStream out = new java.io.FileOutputStream(new java.io.File(className + ".class"))) {
+            out.write(classBytes);
+        } catch (java.io.IOException e) {
+            e.printStackTrace();
+        }
+//*/
+        return RowStorageGenerator.generateStorageClass(valueTypes, indexes);
+    }
+
 
     public void testCompactRowFactory() throws Exception {
         deleteDb("rowFactory");
@@ -85,6 +174,11 @@ public class TestRowFactory extends TestBase {
 
         @Override
         public SearchRow createRow() {
+            return null;
+        }
+
+        @Override
+        public DataType getDataType() {
             return null;
         }
     }

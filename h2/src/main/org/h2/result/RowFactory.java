@@ -5,8 +5,12 @@
  */
 package org.h2.result;
 
+import org.h2.engine.Database;
+import org.h2.mvstore.db.ValueDataType;
+import org.h2.mvstore.type.DataType;
 import org.h2.table.Column;
 import org.h2.table.CompactRowFactory;
+import org.h2.table.IndexColumn;
 import org.h2.value.Value;
 
 /**
@@ -31,7 +35,7 @@ public abstract class RowFactory {
     }
 
 
-    public RowFactory createRowFactory(Column columns[], int indexes[]) {
+    public RowFactory createRowFactory(Database db, Column columns[], IndexColumn indexColumns[]) {
         return this;
     }
 
@@ -46,10 +50,27 @@ public abstract class RowFactory {
 
     public abstract SearchRow createRow();
 
+    public abstract DataType getDataType();
+
     /**
      * Default implementation of row factory.
      */
     private static final class DefaultRowFactory extends RowFactory {
+        private final DataType dataType;
+
+        public DefaultRowFactory() {
+            dataType = new ValueDataType(null, null, null);
+        }
+
+        public DefaultRowFactory(Database db) {
+            dataType = new ValueDataType(db.getCompareMode(), db, null);
+        }
+
+        @Override
+        public RowFactory createRowFactory(Database db, Column[] columns, IndexColumn[] indexColumns) {
+            return new DefaultRowFactory(db);
+        }
+
         @Override
         public Row createRow(Value[] data, int memory) {
             return new RowImpl(data, memory);
@@ -58,6 +79,11 @@ public abstract class RowFactory {
         @Override
         public SearchRow createRow() {
             return null;
+        }
+
+        @Override
+        public DataType getDataType() {
+            return dataType;
         }
     }
 }

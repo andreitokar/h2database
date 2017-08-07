@@ -1,12 +1,21 @@
 package org.h2.bytecode;
 
+import jdk.nashorn.internal.ir.annotations.Ignore;
+import org.h2.engine.Constants;
+import org.h2.mvstore.DataUtils;
+import org.h2.mvstore.WriteBuffer;
+import org.h2.mvstore.db.ValueDataType;
+import org.h2.mvstore.type.ExtendedDataType;
 import org.h2.result.Row;
 import org.h2.result.SearchRow;
+import org.h2.result.SortOrder;
 import org.h2.store.Data;
+import org.h2.store.DataHandler;
 import org.h2.value.*;
 import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
 import java.math.BigDecimal;
+import java.nio.ByteBuffer;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 
@@ -53,9 +62,74 @@ public class RowStorage extends Value implements Row, Cloneable {
         return 0;
     }
 
+    protected int[] getIndexes() {
+        return null;
+    }
+
+    public int getInt(int indx) { return 0; }
+    public long getLong(int indx) { return 0L; }
+    public float getFloat(int indx) { return 0.0f; }
+    public double getDouble(int indx) { return 0.0; }
+    public byte[] getBytes(int indx) { return null; }
+    public String getString(int indx) { return null; }
+    public Object get(int indx) { return null; }
+
+    public void setInt(int indx, int value) {}
+    public void setLong(int indx, long value) {}
+    public void setFloat(int indx, float value) {}
+    public void setDouble(int indx, double value) {}
+    public void setBytes(int indx, byte[] value) {}
+    public void setString(int indx) {}
+    public void set(int indx, Object value) {}
+    public void nullify(int indx) {}
+
     protected int compareToSecure(RowStorage other, CompareMode mode) {
         return 0;
     }
+
+    protected int compareToSecure(RowStorage other, CompareMode mode, int index) {
+        return 0;
+    }
+
+    public void copyFrom(RowStorage other, int index) {
+    }
+
+    protected final int compareTo(RowStorage other, int index, CompareMode compareMode, int sortType) {
+        boolean isNull = isNull(index);
+        boolean otherIsNull = other.isNull(index);
+        if (isNull || otherIsNull) {
+            return SortOrder.compareNull(isNull, sortType);
+        }
+
+        int res = compareToSecure(other, compareMode, index);
+        assert res == normalizeCompare(getValue(index).compareTypeSafe(other.getValue(index), compareMode)) : res;
+
+        if ((sortType & SortOrder.DESCENDING) != 0) {
+            res = -res;
+        }
+        return res;
+    }
+
+    public void copyFrom(RowStorage other) {
+        int[] indexes = getIndexes();
+        if (indexes == null) {
+            int columnCount = getColumnCount();
+            for (int i = 0; i < columnCount; i++) {
+                copyFrom(other, i);
+            }
+        } else {
+            for (int indx : indexes) {
+                copyFrom(other, indx);
+            }
+        }
+    }
+
+    // TODO eliminate boxing and generate type-specific code instead
+    protected final boolean isNull(int index) {
+        Value value = getValue(index);
+        return value == null || value == ValueNull.INSTANCE;
+    }
+
 
     @Override
     public Value getValue(int index) {
@@ -295,25 +369,41 @@ public class RowStorage extends Value implements Row, Cloneable {
     }
 
     protected static int compare(BigDecimal one, BigDecimal two, CompareMode mode) {
-        return one == two ? 0 :
-                one == null ? -1 :
-                two == null ? 1 :
-                one.compareTo(two);
+        int res = one == two  ?  0 :
+                  one == null ? -1 :
+                  two == null ?  1 :
+                                normalizeCompare(one.compareTo(two));
+        return res;
     }
 
     protected static int compare(byte[] one, byte[] two, CompareMode mode) {
-        return one == two ? 0 :
-                one == null ? -1 :
-                two == null ? 1 :
-                new String(one).compareTo(new String(two));
+        int res = one == two   ?  0 :
+                  one == null  ? -1 :
+                  two == null  ?  1 :
+                  normalizeCompare(mode == null ? new String(one).compareTo(new String(two)) :
+                                   mode.compareString(new String(one), new String(two), false));
+        return res;
     }
 
     protected static int compare(String one, String two, CompareMode mode) {
-        return mode.compareString(one, two, false);
+        int res = one == two   ?  0 :
+                  one == null  ? -1 :
+                  two == null  ?  1 :
+                  normalizeCompare(mode == null ? one.compareTo(two) :
+                                   mode.compareString(one, two, false));
+        return res;
+    }
+
+    private static int normalizeCompare(int res) {
+        return res > 0 ? 1 : res < 0 ? -1 : 0;
     }
 
     protected static int compare(Value one, Value two, CompareMode mode) {
-        return one.compareTo(two, mode);
+        int res = one == two  ?  0 :
+                  one == null ? -1 :
+                  two == null ?  1 :
+                                one.compareTo(two, mode);
+        return res;
     }
 
     protected static int getInt(Value v)
@@ -392,5 +482,140 @@ public class RowStorage extends Value implements Row, Cloneable {
     protected static Value getValueString(String v)
     {
         return v == null ? null : v == NULL_STRING ? ValueNull.INSTANCE  : ValueString.get(v);
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////
+
+    public static final class Type extends ValueDataType implements ExtendedDataType {
+
+
+        public Type(CompareMode compareMode, DataHandler handler, int[] sortTypes) {
+            super(compareMode, handler, sortTypes);
+        }
+
+        @Override
+        public Object createStorage(int size) {
+            return new RowStorage[size];
+        }
+
+        @Override
+        public Object clone(Object storage) {
+            return ((RowStorage[])storage).clone();
+        }
+
+        @Override
+        public int getLength(Object storage) {
+            return ((RowStorage[])storage).length;
+        }
+
+        @Override
+        public Object getValue(Object storage, int indx) {
+            return ((RowStorage[])storage)[indx];
+        }
+
+        @Override
+        public void setValue(Object storage, int indx, Object value) {
+            ((RowStorage[])storage)[indx] = (RowStorage) value;
+        }
+
+        @Override
+        public int getMemorySize(Object storage) {
+            int size = getLength(storage) * Constants.MEMORY_POINTER;
+            for (RowStorage row : ((RowStorage[]) storage)) {
+                size += row.getMemory();
+            }
+            return size;
+        }
+
+        @Override
+        public int compare(Object a, Object b) {
+            if (a instanceof RowStorage && b instanceof RowStorage) {
+                RowStorage rowA = (RowStorage) a;
+                RowStorage rowB = (RowStorage) b;
+                assert rowA.getColumnCount() == rowB.getColumnCount() : "Incopmatible rows: " + rowA + " " + rowB;
+/*
+                assert rowA.getIndexes() == rowB.getIndexes() :
+                        "Incopmatible rows: " + rowA.getIndexes() + " "  + rowB.getIndexes();
+                assert Arrays.equals(rowA.getIndexes(), rowB.getIndexes())
+                        : "Incompatible sparse rows" + Arrays.toString(rowA.getIndexes()) + " " + Arrays.toString(rowB.getIndexes());
+*/
+                return compare(rowA, rowB, compareMode, sortTypes);
+            }
+            return super.compare(a, b);
+        }
+
+        public static int compare(RowStorage a, RowStorage b, CompareMode compareMode, int sortTypes[]) {
+            int res = 0;
+            int[] indexes = a.getIndexes();
+            if (indexes == null) {
+                int columnCount = a.getColumnCount();
+                for (int i = 0; res == 0 && i < columnCount; i++) {
+                    res = a.compareTo(b, i, compareMode,
+                            sortTypes == null ? SortOrder.ASCENDING : sortTypes[i]);
+                }
+            } else {
+                assert sortTypes != null;
+                assert sortTypes.length == indexes.length;
+                for (int i = 0; i < indexes.length; i++) {
+                    int indx = indexes[i];
+                    res = a.compareTo(b, indx, compareMode, sortTypes[i]);
+                }
+            }
+            return res;
+        }
+
+        @Override
+        public int binarySearch(Object key, Object storage, int initialGuess) {
+            return binarySearch((RowStorage)key, ((RowStorage[])storage), initialGuess);
+        }
+
+        public int binarySearch(RowStorage key, RowStorage[] keys, int initialGuess) {
+            int low = 0, high = keys.length - 1;
+            // the cached index minus one, so that
+            // for the first time (when cachedCompare is 0),
+            // the default value is used
+            int x = initialGuess - 1;
+            if (x < 0 || x > high) {
+                x = high >>> 1;
+            }
+            while (low <= high) {
+                int compare = compare(key, keys[x], compareMode, sortTypes);
+                if (compare > 0) {
+                    low = x + 1;
+                } else if (compare < 0) {
+                    high = x - 1;
+                } else {
+                    return x;
+                }
+                x = (low + high) >>> 1;
+            }
+            return -(low + 1);
+        }
+
+        @Override
+        public void writeStorage(WriteBuffer buff, Object storage) {
+            RowStorage[] data = (RowStorage[]) storage;
+            for (RowStorage row : data) {
+                buff.putVarLong(row.getKey());
+                int columnCount = row.getColumnCount();
+                for (int i = 0; i < columnCount; i++) {
+                    Value value = row.getValue(i);
+                    write(buff, value);
+                }
+            }
+        }
+
+        @Override
+        public void read(ByteBuffer buff, Object storage) {
+            RowStorage[] data = (RowStorage[]) storage;
+            for (RowStorage row : data) {
+                row.setKey(DataUtils.readVarLong(buff));
+                int columnCount = row.getColumnCount();
+                for (int i = 0; i < columnCount; i++) {
+                    Value value = readValue(buff);
+                    row.setValue(i, value);
+                }
+            }
+        }
     }
 }

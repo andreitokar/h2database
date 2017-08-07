@@ -21,6 +21,7 @@ import org.h2.message.DbException;
 import org.h2.mvstore.MVMap;
 import org.h2.mvstore.db.TransactionStore.Transaction;
 import org.h2.mvstore.db.TransactionStore.TransactionMap;
+import org.h2.mvstore.type.DataType;
 import org.h2.result.Row;
 import org.h2.result.RowFactory;
 import org.h2.result.SearchRow;
@@ -67,16 +68,16 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
         }
         sortTypes[keyColumns - 1] = SortOrder.ASCENDING;
 
-        rowFactory = database.getRowFactory().createRowFactory(table.getColumns(), columnIds);
-        ValueDataType keyType = new ValueDataType(
-                db.getCompareMode(), db, sortTypes);
+        rowFactory = database.getRowFactory().createRowFactory(db, table.getColumns(), columns);
+//        DataType keyType = rowFactory.getDataType();
+        ValueDataType keyType = new ValueDataType(db.getCompareMode(), db, sortTypes);
 //        ValueDataType valueType = new ValueDataType(null, null, null);
         ValueDataType valueType = ValueNull.Type.INSTANCE;
         Transaction t = mvTable.getTransaction(null);
         dataMap = t.openMap(mapName, keyType, valueType);
         t.commit();
         if (!keyType.equals(dataMap.getKeyType())) {
-            throw DbException.throwInternalError("Incompatible key type");
+            throw DbException.throwInternalError("Incompatible key types: " + keyType + " and " + dataMap.getKeyType());
         }
     }
 
@@ -165,7 +166,6 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
             sortTypes[i] = indexColumns[i].sortType;
         }
         sortTypes[keyColumns - 1] = SortOrder.ASCENDING;
-
         ValueDataType keyType = new ValueDataType(
                 database.getCompareMode(), database, sortTypes);
 //        ValueDataType valueType = new ValueDataType(null, null, null);
@@ -320,6 +320,7 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
         if (r == null) {
             return null;
         }
+/*
         SearchRow row = rowFactory.createRow();
         if (row instanceof Value) {
             for (int i = 0; i < columns.length; i++) {
@@ -333,6 +334,7 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
             row.setKey(min ? Long.MIN_VALUE : r.getKey());
             return (Value)row;
         } else {
+*/
             Value[] array = new Value[keyColumns];
             for (int i = 0; i < columns.length; i++) {
                 Column c = columns[i];
@@ -342,9 +344,9 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
                     array[i] = v.convertTo(c.getType());
                 }
             }
-            array[keyColumns - 1] = ValueLong.get(r.getKey());
+            array[keyColumns - 1] = ValueLong.get(min ? Long.MIN_VALUE : r.getKey());
             return ValueArray.get(array);
-        }
+//        }
     }
 
     /**
