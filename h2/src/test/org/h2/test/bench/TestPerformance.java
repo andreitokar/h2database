@@ -243,6 +243,7 @@ public class TestPerformance implements Database.DatabaseTest {
             int statPerSec = (int) (db.getExecutedStatements() * 1000L / db.getTotalTime());
             db.log("Statements per second", "#", statPerSec);
             System.out.println("Statements per second: " + statPerSec);
+            System.out.println("GC overhead: " + (100 * db.getTotalGCTime() / db.getTotalTime()) + "%");
             collect = false;
             db.stopServer();
         }
