@@ -285,13 +285,15 @@ public abstract class Command implements CommandInterface {
             } catch(Throwable ignore) {/**/}
             throw e;
         } finally {
-            try {
-                if (callStop) {
-                    stop();
-                }
-            } finally {
-                if (writing) {
-                    database.afterWriting();
+            if(!database.isClosing()) {
+                try {
+                    if (callStop) {
+                        stop();
+                    }
+                } finally {
+                    if (writing) {
+                        database.afterWriting();
+                    }
                 }
             }
         }

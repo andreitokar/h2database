@@ -2501,6 +2501,7 @@ public class Database implements DataHandler {
      * Immediately close the database.
      */
     public void shutdownImmediately() {
+        closing = true;
         setPowerOffCount(1);
         try {
             checkPowerOff();
