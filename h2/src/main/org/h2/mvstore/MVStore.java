@@ -1189,7 +1189,7 @@ public final class MVStore {
 
         c.block = filePos / BLOCK_SIZE;
         c.len = length / BLOCK_SIZE;
-        assert fileStore.getLast() == _getFileLengthInUse() : fileStore.getLast() + " != " + _getFileLengthInUse();
+        assert fileStore.getLast() == _getFileLengthInUse() : fileStore.getLast() + " != " + _getFileLengthInUse() + " " + c;
         c.metaRootPos = metaRoot.getPos();
         // calculate and set the likely next position
         if (reuseSpace) {
@@ -1197,7 +1197,7 @@ public final class MVStore {
             long predictedNextStart = fileStore.allocate(
                     predictBlocks * BLOCK_SIZE);
             fileStore.free(predictedNextStart, predictBlocks * BLOCK_SIZE);
-            assert fileStore.getLast() == _getFileLengthInUse() : fileStore.getLast() + " != " + _getFileLengthInUse();
+            assert fileStore.getLast() == _getFileLengthInUse() : fileStore.getLast() + " != " + _getFileLengthInUse() + " " + c;
             c.next = predictedNextStart / BLOCK_SIZE;
         } else {
             // just after this chunk

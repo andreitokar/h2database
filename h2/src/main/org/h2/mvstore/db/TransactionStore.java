@@ -988,7 +988,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
          * @param savepointId the savepoint id
          */
         public void rollbackToSavepoint(long savepointId) {
-            checkOpen();
+            checkNotClosed();
             store.rollbackTo(this, savepointId);
             assert logId == savepointId : logId + " != " + savepointId;
             assert hasChanges() || store.verifyUndoIsEmptyForTx(transactionId);
@@ -999,7 +999,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
          */
         public void rollback() {
             if(hasChanges()) {
-                checkOpen();
+                checkNotClosed();
                 store.rollbackTo(this, 0);
             }
             store.endTransaction(this);

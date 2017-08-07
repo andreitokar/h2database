@@ -1052,7 +1052,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
      */
     public boolean containsUncommitted() {
         if (database.getMvStore() != null) {
-            return transaction != null;
+            return transaction != null && transaction.hasChanges();
         }
         return firstUncommittedLog != Session.LOG_WRITTEN;
     }
@@ -1097,9 +1097,6 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
      * @param transactionName the name of the transaction
      */
     public void prepareCommit(String transactionName) {
-        if (transaction != null) {
-            database.prepareCommit(this, transactionName);
-        }
         if (containsUncommitted()) {
             // need to commit even if rollback is not possible (create/drop
             // table and so on)
