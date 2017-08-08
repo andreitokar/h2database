@@ -70,12 +70,11 @@ public abstract class RowFactory {
         public RowFactory createRowFactory(Database db, Column[] columns, IndexColumn[] indexColumns) {
             int[] sortTypes = null;
             if (indexColumns != null) {
-                int keyColumns = indexColumns.length;
-                sortTypes = new int[keyColumns + 1];
-                for (int i = 0; i < keyColumns; i++) {
+                sortTypes = new int[indexColumns.length + 1];
+                for (int i = 0; i < indexColumns.length; i++) {
                     sortTypes[i] = indexColumns[i].sortType;
                 }
-                sortTypes[keyColumns - 1] = SortOrder.ASCENDING;
+                sortTypes[indexColumns.length] = SortOrder.ASCENDING;
             }
             return new DefaultRowFactory(new ValueDataType(db.getCompareMode(), db, sortTypes));
         }

@@ -329,7 +329,6 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
 /*
         if(row instanceof RowStorage) {
             ((RowStorage)row).copyFrom((RowStorage)r);
-        }
 /*/
         if (row instanceof Value) {
             for (Column c : columns) {
