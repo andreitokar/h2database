@@ -319,6 +319,7 @@ public class WriteBuffer {
         try {
             buff = ByteBuffer.allocate(newCapacity);
         } catch (OutOfMemoryError e) {
+            buff = reuse = null;
             throw new OutOfMemoryError("Capacity: " + newCapacity);
         }
         temp.flip();

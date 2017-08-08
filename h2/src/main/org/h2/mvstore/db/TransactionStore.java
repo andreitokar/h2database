@@ -368,7 +368,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
      *
      */
     private void commit(Transaction t) {
-        if (store != null && !store.isClosed()) {
+        if (/*store != null &&*/ !store.isClosed()) {
             boolean success;
             do {
                 BitSet original = committingTransactions.get();
@@ -399,8 +399,6 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
                 clone.clear(t.transactionId);
                 success = committingTransactions.compareAndSet(original, clone);
             } while(!success);
-
-            endTransaction(t);
         }
     }
 
@@ -494,7 +492,9 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
         if (status == Transaction.STATUS_PREPARED
                 || status == Transaction.STATUS_COMMITTING
                 || status == Transaction.STATUS_COMMITTED) {
-            preparedTransactions.remove(txId);
+            if(!preparedTransactions.isClosed()) {
+                preparedTransactions.remove(txId);
+            }
         }
         t.closeIt();
         clearTxSavePoint(t.txCounter);
@@ -565,9 +565,10 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
      * @param toLogId the log id to roll back to
      */
     void rollbackTo(final Transaction t, long fromLogId, long toLogId) {
-        RollbackDecisionMaker decisionMaker = new RollbackDecisionMaker(this, t.getId(), toLogId, t.listener);
+        int transactionId = t.getId();
+        RollbackDecisionMaker decisionMaker = new RollbackDecisionMaker(this, transactionId, toLogId, t.listener);
         for (long logId = fromLogId - 1; logId >= toLogId; logId--) {
-            Long undoKey = getOperationId(t.getId(), logId);
+            Long undoKey = getOperationId(transactionId, logId);
             undoLog.operate(undoKey, null, decisionMaker);
             decisionMaker.reset();
         }
@@ -845,29 +846,58 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
             return getStatus(statusAndLogId.get());
         }
 
-        long setStatus(int status) {
+        private long setStatus(int status) {
             while (true) {
                 long currentState = statusAndLogId.get();
                 long logId = getTxLogId(currentState);
                 int currentStatus = getStatus(currentState);
-                if (     status == STATUS_OPEN && currentStatus != STATUS_CLOSED && currentStatus != STATUS_ROLLING_BACK
-                      || status == STATUS_ROLLING_BACK && currentStatus != STATUS_OPEN
-                      || status == STATUS_PREPARED && currentStatus != STATUS_OPEN
-                      || status == STATUS_COMMITTING && currentStatus != STATUS_OPEN && currentStatus != STATUS_PREPARED
-                      || status == STATUS_COMMITTED && currentStatus != STATUS_COMMITTING
-                      || status == STATUS_ROLLED_BACK && currentStatus != STATUS_OPEN && currentStatus != STATUS_PREPARED
-                      || status == STATUS_CLOSED && currentStatus != STATUS_COMMITTING && currentStatus != STATUS_COMMITTED && currentStatus != STATUS_ROLLED_BACK
-                        ) {
-
-                    throw DataUtils.newIllegalStateException(
-                            DataUtils.ERROR_TRANSACTION_ILLEGAL_STATE,
-                            "Transaction {0} was illegally transitioned from {1} to {2}", +
-                            transactionId, STATUS_NAMES[currentStatus], STATUS_NAMES[status]);
-                }
+                validateStatusTransition(currentStatus, status);
                 long newState = composeState(status, logId, hasRollback(currentState));
                 if (statusAndLogId.compareAndSet(currentState, newState)) {
                     return currentState;
                 }
+            }
+        }
+
+        private static void validateStatusTransition(int currentStatus, int newStatus) {
+            boolean valid;
+            switch (newStatus) {
+                case STATUS_OPEN:
+                    valid = currentStatus == STATUS_CLOSED ||
+                            currentStatus == STATUS_ROLLING_BACK;
+                    break;
+                case STATUS_ROLLING_BACK:
+                    valid = currentStatus == STATUS_OPEN;
+                    break;
+                case STATUS_PREPARED:
+                    valid = currentStatus == STATUS_OPEN;
+                    break;
+                case STATUS_COMMITTING:
+                    valid = currentStatus == STATUS_OPEN ||
+                            currentStatus == STATUS_COMMITTING ||
+                            currentStatus == STATUS_PREPARED;
+                    break;
+                case STATUS_COMMITTED:
+                    valid = currentStatus == STATUS_COMMITTING;
+                    break;
+                case STATUS_ROLLED_BACK:
+                    valid = currentStatus == STATUS_OPEN ||
+                            currentStatus == STATUS_PREPARED;
+                    break;
+                case STATUS_CLOSED:
+                    valid = currentStatus == STATUS_COMMITTING ||
+                            currentStatus == STATUS_COMMITTED ||
+                            currentStatus == STATUS_ROLLED_BACK;
+                    break;
+               default:
+                   valid = false;
+                   break;
+            }
+            if (!valid) {
+                throw DataUtils.newIllegalStateException(
+                        DataUtils.ERROR_TRANSACTION_ILLEGAL_STATE,
+                        "Transaction was illegally transitioned from {0} to {1}",
+                        STATUS_NAMES[currentStatus], STATUS_NAMES[newStatus]);
             }
         }
 
@@ -1035,17 +1065,19 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
          */
         public void commit() {
             long state = setStatus(STATUS_COMMITTING);
-            if(hasChanges(state)) {
-                int status = getStatus(state);
-                if (!store.committingTransactions.get().get(transactionId) /*|| status != STATUS_COMMITTING*/) {
-                    assert store.openTransactions.get().get(transactionId) : this + " " + store.openTransactions;
-                    assert status == Transaction.STATUS_OPEN ||
-                            status == Transaction.STATUS_PREPARED && store.preparedTransactions.get(transactionId) != null ||
-                            // this case is only possible if called from initTransactions()
-                            status == Transaction.STATUS_COMMITTING : status;
-                    store.commit(this);
+            try {
+                if(hasChanges(state)) {
+                    int status = getStatus(state);
+                    if (!store.committingTransactions.get().get(transactionId) /*|| status != STATUS_COMMITTING*/) {
+                        assert store.openTransactions.get().get(transactionId) : this + " " + store.openTransactions;
+                        assert status == Transaction.STATUS_OPEN ||
+                                status == Transaction.STATUS_PREPARED && store.preparedTransactions.get(transactionId) != null ||
+                                // this case is only possible if called from initTransactions()
+                                status == Transaction.STATUS_COMMITTING : status;
+                        store.commit(this);
+                    }
                 }
-            } else {
+            } finally {
                 store.endTransaction(this);
             }
         }
@@ -1057,42 +1089,28 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
          * @param savepointId the savepoint id
          */
         public void rollbackToSavepoint(long savepointId) {
-            int currentStatus;
-            long logId;
-            boolean success;
-            do {
-                long currentState = statusAndLogId.get();
-                logId = getTxLogId(currentState);
-                currentStatus = getStatus(currentState);
-                if(savepointId == 0) {
-                    checkNotClosed(currentStatus);
-                } else {
-                    checkOpen(currentStatus);
-                }
-                long newState = composeState(STATUS_ROLLING_BACK, savepointId, true);
-                success = statusAndLogId.compareAndSet(currentState, newState);
-            } while(!success);
-
+            long lastState = setStatus(STATUS_ROLLING_BACK);
+            long logId = getTxLogId(lastState);
             store.rollbackTo(this, logId, savepointId);
             assert savepointId > 0 || store.verifyUndoIsEmptyForTx(transactionId);
-            setStatus(STATUS_OPEN);
+
+            long expectedState = composeState(STATUS_ROLLING_BACK, logId, hasRollback(lastState));
+            long newState = composeState(STATUS_OPEN, savepointId, true);
+            if (!statusAndLogId.compareAndSet(expectedState, newState)) {
+                throw DataUtils.newIllegalStateException(
+                        DataUtils.ERROR_TRANSACTION_ILLEGAL_STATE,
+                        "Transaction {0} concurrently modified " +
+                                "while rollback to savepoint was in progress",
+                        transactionId);
+            }
         }
 
         /**
          * Roll the transaction back. Afterwards, this transaction is closed.
          */
         public void rollback() {
-            long logId;
-            boolean success;
-            do {
-                long currentState = statusAndLogId.get();
-                logId = getTxLogId(currentState);
-                int currentStatus = getStatus(currentState);
-                checkNotClosed(currentStatus);
-                long newState = composeState(STATUS_ROLLED_BACK, logId, true);
-                success = statusAndLogId.compareAndSet(currentState, newState);
-            } while(!success);
-
+            long lastState = setStatus(STATUS_ROLLED_BACK);
+            long logId = getTxLogId(lastState);
             if(logId > 0) {
                 store.rollbackTo(this, logId, 0);
             }

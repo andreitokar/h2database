@@ -59,16 +59,25 @@ public abstract class RowFactory {
         private final DataType dataType;
 
         public DefaultRowFactory() {
-            dataType = new ValueDataType(null, null, null);
+            this(new ValueDataType(null, null, null));
         }
 
-        public DefaultRowFactory(Database db) {
-            dataType = new ValueDataType(db.getCompareMode(), db, null);
+        private DefaultRowFactory(DataType dataType) {
+            this.dataType = dataType;
         }
 
         @Override
         public RowFactory createRowFactory(Database db, Column[] columns, IndexColumn[] indexColumns) {
-            return new DefaultRowFactory(db);
+            int[] sortTypes = null;
+            if (indexColumns != null) {
+                int keyColumns = indexColumns.length;
+                sortTypes = new int[keyColumns + 1];
+                for (int i = 0; i < keyColumns; i++) {
+                    sortTypes[i] = indexColumns[i].sortType;
+                }
+                sortTypes[keyColumns - 1] = SortOrder.ASCENDING;
+            }
+            return new DefaultRowFactory(new ValueDataType(db.getCompareMode(), db, sortTypes));
         }
 
         @Override

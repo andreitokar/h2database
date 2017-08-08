@@ -619,19 +619,22 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
         currentTransactionName = null;
         transactionStart = 0;
         if (transaction != null) {
-            // increment the data mod count, so that other sessions
-            // see the changes
-            // TODO should not rely on locking
-            if (locks.size() > 0) {
-                for (int i = 0, size = locks.size(); i < size; i++) {
-                    Table t = locks.get(i);
-                    if (t instanceof MVTable) {
-                        ((MVTable) t).commit();
+            try {
+                // increment the data mod count, so that other sessions
+                // see the changes
+                // TODO should not rely on locking
+                if (locks.size() > 0) {
+                    for (int i = 0, size = locks.size(); i < size; i++) {
+                        Table t = locks.get(i);
+                        if (t instanceof MVTable) {
+                            ((MVTable) t).commit();
+                        }
                     }
                 }
+                transaction.commit();
+            } finally {
+                transaction = null;
             }
-            transaction.commit();
-            transaction = null;
         }
         if (containsUncommitted()) {
             // need to commit even if rollback is not possible
@@ -736,6 +739,12 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
     public void rollback() {
         checkCommitRollback();
         currentTransactionName = null;
+//*
+        boolean needCommit = undoLog.size() > 0 || transaction != null && transaction.hasChanges();
+        if(needCommit) {
+            rollbackTo(null, false);
+        }
+/*/
         boolean needCommit = false;
         if (undoLog.size() > 0) {
             rollbackTo(null, false);
@@ -749,6 +758,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
             transaction.commit();
             transaction = null;
         }
+//*/
         if (locks.size() > 0 || needCommit) {
             database.commit(this);
         }
@@ -774,8 +784,12 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
             undoLog.removeLast(trimToSize);
         }
         if (transaction != null) {
-            long savepointId = savepoint == null ? 0 : savepoint.transactionSavepoint;
-            transaction.rollbackToSavepoint(savepointId);
+            if (savepoint == null) {
+                transaction.rollback();
+                transaction = null;
+            } else {
+                transaction.rollbackToSavepoint(savepoint.transactionSavepoint);
+            }
         }
         if (savepoints != null) {
             String[] names = new String[savepoints.size()];

@@ -12,6 +12,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.TreeSet;
 import org.h2.api.ErrorCode;
+import org.h2.bytecode.RowStorage;
 import org.h2.engine.Database;
 import org.h2.engine.Session;
 import org.h2.index.BaseIndex;
@@ -62,15 +63,17 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
         // even for unique indexes, as some of the index columns could be null
         keyColumns = columns.length + 1;
         mapName = "index." + getId();
+/*
         int[] sortTypes = new int[keyColumns];
         for (int i = 0; i < columns.length; i++) {
             sortTypes[i] = columns[i].sortType;
         }
         sortTypes[keyColumns - 1] = SortOrder.ASCENDING;
+*/
 
         rowFactory = database.getRowFactory().createRowFactory(db, table.getColumns(), columns);
-//        DataType keyType = rowFactory.getDataType();
-        ValueDataType keyType = new ValueDataType(db.getCompareMode(), db, sortTypes);
+        DataType keyType = rowFactory.getDataType();
+//        ValueDataType keyType = new ValueDataType(db.getCompareMode(), db, sortTypes);
 //        ValueDataType valueType = new ValueDataType(null, null, null);
         ValueDataType valueType = ValueNull.Type.INSTANCE;
         Transaction t = mvTable.getTransaction(null);
@@ -320,21 +323,26 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
         if (r == null) {
             return null;
         }
-/*
+
         SearchRow row = rowFactory.createRow();
+        long rowId = min ? Long.MIN_VALUE : r.getKey();
+/*
+        if(row instanceof RowStorage) {
+            ((RowStorage)row).copyFrom((RowStorage)r);
+        }
+/*/
         if (row instanceof Value) {
-            for (int i = 0; i < columns.length; i++) {
-                Column c = columns[i];
+            for (Column c : columns) {
                 int idx = c.getColumnId();
                 Value v = r.getValue(idx);
                 if (v != null) {
-                    row.setValue(i, v.convertTo(c.getType()));
+                    row.setValue(idx, v.convertTo(c.getType()));
                 }
             }
-            row.setKey(min ? Long.MIN_VALUE : r.getKey());
+//*/
+            row.setKey(rowId);
             return (Value)row;
         } else {
-*/
             Value[] array = new Value[keyColumns];
             for (int i = 0; i < columns.length; i++) {
                 Column c = columns[i];
@@ -344,9 +352,9 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
                     array[i] = v.convertTo(c.getType());
                 }
             }
-            array[keyColumns - 1] = ValueLong.get(min ? Long.MIN_VALUE : r.getKey());
+            array[keyColumns - 1] = ValueLong.get(rowId);
             return ValueArray.get(array);
-//        }
+        }
     }
 
     /**

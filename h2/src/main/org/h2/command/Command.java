@@ -285,7 +285,8 @@ public abstract class Command implements CommandInterface {
             } catch(Throwable ignore) {/**/}
             throw e;
         } finally {
-            if(!database.isClosing()) {
+            if(!database.isClosing() &&
+                    (database.getMvStore() == null || !database.getMvStore().isClosed())) {
                 try {
                     if (callStop) {
                         stop();
