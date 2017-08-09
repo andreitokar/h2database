@@ -166,6 +166,11 @@ public abstract class Value {
      */
 
     /**
+     * The value type for a table / index row.
+     */
+    public static final int ROW = 23;
+
+    /**
      * The value type for TIMESTAMP WITH TIME ZONE values.
      */
     public static final int TIMESTAMP_TZ = 24;

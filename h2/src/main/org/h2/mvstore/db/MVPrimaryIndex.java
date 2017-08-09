@@ -22,6 +22,7 @@ import org.h2.message.DbException;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.db.TransactionStore.Transaction;
 import org.h2.mvstore.db.TransactionStore.TransactionMap;
+import org.h2.mvstore.type.DataType;
 import org.h2.result.Row;
 import org.h2.result.SearchRow;
 import org.h2.result.SortOrder;
@@ -62,8 +63,7 @@ public class MVPrimaryIndex extends BaseIndex {
         for (int i = 0; i < columns.length; i++) {
             sortTypes[i] = SortOrder.ASCENDING;
         }
-        ValueDataType valueType = new ValueDataType(db.getCompareMode(), db,
-                sortTypes);
+        DataType valueType = table.getRowFactory().getDataType();
         mapName = "table." + getId();
         Transaction t = mvTable.getTransaction(null);
         dataMap = t.openMap(mapName, ValueLong.Type.INSTANCE, valueType);

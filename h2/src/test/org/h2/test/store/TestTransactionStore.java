@@ -158,9 +158,12 @@ public class TestTransactionStore extends TestBase {
                 break;
             }
         }
+        task.get();
         // we expect at least 10% the operations were successful
         assertTrue(failCount.toString() + " >= " + (count * 0.9),
                 failCount.get() < count * 0.9);
+        // we expect at least a few failures
+        assertTrue(failCount.toString(), failCount.get() > 0);
         s.close();
     }
 

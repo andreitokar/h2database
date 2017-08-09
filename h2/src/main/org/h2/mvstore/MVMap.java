@@ -1148,7 +1148,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     protected final void beforeWrite() {
         if (closed) {
             throw DataUtils.newIllegalStateException(
-                    DataUtils.ERROR_CLOSED, "This map is closed");
+                    DataUtils.ERROR_CLOSED, "This map is closed", store.getPanicException());
         }
         if (readOnly) {
             throw DataUtils.newUnsupportedOperationException(

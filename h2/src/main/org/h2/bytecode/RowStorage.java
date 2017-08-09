@@ -62,7 +62,7 @@ public class RowStorage extends Value implements Row, Cloneable {
         return 0;
     }
 
-    protected int[] getIndexes() {
+    public int[] getIndexes() {
         return null;
     }
 
@@ -349,7 +349,7 @@ public class RowStorage extends Value implements Row, Cloneable {
     /////////////////////////////////////////////////////////////////////
 
     protected static Value getNullValue() {
-        return ValueNull.INSTANCE;
+        return null;
     }
 
     protected static int getMemory(byte v[]) {
@@ -597,10 +597,18 @@ public class RowStorage extends Value implements Row, Cloneable {
             RowStorage[] data = (RowStorage[]) storage;
             for (RowStorage row : data) {
                 buff.putVarLong(row.getKey());
-                int columnCount = row.getColumnCount();
-                for (int i = 0; i < columnCount; i++) {
-                    Value value = row.getValue(i);
-                    write(buff, value);
+                int[] indexes = row.getIndexes();
+                if(indexes == null) {
+                    int columnCount = row.getColumnCount();
+                    for (int i = 0; i < columnCount; i++) {
+                        Value value = row.getValue(i);
+                        write(buff, value);
+                    }
+                } else {
+                    for (int i : indexes) {
+                        Value value = row.getValue(i);
+                        write(buff, value);
+                    }
                 }
             }
         }
@@ -610,10 +618,18 @@ public class RowStorage extends Value implements Row, Cloneable {
             RowStorage[] data = (RowStorage[]) storage;
             for (RowStorage row : data) {
                 row.setKey(DataUtils.readVarLong(buff));
-                int columnCount = row.getColumnCount();
-                for (int i = 0; i < columnCount; i++) {
-                    Value value = readValue(buff);
-                    row.setValue(i, value);
+                int[] indexes = row.getIndexes();
+                if(indexes == null) {
+                    int columnCount = row.getColumnCount();
+                    for (int i = 0; i < columnCount; i++) {
+                        Value value = readValue(buff);
+                        row.setValue(i, value);
+                    }
+                } else {
+                    for (int i : indexes) {
+                        Value value = readValue(buff);
+                        row.setValue(i, value);
+                    }
                 }
             }
         }

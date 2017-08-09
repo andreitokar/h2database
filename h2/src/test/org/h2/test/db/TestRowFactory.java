@@ -53,7 +53,7 @@ public class TestRowFactory extends TestBase {
         testCompactRowFactory();
     }
 
-    public void testMyRowFactory() throws Exception {
+    private void testMyRowFactory() throws Exception {
         deleteDb("rowFactory");
         Connection conn = getConnection("rowFactory;ROW_FACTORY=\"" +
                 MyTestRowFactory.class.getName() + '"');
@@ -67,7 +67,7 @@ public class TestRowFactory extends TestBase {
         deleteDb("rowFactory");
     }
 
-    public void tetRowStorage() {
+    private void tetRowStorage() {
         int[] valueTypes = { Value.INT, Value.STRING, Value.UNKNOWN, Value.LONG, Value.DOUBLE };
         Class<? extends RowStorage> cls = generateClass(valueTypes, null);
         Class<? extends RowStorage> icls = generateClass(valueTypes, new int[]{3, 0, 1});
@@ -107,7 +107,7 @@ public class TestRowFactory extends TestBase {
                 fail();
             } catch(Throwable ignore) {/**/}
             irowTwo.setKey(987);
-            assertEquals("Row{987/0 5, 'World', NULL, 999, NULL}", irowTwo.toString());
+            assertEquals("Row{987/0 5, 'World', null, 999, null}", irowTwo.toString());
             RowStorage.Type itype = new RowStorage.Type(compareMode, null, new int[]{SortOrder.ASCENDING, SortOrder.ASCENDING, SortOrder.ASCENDING});
             assertEquals(0, itype.compare(irowTwo, irowTwo));
             assertEquals(0, itype.compare(irowTwo, rowTwo));
@@ -115,7 +115,7 @@ public class TestRowFactory extends TestBase {
 
             RowStorage irow = icls.getConstructor().newInstance();
             irow.copyFrom(row);
-            assertEquals("Row{0/0 3, 'Hello', NULL, 77, NULL}", irow.toString());
+            assertEquals("Row{0/0 3, 'Hello', null, 77, null}", irow.toString());
             assertEquals(-1, itype.compare(irow, irowTwo));
             assertEquals(0, itype.compare(irow, row));
             assertEquals(1, itype.compare(row, irow));  // assuming NULL sorted low
@@ -139,7 +139,7 @@ public class TestRowFactory extends TestBase {
     }
 
 
-    public void testCompactRowFactory() throws Exception {
+    private void testCompactRowFactory() throws Exception {
         deleteDb("rowFactory");
         Connection conn = getConnection("rowFactory;ROW_FACTORY=\"" + CompactRowFactory.class.getName() + '"');
         Statement stat = conn.createStatement();
@@ -150,7 +150,7 @@ public class TestRowFactory extends TestBase {
         }
         ResultSet resultSet = stat.executeQuery("select id from t1 where name='name_500'");
         assertTrue(resultSet.next());
-//        assertEquals(500, resultSet.getInt("id"));
+        assertEquals(500, resultSet.getInt("id"));
         resultSet.close();
         conn.close();
         deleteDb("rowFactory");
@@ -164,7 +164,7 @@ public class TestRowFactory extends TestBase {
         /**
          * A simple counter.
          */
-        static final AtomicInteger COUNTER = new AtomicInteger();
+        private static final AtomicInteger COUNTER = new AtomicInteger();
 
         @Override
         public Row createRow(Value[] data, int memory) {
@@ -179,7 +179,7 @@ public class TestRowFactory extends TestBase {
 
         @Override
         public DataType getDataType() {
-            return null;
+            return getDefaultRowFactory().getDataType();
         }
     }
 }

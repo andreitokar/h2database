@@ -766,7 +766,7 @@ public class Database implements DataHandler {
         objectIds.set(0);
         starting = true;
         if (mvStore != null) {
-            mvStore.endLeftoverTransactions();
+            mvStore.getTransactionStore().endLeftoverTransactions();
         }
         Cursor cursor = metaIdIndex.find(systemSession, null, null);
         ArrayList<MetaRecord> records = New.arrayList();

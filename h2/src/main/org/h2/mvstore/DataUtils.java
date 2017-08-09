@@ -147,6 +147,7 @@ public final class DataUtils {
     public static final int PAGE_LEAF_MEMORY = PAGE_MEMORY + Constants.MEMORY_POINTER;
     public static final int PAGE_NODE_MEMORY = PAGE_MEMORY + Constants.MEMORY_POINTER + 8;
     public static final int PAGE_LEAF_EMPTY_MEMORY = PAGE_LEAF_MEMORY + 2 * Constants.MEMORY_ARRAY;
+    public static final int PAGE_NODE_EMPTY_MEMORY = PAGE_NODE_MEMORY + Constants.MEMORY_ARRAY;
 
     /**
      * The estimated number of bytes used per child entry.

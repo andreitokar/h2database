@@ -13,6 +13,7 @@ import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.util.Arrays;
 import org.h2.api.ErrorCode;
+import org.h2.bytecode.RowStorage;
 import org.h2.message.DbException;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.WriteBuffer;
@@ -379,20 +380,10 @@ public class ValueDataType implements DataType {
             break;
         }
         case Value.ARRAY: {
-            if(v instanceof Row)
-            {
-                Row row = (Row) v;
-                int columnCount = row.getColumnCount();
-                buff.put((byte) type).putVarInt(columnCount);
-                for(int i = 0; i < columnCount; ++i) {
-                    writeValue(buff, row.getValue(i));
-                }
-            } else {
-                Value[] list = ((ValueArray) v).getList();
-                buff.put((byte) type).putVarInt(list.length);
-                for (Value x : list) {
-                    writeValue(buff, x);
-                }
+            Value[] list = ((ValueArray) v).getList();
+            buff.put((byte) type).putVarInt(list.length);
+            for (Value x : list) {
+                writeValue(buff, x);
             }
             break;
         }
@@ -433,6 +424,25 @@ public class ValueDataType implements DataType {
             buff.put((byte) type).
                 putVarInt(len).
                 put(b);
+            break;
+        }
+        case Value.ROW: {
+            Row r = (Row)v;
+            int columnCount = r.getColumnCount();
+            buff.put((byte) type).putVarInt(columnCount);
+            if (r instanceof RowStorage) {
+                RowStorage row = (RowStorage)r;
+                int[] indexes = row.getIndexes();
+                if(indexes != null) {
+                    for (int i : indexes) {
+                        writeValue(buff, r.getValue(i));
+                    }
+                    break;
+                }
+            }
+            for(int i = 0; i < columnCount; ++i) {
+                writeValue(buff, r.getValue(i));
+            }
             break;
         }
         default:
@@ -615,6 +625,9 @@ public class ValueDataType implements DataType {
             byte[] b = DataUtils.newBytes(len);
             buff.get(b, 0, len);
             return ValueGeometry.get(b);
+        }
+        case Value.ROW: {
+            return null;
         }
         case SPATIAL_KEY_2D:
             return getSpatialDataType().read(buff);

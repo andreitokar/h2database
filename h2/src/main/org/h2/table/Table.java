@@ -644,6 +644,10 @@ public abstract class Table extends SchemaObjectBase {
         }
     }
 
+    public RowFactory getRowFactory() {
+        return rowFactory;
+    }
+
     public Row createRow(Value[] data, int memory) {
         return rowFactory.createRow(data, memory);
     }

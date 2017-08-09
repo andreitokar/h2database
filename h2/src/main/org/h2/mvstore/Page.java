@@ -109,6 +109,12 @@ public abstract class Page implements Cloneable {
         return create(map, keys, values, null, 0, DataUtils.PAGE_LEAF_EMPTY_MEMORY);
     }
 
+    public static Page createEmptyNode(MVMap<?, ?> map) {
+        Object keys = map.getKeyType() != map.getExtendedKeyType() ? EMPTY_OBJECT_ARRAY :
+                                                                     map.getExtendedKeyType().createStorage(0);
+        return create(map, keys, null, PageReference.SINGLE_EMPTY, 0, DataUtils.PAGE_LEAF_EMPTY_MEMORY);
+    }
+
     /**
      * Create a new page. The arrays are not cloned.
      *

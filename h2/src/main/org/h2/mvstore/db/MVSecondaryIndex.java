@@ -45,11 +45,10 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
     /**
      * The multi-value table.
      */
-    final MVTable mvTable;
+    private final MVTable mvTable;
 
     private final int keyColumns;
     private final RowFactory rowFactory;
-    private final String mapName;
     private TransactionMap<Value, Value> dataMap;
 
     public MVSecondaryIndex(Database db, MVTable table, int id, String indexName,
@@ -62,20 +61,10 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
         // always store the row key in the map key,
         // even for unique indexes, as some of the index columns could be null
         keyColumns = columns.length + 1;
-        mapName = "index." + getId();
-/*
-        int[] sortTypes = new int[keyColumns];
-        for (int i = 0; i < columns.length; i++) {
-            sortTypes[i] = columns[i].sortType;
-        }
-        sortTypes[keyColumns - 1] = SortOrder.ASCENDING;
-*/
-
         rowFactory = database.getRowFactory().createRowFactory(db, table.getColumns(), columns);
         DataType keyType = rowFactory.getDataType();
-//        ValueDataType keyType = new ValueDataType(db.getCompareMode(), db, sortTypes);
-//        ValueDataType valueType = new ValueDataType(null, null, null);
         ValueDataType valueType = ValueNull.Type.INSTANCE;
+        String mapName = "index." + getId();
         Transaction t = mvTable.getTransaction(null);
         dataMap = t.openMap(mapName, keyType, valueType);
         t.commit();
@@ -164,19 +153,13 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
     }
 
     private MVMap<Value, Value> openMap(String mapName) {
-        int[] sortTypes = new int[keyColumns];
-        for (int i = 0; i < indexColumns.length; i++) {
-            sortTypes[i] = indexColumns[i].sortType;
-        }
-        sortTypes[keyColumns - 1] = SortOrder.ASCENDING;
-        ValueDataType keyType = new ValueDataType(
-                database.getCompareMode(), database, sortTypes);
-//        ValueDataType valueType = new ValueDataType(null, null, null);
+        DataType keyType = rowFactory.getDataType();
         ValueDataType valueType = ValueNull.Type.INSTANCE;
-        MVMap.Builder<Value, Value> builder =
-                new MVMap.Builder<Value, Value>().keyType(keyType).valueType(valueType);
-        MVMap<Value, Value> map = database.getMvStore().
-                getStore().openMap(mapName, builder);
+        MVMap.Builder<Value, Value> builder = new MVMap.Builder<Value, Value>()
+                                                .keyType(keyType)
+                                                .valueType(valueType);
+        MVMap<Value, Value> map = database.getMvStore().getStore()
+                .openMap(mapName, builder);
         if (!keyType.equals(map.getKeyType())) {
             throw DbException.throwInternalError("Incompatible key type");
         }

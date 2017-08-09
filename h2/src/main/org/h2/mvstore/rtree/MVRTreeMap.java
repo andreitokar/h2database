@@ -422,16 +422,14 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
     }
 
     private Page newPage(boolean leaf) {
+        Page page;
         Object[] values;
         Page.PageReference[] refs;
         if (leaf) {
-            values = Page.EMPTY_OBJECT_ARRAY;
-            refs = null;
+            page = Page.createEmpty(this);
         } else {
-            values = null;
-            refs = Page.PageReference.SINGLE_EMPTY;
+            page = Page.createEmptyNode(this);
         }
-        Page page = Page.create(this, Page.EMPTY_OBJECT_ARRAY, values, refs, 0, 0);
         if(store.getFileStore() != null)
         {
             store.registerUnsavedPage(page.getMemory());

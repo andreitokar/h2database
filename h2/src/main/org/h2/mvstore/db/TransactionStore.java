@@ -186,6 +186,21 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
     }
 
     /**
+     * Commit all transactions that are in the committing state, and
+     * rollback all open transactions.
+     */
+    public void endLeftoverTransactions() {
+        List<Transaction> list = getOpenTransactions();
+        for (Transaction t : list) {
+            if(t.getStatus() == Transaction.STATUS_COMMITTING) {
+                t.commit();
+            } else if(t.getStatus() != Transaction.STATUS_PREPARED) {
+                t.rollback();
+            }
+        }
+    }
+
+    /**
      * Set the maximum transaction id, after which ids are re-used. If the old
      * transaction is still in use when re-using an old id, the new transaction
      * fails.
@@ -368,37 +383,43 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
      *
      */
     private void commit(Transaction t) {
-        if (/*store != null &&*/ !store.isClosed()) {
+        if (!store.isClosed()) {
             boolean success;
+            int transactionId = t.transactionId;
             do {
                 BitSet original = committingTransactions.get();
+                assert !original.get(transactionId) : "Double commit";
                 BitSet clone = (BitSet) original.clone();
-                clone.set(t.transactionId);
+                clone.set(transactionId);
                 success = committingTransactions.compareAndSet(original, clone);
             } while(!success);
-            long state = t.setStatus(Transaction.STATUS_COMMITTED);
-            long maxLogId = Transaction.getTxLogId(state);
-            CommitDecisionMaker decisionMaker = new CommitDecisionMaker(this);
-            for (long logId = 0; logId < maxLogId; logId++) {
-                long undoKey = getOperationId(t.getId(), logId);
-                decisionMaker.setOperationId(undoKey);
-                undoLog.operate(undoKey, null, decisionMaker);
-                if(decisionMaker.decision == MVMap.Decision.ABORT) // entry was not there
-                {
-                    // partially committed: load next
-                    Long nextKey = undoLog.ceilingKey(undoKey);
-                    if(nextKey == null || getTransactionId(nextKey) != t.transactionId) {
-                        break;
+            try {
+                long state = t.setStatus(Transaction.STATUS_COMMITTED);
+                long maxLogId = Transaction.getTxLogId(state);
+                CommitDecisionMaker decisionMaker = new CommitDecisionMaker(this);
+                for (long logId = 0; logId < maxLogId; logId++) {
+                    long undoKey = getOperationId(t.getId(), logId);
+                    decisionMaker.setOperationId(undoKey);
+                    undoLog.operate(undoKey, null, decisionMaker);
+                    if (decisionMaker.decision == MVMap.Decision.ABORT) // entry was not there
+                    {
+                        // partially committed: load next
+                        Long nextKey = undoLog.ceilingKey(undoKey);
+                        if (nextKey == null || getTransactionId(nextKey) != transactionId) {
+                            break;
+                        }
+                        logId = getLogId(nextKey) - 1;
                     }
-                    logId = getLogId(nextKey) - 1;
                 }
+            } finally {
+                do {
+                    BitSet original = committingTransactions.get();
+                    assert original.get(transactionId) : "Mysterious bit's disappearance";
+                    BitSet clone = (BitSet) original.clone();
+                    clone.clear(transactionId);
+                    success = committingTransactions.compareAndSet(original, clone);
+                } while(!success);
             }
-            do {
-                BitSet original = committingTransactions.get();
-                BitSet clone = (BitSet) original.clone();
-                clone.clear(t.transactionId);
-                success = committingTransactions.compareAndSet(original, clone);
-            } while(!success);
         }
     }
 
@@ -484,20 +505,14 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
      * @param t the transaction
      */
     void endTransaction(Transaction t) {
-        int txId = t.getId();
+        int txId = t.transactionId;
+
+        int status = t.getStatus();
+        t.closeIt();
+        clearTxSavePoint(t.txCounter);
 
         assert verifyUndoIsEmptyForTx(txId);
 
-        int status = t.getStatus();
-        if (status == Transaction.STATUS_PREPARED
-                || status == Transaction.STATUS_COMMITTING
-                || status == Transaction.STATUS_COMMITTED) {
-            if(!preparedTransactions.isClosed()) {
-                preparedTransactions.remove(txId);
-            }
-        }
-        t.closeIt();
-        clearTxSavePoint(t.txCounter);
         if(t.transactionId < AVG_OPEN_TRANSACTIONS) {
             transactions.set(t.transactionId, null);
         } else {
@@ -511,12 +526,21 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
         boolean success;
         do {
             BitSet original = openTransactions.get();
+            assert original.get(t.transactionId);
             BitSet clone = (BitSet) original.clone();
             clone.clear(t.transactionId);
             success = openTransactions.compareAndSet(original, clone);
         } while(!success);
 
         assert verifyUndoIsEmptyWhenIdle();
+
+        if (status == Transaction.STATUS_PREPARED
+                || status == Transaction.STATUS_COMMITTING
+                || status == Transaction.STATUS_COMMITTED) {
+            if(!preparedTransactions.isClosed()) {
+                preparedTransactions.remove(txId);
+            }
+        }
 
         if (store.getAutoCommitDelay() == 0) {
             store.commit();
@@ -670,10 +694,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
     private void clearTxSavePoint(TxCounter txCounter) {
         if(txCounter != null) {
             if(txCounter.counter.decrementAndGet() <= 0) {
-                while ((txCounter = versions.peek()) != null
-                        && txCounter.counter.get() < 0
-                        && versions.remove(txCounter)) {/**/}
-                store.setOldestVersionToKeep(txCounter == null ? currentTxCounter.version : txCounter.version);
+                dropUnusedVersions();
             }
         }
     }
@@ -684,6 +705,15 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
         versions.add(txCounter);
         currentTxCounter = new TxCounter(version);
         txCounter.counter.decrementAndGet();
+        dropUnusedVersions();
+    }
+
+    private void dropUnusedVersions() {
+        TxCounter txCounter;
+        while ((txCounter = versions.peek()) != null
+                && txCounter.counter.get() < 0
+                && versions.remove(txCounter)) {/**/}
+        store.setOldestVersionToKeep(txCounter == null ? currentTxCounter.version : txCounter.version);
     }
 
     public static final class TxCounter {
@@ -874,16 +904,17 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
                     break;
                 case STATUS_COMMITTING:
                     valid = currentStatus == STATUS_OPEN ||
-                            currentStatus == STATUS_COMMITTING ||
-                            currentStatus == STATUS_PREPARED;
+                            currentStatus == STATUS_PREPARED ||
+                            // this case is only possible if called
+                            // from endLeftoverTransactions()
+                            currentStatus == STATUS_COMMITTING;
                     break;
                 case STATUS_COMMITTED:
                     valid = currentStatus == STATUS_COMMITTING;
                     break;
                 case STATUS_ROLLED_BACK:
                     valid = currentStatus == STATUS_OPEN ||
-                            currentStatus == STATUS_PREPARED ||
-                            currentStatus == STATUS_ROLLING_BACK;
+                            currentStatus == STATUS_PREPARED;
                     break;
                 case STATUS_CLOSED:
                     valid = currentStatus == STATUS_COMMITTING ||
@@ -1068,15 +1099,15 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
             long state = setStatus(STATUS_COMMITTING);
             try {
                 if(hasChanges(state)) {
-                    int status = getStatus(state);
-                    if (!store.committingTransactions.get().get(transactionId) /*|| status != STATUS_COMMITTING*/) {
-                        assert store.openTransactions.get().get(transactionId) : this + " " + store.openTransactions;
-                        assert status == Transaction.STATUS_OPEN ||
-                                status == Transaction.STATUS_PREPARED && store.preparedTransactions.get(transactionId) != null ||
-                                // this case is only possible if called from initTransactions()
-                                status == Transaction.STATUS_COMMITTING : status;
+//                    int status = getStatus(state);
+//                    if (!store.committingTransactions.get().get(transactionId) /*|| status != STATUS_COMMITTING*/) {
+//                        assert store.openTransactions.get().get(transactionId) : this + " " + store.openTransactions;
+//                        assert status == Transaction.STATUS_OPEN ||
+//                                status == Transaction.STATUS_PREPARED && store.preparedTransactions.get(transactionId) != null ||
+//                                // this case is only possible if called from initTransactions()
+//                                status == Transaction.STATUS_COMMITTING : status;
                         store.commit(this);
-                    }
+//                    }
                 }
             } finally {
                 store.endTransaction(this);
@@ -1398,7 +1429,8 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
                         ", committing: " + transaction.store.committingTransactions.get().get(decisionMaker.blockingId);
                 decisionMaker.reset();
             } while (transaction.waitFor(blockingTransaction));
-            throw DataUtils.newIllegalStateException(DataUtils.ERROR_TRANSACTION_LOCKED, "Entry is locked in " + map.getName());
+            throw DataUtils.newIllegalStateException(DataUtils.ERROR_TRANSACTION_LOCKED,
+                    "Map entry <{0}> with key <{1}> is locked", map.getName(), key);
         }
 
         /**
