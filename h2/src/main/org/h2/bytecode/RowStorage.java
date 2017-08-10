@@ -240,7 +240,7 @@ public class RowStorage extends Value implements Row, Cloneable {
 
     @Override
     public int getType() {
-        return Value.ARRAY;
+        return Value.ROW;
     }
 
     @Override
@@ -616,10 +616,12 @@ public class RowStorage extends Value implements Row, Cloneable {
         @Override
         public void read(ByteBuffer buff, Object storage) {
             RowStorage[] data = (RowStorage[]) storage;
-            for (RowStorage row : data) {
+            for (int k = 0; k < data.length; k++) {
+                RowStorage row = (RowStorage)getRowFactory().createRow();
+                data[k] = row;
                 row.setKey(DataUtils.readVarLong(buff));
                 int[] indexes = row.getIndexes();
-                if(indexes == null) {
+                if (indexes == null) {
                     int columnCount = row.getColumnCount();
                     for (int i = 0; i < columnCount; i++) {
                         Value value = readValue(buff);

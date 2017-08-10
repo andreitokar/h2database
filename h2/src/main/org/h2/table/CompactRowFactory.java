@@ -55,8 +55,10 @@ public final class CompactRowFactory extends RowFactory {
         } catch (Exception e) {
             throw new IllegalStateException("CompactRowFactory failure ", e);
         }
-        return new CompactRowFactory(rowStorage,
-                                     new RowStorage.Type(db.getCompareMode(), db, sortTypes));
+        RowStorage.Type dataType = new RowStorage.Type(db.getCompareMode(), db, sortTypes);
+        CompactRowFactory factory = new CompactRowFactory(rowStorage, dataType);
+        dataType.setRowFactory(factory);
+        return factory;
     }
 
     @Override

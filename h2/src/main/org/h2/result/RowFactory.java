@@ -69,7 +69,12 @@ public abstract class RowFactory {
         @Override
         public RowFactory createRowFactory(Database db, Column[] columns, IndexColumn[] indexColumns) {
             int[] sortTypes = null;
-            if (indexColumns != null) {
+            if (indexColumns == null) {
+                sortTypes = new int[columns.length];
+                for (int i = 0; i < columns.length; i++) {
+                    sortTypes[i] = SortOrder.ASCENDING;
+                }
+            } else {
                 int indexColumnCount = indexColumns.length;
                 sortTypes = new int[indexColumnCount + 1];
                 for (int i = 0; i < indexColumnCount; i++) {

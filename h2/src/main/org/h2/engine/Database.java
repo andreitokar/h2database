@@ -780,6 +780,7 @@ public class Database implements DataHandler {
             rec.execute(this, systemSession, eventListener);
         }
         if (mvStore != null) {
+//            mvStore.getTransactionStore().endLeftoverTransactions();
             mvStore.removeTemporaryMaps(objectIds);
         }
         recompileInvalidViews(systemSession);

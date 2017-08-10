@@ -59,10 +59,6 @@ public class MVPrimaryIndex extends BaseIndex {
             IndexColumn[] columns, IndexType indexType) {
         this.mvTable = table;
         initBaseIndex(table, id, table.getName() + "_DATA", columns, indexType);
-        int[] sortTypes = new int[columns.length];
-        for (int i = 0; i < columns.length; i++) {
-            sortTypes[i] = SortOrder.ASCENDING;
-        }
         DataType valueType = table.getRowFactory().getDataType();
         mapName = "table." + getId();
         Transaction t = mvTable.getTransaction(null);

@@ -22,6 +22,8 @@ import org.h2.mvstore.rtree.SpatialKey;
 import org.h2.mvstore.type.DataType;
 import org.h2.mvstore.type.ExtendedDataType;
 import org.h2.result.Row;
+import org.h2.result.RowFactory;
+import org.h2.result.SearchRow;
 import org.h2.result.SortOrder;
 import org.h2.store.DataHandler;
 import org.h2.tools.SimpleResultSet;
@@ -73,10 +75,11 @@ public class ValueDataType implements DataType {
     private static final int SPATIAL_KEY_2D = 132;
     private static final int CUSTOM_DATA_TYPE = 133;
 
-    final DataHandler handler;
+    private final DataHandler handler;
     protected final CompareMode compareMode;
     protected final int[] sortTypes;
-    SpatialDataType spatialType;
+    private SpatialDataType spatialType;
+    private RowFactory rowFactory;
 
     public ValueDataType(CompareMode compareMode, DataHandler handler,
             int[] sortTypes) {
@@ -92,6 +95,14 @@ public class ValueDataType implements DataType {
         return spatialType;
     }
 
+    public RowFactory getRowFactory() {
+        return rowFactory;
+    }
+
+    public void setRowFactory(RowFactory rowFactory) {
+        this.rowFactory = rowFactory;
+    }
+
     @Override
     public int compare(Object a, Object b) {
         if (a == b) {
@@ -104,7 +115,7 @@ public class ValueDataType implements DataType {
             int bl = bx.length;
             int len = Math.min(al, bl);
             for (int i = 0; i < len; i++) {
-                int sortType = sortTypes == null ? SortOrder.ASCENDING : sortTypes[i];
+                int sortType = /*sortTypes == null ? SortOrder.ASCENDING : */sortTypes[i];
                 int comp = compareValues(ax[i], bx[i], sortType);
                 if (comp != 0) {
                     return comp;
@@ -427,9 +438,10 @@ public class ValueDataType implements DataType {
             break;
         }
         case Value.ROW: {
+            buff.put((byte) type);
             Row r = (Row)v;
+            buff.putVarLong(r.getKey());
             int columnCount = r.getColumnCount();
-            buff.put((byte) type).putVarInt(columnCount);
             if (r instanceof RowStorage) {
                 RowStorage row = (RowStorage)r;
                 int[] indexes = row.getIndexes();
@@ -439,6 +451,8 @@ public class ValueDataType implements DataType {
                     }
                     break;
                 }
+            } else {
+                buff.putVarInt(columnCount);
             }
             for(int i = 0; i < columnCount; ++i) {
                 writeValue(buff, r.getValue(i));
@@ -627,7 +641,21 @@ public class ValueDataType implements DataType {
             return ValueGeometry.get(b);
         }
         case Value.ROW: {
-            return null;
+            RowStorage row = (RowStorage) getRowFactory().createRow();
+            row.setKey(readVarLong(buff));
+            int[] indexes = row.getIndexes();
+            if(indexes == null) {
+                int columnCount = row.getColumnCount();
+                for (int i = 0; i < columnCount; i++) {
+                    row.setValue(i, readValue(buff));
+                }
+
+            } else {
+                for (int i : indexes) {
+                    row.setValue(i, readValue(buff));
+                }
+            }
+            return row;
         }
         case SPATIAL_KEY_2D:
             return getSpatialDataType().read(buff);
