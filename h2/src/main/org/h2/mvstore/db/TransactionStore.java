@@ -60,7 +60,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
      * <p>
      * Key: opId, value: [ mapId, key, oldValue ].
      */
-    final MVMap<Long, Record> undoLog;
+    private final MVMap<Long, Record> undoLog;
 
     /**
      * The map of maps.
@@ -108,26 +108,18 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
         preparedTransactions = store.openMap("openTransactions",
                 new MVMap.Builder<Integer, Object[]>());
 
-        undoLog = openUndoLog(store, dataType);
-        this.store.setVersionChangeListener(this);
-    }
-
-    public static MVMap<Long, Record> openUndoLog(MVStore store, DataType dataType) {
-        VersionedValueType oldValueType = new VersionedValueType(dataType);
-        RecordType undoLogValueType = new RecordType(dataType, oldValueType);
+        RecordType undoLogValueType = new RecordType(this);
 
         MVMap.Builder<Long, Record> builder =
                 new MVMap.Builder<Long, Record>()
                         .keyType(ObjectDataType.LongType.INSTANCE)
                         .valueType(undoLogValueType);
-        MVMap<Long, Record> undoLog = store.openMap("undoLog", builder);
-/*
-        if (undoLog.getValueType() != undoLogValueType) {
-            throw DataUtils.newIllegalStateException(
-                    DataUtils.ERROR_TRANSACTION_CORRUPT,
-                    "Undo map open with a different value type");
-        }
-*/
+        undoLog = store.openMap("undoLog", builder);
+
+        this.store.setVersionChangeListener(this);
+    }
+
+    public MVMap<Long, Record> getUndoLog() {
         return undoLog;
     }
 
@@ -473,6 +465,12 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
                 }
             }
         }
+        return map;
+    }
+
+    private MVMap<Object,VersionedValue> getMap(int mapId) {
+        MVMap<Object, VersionedValue> map = maps.get(mapId);
+        assert map != null;
         return map;
     }
 
@@ -1924,8 +1922,9 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
         public int getMemory(Object obj) {
             if(obj == null) return 0;
             VersionedValue v = (VersionedValue) obj;
+            Object value = v.value;
             return Constants.MEMORY_OBJECT + 8 + Constants.MEMORY_POINTER +
-                    valueType.getMemory(v.value);
+                    (value == null ? 0 : valueType.getMemory(value));
         }
 
         @Override
@@ -2001,6 +2000,10 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
             }
         }
 
+        @Override
+        public int hashCode() {
+            return getClass().hashCode() + valueType.hashCode();
+        }
     }
 
     private static final class Record {
@@ -2020,37 +2023,24 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
      * types.
      */
     public static final class RecordType implements DataType {
-        private final DataType keyType;
-        private final VersionedValueType valueType;
+        private final TransactionStore transactionStore;
 
-        public RecordType(DataType keyType, VersionedValueType valueType) {
-            this.keyType = keyType;
-            this.valueType = valueType;
+        public RecordType(TransactionStore transactionStore) {
+            this.transactionStore = transactionStore;
         }
 
         @Override
         public int getMemory(Object obj) {
             Record record = (Record) obj;
+            MVMap<Object, VersionedValue> map = transactionStore.getMap(record.mapId);
             return Constants.MEMORY_OBJECT + 4 + 3 * Constants.MEMORY_POINTER +
-                    keyType.getMemory(record.key) +
-                    valueType.getMemory(record.oldValue);
+                    map.getKeyType().getMemory(record.key) +
+                    map.getValueType().getMemory(record.oldValue);
         }
 
         @Override
         public int compare(Object aObj, Object bObj) {
-            if (aObj == bObj) {
-                return 0;
-            }
-            Record a = (Record) aObj;
-            Record b = (Record) bObj;
-            int comp = Integer.compare(a.mapId, b.mapId);
-            if(comp == 0) {
-                comp = keyType.compare(a.key, b.key);
-                if(comp == 0) {
-                    comp = valueType.compare(a.oldValue, b.oldValue);
-                }
-            }
-            return comp;
+            throw new UnsupportedOperationException();
         }
 
         @Override
@@ -2072,25 +2062,27 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
         @Override
         public void write(WriteBuffer buff, Object obj) {
             Record record = (Record) obj;
+            MVMap<Object, VersionedValue> map = transactionStore.getMap(record.mapId);
             buff.putVarInt(record.mapId);
-            keyType.write(buff, record.key);
+            map.getKeyType().write(buff, record.key);
             VersionedValue oldValue = record.oldValue;
             if(oldValue == null) {
-                    buff.put((byte) 0);
-                } else {
-                    buff.put((byte) 1);
-                valueType.write(buff, oldValue);
+                buff.put((byte) 0);
+            } else {
+                buff.put((byte) 1);
+                map.getValueType().write(buff, oldValue);
             }
         }
 
         @Override
         public Object read(ByteBuffer buff) {
             int mapId = DataUtils.readVarInt(buff);
-            Object key = keyType.read(buff);
+            MVMap<Object, VersionedValue> map = transactionStore.getMap(mapId);
+            Object key = map.getKeyType().read(buff);
             VersionedValue oldValue = null;
-                if (buff.get() == 1) {
-                oldValue = (VersionedValue) valueType.read(buff);
-                }
+            if (buff.get() == 1) {
+                oldValue = (VersionedValue)map.getValueType().read(buff);
+            }
             return new Record(mapId, key, oldValue);
         }
 

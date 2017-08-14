@@ -6,10 +6,9 @@
 package org.h2.result;
 
 import org.h2.engine.Database;
-import org.h2.mvstore.db.ValueDataType;
+import org.h2.mvstore.RowDataType;
 import org.h2.mvstore.type.DataType;
 import org.h2.table.Column;
-import org.h2.table.CompactRowFactory;
 import org.h2.table.IndexColumn;
 import org.h2.value.Value;
 
@@ -21,13 +20,12 @@ import org.h2.value.Value;
 public abstract class RowFactory {
 
     private static final class Holder {
-        static final RowFactory DEFAULT = new DefaultRowFactory();
-        static final RowFactory EFFECTIVE = new DefaultRowFactory();
+        private static final RowFactory EFFECTIVE = DefaultRowFactory.INSTANCE;
 //        static final RowFactory EFFECTIVE = new CompactRowFactory();
     }
 
     public static RowFactory getDefaultRowFactory() {
-        return Holder.DEFAULT;
+        return DefaultRowFactory.INSTANCE;
     }
 
     public static RowFactory getRowFactory() {
@@ -56,33 +54,49 @@ public abstract class RowFactory {
      * Default implementation of row factory.
      */
     private static final class DefaultRowFactory extends RowFactory {
-        private final DataType dataType;
+        private final RowDataType dataType;
+        private final int         columnCount;
+        private final int         map[];
 
-        public DefaultRowFactory() {
-            this(new ValueDataType(null, null, null));
+        public static final DefaultRowFactory INSTANCE = new DefaultRowFactory();
+
+        protected DefaultRowFactory() {
+            this(new RowDataType(null, null, null, null), 0, null);
         }
 
-        private DefaultRowFactory(DataType dataType) {
+        private DefaultRowFactory(RowDataType dataType, int columnCount, int map[]) {
             this.dataType = dataType;
+            this.columnCount = columnCount;
+            this.map = map;
         }
 
         @Override
         public RowFactory createRowFactory(Database db, Column[] columns, IndexColumn[] indexColumns) {
-            int[] sortTypes = null;
+            int indexes[] = null;
+            int sortTypes[];
+            int map[] = null;
+            int columnCount = columns.length;
             if (indexColumns == null) {
-                sortTypes = new int[columns.length];
-                for (int i = 0; i < columns.length; i++) {
+                sortTypes = new int[columnCount];
+                for (int i = 0; i < columnCount; i++) {
                     sortTypes[i] = SortOrder.ASCENDING;
                 }
             } else {
-                int indexColumnCount = indexColumns.length;
-                sortTypes = new int[indexColumnCount + 1];
-                for (int i = 0; i < indexColumnCount; i++) {
-                    sortTypes[i] = indexColumns[i].sortType;
+                int len = indexColumns.length;
+                indexes = new int[len];
+                sortTypes = new int[len];
+                map = new int[columnCount];
+                for (int i = 0; i < len; i++) {
+                    IndexColumn indexColumn = indexColumns[i];
+                    indexes[i] = indexColumn.column.getColumnId();
+                    map[indexes[i]] = i + 1;
+                    sortTypes[i] = indexColumn.sortType;
                 }
-                sortTypes[indexColumnCount] = SortOrder.ASCENDING;
             }
-            return new DefaultRowFactory(new ValueDataType(db.getCompareMode(), db, sortTypes));
+            RowDataType dataType = new RowDataType(db.getCompareMode(), db, sortTypes, indexes);
+            DefaultRowFactory defaultRowFactory = new DefaultRowFactory(dataType, columnCount, map);
+            dataType.setRowFactory(defaultRowFactory);
+            return defaultRowFactory;
         }
 
         @Override
@@ -92,7 +106,14 @@ public abstract class RowFactory {
 
         @Override
         public SearchRow createRow() {
-            return null;
+            int[] indexes = dataType.getIndexes();
+            if (indexes == null) {
+                return new RowImpl(columnCount);
+            } else if (indexes.length == 1) {
+                return new SimpleRowValue(columnCount);
+            } else {
+                return new SimpleRow.Indexed(columnCount, indexes.length, map);
+            }
         }
 
         @Override

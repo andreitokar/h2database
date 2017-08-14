@@ -74,20 +74,11 @@ public class SequenceMap extends MVMap<Long, Long> {
     /**
      * A builder for this class.
      */
-    public static class Builder implements MapBuilder<SequenceMap, Long, Long> {
-
-        /**
-         * Create a new builder.
-         */
-        public Builder() {
-            // ignore
-        }
-
+    public static class Builder extends MVMap.Builder<Long, Long> {
         @Override
         public SequenceMap create() {
             return new SequenceMap();
         }
 
     }
-
 }

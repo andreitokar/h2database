@@ -26,6 +26,13 @@ public interface SearchRow {
     int getColumnCount();
 
     /**
+     * Determine if specified column contains NULL
+     * @param indx column index
+     * @return true if NULL
+     */
+    boolean isNull(int indx);
+
+    /**
      * Get the value for the column
      *
      * @param index the column number (starting with 0)
@@ -76,4 +83,9 @@ public interface SearchRow {
      */
     int getMemory();
 
+    /**
+     * Copy all relevant values from the source to this row.
+     * @param source of column values
+     */
+    void copyFrom(SearchRow source);
 }

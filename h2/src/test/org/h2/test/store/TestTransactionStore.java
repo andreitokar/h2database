@@ -354,13 +354,14 @@ public class TestTransactionStore extends TestBase {
             for (int back = 0; back < 100; back++) {
                 int minus = r.nextInt(10);
                 s.rollbackTo(Math.max(0, s.getCurrentVersion() - minus));
-                MVMap<?, ?> undo = TransactionStore.openUndoLog(s, new ObjectDataType());
+                ts = new TransactionStore(s);
+                MVMap<?, ?> undo = ts.getUndoLog();
                 if (undo.size() > 0) {
                     break;
                 }
             }
-            // re-open the store, because we have opened
-            // the undoLog map with the wrong data type
+            // re-open TransactionStore, because we rolled back
+            // underlying MVStore without rolling back TranactionStore
             s.close();
             s = MVStore.open(fileName);
             ts = new TransactionStore(s);

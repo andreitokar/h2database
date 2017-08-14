@@ -5,7 +5,6 @@
  */
 package org.h2.mvstore.db;
 
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -23,6 +22,7 @@ import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.db.TransactionStore.Transaction;
 import org.h2.mvstore.db.TransactionStore.TransactionMap;
 import org.h2.mvstore.type.DataType;
+import org.h2.mvstore.type.ObjectDataType;
 import org.h2.result.Row;
 import org.h2.result.SearchRow;
 import org.h2.result.SortOrder;
@@ -33,6 +33,7 @@ import org.h2.value.Value;
 import org.h2.value.ValueArray;
 import org.h2.value.ValueLong;
 import org.h2.value.ValueNull;
+import org.jetbrains.annotations.NotNull;
 
 /**
  * A table stored in a MVStore.
@@ -51,7 +52,7 @@ public class MVPrimaryIndex extends BaseIndex {
 
     private final MVTable mvTable;
     private final String mapName;
-    private TransactionMap<Value, Value> dataMap;
+    private TransactionMap<Long,Row> dataMap;
     private final AtomicLong lastKey = new AtomicLong(0);
     private int mainIndexColumn = -1;
 
@@ -62,13 +63,13 @@ public class MVPrimaryIndex extends BaseIndex {
         DataType valueType = table.getRowFactory().getDataType();
         mapName = "table." + getId();
         Transaction t = mvTable.getTransaction(null);
-        dataMap = t.openMap(mapName, ValueLong.Type.INSTANCE, valueType);
+        dataMap = t.openMap(mapName, ObjectDataType.LongType.INSTANCE, valueType);
         t.commit();
         if (!table.isPersistData()) {
             dataMap.map.setVolatile(true);
         }
-        Value k = dataMap.lastKey();
-        lastKey.set(k == null ? 0 : k.getLong());
+        Long k = dataMap.lastKey();
+        lastKey.set(k == null ? 0 : k);
     }
 
     @Override
@@ -118,12 +119,10 @@ public class MVPrimaryIndex extends BaseIndex {
             }
         }
 
-        TransactionMap<Value, Value> map = getMap(session);
+        TransactionMap<Long,Row> map = getMap(session);
         long rowKey = row.getKey();
-        ValueLong key = ValueLong.get(rowKey);
         try {
-            Value v = row instanceof Value ? (Value)row : ValueArray.get(row.getValueList());
-            Value old = map.put(key, v);
+            Row old = map.put(rowKey, row);
             if (old != null) {
                 String sql = "PRIMARY KEY ON " + table.getSQL();
                 if (mainIndexColumn >= 0 && mainIndexColumn < indexColumns.length) {
@@ -159,14 +158,13 @@ public class MVPrimaryIndex extends BaseIndex {
                 }
             }
         }
-        TransactionMap<Value, Value> map = getMap(session);
+        TransactionMap<Long,Row> map = getMap(session);
         try {
-            Value old = map.remove(ValueLong.get(row.getKey()));
-            if (old == null) {
+            Row result = map.remove(row.getKey());
+            if (result == null) {
                 throw DbException.get(ErrorCode.ROW_NOT_FOUND_WHEN_DELETING_1,
                         getSQL() + ": " + row.getKey());
             }
-            Row result = convertValueToRow(row.getKey(), old);
             return result;
         } catch (IllegalStateException e) {
             throw mvTable.convertException(e);
@@ -203,10 +201,9 @@ public class MVPrimaryIndex extends BaseIndex {
                 }
             }
 
-            TransactionMap<Value, Value> map = getMap(session);
+            TransactionMap<Long,Row> map = getMap(session);
             try {
-                Value v = newRow instanceof Value ? (Value)newRow : ValueArray.get(newRow.getValueList());
-                Value old = map.put(ValueLong.get(key), v);
+                Row old = map.put(key, newRow);
                 if (old == null) {
                     throw DbException.get(ErrorCode.ROW_NOT_FOUND_WHEN_DELETING_1,
                             getSQL() + ": " + key);
@@ -226,33 +223,28 @@ public class MVPrimaryIndex extends BaseIndex {
 
     @Override
     public Cursor find(Session session, SearchRow first, SearchRow last) {
-        ValueLong min, max;
-        if (first == null) {
-            min = MIN;
+        Long min = extractPKFromRow(first, Long.MIN_VALUE);
+        Long max = extractPKFromRow(last, Long.MAX_VALUE);
+        TransactionMap<Long,Row> map = getMap(session);
+        return new MVStoreCursor(map.entryIterator(min), max);
+    }
+
+    @NotNull
+    private Long extractPKFromRow(SearchRow row, long defaultValue) {
+        Long result;
+        if (row == null) {
+            result = defaultValue;
         } else if (mainIndexColumn < 0) {
-            min = ValueLong.get(first.getKey());
+            result = row.getKey();
         } else {
-            ValueLong v = (ValueLong) first.getValue(mainIndexColumn);
+            Value v = row.getValue(mainIndexColumn);
             if (v == null) {
-                min = ValueLong.get(first.getKey());
+                result = row.getKey();
             } else {
-                min = v;
+                result = v.getLong();
             }
         }
-        if (last == null) {
-            max = MAX;
-        } else if (mainIndexColumn < 0) {
-            max = ValueLong.get(last.getKey());
-        } else {
-            ValueLong v = (ValueLong) last.getValue(mainIndexColumn);
-            if (v == null) {
-                max = ValueLong.get(last.getKey());
-            } else {
-                max = v;
-            }
-        }
-        TransactionMap<Value, Value> map = getMap(session);
-        return new MVStoreCursor(mvTable, map.entryIterator(min), max);
+        return result;
     }
 
     @Override
@@ -262,13 +254,12 @@ public class MVPrimaryIndex extends BaseIndex {
 
     @Override
     public Row getRow(Session session, long key) {
-        TransactionMap<Value, Value> map = getMap(session);
-        Value v = map.get(ValueLong.get(key));
-        if (v == null) {
+        TransactionMap<Long,Row> map = getMap(session);
+        Row row = map.get(key);
+        if (row == null) {
             throw DbException.get(ErrorCode.ROW_NOT_FOUND_IN_PRIMARY_INDEX,
                     getSQL(), String.valueOf(key));
         }
-        Row row = convertValueToRow(key, v);
         return row;
     }
 
@@ -297,7 +288,7 @@ public class MVPrimaryIndex extends BaseIndex {
 
     @Override
     public void remove(Session session) {
-        TransactionMap<Value, Value> map = getMap(session);
+        TransactionMap<Long,Row> map = getMap(session);
         if (!map.isClosed()) {
             Transaction t = mvTable.getTransaction(session);
             t.removeMap(map);
@@ -306,7 +297,7 @@ public class MVPrimaryIndex extends BaseIndex {
 
     @Override
     public void truncate(Session session) {
-        TransactionMap<Value, Value> map = getMap(session);
+        TransactionMap<Long,Row> map = getMap(session);
         if (mvTable.getContainsLargeObject()) {
             database.getLobStorage().removeAllForTable(table.getId());
         }
@@ -320,15 +311,15 @@ public class MVPrimaryIndex extends BaseIndex {
 
     @Override
     public Cursor findFirstOrLast(Session session, boolean first) {
-        TransactionMap<Value, Value> map = getMap(session);
-        ValueLong v = (ValueLong) (first ? map.firstKey() : map.lastKey());
-        if (v == null) {
-            return new MVStoreCursor(mvTable, Collections.<Entry<Value, Value>> emptyList().iterator(), null);
+        TransactionMap<Long,Row> map = getMap(session);
+        Long rowId = first ? map.firstKey() : map.lastKey();
+        if (rowId == null) {
+            return new MVStoreCursor(Collections.<Entry<Long,Row>> emptyList().iterator(), null);
         }
-        Value value = map.get(v);
-        Entry<Value, Value> e = new DataUtils.MapEntry<Value, Value>(v, value);
-        List<Entry<Value, Value>> list = Collections.singletonList(e);
-        MVStoreCursor c = new MVStoreCursor(mvTable, list.iterator(), v);
+        Row value = map.get(rowId);
+        Entry<Long,Row> e = new DataUtils.MapEntry<>(rowId, value);
+        List<Entry<Long,Row>> list = Collections.singletonList(e);
+        MVStoreCursor c = new MVStoreCursor(list.iterator(), rowId);
         c.next();
         return c;
     }
@@ -340,7 +331,7 @@ public class MVPrimaryIndex extends BaseIndex {
 
     @Override
     public long getRowCount(Session session) {
-        TransactionMap<Value, Value> map = getMap(session);
+        TransactionMap<Long,Row> map = getMap(session);
         return map.sizeAsLong();
     }
 
@@ -407,8 +398,9 @@ public class MVPrimaryIndex extends BaseIndex {
      * @return the cursor
      */
     Cursor find(Session session, ValueLong first, ValueLong last) {
-        TransactionMap<Value, Value> map = getMap(session);
-        return new MVStoreCursor(mvTable, map.entryIterator(first), last);
+        TransactionMap<Long,Row> map = getMap(session);
+        return new MVStoreCursor(map.entryIterator(first == null ? null : first.getLong()),
+                                            last == null ? null : last.getLong());
     }
 
     @Override
@@ -422,7 +414,7 @@ public class MVPrimaryIndex extends BaseIndex {
      * @param session the session
      * @return the map
      */
-    private TransactionMap<Value, Value> getMap(Session session) {
+    private TransactionMap<Long,Row> getMap(Session session) {
         if (session == null) {
             return dataMap;
         }
@@ -430,11 +422,7 @@ public class MVPrimaryIndex extends BaseIndex {
         return dataMap.getInstance(t, Long.MAX_VALUE);
     }
 
-    private Row convertValueToRow(long key, Value value) {
-        return convertValueToRow(key, value, mvTable);
-    }
-
-    public static Row convertValueToRow(long key, Value value, MVTable mvTable) {
+    public static Row convertValueToRow(long key, Object value, MVTable mvTable) {
         Row result;
         if(value instanceof Row) {
             result = (Row) value;
@@ -454,14 +442,12 @@ public class MVPrimaryIndex extends BaseIndex {
      */
     static final class MVStoreCursor implements Cursor {
 
-        private final MVTable mvTable;
-        private final Iterator<Entry<Value, Value>> it;
-        private final ValueLong last;
-        private Entry<Value, Value> current;
-        private Row row;
+        private final Iterator<Entry<Long,Row>> it;
+        private final Long                      last;
+        private       Entry<Long,Row>           current;
+        private       Row                       row;
 
-        public MVStoreCursor(MVTable mvTable, Iterator<Entry<Value, Value>> it, ValueLong last) {
-            this.mvTable = mvTable;
+        private MVStoreCursor(Iterator<Entry<Long, Row>> it, Long last) {
             this.it = it;
             this.last = last;
         }
@@ -470,9 +456,7 @@ public class MVPrimaryIndex extends BaseIndex {
         public Row get() {
             if (row == null) {
                 if (current != null) {
-                    Value key = current.getKey();
-                    Value value = current.getValue();
-                    row = convertValueToRow(key.getLong(), value, mvTable);
+                    row = current.getValue();
                 }
             }
             return row;
@@ -486,7 +470,7 @@ public class MVPrimaryIndex extends BaseIndex {
         @Override
         public boolean next() {
             current = it.hasNext() ? it.next() : null;
-            if (current != null && current.getKey().getLong() > last.getLong()) {
+            if (current != null && current.getKey() > last) {
                 current = null;
             }
             row = null;
@@ -499,5 +483,4 @@ public class MVPrimaryIndex extends BaseIndex {
         }
 
     }
-
 }

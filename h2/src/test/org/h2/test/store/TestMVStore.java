@@ -805,7 +805,7 @@ public class TestMVStore extends TestBase {
         String fileName = getBaseDir() + "/" + getTestName();
         FileUtils.delete(fileName);
         MVStore s = openStore(fileName);
-        SequenceMap seq = s.openMap("data", new SequenceMap.Builder());
+        Map<Long,Long> seq = s.openMap("data", new SequenceMap.Builder());
         StringBuilder buff = new StringBuilder();
         for (long x : seq.keySet()) {
             buff.append(x).append(';');

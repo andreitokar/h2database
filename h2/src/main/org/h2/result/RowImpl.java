@@ -10,6 +10,7 @@ import org.h2.store.Data;
 import org.h2.util.StatementBuilder;
 import org.h2.value.Value;
 import org.h2.value.ValueLong;
+import org.h2.value.ValueNull;
 
 /**
  * Default row implementation.
@@ -25,6 +26,11 @@ public class RowImpl implements Row {
     public RowImpl(Value[] data, int memory) {
         this.data = data;
         this.memory = memory;
+    }
+
+    public RowImpl(int columnCount) {
+        this.data = new Value[columnCount];
+        this.memory = MEMORY_CALCULATE;
     }
 
     /**
@@ -100,8 +106,20 @@ public class RowImpl implements Row {
     }
 
     @Override
+    public boolean isNull(int indx) {
+        return data == null || data[indx] == null || data[indx] == ValueNull.INSTANCE;
+    }
+
+    @Override
     public boolean isEmpty() {
-        return data == null;
+        if (data != null) {
+            for (int i = 0; i < getColumnCount(); i++) {
+                if(getValue(i) != null) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     @Override
@@ -180,5 +198,13 @@ public class RowImpl implements Row {
     @Override
     public Value[] getValueList() {
         return data;
+    }
+
+    @Override
+    public void copyFrom(SearchRow source) {
+        setKey(source.getKey());
+        for (int i = 0; i < getColumnCount(); i++) {
+            setValue(i, source.getValue(i));
+        }
     }
 }

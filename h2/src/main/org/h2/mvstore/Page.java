@@ -38,7 +38,7 @@ public abstract class Page implements Cloneable {
     /**
      * An empty object array.
      */
-    public static final Object[] EMPTY_OBJECT_ARRAY = new Object[0];
+    private static final Object[] EMPTY_OBJECT_ARRAY = new Object[0];
 
     /**
      * Marker value for memory field, meaning that memory accounting is replaced by key count.
@@ -49,7 +49,7 @@ public abstract class Page implements Cloneable {
     /**
      * Map this page belongs to
      */
-    public final MVMap<?, ?> map;   //TODO make it private, look into map id change issue on compact/reopen
+    protected final MVMap<?, ?> map;
 
     /**
      * Position of this page's saved image within a Chunk or 0 if this page has not been saved yet.
@@ -179,6 +179,14 @@ public abstract class Page implements Cloneable {
         int offset = DataUtils.getPageOffset(pos);
         p.read(buff, chunkId, offset, maxLength);
         return p;
+    }
+
+    /**
+     * Get the id of the page's owner map
+     * @return id
+     */
+    public final int getMapId() {
+        return map.getId();
     }
 
     /**

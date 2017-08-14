@@ -7,6 +7,7 @@ package org.h2.result;
 
 import org.h2.engine.Constants;
 import org.h2.value.Value;
+import org.h2.value.ValueNull;
 
 /**
  * A simple row that contains data for only one column.
@@ -71,4 +72,14 @@ public class SimpleRowValue implements SearchRow {
         return Constants.MEMORY_OBJECT + (data == null ? 0 : data.getMemory());
     }
 
+    @Override
+    public boolean isNull(int indx) {
+        return indx != index || data == null || data == ValueNull.INSTANCE;
+    }
+
+    @Override
+    public void copyFrom(SearchRow source) {
+        setKey(source.getKey());
+        setValue(index, source.getValue(index));
+    }
 }

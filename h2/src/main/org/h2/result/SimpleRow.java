@@ -8,6 +8,7 @@ package org.h2.result;
 import org.h2.engine.Constants;
 import org.h2.util.StatementBuilder;
 import org.h2.value.Value;
+import org.h2.value.ValueNull;
 
 /**
  * Represents a simple row without state.
@@ -77,16 +78,62 @@ public class SimpleRow implements SearchRow {
     @Override
     public int getMemory() {
         if (memory == 0) {
-            int len = data.length;
-            memory = Constants.MEMORY_OBJECT + len * Constants.MEMORY_POINTER;
-            for (int i = 0; i < len; i++) {
-                Value v = data[i];
-                if (v != null) {
-                    memory += v.getMemory();
+            memory = Constants.MEMORY_OBJECT + getColumnCount() * Constants.MEMORY_POINTER;
+            for (Value value : data) {
+                if (value != null) {
+                    memory += value.getMemory();
                 }
             }
         }
         return memory;
     }
 
+    @Override
+    public boolean isNull(int indx) {
+        return data[indx] == ValueNull.INSTANCE;
+    }
+
+    @Override
+    public void copyFrom(SearchRow source) {
+        setKey(source.getKey());
+        for (int i = 0; i < getColumnCount(); i++) {
+            setValue(i, source.getValue(i));
+        }
+    }
+
+    public static final class Indexed extends SimpleRow {
+        private final int columnCount;
+        private final int map[];
+
+        public Indexed(int columnCount, int capacity, int[] map) {
+            super(new Value[capacity]);
+            this.columnCount = columnCount;
+            this.map = map;
+        }
+
+        @Override
+        public int getColumnCount() {
+            return columnCount;
+        }
+
+        @Override
+        public Value getValue(int i) {
+            int indx = map[i];
+            return indx > 0 ? super.getValue(indx - 1) : null;
+        }
+
+        @Override
+        public void setValue(int i, Value v) {
+            int indx = map[i];
+            if (indx > 0) {
+                super.setValue(indx - 1, v);
+            }
+        }
+
+        @Override
+        public boolean isNull(int i) {
+            int indx = map[i];
+            return indx <= 0 || super.isNull(indx - 1);
+        }
+    }
 }

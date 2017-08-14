@@ -1321,6 +1321,8 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         if (createVersion != 0) {
             DataUtils.appendMap(buff, "createVersion", createVersion);
         }
+        DataUtils.appendMap(buff, "key", store.registerDataType(getKeyType()));
+        DataUtils.appendMap(buff, "val", store.registerDataType(getValueType()));
         String type = getType();
         if (type != null) {
             DataUtils.appendMap(buff, "type", type);
@@ -1404,6 +1406,14 @@ public class MVMap<K, V> extends AbstractMap<K, V>
          */
         M create();
 
+        DataType getKeyType();
+
+        DataType getValueType();
+
+        void setKeyType(DataType dataType);
+
+        void setValueType(DataType dataType);
+
     }
 
     /**
@@ -1412,16 +1422,36 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @param <K> the key type
      * @param <V> the value type
      */
-    public static final class Builder<K, V> implements MapBuilder<MVMap<K, V>, K, V> {
+    public abstract static class BasicBuilder<M extends MVMap<K, V>, K, V> implements MapBuilder<M, K, V> {
 
-        protected DataType keyType;
-        protected DataType valueType;
+        private DataType keyType;
+        private DataType valueType;
 
         /**
          * Create a new builder with the default key and value data types.
          */
-        public Builder() {
+        protected BasicBuilder() {
             // ignore
+        }
+
+        @Override
+        public DataType getKeyType() {
+            return keyType;
+        }
+
+        @Override
+        public DataType getValueType() {
+            return valueType;
+        }
+
+        @Override
+        public void setKeyType(DataType keyType) {
+            this.keyType = keyType;
+        }
+
+        @Override
+        public void setValueType(DataType valueType) {
+            this.valueType = valueType;
         }
 
         /**
@@ -1430,17 +1460,9 @@ public class MVMap<K, V> extends AbstractMap<K, V>
          * @param keyType the key type
          * @return this
          */
-        public Builder<K, V> keyType(DataType keyType) {
+        public BasicBuilder<M, K, V> keyType(DataType keyType) {
             this.keyType = keyType;
             return this;
-        }
-
-        public DataType getKeyType() {
-            return keyType;
-        }
-
-        public DataType getValueType() {
-            return valueType;
         }
 
         /**
@@ -1449,22 +1471,43 @@ public class MVMap<K, V> extends AbstractMap<K, V>
          * @param valueType the value type
          * @return this
          */
-        public Builder<K, V> valueType(DataType valueType) {
+        public BasicBuilder<M, K, V> valueType(DataType valueType) {
             this.valueType = valueType;
             return this;
         }
 
         @Override
-        public MVMap<K, V> create() {
-            if (keyType == null) {
-                keyType = new ObjectDataType();
-            }
-            if (valueType == null) {
-                valueType = new ObjectDataType();
-            }
-            return new MVMap<K, V>(keyType, valueType);
+        public abstract M create();
+    }
+
+    /**
+     * A builder for this class.
+     *
+     * @param <K> the key type
+     * @param <V> the value type
+     */
+    public static class Builder<K, V> extends BasicBuilder<MVMap<K, V>, K, V> {
+
+        public Builder<K,V> keyType(DataType dataType) {
+            setKeyType(dataType);
+            return this;
         }
 
+        public Builder<K,V> valueType(DataType dataType) {
+            setValueType(dataType);
+            return this;
+        }
+
+        @Override
+        public MVMap<K, V> create() {
+            if (getKeyType() == null) {
+                setKeyType(new ObjectDataType());
+            }
+            if (getValueType() == null) {
+                setValueType(new ObjectDataType());
+            }
+            return new MVMap<K, V>(getKeyType(), getValueType());
+        }
     }
 
     private static final class EqualsDecisionMaker<V> extends DecisionMaker<V> {

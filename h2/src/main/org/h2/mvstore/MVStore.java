@@ -26,6 +26,7 @@ import org.h2.compress.CompressLZF;
 import org.h2.compress.Compressor;
 import org.h2.mvstore.Page.PageChildren;
 import org.h2.mvstore.cache.CacheLongKeyLIRS;
+import org.h2.mvstore.type.DataType;
 import org.h2.mvstore.type.StringDataType;
 import org.h2.util.MathUtils;
 import org.h2.util.New;
@@ -210,7 +211,9 @@ public final class MVStore {
     private final ConcurrentHashMap<Integer, MVMap<?, ?>> maps =
             new ConcurrentHashMap<Integer, MVMap<?, ?>>();
 
-    private HashMap<String, Object> storeHeader = New.hashMap();
+    private final MVMap<String, DataType> typeRegistry;
+
+    private final HashMap<String, Object> storeHeader = New.hashMap();
 
     private WriteBuffer writeBuffer;
 
@@ -328,6 +331,13 @@ public final class MVStore {
         c.put("id", 0);
         c.put("createVersion", currentVersion);
         meta.init(this, c);
+
+        typeRegistry = new MVMap<String,DataType>(StringDataType.INSTANCE,
+                        new MetaDataType(backgroundExceptionHandler));
+        c.put("id", 1);
+        c.put("createVersion", currentVersion);
+        typeRegistry.init(this, c);
+
         if (this.fileStore == null) {
             cache = null;
             cacheChunkRef = null;
@@ -490,10 +500,25 @@ public final class MVStore {
         if (map == null) {
             String configAsString = meta.get(MVMap.getMapKey(id));
             if(configAsString != null) {
-                map = builder.create();
                 HashMap<String, Object> config = New.hashMap();
-                config.putAll(DataUtils.parseMap(configAsString));
+                HashMap<String, String> cfg = DataUtils.parseMap(configAsString);
+                String keyTypeKey = cfg.remove("key");
+                if(keyTypeKey != null) {
+                    DataType keyDataType = typeRegistry.get(keyTypeKey);
+                    if(keyDataType != null) {
+                        builder.setKeyType(keyDataType);
+                    }
+                }
+                String valueTypeKey = cfg.remove("val");
+                if(valueTypeKey != null) {
+                    DataType valueDataType = typeRegistry.get(valueTypeKey);
+                    if(valueDataType != null) {
+                        builder.setKeyType(valueDataType);
+                    }
+                }
+                config.putAll(cfg);
                 config.put("id", id);
+                map = builder.create();
                 map.init(this, config);
                 long root = getRootPos(meta, id);
                 map.setRootPos(root, lastStoredVersion);
@@ -1142,7 +1167,7 @@ public final class MVStore {
         c.maxLen = 0;
         c.maxLenLive = 0;
         for (Page p : changed) {
-            String key = MVMap.getMapRootKey(p.map.getId());
+            String key = MVMap.getMapRootKey(p.getMapId());
             if (p.getTotalCount() == 0) {
                 meta.put(key, "0");
             } else {
@@ -2768,6 +2793,12 @@ public final class MVStore {
 
     public synchronized void setVersionChangeListener(VersionChangeListener versionChangeListener) {
         this.versionChangeListener = versionChangeListener;
+    }
+
+    public String registerDataType(DataType dataType) {
+        String key = Integer.toHexString(dataType.hashCode());
+        typeRegistry.putIfAbsent(key, dataType);
+        return key;
     }
 
     public interface VersionChangeListener {

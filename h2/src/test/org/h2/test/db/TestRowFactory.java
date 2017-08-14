@@ -5,6 +5,8 @@
  */
 package org.h2.test.db;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.sql.Connection;
@@ -115,7 +117,7 @@ public class TestRowFactory extends TestBase {
 
             RowStorage irow = icls.getConstructor().newInstance();
             irow.copyFrom(row);
-            assertEquals("Row{0/0 3, 'Hello', null, 77, null}", irow.toString());
+            assertEquals("Row{12345/0 3, 'Hello', null, 77, null}", irow.toString());
             assertEquals(-1, itype.compare(irow, irowTwo));
             assertEquals(0, itype.compare(irow, row));
             assertEquals(1, itype.compare(row, irow));  // assuming NULL sorted low
@@ -125,16 +127,14 @@ public class TestRowFactory extends TestBase {
     }
 
     private static Class<? extends RowStorage> generateClass(int[] valueTypes, int indexes[]) {
-        //*
         String className = RowStorageGenerator.getClassName(valueTypes, indexes);
         byte classBytes[] = RowStorageGenerator.generateStorageBytes(valueTypes, indexes, className);
         className = className.substring(className.lastIndexOf('.') + 1);
-        try (java.io.FileOutputStream out = new java.io.FileOutputStream(new java.io.File(className + ".class"))) {
+        try (FileOutputStream out = new FileOutputStream(new File(new File("generated"), className + ".class"))) {
             out.write(classBytes);
         } catch (java.io.IOException e) {
             e.printStackTrace();
         }
-//*/
         return RowStorageGenerator.generateStorageClass(valueTypes, indexes);
     }
 

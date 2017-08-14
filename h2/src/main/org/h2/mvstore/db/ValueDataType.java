@@ -131,7 +131,7 @@ public class ValueDataType implements DataType {
         return compareValues((Value) a, (Value) b, SortOrder.ASCENDING);
     }
 
-    private int compareValues(Value a, Value b, int sortType) {
+    public int compareValues(Value a, Value b, int sortType) {
         if (a == b) {
             return 0;
         }
@@ -184,7 +184,8 @@ public class ValueDataType implements DataType {
 
     @Override
     public Object read(ByteBuffer buff) {
-        return readValue(buff);
+        int type = buff.get() & 255;
+        return read(buff, type);
     }
 
     @Override
@@ -198,7 +199,7 @@ public class ValueDataType implements DataType {
         writeValue(buff, x);
     }
 
-    private void writeValue(WriteBuffer buff, Value v) {
+    protected void writeValue(WriteBuffer buff, Value v) {
         if (v == ValueNull.INSTANCE) {
             buff.put((byte) 0);
             return;
@@ -438,6 +439,10 @@ public class ValueDataType implements DataType {
             break;
         }
         case Value.ROW: {
+/*
+            DataType dataType = getRowFactory().getDataType();
+            dataType.write(buff, v);
+/*/
             buff.put((byte) type);
             Row r = (Row)v;
             buff.putVarLong(r.getKey());
@@ -457,6 +462,7 @@ public class ValueDataType implements DataType {
             for(int i = 0; i < columnCount; ++i) {
                 writeValue(buff, r.getValue(i));
             }
+//*/
             break;
         }
         default:
@@ -494,6 +500,10 @@ public class ValueDataType implements DataType {
      */
     protected Value readValue(ByteBuffer buff) {
         int type = buff.get() & 255;
+        return (Value)read(buff, type);
+    }
+
+    protected Object read(ByteBuffer buff, int type) {
         switch (type) {
         case Value.NULL:
             return ValueNull.INSTANCE;
@@ -641,7 +651,9 @@ public class ValueDataType implements DataType {
             return ValueGeometry.get(b);
         }
         case Value.ROW: {
-            RowStorage row = (RowStorage) getRowFactory().createRow();
+            DataType dataType = getRowFactory().getDataType();
+            Object row = dataType.read(buff);
+/*
             row.setKey(readVarLong(buff));
             int[] indexes = row.getIndexes();
             if(indexes == null) {
@@ -655,6 +667,7 @@ public class ValueDataType implements DataType {
                     row.setValue(i, readValue(buff));
                 }
             }
+*/
             return row;
         }
         case SPATIAL_KEY_2D:

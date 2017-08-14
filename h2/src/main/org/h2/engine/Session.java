@@ -1743,7 +1743,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
         if(mvStore != null) {
             MVTable table = mvStore.getTable(map.getName());
             if (table != null) {
-                long recKey = ((ValueLong) key).getLong();
+                long recKey = (Long)key;
                 Row oldRow = getRowFromVersionedValue(table, recKey, existingValue);
                 Row newRow = getRowFromVersionedValue(table, recKey, restoredValue);
                 table.fireAfterRow(this, oldRow, newRow, true);
@@ -1754,7 +1754,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
     private static Row getRowFromVersionedValue(MVTable table, long recKey,
                                                 TransactionStore.VersionedValue versionedValue) {
 
-        Value value = versionedValue == null ? null : (Value)versionedValue.value;
+        Object value = versionedValue == null ? null : versionedValue.value;
         return value == null ? null : MVPrimaryIndex.convertValueToRow(recKey, value, table);
     }
 

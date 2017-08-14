@@ -110,22 +110,27 @@ public class RowStorage extends Value implements Row, Cloneable {
         return res;
     }
 
-    public void copyFrom(RowStorage other) {
+    public void copyFrom(SearchRow source) {
+        copyFrom((RowStorage)source);
+    }
+
+    public void copyFrom(RowStorage source) {
+        setKey(source.getKey());
         int[] indexes = getIndexes();
         if (indexes == null) {
             int columnCount = getColumnCount();
             for (int i = 0; i < columnCount; i++) {
-                copyFrom(other, i);
+                copyFrom(source, i);
             }
         } else {
             for (int indx : indexes) {
-                copyFrom(other, indx);
+                copyFrom(source, indx);
             }
         }
     }
 
     // TODO eliminate boxing and generate type-specific code instead
-    protected final boolean isNull(int index) {
+    public final boolean isNull(int index) {
         Value value = getValue(index);
         return value == null || value == ValueNull.INSTANCE;
     }
@@ -395,7 +400,7 @@ public class RowStorage extends Value implements Row, Cloneable {
     }
 
     private static int normalizeCompare(int res) {
-        return res > 0 ? 1 : res < 0 ? -1 : 0;
+        return Integer.compare(res, 0);
     }
 
     protected static int compare(Value one, Value two, CompareMode mode) {
@@ -539,29 +544,37 @@ public class RowStorage extends Value implements Row, Cloneable {
                 assert Arrays.equals(rowA.getIndexes(), rowB.getIndexes())
                         : "Incompatible sparse rows" + Arrays.toString(rowA.getIndexes()) + " " + Arrays.toString(rowB.getIndexes());
 */
-                return compare(rowA, rowB, compareMode, sortTypes);
+                return compare(rowA, rowB);
             }
             return super.compare(a, b);
         }
 
-        public static int compare(RowStorage a, RowStorage b, CompareMode compareMode, int sortTypes[]) {
-            int res = 0;
+        public int compare(RowStorage a, RowStorage b) {
             int[] indexes = a.getIndexes();
+            return compare(a, b, compareMode, sortTypes, indexes);
+        }
+
+        public int compare(RowStorage a, RowStorage b, CompareMode compareMode, int sortTypes[], int indexes[]) {
             if (indexes == null) {
                 int columnCount = a.getColumnCount();
-                for (int i = 0; res == 0 && i < columnCount; i++) {
-                    res = a.compareTo(b, i, compareMode,
+                for (int i = 0; i < columnCount; i++) {
+                    int res = a.compareTo(b, i, compareMode,
                             sortTypes == null ? SortOrder.ASCENDING : sortTypes[i]);
+                    if(res != 0) {
+                        return res;
+                    }
                 }
             } else {
-                assert sortTypes != null;
                 assert sortTypes.length == indexes.length;
                 for (int i = 0; i < indexes.length; i++) {
                     int indx = indexes[i];
-                    res = a.compareTo(b, indx, compareMode, sortTypes[i]);
+                    int res = a.compareTo(b, indx, compareMode, sortTypes[i]);
+                    if(res != 0) {
+                        return res;
+                    }
                 }
             }
-            return res;
+            return 0;
         }
 
         @Override
@@ -579,7 +592,7 @@ public class RowStorage extends Value implements Row, Cloneable {
                 x = high >>> 1;
             }
             while (low <= high) {
-                int compare = compare(key, keys[x], compareMode, sortTypes);
+                int compare = compare(key, keys[x]);
                 if (compare > 0) {
                     low = x + 1;
                 } else if (compare < 0) {

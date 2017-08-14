@@ -595,17 +595,15 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
      *
      * @param <V> the value type
      */
-    public static class Builder<V> implements
-            MVMap.MapBuilder<MVRTreeMap<V>, SpatialKey, V> {
+    public static class Builder<V> extends MVMap.BasicBuilder<MVRTreeMap<V>, SpatialKey, V> {
 
         private int dimensions = 2;
-        private DataType valueType;
 
         /**
          * Create a new builder for maps with 2 dimensions.
          */
         public Builder() {
-            // default
+            setKeyType(new SpatialDataType(dimensions));
         }
 
         /**
@@ -616,6 +614,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
          */
         public Builder<V> dimensions(int dimensions) {
             this.dimensions = dimensions;
+            setKeyType(new SpatialDataType(dimensions));
             return this;
         }
 
@@ -626,18 +625,16 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
          * @return this
          */
         public Builder<V> valueType(DataType valueType) {
-            this.valueType = valueType;
+            setValueType(valueType);
             return this;
         }
 
         @Override
         public MVRTreeMap<V> create() {
-            if (valueType == null) {
-                valueType = new ObjectDataType();
+            if (getValueType() == null) {
+                setValueType(new ObjectDataType());
             }
-            return new MVRTreeMap<V>(dimensions, valueType);
+            return new MVRTreeMap<V>(dimensions, getValueType());
         }
-
     }
-
 }
