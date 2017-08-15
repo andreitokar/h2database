@@ -495,7 +495,7 @@ public class Set extends Prepared {
                 throw DbException.convert(e);
             }
             database.setRowFactory(rowFactory);
-            addOrUpdateSetting(name, rowFactoryName, 0);
+            addOrUpdateSetting(name, '"' + rowFactoryName + '"', 0);
             break;
         }
         case SetTypes.BATCH_JOINS: {

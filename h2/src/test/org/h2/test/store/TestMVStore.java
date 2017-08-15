@@ -1433,7 +1433,8 @@ public class TestMVStore extends TestBase {
 //        assertEquals(117120, s.getUnsavedMemory());
 //        assertEquals(97266, s.getUnsavedMemory());
 //        assertEquals(64252, s.getUnsavedMemory());
-        assertEquals(64284, s.getUnsavedMemory());
+//        assertEquals(64284, s.getUnsavedMemory());
+        assertEquals(64480, s.getUnsavedMemory());
         s.commit();
         assertEquals(2, s.getFileStore().getWriteCount());
         s.close();
@@ -1618,10 +1619,10 @@ public class TestMVStore extends TestBase {
         assertNull(s.getMapName(data.getId() + 1));
 
         String id = s.getMetaMap().get("name.data");
-        assertEquals("name:data", m.get("map." + id));
+        assertTrue(m.get("map." + id).startsWith("name:data"));
         assertEquals("Hello", data.put("1", "Hallo"));
         s.commit();
-        assertEquals("name:data", m.get("map." + id));
+        assertTrue(m.get("map." + id).startsWith("name:data"));
         assertTrue(m.get("root.1").length() > 0);
         assertTrue(m.containsKey("chunk.1"));
 

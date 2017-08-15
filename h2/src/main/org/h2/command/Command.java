@@ -309,7 +309,7 @@ public abstract class Command implements CommandInterface {
         }
         long now = System.nanoTime();
         if (start != 0 && now - start > TimeUnit.MILLISECONDS.toNanos(session.getLockTimeout())) {
-            throw DbException.get(ErrorCode.LOCK_TIMEOUT_1, e.getCause(), "");
+            throw DbException.get(ErrorCode.LOCK_TIMEOUT_1, e);
         }
         return start == 0 ? now : start;
     }

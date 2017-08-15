@@ -1,6 +1,5 @@
 package org.h2.bytecode;
 
-import jdk.nashorn.internal.ir.annotations.Ignore;
 import org.h2.engine.Constants;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.WriteBuffer;
@@ -70,6 +69,7 @@ public class RowStorage extends Value implements Row, Cloneable {
     public long getLong(int indx) { return 0L; }
     public float getFloat(int indx) { return 0.0f; }
     public double getDouble(int indx) { return 0.0; }
+    public BigDecimal getDecimal(int indx) { return BigDecimal.ZERO; }
     public byte[] getBytes(int indx) { return null; }
     public String getString(int indx) { return null; }
     public Object get(int indx) { return null; }
@@ -78,6 +78,7 @@ public class RowStorage extends Value implements Row, Cloneable {
     public void setLong(int indx, long value) {}
     public void setFloat(int indx, float value) {}
     public void setDouble(int indx, double value) {}
+    public void setDecimal(int indx, BigDecimal value) {}
     public void setBytes(int indx, byte[] value) {}
     public void setString(int indx) {}
     public void set(int indx, Object value) {}
@@ -97,6 +98,9 @@ public class RowStorage extends Value implements Row, Cloneable {
     protected final int compareTo(RowStorage other, int index, CompareMode compareMode, int sortType) {
         boolean isNull = isNull(index);
         boolean otherIsNull = other.isNull(index);
+        if (isNull && otherIsNull) {
+            return 0;
+        }
         if (isNull || otherIsNull) {
             return SortOrder.compareNull(isNull, sortType);
         }
@@ -110,11 +114,11 @@ public class RowStorage extends Value implements Row, Cloneable {
         return res;
     }
 
-    public void copyFrom(SearchRow source) {
+    public final void copyFrom(SearchRow source) {
         copyFrom((RowStorage)source);
     }
 
-    public void copyFrom(RowStorage source) {
+    public final void copyFrom(RowStorage source) {
         setKey(source.getKey());
         int[] indexes = getIndexes();
         if (indexes == null) {
@@ -564,6 +568,7 @@ public class RowStorage extends Value implements Row, Cloneable {
                         return res;
                     }
                 }
+                return 0;
             } else {
                 assert sortTypes.length == indexes.length;
                 for (int i = 0; i < indexes.length; i++) {
@@ -573,8 +578,8 @@ public class RowStorage extends Value implements Row, Cloneable {
                         return res;
                     }
                 }
+                return Long.compare(a.getKey(), b.getKey());
             }
-            return 0;
         }
 
         @Override
@@ -609,19 +614,28 @@ public class RowStorage extends Value implements Row, Cloneable {
         public void writeStorage(WriteBuffer buff, Object storage) {
             RowStorage[] data = (RowStorage[]) storage;
             for (RowStorage row : data) {
-                buff.putVarLong(row.getKey());
-                int[] indexes = row.getIndexes();
-                if(indexes == null) {
-                    int columnCount = row.getColumnCount();
-                    for (int i = 0; i < columnCount; i++) {
-                        Value value = row.getValue(i);
-                        write(buff, value);
-                    }
-                } else {
-                    for (int i : indexes) {
-                        Value value = row.getValue(i);
-                        write(buff, value);
-                    }
+                write(buff, row);
+            }
+        }
+
+        @Override
+        public void write(WriteBuffer buff, Object row) {
+            write(buff, (RowStorage)row);
+        }
+
+        private void write(WriteBuffer buff, RowStorage row) {
+            buff.putVarLong(row.getKey());
+            int[] indexes = row.getIndexes();
+            if(indexes == null) {
+                int columnCount = row.getColumnCount();
+                for (int i = 0; i < columnCount; i++) {
+                    Value value = row.getValue(i);
+                    super.write(buff, value);
+                }
+            } else {
+                for (int i : indexes) {
+                    Value value = row.getValue(i);
+                    super.write(buff, value);
                 }
             }
         }
@@ -630,23 +644,27 @@ public class RowStorage extends Value implements Row, Cloneable {
         public void read(ByteBuffer buff, Object storage) {
             RowStorage[] data = (RowStorage[]) storage;
             for (int k = 0; k < data.length; k++) {
-                RowStorage row = (RowStorage)getRowFactory().createRow();
-                data[k] = row;
-                row.setKey(DataUtils.readVarLong(buff));
-                int[] indexes = row.getIndexes();
-                if (indexes == null) {
-                    int columnCount = row.getColumnCount();
-                    for (int i = 0; i < columnCount; i++) {
-                        Value value = readValue(buff);
-                        row.setValue(i, value);
-                    }
-                } else {
-                    for (int i : indexes) {
-                        Value value = readValue(buff);
-                        row.setValue(i, value);
-                    }
+                data[k] = read(buff);
+            }
+        }
+
+        public RowStorage read(ByteBuffer buff) {
+            RowStorage row = (RowStorage)getRowFactory().createRow();
+            row.setKey(DataUtils.readVarLong(buff));
+            int[] indexes = row.getIndexes();
+            if (indexes == null) {
+                int columnCount = row.getColumnCount();
+                for (int i = 0; i < columnCount; i++) {
+                    Value value = readValue(buff);
+                    row.setValue(i, value);
+                }
+            } else {
+                for (int i : indexes) {
+                    Value value = readValue(buff);
+                    row.setValue(i, value);
                 }
             }
+            return row;
         }
     }
 }

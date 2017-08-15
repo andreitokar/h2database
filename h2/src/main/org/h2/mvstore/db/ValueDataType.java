@@ -28,6 +28,7 @@ import org.h2.result.SortOrder;
 import org.h2.store.DataHandler;
 import org.h2.tools.SimpleResultSet;
 import org.h2.util.JdbcUtils;
+import org.h2.util.Utils;
 import org.h2.value.CompareMode;
 import org.h2.value.Value;
 import org.h2.value.ValueArray;
@@ -720,7 +721,7 @@ public class ValueDataType implements DataType {
 
     @Override
     public int hashCode() {
-        return compareMode.hashCode() ^ Arrays.hashCode(sortTypes);
+        return Utils.hashCode(compareMode) ^ Arrays.hashCode(sortTypes);
     }
 
     @Override

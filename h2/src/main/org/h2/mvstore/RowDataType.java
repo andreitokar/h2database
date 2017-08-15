@@ -6,6 +6,7 @@
 package org.h2.mvstore;
 
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 
 import org.h2.engine.Constants;
 import org.h2.mvstore.db.ValueDataType;
@@ -69,7 +70,6 @@ public final class RowDataType extends ValueDataType implements ExtendedDataType
         return size;
     }
 
-
     @Override
     public int compare(Object a, Object b) {
         if(a instanceof SearchRow && b instanceof SearchRow) {
@@ -83,19 +83,13 @@ public final class RowDataType extends ValueDataType implements ExtendedDataType
             return 0;
         }
         if (indexes == null) {
-            int al = a.getColumnCount();
-            int bl = b.getColumnCount();
-            int len = Math.min(al, bl);
+            int len = a.getColumnCount();
+            assert len == b.getColumnCount() : len + " != " + b.getColumnCount();
             for (int i = 0; i < len; i++) {
                 int comp = compareValues(a.getValue(i), b.getValue(i), sortTypes[i]);
                 if (comp != 0) {
                     return comp;
                 }
-            }
-            if (len < al) {
-                return -1;
-            } else if (len < bl) {
-                return 1;
             }
             return 0;
         } else {
@@ -107,8 +101,8 @@ public final class RowDataType extends ValueDataType implements ExtendedDataType
                     return comp;
                 }
             }
+            return Long.compare(a.getKey(), b.getKey());
         }
-        return 0;
     }
 
     @Override
@@ -210,5 +204,10 @@ public final class RowDataType extends ValueDataType implements ExtendedDataType
                 super.write(buff, row.getValue(i));
             }
         }
+    }
+
+    @Override
+    public int hashCode() {
+        return super.hashCode() ^ Arrays.hashCode(indexes);
     }
 }

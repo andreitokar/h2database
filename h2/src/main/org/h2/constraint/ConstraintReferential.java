@@ -379,11 +379,15 @@ public class ConstraintReferential extends Constraint {
         searchTable.lock(session, false, false);
         Cursor cursor = searchIndex.find(session, check, check);
         while (cursor.next()) {
-            SearchRow found;
-            found = cursor.getSearchRow();
+            SearchRow found = cursor.getSearchRow();
             if (excluding != null && found.getKey() == excluding.getKey()) {
                 continue;
             }
+            check.setKey(found.getKey());
+            if (searchIndex.compareRows(check, found) == 0) {
+                return true;
+            }
+/*
             Column[] cols = searchIndex.getColumns();
             boolean allEqual = true;
             int len = Math.min(columns.length, cols.length);
@@ -399,6 +403,7 @@ public class ConstraintReferential extends Constraint {
             if (allEqual) {
                 return true;
             }
+*/
         }
         return false;
     }
@@ -408,7 +413,8 @@ public class ConstraintReferential extends Constraint {
     }
 
     private void checkRow(Session session, Row oldRow) {
-        SearchRow check = table.getTemplateSimpleRow(false);
+        SearchRow check = table.getRowFactory().createRow();
+//        SearchRow check = table.getTemplateSimpleRow(false);
         for (int i = 0, len = columns.length; i < len; i++) {
             Column refCol = refColumns[i].column;
             int refIdx = refCol.getColumnId();

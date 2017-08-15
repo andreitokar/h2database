@@ -469,7 +469,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
     }
 
     private MVMap<Object,VersionedValue> getMap(int mapId) {
-        MVMap<Object, VersionedValue> map = maps.get(mapId);
+        MVMap<Object, VersionedValue> map = openMap(mapId);
         assert map != null;
         return map;
     }

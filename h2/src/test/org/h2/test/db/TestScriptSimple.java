@@ -11,6 +11,8 @@ import java.io.LineNumberReader;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
+
 import org.h2.test.TestBase;
 import org.h2.util.ScriptReader;
 
@@ -33,6 +35,24 @@ public class TestScriptSimple extends TestBase {
 
     @Override
     public void test() throws Exception {
+        deleteDb(getTestName());
+        conn = getConnection(getTestName());
+        Statement stmt = conn.createStatement();
+        stmt.executeUpdate("create table a(x int, y int)");
+        stmt.executeUpdate("create unique index a_xy on a(x, y)");
+        stmt.executeUpdate("insert into a values(null, null), (null, 0), (0, null), (0, 0)");
+        int count1 = stmt.executeUpdate("delete from a where x is null and y is null");
+        assertEquals(1, count1);
+        int count2 = stmt.executeUpdate("delete from a where x is null and y = 0");
+        assertEquals(1, count2);
+        int count3 = stmt.executeUpdate("delete from a where x = 0 and y is null");
+        assertEquals(1, count3);
+        int count4 = stmt.executeUpdate("delete from a where x = 0 and y = 0");
+        assertEquals(1, count4);
+    }
+
+//    @Override
+    public void _test() throws Exception {
         if (config.memory || config.big || config.networked) {
             return;
         }

@@ -12,6 +12,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.PriorityQueue;
+import java.util.Queue;
 
 import org.h2.api.ErrorCode;
 import org.h2.engine.Database;
@@ -113,7 +114,7 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
     public void addBufferedRows(List<String> bufferNames) {
         ArrayList<String> mapNames = New.arrayList(bufferNames);
         int buffersCount = bufferNames.size();
-        PriorityQueue<Source> queue = new PriorityQueue<>(buffersCount,
+        Queue<Source> queue = new PriorityQueue<>(buffersCount,
                                         Source.createComparator(rowFactory.getDataType()));
         for (String bufferName : bufferNames) {
             Iterator<SearchRow> iter = openMap(bufferName).keyIterator(null);
@@ -128,7 +129,7 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
 
                 if (indexType.isUnique()) {
                     SearchRow unique = convertToKey(row, true);
-                    checkUnique(row, dataMap, unique);
+                    checkUnique(dataMap, unique);
                 }
 
                 dataMap.putCommitted(row, ValueNull.INSTANCE);
@@ -169,23 +170,24 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
     @Override
     public void add(Session session, Row row) {
         TransactionMap<SearchRow,Value> map = getMap(session);
-        SearchRow key = convertToKey(row);
+        SearchRow key = convertToKey(row, false);
         SearchRow unique = null;
         if (indexType.isUnique()) {
             // this will detect committed entries only
             unique = convertToKey(row, true);
-            checkUnique(row, map, unique);
+            checkUnique(map, unique);
         }
         try {
             map.put(key, ValueNull.INSTANCE);
         } catch (IllegalStateException e) {
             throw mvTable.convertException(e);
         }
-        if (indexType.isUnique()) {
+        if (unique != null) {
             Iterator<SearchRow> it = map.keyIterator(unique, true);
             while (it.hasNext()) {
                 SearchRow k = it.next();
-                if (compareRows(row, k) != 0) {
+                unique.setKey(k.getKey());
+                if (compareRows(unique, k) != 0) {
                     break;
                 }
                 if (containsNullAndAllowMultipleNull(k)) {
@@ -204,10 +206,11 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
         }
     }
 
-    private void checkUnique(SearchRow row, TransactionMap<SearchRow,Value> map, SearchRow unique) {
-        Iterator<SearchRow> it = map.keyIterator(unique, true);
+    private void checkUnique(TransactionMap<SearchRow,Value> map, SearchRow row) {
+        Iterator<SearchRow> it = map.keyIterator(row, true);
         while (it.hasNext()) {
             SearchRow k = it.next();
+            row.setKey(k.getKey());
             if (compareRows(row, k) != 0) {
                 break;
             }
@@ -221,7 +224,7 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
 
     @Override
     public void remove(Session session, Row row) {
-        SearchRow searchRow = convertToKey(row);
+        SearchRow searchRow = convertToKey(row, false);
         TransactionMap<SearchRow,Value> map = getMap(session);
         try {
             Value old = map.remove(searchRow);
@@ -276,11 +279,7 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
                         Collections.<SearchRow>emptyList().iterator(), null);
             }
         }
-        return new MVStoreCursor(session, map.keyIterator(min), last);
-    }
-
-    private SearchRow convertToKey(SearchRow r) {
-        return convertToKey(r, false);
+        return new MVStoreCursor(session, map.keyIterator(min), convertToKey(last, false));
     }
 
     private SearchRow convertToKey(SearchRow r, boolean min) {
@@ -347,8 +346,7 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
             }
             key = first ? map.higherKey(key) : map.lowerKey(key);
         }
-        ArrayList<SearchRow> list = New.arrayList();
-        list.add(key);
+        List<SearchRow> list = Collections.singletonList(key);
         MVStoreCursor cursor = new MVStoreCursor(session, list.iterator(), null);
         cursor.next();
         return cursor;
