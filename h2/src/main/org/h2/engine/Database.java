@@ -946,7 +946,8 @@ public class Database implements DataHandler {
      */
     public synchronized void removeMeta(Session session, int id) {
         if (id > 0 && !starting) {
-            SearchRow r = meta.getTemplateSimpleRow(false);
+            SearchRow r = meta.getRowFactory().createRow();
+//            SearchRow r = meta.getTemplateSimpleRow(false);
             r.setValue(0, ValueInt.get(id));
             boolean wasLocked = lockMeta(session);
             Cursor cursor = metaIdIndex.find(session, r, r);
@@ -1469,7 +1470,8 @@ public class Database implements DataHandler {
     }
 
     private void checkMetaFree(Session session, int id) {
-        SearchRow r = meta.getTemplateSimpleRow(false);
+        SearchRow r = meta.getRowFactory().createRow();
+//        SearchRow r = meta.getTemplateSimpleRow(false);
         r.setValue(0, ValueInt.get(id));
         Cursor cursor = metaIdIndex.find(session, r, r);
         if (cursor.next()) {
@@ -1679,7 +1681,8 @@ public class Database implements DataHandler {
             MetaRecord.populateRowFromDBObject(obj, newRow);
             objectIds.set(id);
 
-            SearchRow r = meta.getTemplateSimpleRow(false);
+            SearchRow r = meta.getRowFactory().createRow();
+//            SearchRow r = meta.getTemplateSimpleRow(false);
             r.setValue(0, ValueInt.get(id));
             Cursor cursor = metaIdIndex.find(session, r, r);
             if (cursor.next()) {

@@ -480,7 +480,8 @@ public class Select extends Query {
             SearchRow found = cursor.getSearchRow();
             Value value = found.getValue(columnIndex);
             if (first == null) {
-                first = topTableFilter.getTable().getTemplateSimpleRow(true);
+                first = topTableFilter.getTable().getRowFactory().createRow();
+//                first = topTableFilter.getTable().getTemplateSimpleRow(true);
             }
             first.setValue(columnIndex, value);
             Value[] row = { value };

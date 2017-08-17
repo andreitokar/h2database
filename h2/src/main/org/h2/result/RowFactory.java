@@ -21,8 +21,8 @@ import org.h2.value.Value;
 public abstract class RowFactory {
 
     private static final class Holder {
-//        private static final RowFactory EFFECTIVE = DefaultRowFactory.INSTANCE;
-        static final RowFactory EFFECTIVE = new CompactRowFactory();
+        private static final RowFactory EFFECTIVE = DefaultRowFactory.INSTANCE;
+//        static final RowFactory EFFECTIVE = new CompactRowFactory();
     }
 
     public static RowFactory getDefaultRowFactory() {

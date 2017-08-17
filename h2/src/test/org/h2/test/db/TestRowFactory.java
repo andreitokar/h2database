@@ -9,6 +9,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
@@ -24,13 +25,7 @@ import org.h2.result.SearchRow;
 import org.h2.result.SortOrder;
 import org.h2.table.CompactRowFactory;
 import org.h2.test.TestBase;
-import org.h2.value.CompareMode;
-import org.h2.value.Value;
-import org.h2.value.ValueDate;
-import org.h2.value.ValueDouble;
-import org.h2.value.ValueInt;
-import org.h2.value.ValueLong;
-import org.h2.value.ValueString;
+import org.h2.value.*;
 
 /**
  * Test {@link RowFactory} setting.
@@ -50,9 +45,9 @@ public class TestRowFactory extends TestBase {
 
     @Override
     public void test() throws Exception {
-        testMyRowFactory();
         tetRowStorage();
         testCompactRowFactory();
+        testMyRowFactory();
     }
 
     private void testMyRowFactory() throws Exception {
@@ -70,7 +65,8 @@ public class TestRowFactory extends TestBase {
     }
 
     private void tetRowStorage() {
-        int[] valueTypes = { Value.INT, Value.STRING, Value.UNKNOWN, Value.LONG, Value.DOUBLE };
+        int[] valueTypes = { Value.INT, Value.STRING, Value.UNKNOWN, Value.LONG, Value.DOUBLE,
+                             Value.FLOAT, Value.DECIMAL, Value.STRING_FIXED };
         Class<? extends RowStorage> cls = generateClass(valueTypes, null);
         Class<? extends RowStorage> icls = generateClass(valueTypes, new int[]{3, 0, 1});
 
@@ -81,12 +77,15 @@ public class TestRowFactory extends TestBase {
                     ValueString.get("Hello"),
                     ValueDate.parse("2017-08-04"),
                     ValueLong.get(77),
-                    ValueDouble.get(3.62)
+                    ValueDouble.get(3.62),
+                    ValueFloat.get(3.62f),
+                    ValueDecimal.get(BigDecimal.TEN),
+                    ValueString.get("ABC")
             };
             RowStorage row = constructor.newInstance();
             row.setValues(initargs);
             row.setKey(12345);
-            assertEquals("Row{12345/0 3, 'Hello', DATE '2017-08-04', 77, 3.619999885559082}", row.toString());
+            assertEquals("Row{12345/0 3, 'Hello', DATE '2017-08-04', 77, 3.619999885559082, 3.62, 10, 'ABC'}", row.toString());
 
             RowStorage rowTwo = row.clone();
             rowTwo.setValue(0, ValueInt.get(5));
@@ -94,10 +93,20 @@ public class TestRowFactory extends TestBase {
             rowTwo.setValue(2, ValueDate.parse("2001-09-11"));
             rowTwo.setValue(3, ValueLong.get(999));
             rowTwo.setValue(4, ValueDouble.get(4.12));
-            assertEquals("Row{12345/0 5, 'World', DATE '2001-09-11', 999, 4.119999885559082}", rowTwo.toString());
+            assertEquals("Row{12345/0 5, 'World', DATE '2001-09-11', 999, 4.119999885559082, 3.62, 10, 'ABC'}", rowTwo.toString());
+            assertFalse(rowTwo.isNull(5));
+            rowTwo.setValue(5, ValueNull.INSTANCE);
+            assertTrue(rowTwo.isNull(5));
+            assertFalse(rowTwo.isNull(6));
+            rowTwo.setValue(6, ValueNull.INSTANCE);
+            assertTrue(rowTwo.isNull(6));
+            rowTwo.setValue(7, ValueNull.INSTANCE);
+            assertEquals("Row{12345/0 5, 'World', DATE '2001-09-11', 999, 4.119999885559082, NULL, NULL, NULL}", rowTwo.toString());
+
+
             CompareMode compareMode = CompareMode.getInstance(null, 0);
             RowStorage.Type type = new RowStorage.Type(compareMode, null, null);
-            assertEquals(-1, type.compare(row,rowTwo));
+            assertEquals(-1, type.compare(row, rowTwo));
             assertEquals(1, type.compare(rowTwo, row));
 
             RowStorage irowTwo = icls.getConstructor().newInstance();
@@ -128,7 +137,7 @@ public class TestRowFactory extends TestBase {
 
     private static Class<? extends RowStorage> generateClass(int[] valueTypes, int indexes[]) {
         String className = RowStorageGenerator.getClassName(valueTypes, indexes);
-        byte classBytes[] = RowStorageGenerator.generateStorageBytes(valueTypes, indexes, className);
+        byte classBytes[] = RowStorageGenerator.generateClassDefinition(valueTypes, indexes, className);
         className = className.substring(className.lastIndexOf('.') + 1);
         try (FileOutputStream out = new FileOutputStream(new File(new File("generated"), className + ".class"))) {
             out.write(classBytes);

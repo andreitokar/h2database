@@ -17,6 +17,7 @@ import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.util.Arrays;
 
 /**
  * Class RowStorage is the base class for all schema-aware auto-generated
@@ -72,7 +73,7 @@ public class RowStorage extends Value implements Row, Cloneable {
     public BigDecimal getDecimal(int indx) { return BigDecimal.ZERO; }
     public byte[] getBytes(int indx) { return null; }
     public String getString(int indx) { return null; }
-    public Object get(int indx) { return null; }
+//    public Object get(int indx) { return null; }
 
     public void setInt(int indx, int value) {}
     public void setLong(int indx, long value) {}
@@ -81,8 +82,9 @@ public class RowStorage extends Value implements Row, Cloneable {
     public void setDecimal(int indx, BigDecimal value) {}
     public void setBytes(int indx, byte[] value) {}
     public void setString(int indx) {}
-    public void set(int indx, Object value) {}
-    public void nullify(int indx) {}
+//    public void set(int indx, Object value) {}
+    protected void nullify(int indx) {}
+    protected void clearNull(int indx) {}
 
     protected int compareToSecure(RowStorage other, CompareMode mode) {
         return 0;
@@ -106,7 +108,7 @@ public class RowStorage extends Value implements Row, Cloneable {
         }
 
         int res = compareToSecure(other, compareMode, index);
-        assert res == normalizeCompare(getValue(index).compareTypeSafe(other.getValue(index), compareMode)) : res;
+        assert normalizeCompare(res) == normalizeCompare(getValue(index).compareTypeSafe(other.getValue(index), compareMode)) : res;
 
         if ((sortType & SortOrder.DESCENDING) != 0) {
             res = -res;
@@ -134,19 +136,38 @@ public class RowStorage extends Value implements Row, Cloneable {
     }
 
     // TODO eliminate boxing and generate type-specific code instead
-    public final boolean isNull(int index) {
-        Value value = getValue(index);
-        return value == null || value == ValueNull.INSTANCE;
+    public boolean isNull(int index) {
+        throw new IllegalArgumentException(getClass().getSimpleName()+".isNull("+index+")");
+//        Value value = getValue(index);
+//        return value == null || value == ValueNull.INSTANCE;
     }
 
+    // TODO eliminate boxing and generate type-specific code instead
+    public final boolean isEmpty(int index) {
+        Value value = getValue(index);
+        return value == null;
+    }
 
     @Override
-    public Value getValue(int index) {
+    public final Value getValue(int index) {
+        return isNull(index) ? ValueNull.INSTANCE : get(index);
+    }
+
+    protected Value get(int index) {
         throw new IllegalArgumentException(getClass().getSimpleName()+".getValue("+index+")");
     }
 
     @Override
-    public void setValue(int index, Value v) {
+    public final void setValue(int index, Value v) {
+        if(isNull(v)) {
+            nullify(index);
+        } else {
+            clearNull(index);
+        }
+        set(index, v);
+    }
+
+    public void set(int index, Value v) {
         throw new IllegalArgumentException(getClass().getSimpleName()+".setValue("+index+", ..)");
     }
 
@@ -415,82 +436,105 @@ public class RowStorage extends Value implements Row, Cloneable {
         return res;
     }
 
-    protected static int getInt(Value v)
+    protected static int toInt(Value v)
     {
         return v == null ? Integer.MIN_VALUE + 1 : v == ValueNull.INSTANCE ? Integer.MIN_VALUE : v.getInt();
     }
 
-    protected static Value getValueInt(int v)
+    protected static Value convertFrom(int v)
     {
-        return v == Integer.MIN_VALUE + 1 ? null : v == Integer.MIN_VALUE ? ValueNull.INSTANCE : ValueInt.get(v);
+        return ValueInt.get(v);
+//        return v == Integer.MIN_VALUE + 1 ? null : v == Integer.MIN_VALUE ? ValueNull.INSTANCE : ValueInt.get(v);
     }
 
 
-    protected static long getLong(Value v)
+    protected static long toLong(Value v)
     {
         return v == null ? Long.MIN_VALUE + 1 : v == ValueNull.INSTANCE ? Long.MIN_VALUE : v.getLong();
     }
 
-    protected static Value getValueLong(long v)
+    protected static Value convertFrom(long v)
     {
-        return v == Long.MIN_VALUE + 1 ? null : v == Long.MIN_VALUE ? ValueNull.INSTANCE : ValueLong.get(v);
+        return ValueLong.get(v);
+//        return v == Long.MIN_VALUE + 1 ? null : v == Long.MIN_VALUE ? ValueNull.INSTANCE : ValueLong.get(v);
     }
 
 
-    protected static float getFloat(Value v)
+    protected static float toFloat(Value v)
     {
         return v == null ? Float.NEGATIVE_INFINITY : v == ValueNull.INSTANCE ? Float.NaN : v.getFloat();
     }
 
-    protected static Value getValueFloat(float v)
+    protected static Value convertFrom(float v)
     {
-        return v == Float.NEGATIVE_INFINITY ? null : Float.isNaN(v) ? ValueNull.INSTANCE : ValueFloat.get(v);
+        return ValueFloat.get(v);
+//        return v == Float.NEGATIVE_INFINITY ? null : Float.isNaN(v) ? ValueNull.INSTANCE : ValueFloat.get(v);
     }
 
 
-    protected static double getDouble(Value v)
+    protected static double toDouble(Value v)
     {
         return v == null ? Double.NEGATIVE_INFINITY : v == ValueNull.INSTANCE ? Double.NaN : v.getFloat();
     }
 
-    protected static Value getValueDouble(double v)
+    protected static Value convertFrom(double v)
     {
-        return v == Double.NEGATIVE_INFINITY ? null : Double.isNaN(v) ? ValueNull.INSTANCE : ValueDouble.get(v);
+        return ValueDouble.get(v);
+//        return v == Double.NEGATIVE_INFINITY ? null : Double.isNaN(v) ? ValueNull.INSTANCE : ValueDouble.get(v);
     }
 
-
-    protected static BigDecimal getDecimal(Value v)
+    protected static BigDecimal toDecimal(Value v)
     {
         return v == null ? null : v == ValueNull.INSTANCE ? NULL_BIG_DECIMAL : v.getBigDecimal();
     }
 
     @SuppressWarnings("NumberEquality")
-    protected static Value getValueDecimal(BigDecimal v)
+    protected static Value convertFrom(BigDecimal v)
     {
         return v == null ? null : v == NULL_BIG_DECIMAL ? ValueNull.INSTANCE : ValueDecimal.get(v);
     }
 
+    @SuppressWarnings("NumberEquality")
+    protected static boolean isNull(BigDecimal v)
+    {
+        return v == null || v == NULL_BIG_DECIMAL;
+    }
 
-    protected static byte[] getBytes(Value v)
+
+    protected static byte[] toBytes(Value v)
     {
         return v == null ? null : v == ValueNull.INSTANCE ? NULL_BYTES : v.getString().getBytes();
     }
 
-    protected static Value getValueBytes(byte v[])
+    protected static Value convertFrom(byte v[])
     {
         return v == null ? null : v == NULL_BYTES ? ValueNull.INSTANCE  : ValueString.get(new String(v));
     }
 
+    protected static boolean isNull(byte v[])
+    {
+        return v == null || v == NULL_BYTES;
+    }
 
-    protected static String getString(Value v)
+    protected static String toString(Value v)
     {
         return v == null ? null : v == ValueNull.INSTANCE ? NULL_STRING : v.getString();
     }
 
     @SuppressWarnings("StringEquality")
-    protected static Value getValueString(String v)
+    protected static Value convertFrom(String v)
     {
         return v == null ? null : v == NULL_STRING ? ValueNull.INSTANCE  : ValueString.get(v);
+    }
+
+    protected static boolean isNull(String v)
+    {
+        return v == null || v == NULL_STRING;
+    }
+
+    protected static boolean isNull(Value v)
+    {
+        return v == null || v == ValueNull.INSTANCE;
     }
 
     ////////////////////////////////////////////////////////////////////////////////////////////
@@ -554,18 +598,63 @@ public class RowStorage extends Value implements Row, Cloneable {
         }
 
         public int compare(RowStorage a, RowStorage b) {
+            assert a.getColumnCount() == b.getColumnCount();
             int[] indexes = a.getIndexes();
-            return compare(a, b, compareMode, sortTypes, indexes);
+            assert Arrays.equals(indexes, b.getIndexes());
+            int comp = compare(a, b, compareMode, sortTypes, indexes);
+            int _comp = _compare(a, b, compareMode, sortTypes, indexes);
+            assert comp == _comp;
+            return comp;
         }
 
         public int compare(RowStorage a, RowStorage b, CompareMode compareMode, int sortTypes[], int indexes[]) {
+            int limit = indexes == null ? a.getColumnCount() : indexes.length;
+            for (int i = 0; i < limit; i++) {
+                int indx = indexes == null ? i : indexes[i];
+                boolean aIsEmpty = a.isEmpty(indx);
+                boolean bIsEmpty = b.isEmpty(indx);
+//                assert !aIsEmpty;
+//                assert !bIsEmpty;
+
+                if (aIsEmpty) {
+                    if (!bIsEmpty) {
+                        return -1;
+                    }
+                } else if (bIsEmpty) {
+                    return 1;
+                } else {
+
+                    int sortType = sortTypes == null ? SortOrder.ASCENDING : sortTypes[i];
+                    boolean aIsNull = a.isNull(indx);
+                    boolean bIsNull = b.isNull(indx);
+                    if (aIsNull != bIsNull) {
+                        return SortOrder.compareNull(aIsNull, sortType);
+                    }
+                    if (!aIsNull) { // && !bIsNull
+                        int res = a.compareToSecure(b, compareMode, indx);
+                        if (res != 0) {
+                            if ((sortType & SortOrder.DESCENDING) != 0) {
+                                res = -res;
+                            }
+                            return Integer.compare(res, 0);
+                        }
+                    }
+                }
+            }
+            return indexes == null ? 0 : Long.compare(a.getKey(), b.getKey());
+        }
+
+        private int _compare(RowStorage a, RowStorage b, CompareMode compareMode, int sortTypes[], int indexes[]) {
             if (indexes == null) {
                 int columnCount = a.getColumnCount();
                 for (int i = 0; i < columnCount; i++) {
+                    if (a.isEmpty(i) || b.isEmpty(i)) {
+                        return 0;
+                    }
                     int res = a.compareTo(b, i, compareMode,
                             sortTypes == null ? SortOrder.ASCENDING : sortTypes[i]);
                     if(res != 0) {
-                        return res;
+                        return Integer.compare(res, 0);
                     }
                 }
                 return 0;
@@ -573,9 +662,12 @@ public class RowStorage extends Value implements Row, Cloneable {
                 assert sortTypes.length == indexes.length;
                 for (int i = 0; i < indexes.length; i++) {
                     int indx = indexes[i];
+                    if (a.isEmpty(indx) || b.isEmpty(indx)) {
+                        break;
+                    }
                     int res = a.compareTo(b, indx, compareMode, sortTypes[i]);
                     if(res != 0) {
-                        return res;
+                        return Integer.compare(res, 0);
                     }
                 }
                 return Long.compare(a.getKey(), b.getKey());
@@ -619,8 +711,8 @@ public class RowStorage extends Value implements Row, Cloneable {
         }
 
         @Override
-        public void write(WriteBuffer buff, Object row) {
-            write(buff, (RowStorage)row);
+        public void write(WriteBuffer buff, Object obj) {
+            write(buff, (RowStorage)obj);
         }
 
         private void write(WriteBuffer buff, RowStorage row) {

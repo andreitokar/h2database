@@ -243,8 +243,9 @@ public class IndexCursor implements Cursor {
         }
         if (a == ValueNull.INSTANCE || b == ValueNull.INSTANCE) {
             if (session.getDatabase().getSettings().optimizeIsNull) {
-                // column IS NULL AND column <op> <not null> is always false
-                return null;
+                throw new IllegalStateException("?????");
+//                 column IS NULL AND column <op> <not null> is always false
+//                return null;
             }
         }
         if (!bigger) {
