@@ -8,6 +8,8 @@ package org.h2.mvstore;
 import org.h2.mvstore.type.DataType;
 import org.h2.mvstore.type.ObjectDataType;
 
+import java.util.Map;
+
 /**
  * A class used for backward compatibility.
  *
@@ -16,8 +18,8 @@ import org.h2.mvstore.type.ObjectDataType;
  */
 public class MVMapConcurrent<K, V> extends MVMap<K, V> {
 
-    public MVMapConcurrent(DataType keyType, DataType valueType) {
-        super(keyType, valueType);
+    public MVMapConcurrent(Map<String, Object> config) {
+        super(config);
     }
 
     /**
@@ -57,16 +59,8 @@ public class MVMapConcurrent<K, V> extends MVMap<K, V> {
         }
 
         @Override
-        public MVMapConcurrent<K, V> create() {
-            if (getKeyType() == null) {
-                setKeyType(new ObjectDataType());
-            }
-            if (getValueType() == null) {
-                setValueType(new ObjectDataType());
-            }
-            return new MVMapConcurrent<K, V>(getKeyType(), getValueType());
+        protected MVMapConcurrent<K, V> create(Map<String, Object> config) {
+            return new MVMapConcurrent<K, V>(config);
         }
-
     }
-
 }

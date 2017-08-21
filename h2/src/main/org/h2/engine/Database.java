@@ -308,8 +308,14 @@ public class Database implements DataHandler {
                 }
                 traceSystem.close();
             }
-            try { closeOpenFilesAndUnlock(false); } catch(Throwable ignore) {/* to preserve original exeption */}
-            throw DbException.convert(e);
+            DbException dbException = DbException.convert(e);
+            try {
+                closeOpenFilesAndUnlock(false);
+            } catch(Throwable ignore) {
+                // to preserve original exeption
+                e.addSuppressed(ignore);
+            }
+            throw dbException;
         }
     }
 

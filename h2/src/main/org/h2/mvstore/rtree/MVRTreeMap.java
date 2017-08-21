@@ -7,9 +7,12 @@ package org.h2.mvstore.rtree;
 
 import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.Map;
+
 import org.h2.mvstore.CursorPos;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.MVMap;
+import org.h2.mvstore.MVStore;
 import org.h2.mvstore.Page;
 import org.h2.mvstore.type.DataType;
 import org.h2.mvstore.type.ObjectDataType;
@@ -30,32 +33,21 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
 
     private boolean quadraticSplit;
 
-    public MVRTreeMap(int dimensions, DataType valueType) {
-        this(new SpatialDataType(dimensions), valueType);
+    public MVRTreeMap(Map<String, Object> config) {
+        super(config);
+        keyType = (SpatialDataType) config.get("key");
+        quadraticSplit = Boolean.valueOf(String.valueOf(config.get("quadraticSplit")));
     }
 
-    private MVRTreeMap(SpatialDataType keyType, DataType valueType) {
-        super(keyType, valueType);
-        this.keyType = keyType;
+    private MVRTreeMap(MVRTreeMap<V> source) {
+        super(source);
+        this.keyType = source.keyType;
+        this.quadraticSplit = source.quadraticSplit;
     }
 
     @Override
-    public MVRTreeMap<V>cloneFromThis() {
-        MVRTreeMap<V> res = new MVRTreeMap<>(keyType, getValueType());
-        res.quadraticSplit = quadraticSplit;
-        return res;
-    }
-
-    /**
-     * Create a new map with the given dimensions and value type.
-     *
-     * @param <V> the value type
-     * @param dimensions the number of dimensions
-     * @param valueType the value type
-     * @return the map
-     */
-    public static <V> MVRTreeMap<V> create(int dimensions, DataType valueType) {
-        return new MVRTreeMap<V>(dimensions, valueType);
+    public MVRTreeMap<V> cloneIt() {
+        return new MVRTreeMap<>(this);
     }
 
     @Override
@@ -630,11 +622,8 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
         }
 
         @Override
-        public MVRTreeMap<V> create() {
-            if (getValueType() == null) {
-                setValueType(new ObjectDataType());
-            }
-            return new MVRTreeMap<V>(dimensions, getValueType());
+        public MVRTreeMap<V> create(Map<String, Object> config) {
+            return new MVRTreeMap<V>(config);
         }
     }
 }

@@ -470,7 +470,7 @@ public final class RowStorageGenerator {
         gmv.visitFrame(F_SAME, 0, null, 0, null);
         gmv.visitVarInsn(ALOAD, 0);
         gmv.visitVarInsn(ILOAD, 1);
-        gmv.visitMethodInsn(INVOKESPECIAL, ROOT_CLASS_NAME_SLASHED, "getValue", "(I)Lorg/h2/value/Value;", false);
+        gmv.visitMethodInsn(INVOKESPECIAL, ROOT_CLASS_NAME_SLASHED, "get", "(I)Lorg/h2/value/Value;", false);
         gmv.visitInsn(ARETURN);
         gmv.visitMaxs(2, 2);
         gmv.visitEnd();
@@ -480,7 +480,7 @@ public final class RowStorageGenerator {
         smv.visitVarInsn(ALOAD, 0);
         smv.visitVarInsn(ILOAD, 1);
         smv.visitVarInsn(ALOAD, 2);
-        smv.visitMethodInsn(INVOKESPECIAL, ROOT_CLASS_NAME_SLASHED, "setValue", "(ILorg/h2/value/Value;)V", false);
+        smv.visitMethodInsn(INVOKESPECIAL, ROOT_CLASS_NAME_SLASHED, "set", "(ILorg/h2/value/Value;)V", false);
         smv.visitInsn(RETURN);
         smv.visitMaxs(3, 3);
         smv.visitEnd();

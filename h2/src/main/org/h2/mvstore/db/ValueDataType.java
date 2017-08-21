@@ -150,7 +150,9 @@ public class ValueDataType implements DataType {
         if (aNull || bNull) {
             return SortOrder.compareNull(aNull, sortType);
         }
-        int comp = a.compareTypeSafe(b, compareMode);
+//        int comp = a.compareTypeSafe(b, compareMode);
+        int t2 = Value.getHigherOrder(a.getType(), b.getType());
+        int comp = a.convertTo(t2).compareTypeSafe(b.convertTo(t2), compareMode);
         if ((sortType & SortOrder.DESCENDING) != 0) {
             comp = -comp;
         }

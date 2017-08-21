@@ -684,7 +684,9 @@ public class MVTable extends TableBase {
         } catch (Throwable e) {
             try {
                 t.rollbackToSavepoint(savepoint);
-            } catch (Throwable ignore) {/**/}
+            } catch (Throwable ignore) {
+                e.addSuppressed(ignore);
+            }
             throw DbException.convert(e);
         }
         analyzeIfRequired(session);
@@ -713,7 +715,9 @@ public class MVTable extends TableBase {
         } catch (Throwable e) {
             try {
                 t.rollbackToSavepoint(savepoint);
-            } catch (Throwable ignore) {/**/}
+            } catch (Throwable ignore) {
+                e.addSuppressed(ignore);
+            }
             DbException de = DbException.convert(e);
             if (de.getErrorCode() == ErrorCode.DUPLICATE_KEY_1) {
                 for (Index index : indexes) {
@@ -759,10 +763,13 @@ public class MVTable extends TableBase {
             }
 */
         } catch (Throwable e) {
+            DbException dbException = DbException.convert(e);
             try {
                 t.rollbackToSavepoint(savepoint);
-            } catch (Throwable ignore) {/**/}
-            throw DbException.convert(e);
+            } catch (Throwable ignore) {
+                dbException.addSuppressed(ignore);
+            }
+            throw dbException;
         }
         analyzeIfRequired(session);
     }

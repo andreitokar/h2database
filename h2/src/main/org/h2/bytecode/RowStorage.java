@@ -600,7 +600,7 @@ public class RowStorage extends Value implements Row, Cloneable {
         public int compare(RowStorage a, RowStorage b) {
             assert a.getColumnCount() == b.getColumnCount();
             int[] indexes = a.getIndexes();
-            assert Arrays.equals(indexes, b.getIndexes());
+//            assert Arrays.equals(indexes, b.getIndexes());
             int comp = compare(a, b, compareMode, sortTypes, indexes);
             int _comp = _compare(a, b, compareMode, sortTypes, indexes);
             assert comp == _comp;

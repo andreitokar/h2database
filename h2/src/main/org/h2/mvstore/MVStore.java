@@ -30,6 +30,7 @@ import org.h2.mvstore.type.DataType;
 import org.h2.mvstore.type.StringDataType;
 import org.h2.util.MathUtils;
 import org.h2.util.New;
+import org.h2.util.Utils;
 
 import static org.h2.mvstore.MVMap.INITIAL_VERSION;
 
@@ -211,8 +212,6 @@ public final class MVStore {
     private final ConcurrentHashMap<Integer, MVMap<?, ?>> maps =
             new ConcurrentHashMap<Integer, MVMap<?, ?>>();
 
-    private final MVMap<String, DataType> typeRegistry;
-
     private final HashMap<String, Object> storeHeader = New.hashMap();
 
     private WriteBuffer writeBuffer;
@@ -231,7 +230,7 @@ public final class MVStore {
 
     private Compressor compressorHigh;
 
-    private final UncaughtExceptionHandler backgroundExceptionHandler;
+    public final UncaughtExceptionHandler backgroundExceptionHandler;
 
     private long currentVersion; // = INITIAL_VERSION + 1;
 
@@ -325,77 +324,67 @@ public final class MVStore {
         keysPerPage = o != null ? (Integer)o : 48;
         o = config.get("backgroundExceptionHandler");
         this.backgroundExceptionHandler = (UncaughtExceptionHandler) o;
-        meta = new MVMap<String, String>(StringDataType.INSTANCE,
-                StringDataType.INSTANCE);
-        HashMap<String, Object> c = New.hashMap();
-        c.put("id", 0);
-        c.put("createVersion", currentVersion);
-        meta.init(this, c);
-
-        typeRegistry = new MVMap<String,DataType>(StringDataType.INSTANCE,
-                        new MetaDataType(backgroundExceptionHandler));
-        c.put("id", 1);
-        c.put("createVersion", currentVersion);
-        typeRegistry.init(this, c);
+        meta = new MVMap<String, String>(this);
+        meta.init();
 
         if (this.fileStore == null) {
             cache = null;
             cacheChunkRef = null;
-            return;
-        }
-        retentionTime = this.fileStore.getDefaultRetentionTime();
-        boolean readOnly = config.containsKey("readOnly");
-        o = config.get("cacheSize");
-        int mb = o == null ? 16 : (Integer) o;
-        if (mb > 0) {
-            CacheLongKeyLIRS.Config cc = new CacheLongKeyLIRS.Config();
-            cc.maxMemory = mb * 1024L * 1024L;
-            o = config.get("cacheConcurrency");
-            if (o != null) {
-                cc.segmentCount = (Integer) o;
+        } else {
+            retentionTime = this.fileStore.getDefaultRetentionTime();
+            boolean readOnly = config.containsKey("readOnly");
+            o = config.get("cacheSize");
+            int mb = o == null ? 16 : (Integer) o;
+            if (mb > 0) {
+                CacheLongKeyLIRS.Config cc = new CacheLongKeyLIRS.Config();
+                cc.maxMemory = mb * 1024L * 1024L;
+                o = config.get("cacheConcurrency");
+                if (o != null) {
+                    cc.segmentCount = (Integer) o;
+                }
+                cache = new CacheLongKeyLIRS<Page>(cc);
+                cc.maxMemory /= 4;
+                cacheChunkRef = new CacheLongKeyLIRS<PageChildren>(cc);
             }
-            cache = new CacheLongKeyLIRS<Page>(cc);
-            cc.maxMemory /= 4;
-            cacheChunkRef = new CacheLongKeyLIRS<PageChildren>(cc);
-        }
-        o = config.get("autoCommitBufferSize");
-        int kb = o == null ? 1024 : (Integer) o;
-        // 19 KB memory is about 1 KB storage
-        autoCommitMemory = kb * 1024 * 19;
+            o = config.get("autoCommitBufferSize");
+            int kb = o == null ? 1024 : (Integer) o;
+            // 19 KB memory is about 1 KB storage
+            autoCommitMemory = kb * 1024 * 19;
 
-        o = config.get("autoCompactFillRate");
-        autoCompactFillRate = o == null ? 50 : (Integer) o;
+            o = config.get("autoCompactFillRate");
+            autoCompactFillRate = o == null ? 50 : (Integer) o;
 
-        char[] encryptionKey = (char[]) config.get("encryptionKey");
-        try {
-            if (!fileStoreIsProvided) {
-                this.fileStore.open(fileName, readOnly, encryptionKey);
+            char[] encryptionKey = (char[]) config.get("encryptionKey");
+            try {
+                if (!fileStoreIsProvided) {
+                    this.fileStore.open(fileName, readOnly, encryptionKey);
+                }
+                if (this.fileStore.size() == 0) {
+                    creationTime = getTimeAbsolute();
+                    lastCommitTime = creationTime;
+                    storeHeader.put("H", 2);
+                    storeHeader.put("blockSize", BLOCK_SIZE);
+                    storeHeader.put("format", FORMAT_WRITE);
+                    storeHeader.put("created", creationTime);
+                    writeStoreHeader();
+                } else {
+                    readStoreHeader();
+                }
+            } catch (IllegalStateException e) {
+                panic(e);
+            } finally {
+                if (encryptionKey != null) {
+                    Arrays.fill(encryptionKey, (char) 0);
+                }
             }
-            if (this.fileStore.size() == 0) {
-                creationTime = getTimeAbsolute();
-                lastCommitTime = creationTime;
-                storeHeader.put("H", 2);
-                storeHeader.put("blockSize", BLOCK_SIZE);
-                storeHeader.put("format", FORMAT_WRITE);
-                storeHeader.put("created", creationTime);
-                writeStoreHeader();
-            } else {
-                readStoreHeader();
-            }
-        } catch (IllegalStateException e) {
-            panic(e);
-        } finally {
-            if (encryptionKey != null) {
-                Arrays.fill(encryptionKey, (char) 0);
-            }
+            lastCommitTime = getTimeSinceCreation();
+
+            // setAutoCommitDelay starts the thread, but only if
+            // the parameter is different from the old value
+            o = config.get("autoCommitDelay");
+            int delay = o == null ? 1000 : (Integer) o;
+            setAutoCommitDelay(delay);
         }
-        lastCommitTime = getTimeSinceCreation();
-
-        // setAutoCommitDelay starts the thread, but only if
-        // the parameter is different from the old value
-        o = config.get("autoCommitDelay");
-        int delay = o == null ? 1000 : (Integer) o;
-        setAutoCommitDelay(delay);
     }
 
     private void panic(IllegalStateException e) {
@@ -476,8 +465,8 @@ public final class MVStore {
             id = ++lastMapId;
             c.put("id", id);
             c.put("createVersion", currentVersion);
-            map = builder.create();
-            map.init(this, c);
+            map = builder.create(this, c);
+            map.init();
             markMetaChanged();
             x = Integer.toHexString(id);
             meta.put(MVMap.getMapKey(id), map.asString(name));
@@ -494,37 +483,29 @@ public final class MVStore {
 
     public synchronized <M extends MVMap<K, V>, K, V> M openMap(int id,
                                        MVMap.MapBuilder<M, K, V> builder) {
-        checkOpen();
         @SuppressWarnings("unchecked")
-        M map = (M) maps.get(id);
+        M map = (M) getMap(id);
         if (map == null) {
             String configAsString = meta.get(MVMap.getMapKey(id));
             if(configAsString != null) {
                 HashMap<String, Object> config = New.hashMap();
                 HashMap<String, String> cfg = DataUtils.parseMap(configAsString);
-                String keyTypeKey = cfg.remove("key");
-                if(keyTypeKey != null) {
-                    DataType keyDataType = typeRegistry.get(keyTypeKey);
-                    if(keyDataType != null) {
-                        builder.setKeyType(keyDataType);
-                    }
-                }
-                String valueTypeKey = cfg.remove("val");
-                if(valueTypeKey != null) {
-                    DataType valueDataType = typeRegistry.get(valueTypeKey);
-                    if(valueDataType != null) {
-                        builder.setKeyType(valueDataType);
-                    }
-                }
                 config.putAll(cfg);
                 config.put("id", id);
-                map = builder.create();
-                map.init(this, config);
+                map = builder.create(this, config);
+                map.init();
                 long root = getRootPos(meta, id);
                 map.setRootPos(root, lastStoredVersion);
                 maps.put(id, map);
             }
         }
+        return map;
+    }
+
+    public <K,V> MVMap<K,V> getMap(int id) {
+        checkOpen();
+        @SuppressWarnings("unchecked")
+        MVMap<K,V> map = (MVMap<K, V>) maps.get(id);
         return map;
     }
 
@@ -541,7 +522,8 @@ public final class MVStore {
             if (!x.startsWith("name.")) {
                 break;
             }
-            set.add(x.substring("name.".length()));
+            String mapName = x.substring("name.".length());
+            set.add(mapName);
         }
         return set;
     }
@@ -1009,12 +991,15 @@ public final class MVStore {
     }
 
     private void setWriteVersion(long version) {
-        for (MVMap<?, ?> map : maps.values()) {
-            map.setWriteVersion(version);
+        for (Iterator<MVMap<?, ?>> iter = maps.values().iterator(); iter.hasNext(); ) {
+            MVMap<?, ?> map = iter.next();
+            if (map.setWriteVersion(version) == null) {
+                assert map.isClosed();
+                assert map.getVersion() < getOldestVersionToKeep(null);
+                iter.remove();
+            }
         }
-        MVMap<String, String> m = meta;
-        assert m != null;
-        m.setWriteVersion(version);
+        meta.setWriteVersion(version);
     }
 
     /**
@@ -1140,13 +1125,16 @@ public final class MVStore {
         meta.remove(Chunk.getMetaKey(c.id));
         ArrayList<MVMap<?, ?>> list = New.arrayList(maps.values());
         ArrayList<Page> changed = New.arrayList();
-        for (MVMap<?, ?> m : list) {
-            MVMap.RootReference rootReference = m.setWriteVersion(version);
-            if (m.getCreateVersion() <= storeVersion && // if map was created after storing started, skip it
-                    !m.isVolatile() &&
-                    m.hasChangesSince(lastStoredVersion)) {
-//                    m.getVersion() > lastStoredVersion) {
-
+        for (Iterator<MVMap<?, ?>> iter = list.iterator(); iter.hasNext(); ) {
+            MVMap<?, ?> map = iter.next();
+            MVMap.RootReference rootReference = map.setWriteVersion(version);
+            if (rootReference == null) {
+                assert map.isClosed();
+                assert map.getVersion() <getOldestVersionToKeep(null);
+                iter.remove();
+            } else if (map.getCreateVersion() <= storeVersion && // if map was created after storing started, skip it
+                    !map.isVolatile() &&
+                    map.hasChangesSince(lastStoredVersion)) {
                 Page rootPage = rootReference.root;
                 if (rootPage.getPos() == 0 ||
                         // after deletion previously saved leaf
@@ -2432,7 +2420,7 @@ public final class MVStore {
             int id = m.getId();
             if (m.getCreateVersion() >= version) {
                 m.close();
-                maps.remove(id);
+//                maps.remove(id);
             } else {
                 if (loadFromFile) {
                     m.setRootPos(getRootPos(meta, id), version);
@@ -2447,7 +2435,7 @@ public final class MVStore {
             }
         }
         currentVersion = version;
-        setWriteVersion(version);       // TODO: remove this as redundant
+//        setWriteVersion(version);       // TODO: remove this as redundant
     }
 
     private static long getRootPos(MVMap<String, String> map, int mapId) {
@@ -2464,8 +2452,13 @@ public final class MVStore {
                 it.remove();
             }
         }
-        for (MVMap<?, ?> m : maps.values()) {
-            m.removeUnusedOldVersions();
+        for (Iterator<MVMap<?, ?>> iter = maps.values().iterator(); iter.hasNext(); ) {
+            MVMap<?, ?> map = iter.next();
+            if (map.removeUnusedOldVersions()) {
+                assert map.isClosed();
+                assert map.getVersion() < getOldestVersionToKeep(null);
+                iter.remove();
+            }
         }
     }
 
@@ -2541,22 +2534,39 @@ public final class MVStore {
      *
      * @param map the map to remove
      */
-    public synchronized void removeMap(MVMap<?, ?> map) {
+    public void removeMap(MVMap<?, ?> map) {
+        removeMap(map, false);
+    }
+
+    public synchronized void removeMap(MVMap<?, ?> map, boolean delayed) {
         checkOpen();
         DataUtils.checkArgument(map != meta,
                 "Removing the meta map is not allowed");
-        map.clear();
+        map.close();
         MVMap.RootReference rootReference = map.getRoot();
         updateCounter += rootReference.updateCounter;
         updateAttemptCounter += rootReference.updateAttemptCounter;
 
         int id = map.getId();
         String name = getMapName(id);
+        removeMap(name, id, delayed);
+    }
+
+    private void removeMap(String name, int id, boolean delayed) {
         markMetaChanged();
         meta.remove(MVMap.getMapKey(id));
         meta.remove("name." + name);
         meta.remove(MVMap.getMapRootKey(id));
-        maps.remove(id);
+        if (!delayed) {
+            maps.remove(id);
+        }
+    }
+
+    public void removeMap(String name) {
+        int id = getMapId(name);
+        if(id > 0) {
+            removeMap(name, id, false);
+        }
     }
 
     /**
@@ -2569,6 +2579,12 @@ public final class MVStore {
         checkOpen();
         String m = meta.get(MVMap.getMapKey(id));
         return m == null ? null : DataUtils.parseMap(m).get("name");
+    }
+
+    public synchronized int getMapId(String name) {
+        checkOpen();
+        String m = meta.get("name." + name);
+        return m == null ? -1 : DataUtils.parseHexInt(m);
     }
 
     /**
@@ -2793,12 +2809,6 @@ public final class MVStore {
 
     public synchronized void setVersionChangeListener(VersionChangeListener versionChangeListener) {
         this.versionChangeListener = versionChangeListener;
-    }
-
-    public String registerDataType(DataType dataType) {
-        String key = Integer.toHexString(dataType.hashCode());
-        typeRegistry.putIfAbsent(key, dataType);
-        return key;
     }
 
     public interface VersionChangeListener {

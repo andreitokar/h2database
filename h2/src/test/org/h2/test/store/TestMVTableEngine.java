@@ -49,42 +49,42 @@ public class TestMVTableEngine extends TestBase {
 
     @Override
     public void test() throws Exception {
-//        testLobCopy();
-//        testLobReuse();
-//        testShutdownDuringLobCreation();
-//        testLobCreationThenShutdown();
-//        testManyTransactions();
-//        testAppendOnly();
-//        testLowRetentionTime();
-//        testOldAndNew();
-//        testTemporaryTables();
-//        testUniqueIndex();
-//        testSecondaryIndex();
-//        testGarbageCollectionForLOB();
-//        testSpatial();
-//        testCount();
-//        testMinMaxWithNull();
-//        testTimeout();
-//        testExplainAnalyze();
-//        testTransactionLogUsuallyNotStored();
-        testShrinkDatabaseFile();
+        testLobCopy();
+        testLobReuse();
+        testShutdownDuringLobCreation();
+        testLobCreationThenShutdown();
+        testManyTransactions();
+        testAppendOnly();
+        testLowRetentionTime();
+        testOldAndNew();
+        testTemporaryTables();
+        testUniqueIndex();
+        testSecondaryIndex();
+        testGarbageCollectionForLOB();
+        testSpatial();
+        testCount();
+        testMinMaxWithNull();
+        testTimeout();
+        testExplainAnalyze();
+        testTransactionLogUsuallyNotStored();
+//        testShrinkDatabaseFile();
 //        testTwoPhaseCommit();
 //        testRecover();
-//        testSeparateKey();
-//        testRollback();
+        testSeparateKey();
+        testRollback();
 //        testRollbackAfterCrash();
-//        testReferentialIntegrity();
-//        testWriteDelay();
-//        testAutoCommit();
-//        testReopen();
-//        testBlob();
-//        testExclusiveLock();
-//        testEncryption();
-//        testReadOnly();
+        testReferentialIntegrity();
+        testWriteDelay();
+        testAutoCommit();
+        testReopen();
+        testBlob();
+        testExclusiveLock();
+        testEncryption();
+        testReadOnly();
 //        testReuseDiskSpace();
 //        testDataTypes();
-//        testLocking();
-//        testSimple();
+        testLocking();
+        testSimple();
     }
 
     private void testLobCopy() throws Exception {

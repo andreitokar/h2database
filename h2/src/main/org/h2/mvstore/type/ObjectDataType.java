@@ -497,7 +497,13 @@ public class ObjectDataType implements DataType {
      */
     static class NullType extends AutoDetectDataType {
 
-        NullType(ObjectDataType base) {
+        public static final NullType INSTANCE = new NullType();
+
+        public NullType() {
+            this(null);
+        }
+
+        private NullType(ObjectDataType base) {
             super(base, TYPE_NULL);
         }
 
@@ -708,8 +714,11 @@ public class ObjectDataType implements DataType {
      */
     public static final class IntegerType extends AutoDetectDataType implements ExtendedDataType {
 
-        public static final IntegerType INSTANCE = new IntegerType(null);
+        public static final IntegerType INSTANCE = new IntegerType();
 
+        public IntegerType() {
+            this(null);
+        }
         private IntegerType(ObjectDataType base) {
             super(base, TYPE_INT);
         }
@@ -861,7 +870,11 @@ public class ObjectDataType implements DataType {
      */
     public static final class LongType extends AutoDetectDataType implements ExtendedDataType  {
 
-        public static final LongType INSTANCE = new LongType(null);
+        public static final LongType INSTANCE = new LongType();
+
+        public LongType() {
+            this(null);
+        }
 
         private LongType(ObjectDataType base) {
             super(base, TYPE_LONG);
@@ -1929,4 +1942,85 @@ public class ObjectDataType implements DataType {
 
     }
 
+    public static final class NoneType implements ExtendedDataType {
+
+        public static final NoneType INSTANCE = new NoneType();
+
+        public NoneType() {}
+
+        @Override
+        public Object createStorage(int size) {
+            return null;
+        }
+
+        @Override
+        public Object clone(Object storage) {
+            return null;
+        }
+
+        @Override
+        public int getLength(Object storage) {
+            return 0;
+        }
+
+        @Override
+        public Object getValue(Object storage, int indx) {
+            return INSTANCE;
+        }
+
+        @Override
+        public void setValue(Object storage, int indx, Object value) {
+
+        }
+
+        @Override
+        public int getMemorySize(Object storage) {
+            return 0;
+        }
+
+        @Override
+        public int binarySearch(Object key, Object storage, int initialGuess) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void writeStorage(WriteBuffer buff, Object storage) {
+
+        }
+
+        @Override
+        public void read(ByteBuffer buff, Object storage) {
+
+        }
+
+        @Override
+        public int compare(Object a, Object b) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public int getMemory(Object obj) {
+            return 0;
+        }
+
+        @Override
+        public void write(WriteBuffer buff, Object obj) {
+
+        }
+
+        @Override
+        public void write(WriteBuffer buff, Object[] obj, int len, boolean key) {
+
+        }
+
+        @Override
+        public Object read(ByteBuffer buff) {
+            return null;
+        }
+
+        @Override
+        public void read(ByteBuffer buff, Object[] obj, int len, boolean key) {
+
+        }
+    }
 }

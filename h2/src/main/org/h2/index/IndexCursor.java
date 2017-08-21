@@ -22,6 +22,8 @@ import org.h2.value.Value;
 import org.h2.value.ValueGeometry;
 import org.h2.value.ValueNull;
 
+import static org.h2.result.SearchRow.ROWID_INDEX;
+
 /**
  * The filter used to walk through an index. This class supports IN(..)
  * and IN(SELECT ...) optimizations.
@@ -111,7 +113,7 @@ public class IndexCursor implements Cursor {
                 boolean isEnd = condition.isEnd();
                 boolean isIntersects = condition.isSpatialIntersects();
                 int columnId = column.getColumnId();
-                if (columnId >= 0) {
+                if (columnId != ROWID_INDEX) {
                     IndexColumn idxCol = indexColumns[columnId];
                     if (idxCol != null && (idxCol.sortType & SortOrder.DESCENDING) != 0) {
                         // if the index column is sorted the other way, we swap
@@ -200,7 +202,7 @@ public class IndexCursor implements Cursor {
             v = ((ValueGeometry) v.convertTo(Value.GEOMETRY)).
                     getEnvelopeUnion(vg);
         }
-        if (columnId < 0) {
+        if (columnId == ROWID_INDEX) {
             row.setKey(v.getLong());
         } else {
             row.setValue(columnId, v);
@@ -215,7 +217,7 @@ public class IndexCursor implements Cursor {
         } else {
             v = getMax(row.getValue(columnId), v, max);
         }
-        if (columnId < 0) {
+        if (columnId == ROWID_INDEX) {
             row.setKey(v.getLong());
         } else {
             row.setValue(columnId, v);

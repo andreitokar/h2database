@@ -223,7 +223,9 @@ public class CreateTable extends SchemaCommand {
                 if (!transactional) {
                     session.commit(true);
                 }
-            } catch (Throwable ignore) {/**/}
+            } catch (Throwable ignore) {
+                e.addSuppressed(ignore);
+            }
             throw e;
         }
         return 0;

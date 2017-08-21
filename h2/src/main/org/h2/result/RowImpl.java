@@ -78,7 +78,7 @@ public class RowImpl implements Row {
 
     @Override
     public Value getValue(int i) {
-        return i == -1 ? ValueLong.get(key) : data[i];
+        return i == ROWID_INDEX ? ValueLong.get(key) : data[i];
     }
 
     /**
@@ -98,7 +98,7 @@ public class RowImpl implements Row {
 
     @Override
     public void setValue(int i, Value v) {
-        if (i == -1) {
+        if (i == ROWID_INDEX) {
             this.key = v.getLong();
         } else {
             data[i] = v;
@@ -136,8 +136,7 @@ public class RowImpl implements Row {
         if (data != null) {
             int len = data.length;
             m += Constants.MEMORY_OBJECT + len * Constants.MEMORY_POINTER;
-            for (int i = 0; i < len; i++) {
-                Value v = data[i];
+            for (Value v : data) {
                 if (v != null) {
                     m += v.getMemory();
                 }

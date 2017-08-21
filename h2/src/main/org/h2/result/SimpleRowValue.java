@@ -7,6 +7,7 @@ package org.h2.result;
 
 import org.h2.engine.Constants;
 import org.h2.value.Value;
+import org.h2.value.ValueLong;
 import org.h2.value.ValueNull;
 
 /**
@@ -22,6 +23,11 @@ public class SimpleRowValue implements SearchRow {
 
     public SimpleRowValue(int columnCount) {
         this.virtualColumnCount = columnCount;
+    }
+
+    public SimpleRowValue(int columnCount, int index) {
+        this.virtualColumnCount = columnCount;
+        this.index = index;
     }
 
     @Override
@@ -52,11 +58,17 @@ public class SimpleRowValue implements SearchRow {
 
     @Override
     public Value getValue(int idx) {
+        if (idx == ROWID_INDEX) {
+            return ValueLong.get(getKey());
+        }
         return idx == index ? data : null;
     }
 
     @Override
     public void setValue(int idx, Value v) {
+        if (idx == ROWID_INDEX) {
+            setKey(v.getLong());
+        }
         index = idx;
         data = v;
     }

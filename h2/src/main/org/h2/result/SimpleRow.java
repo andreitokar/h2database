@@ -8,6 +8,7 @@ package org.h2.result;
 import org.h2.engine.Constants;
 import org.h2.util.StatementBuilder;
 import org.h2.value.Value;
+import org.h2.value.ValueLong;
 import org.h2.value.ValueNull;
 
 /**
@@ -52,12 +53,16 @@ public class SimpleRow implements SearchRow {
 
     @Override
     public void setValue(int i, Value v) {
-        data[i] = v;
+        if (i == ROWID_INDEX) {
+            key = v.getLong();
+        } else {
+            data[i] = v;
+        }
     }
 
     @Override
     public Value getValue(int i) {
-        return data[i];
+        return i == ROWID_INDEX ? ValueLong.get(key) : data[i];
     }
 
     @Override
@@ -101,11 +106,11 @@ public class SimpleRow implements SearchRow {
         }
     }
 
-    public static final class Indexed extends SimpleRow {
+    public static final class Sparse extends SimpleRow {
         private final int columnCount;
         private final int map[];
 
-        public Indexed(int columnCount, int capacity, int[] map) {
+        public Sparse(int columnCount, int capacity, int[] map) {
             super(new Value[capacity]);
             this.columnCount = columnCount;
             this.map = map;
@@ -118,12 +123,18 @@ public class SimpleRow implements SearchRow {
 
         @Override
         public Value getValue(int i) {
+            if (i == ROWID_INDEX) {
+                return ValueLong.get(getKey());
+            }
             int indx = map[i];
             return indx > 0 ? super.getValue(indx - 1) : null;
         }
 
         @Override
         public void setValue(int i, Value v) {
+            if (i == ROWID_INDEX) {
+                setKey(v.getLong());
+            }
             int indx = map[i];
             if (indx > 0) {
                 super.setValue(indx - 1, v);

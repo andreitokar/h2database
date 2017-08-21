@@ -20,6 +20,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.h2.mvstore.type.DataType;
 import org.h2.mvstore.type.ExtendedDataType;
 import org.h2.mvstore.type.ObjectDataType;
+import org.h2.mvstore.type.StringDataType;
 import org.h2.util.New;
 
 /**
@@ -38,17 +39,17 @@ import org.h2.util.New;
  * @param <V> the value class
  */
 public class MVMap<K, V> extends AbstractMap<K, V>
-        implements ConcurrentMap<K, V> {
+        implements ConcurrentMap<K, V>, Cloneable {
 
     /**
      * The store.
      */
-    protected MVStore store;
+    protected final MVStore store;
 
-    private final AtomicReference<RootReference> root = new AtomicReference<>();
+    private final AtomicReference<RootReference> root;
 
-    private int id;
-    private long createVersion;
+    private final int id;
+    private final long createVersion;
     private final DataType keyType;
     private final ExtendedDataType extendedKeyType;
     private final DataType valueType;
@@ -66,15 +67,40 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     private   static final long KEEP_CURRENT = -2;
     public    static final long INITIAL_VERSION = -1;
 
-    protected MVMap(DataType keyType, DataType valueType) {
+    protected MVMap(Map<String, Object> config) {
+        this((MVStore)config.get("store"),
+             (DataType)config.get("key"),
+             (DataType)config.get("val"),
+             DataUtils.readHexInt(config, "id", 0),
+             DataUtils.readHexLong(config, "createVersion", 0),
+             new AtomicReference<RootReference>());
+        setInitialRoot(Page.createEmpty(this), store.getCurrentVersion());
+    }
+
+    protected MVMap(MVMap<K,V> source) {
+        this(source.store, source.keyType, source.valueType, source.id, source.createVersion,
+                new AtomicReference<RootReference>(source.root.get()));
+    }
+
+    MVMap(MVStore store) {
+        this(store, StringDataType.INSTANCE,StringDataType.INSTANCE, 0, 0, new AtomicReference<RootReference>());
+        setInitialRoot(Page.createEmpty(this), store.getCurrentVersion());
+    }
+
+    private MVMap(MVStore store, DataType keyType, DataType valueType, int id, long createVersion, AtomicReference<RootReference> root) {
+        this.store = store;
+        this.id = id;
+        this.createVersion = createVersion;
         this.keyType = keyType;
         this.extendedKeyType = keyType instanceof ExtendedDataType ? (ExtendedDataType) keyType : new DataTypeExtentionWrapper(keyType);
         this.valueType = valueType;
         this.extendedValueType = valueType instanceof ExtendedDataType ? (ExtendedDataType) valueType : new DataTypeExtentionWrapper(valueType);
+        this.root = root;
     }
 
-    public MVMap<K,V>cloneFromThis() {
-        return new MVMap<>(keyType, valueType);
+    protected MVMap<K,V> cloneIt() {
+        return new MVMap<K,V>(store, keyType, valueType, id, createVersion,
+                                new AtomicReference<RootReference>(root.get()));
     }
 
     /**
@@ -98,17 +124,9 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     }
 
     /**
-     * Open this map with the given store and configuration.
-     *
-     * @param store the store
-     * @param config the configuration
+     * Open this map.
      */
-    protected void init(MVStore store, HashMap<String, Object> config) {
-        this.store = store;
-        this.id = DataUtils.readHexInt(config, "id", 0);
-        this.createVersion = DataUtils.readHexLong(config, "createVersion", 0);
-        setInitialRoot(Page.createEmpty(this), store.getCurrentVersion());
-    }
+    protected void init() {}
 
     /**
      * Add or replace a key-value pair.
@@ -748,6 +766,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         while (rootReference.version >= version && (previous = rootReference.previous) != null) {
             if (root.compareAndSet(rootReference, previous)) {
                 rootReference = previous;
+                closed = false;
             }
         }
         setWriteVersion(version);
@@ -1090,7 +1109,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @param version the version
      */
     final void rollbackTo(long version) {
-        beforeWrite();
+//        beforeWrite();
         // check if the map was removed and re-created later ?
         if (version > createVersion) {
             rollbackRoot(version);
@@ -1099,10 +1118,12 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
     /**
      * Forget those old versions that are no longer needed.
+     * @return true if map was closed previously and now it can be removed
      */
-    final void removeUnusedOldVersions() {
+    final boolean removeUnusedOldVersions() {
         long oldest = store.getOldestVersionToKeep(this);
         RootReference rootReference = getRoot();
+        boolean result = isClosed() && getVersion(rootReference) < oldest;
         RootReference previous;
         while ((previous = rootReference.previous) != null) {
             if (previous.version < oldest) {
@@ -1111,6 +1132,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             }
             rootReference = previous;
         }
+        return result;
     }
 
     public final boolean isReadOnly() {
@@ -1147,8 +1169,10 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      */
     protected final void beforeWrite() {
         if (closed) {
+            int id = getId();
+            String mapName = store.getMapName(id);
             throw DataUtils.newIllegalStateException(
-                    DataUtils.ERROR_CLOSED, "This map is closed", store.getPanicException());
+                    DataUtils.ERROR_CLOSED, "Map {0}({1}) is closed", mapName, id, store.getPanicException());
         }
         if (readOnly) {
             throw DataUtils.newUnsupportedOperationException(
@@ -1256,18 +1280,21 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     }
 
     private MVMap<K, V> openReadOnly(Page root, long version) {
-        MVMap<K, V> m = cloneFromThis();
+        MVMap<K, V> m = cloneIt();
         m.readOnly = true;
-        HashMap<String, Object> config = New.hashMap();
-        config.put("id", id);
-        config.put("createVersion", createVersion);
-        m.init(store, config);
+//        HashMap<String, Object> config = New.hashMap();
+//        config.put("id", id);
+//        config.put("createVersion", createVersion);
+//        m.init(store, config);
         m.setInitialRoot(root, version);
         return m;
     }
 
     public final long getVersion() {
-        RootReference rootReference = getRoot();
+        return getVersion(getRoot());
+    }
+
+    private long getVersion(RootReference rootReference) {
         RootReference previous = rootReference.previous;
         return previous == null || previous.root != rootReference.root ?
                 rootReference.version :
@@ -1313,7 +1340,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @param name the map name (or null)
      * @return the string
      */
-    final String asString(String name) {
+     protected String asString(String name) {
         StringBuilder buff = new StringBuilder();
         if (name != null) {
             DataUtils.appendMap(buff, "name", name);
@@ -1321,8 +1348,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         if (createVersion != 0) {
             DataUtils.appendMap(buff, "createVersion", createVersion);
         }
-        DataUtils.appendMap(buff, "key", store.registerDataType(getKeyType()));
-        DataUtils.appendMap(buff, "val", store.registerDataType(getValueType()));
         String type = getType();
         if (type != null) {
             DataUtils.appendMap(buff, "type", type);
@@ -1334,13 +1359,12 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         int attempt = 0;
         while(true) {
             RootReference rootReference = getRoot();
-            if(rootReference.version >= writeVersion) {
+            if(rootReference.version >= writeVersion || isClosed()) {
                 return rootReference;
             }
             RootReference updatedRootReference = new RootReference(rootReference, writeVersion, ++attempt);
             if(root.compareAndSet(rootReference, updatedRootReference)) {
-                removeUnusedOldVersions();
-                return updatedRootReference;
+                return removeUnusedOldVersions() ? null : updatedRootReference;
             }
         }
     }
@@ -1401,10 +1425,12 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
         /**
          * Create a new map of the given type.
+         * @param store which will own this map
+         * @param config configuration
          *
          * @return the map
          */
-        M create();
+        M create(MVStore store, Map<String, Object> config);
 
         DataType getKeyType();
 
@@ -1477,7 +1503,23 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         }
 
         @Override
-        public abstract M create();
+        public M create(MVStore store, Map<String, Object> config) {
+            if (getKeyType() == null) {
+                setKeyType(new ObjectDataType());
+            }
+            if (getValueType() == null) {
+                setValueType(new ObjectDataType());
+            }
+            DataType keyType = getKeyType();
+            DataType valueType = getValueType();
+            config.put("store", store);
+            config.put("key", keyType);
+            config.put("val", valueType);
+            return create(config);
+        }
+
+        protected abstract M create(Map<String, Object> config);
+
     }
 
     /**
@@ -1487,6 +1529,8 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @param <V> the value type
      */
     public static class Builder<K, V> extends BasicBuilder<MVMap<K, V>, K, V> {
+
+        public Builder() {}
 
         public Builder<K,V> keyType(DataType dataType) {
             setKeyType(dataType);
@@ -1498,15 +1542,12 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             return this;
         }
 
-        @Override
-        public MVMap<K, V> create() {
-            if (getKeyType() == null) {
-                setKeyType(new ObjectDataType());
+        protected MVMap<K, V> create(Map<String, Object> config) {
+            Object type = config.get("type");
+            if(type != null) {
+                throw new IllegalArgumentException("Incompatible map type");
             }
-            if (getValueType() == null) {
-                setValueType(new ObjectDataType());
-            }
-            return new MVMap<K, V>(getKeyType(), getValueType());
+            return new MVMap<K, V>(config);
         }
     }
 

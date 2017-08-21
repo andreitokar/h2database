@@ -149,7 +149,6 @@ public abstract class Command implements CommandInterface {
 
     @Override
     public void stop() {
-        session.endStatement();
         session.setCurrentCommand(null);
         if (!isTransactional()) {
             session.commit(true);
@@ -163,6 +162,7 @@ public abstract class Command implements CommandInterface {
                 }
             }
         }
+        session.endStatement();
         if (trace.isInfoEnabled() && startTimeNanos > 0) {
             long timeMillis = (System.nanoTime() - startTimeNanos) / 1000 / 1000;
             if (timeMillis > Constants.SLOW_QUERY_LIMIT_MS) {
@@ -251,6 +251,7 @@ public abstract class Command implements CommandInterface {
         Session.Savepoint rollback = session.setSavepoint();
         session.startStatementWithinTransaction();
         session.setCurrentCommand(this);
+        DbException ex = null;
         try {
             while (true) {
                 database.checkPowerOff();
@@ -282,7 +283,10 @@ public abstract class Command implements CommandInterface {
                 } else {
                     session.rollbackTo(rollback, false);
                 }
-            } catch(Throwable ignore) {/**/}
+            } catch(Throwable ignore) {
+                e.addSuppressed(ignore);
+            }
+            ex = e;
             throw e;
         } finally {
             if(!database.isClosing() &&
@@ -290,6 +294,12 @@ public abstract class Command implements CommandInterface {
                 try {
                     if (callStop) {
                         stop();
+                    }
+                } catch(Throwable ignore) {
+                    if(ex == null) {
+                        throw ignore;
+                    } else {
+                        ex.addSuppressed(ignore);
                     }
                 } finally {
                     if (writing) {

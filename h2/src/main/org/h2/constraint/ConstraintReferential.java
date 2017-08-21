@@ -384,7 +384,7 @@ public class ConstraintReferential extends Constraint {
                 continue;
             }
             check.setKey(found.getKey());
-            if (searchIndex.compareRows(check, found) == 0) {
+            if (searchIndex.compareRows(found, check) == 0) {
                 return true;
             }
 /*

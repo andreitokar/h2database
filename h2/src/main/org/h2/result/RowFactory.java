@@ -9,7 +9,6 @@ import org.h2.engine.Database;
 import org.h2.mvstore.RowDataType;
 import org.h2.mvstore.type.DataType;
 import org.h2.table.Column;
-import org.h2.table.CompactRowFactory;
 import org.h2.table.IndexColumn;
 import org.h2.value.Value;
 
@@ -111,9 +110,9 @@ public abstract class RowFactory {
             if (indexes == null) {
                 return new RowImpl(columnCount);
             } else if (indexes.length == 1) {
-                return new SimpleRowValue(columnCount);
+                return new SimpleRowValue(columnCount, indexes[0]);
             } else {
-                return new SimpleRow.Indexed(columnCount, indexes.length, map);
+                return new SimpleRow.Sparse(columnCount, indexes.length, map);
             }
         }
 

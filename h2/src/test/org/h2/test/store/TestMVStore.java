@@ -121,8 +121,7 @@ public class TestMVStore extends TestBase {
         store.rollback();
         assertTrue(store.hasMap("test"));
         map = store.openMap("test");
-        // TODO the data should get back alive
-        assertNull(map.get("1"));
+        assertEquals("Hello", map.get("1"));
         store.close();
 
         String fileName = getBaseDir() + "/" + getTestName();
@@ -1433,8 +1432,9 @@ public class TestMVStore extends TestBase {
 //        assertEquals(117120, s.getUnsavedMemory());
 //        assertEquals(97266, s.getUnsavedMemory());
 //        assertEquals(64252, s.getUnsavedMemory());
-//        assertEquals(64284, s.getUnsavedMemory());
-        assertEquals(64480, s.getUnsavedMemory());
+        assertEquals(64284, s.getUnsavedMemory());
+//        assertEquals(64480, s.getUnsavedMemory());
+//        assertEquals(64644, s.getUnsavedMemory());
         s.commit();
         assertEquals(2, s.getFileStore().getWriteCount());
         s.close();
@@ -1448,6 +1448,7 @@ public class TestMVStore extends TestBase {
 //        assertEquals(45, s.getFileStore().getReadCount());
 //        assertEquals(30, s.getFileStore().getReadCount());
         assertEquals(10, s.getFileStore().getReadCount());
+//        assertEquals(11, s.getFileStore().getReadCount());
         assertTrue(s.getFileStore().getWriteCount() < 5);
         s.close();
     }
