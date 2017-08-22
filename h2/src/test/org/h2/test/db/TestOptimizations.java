@@ -44,47 +44,47 @@ public class TestOptimizations extends TestBase {
     @Override
     public void test() throws Exception {
         deleteDb("optimizations");
-//        testIdentityIndexUsage();
-//        testFastRowIdCondition();
-//        testExplainRoundTrip();
-//        testOrderByExpression();
-//        testGroupSubquery();
-//        testAnalyzeLob();
-//        testLike();
-//        testExistsSubquery();
-//        testQueryCacheConcurrentUse();
-//        testQueryCacheResetParams();
-//        testRowId();
-//        testSortIndex();
-//        testAutoAnalyze();
-//        testInAndBetween();
-//        testNestedIn();
-//        testConstantIn1();
-//        testConstantIn2();
-//        testConstantTypeConversionToColumnType();
-//        testNestedInSelectAndLike();
-//        testNestedInSelect();
-//        testInSelectJoin();
-//        testMinMaxNullOptimization();
-//        testUseCoveringIndex();
-//        // testUseIndexWhenAllColumnsNotInOrderBy();
-//        if (config.networked) {
-//            return;
-//        }
-//        testOptimizeInJoinSelect();
-//        testOptimizeInJoin();
-//        testMultiColumnRangeQuery();
+        testIdentityIndexUsage();
+        testFastRowIdCondition();
+        testExplainRoundTrip();
+        testOrderByExpression();
+        testGroupSubquery();
+        testAnalyzeLob();
+        testLike();
+        testExistsSubquery();
+        testQueryCacheConcurrentUse();
+        testQueryCacheResetParams();
+        testRowId();
+        testSortIndex();
+        testAutoAnalyze();
+        testInAndBetween();
+        testNestedIn();
+        testConstantIn1();
+        testConstantIn2();
+        testConstantTypeConversionToColumnType();
+        testNestedInSelectAndLike();
+        testNestedInSelect();
+        testInSelectJoin();
+        testMinMaxNullOptimization();
+        testUseCoveringIndex();
+        // testUseIndexWhenAllColumnsNotInOrderBy();
+        if (config.networked) {
+            return;
+        }
+        testOptimizeInJoinSelect();
+        testOptimizeInJoin();
+        testMultiColumnRangeQuery();
         testDistinctOptimization();
-//        testQueryCacheTimestamp();
-//        testQueryCacheSpeed();
-//        testQueryCache(true);
-//        testQueryCache(false);
-//        testIn();
-//        testMinMaxCountOptimization(true);
-//        testMinMaxCountOptimization(false);
-//        testOrderedIndexes();
-//        testConvertOrToIn();
-//        deleteDb("optimizations");
+        testQueryCacheTimestamp();
+        testQueryCacheSpeed();
+        testQueryCache(true);
+        testQueryCache(false);
+        testIn();
+        testMinMaxCountOptimization(true);
+        testMinMaxCountOptimization(false);
+        testOrderedIndexes();
+        testConvertOrToIn();
+        deleteDb("optimizations");
     }
 
     private void testIdentityIndexUsage() throws Exception {

@@ -2535,7 +2535,7 @@ public final class MVStore {
      * @param map the map to remove
      */
     public void removeMap(MVMap<?, ?> map) {
-        removeMap(map, false);
+        removeMap(map, true);
     }
 
     public synchronized void removeMap(MVMap<?, ?> map, boolean delayed) {

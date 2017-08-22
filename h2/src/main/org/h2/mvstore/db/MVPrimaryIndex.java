@@ -22,7 +22,7 @@ import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.db.TransactionStore.Transaction;
 import org.h2.mvstore.db.TransactionStore.TransactionMap;
 import org.h2.mvstore.type.DataType;
-import org.h2.mvstore.type.ObjectDataType;
+import org.h2.mvstore.type.LongDataType;
 import org.h2.result.Row;
 import org.h2.result.SearchRow;
 import org.h2.result.SortOrder;
@@ -33,7 +33,6 @@ import org.h2.value.Value;
 import org.h2.value.ValueArray;
 import org.h2.value.ValueLong;
 import org.h2.value.ValueNull;
-import org.jetbrains.annotations.NotNull;
 
 /**
  * A table stored in a MVStore.
@@ -63,7 +62,7 @@ public class MVPrimaryIndex extends BaseIndex {
         DataType valueType = table.getRowFactory().getDataType();
         mapName = "table." + getId();
         Transaction t = mvTable.getTransaction(null);
-        dataMap = t.openMap(mapName, ObjectDataType.LongType.INSTANCE, valueType);
+        dataMap = t.openMap(mapName, LongDataType.INSTANCE, valueType);
         t.commit();
         if (!table.isPersistData()) {
             dataMap.map.setVolatile(true);
@@ -229,7 +228,6 @@ public class MVPrimaryIndex extends BaseIndex {
         return new MVStoreCursor(map.entryIterator(min), max);
     }
 
-    @NotNull
     private Long extractPKFromRow(SearchRow row, long defaultValue) {
         Long result;
         if (row == null) {

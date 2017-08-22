@@ -29,10 +29,12 @@ import org.h2.mvstore.Page;
 import org.h2.mvstore.WriteBuffer;
 import org.h2.mvstore.rtree.MVRTreeMap;
 import org.h2.mvstore.type.DataType;
+import org.h2.mvstore.type.LongDataType;
 import org.h2.mvstore.type.ObjectDataType;
 import org.h2.mvstore.type.StringDataType;
 import org.h2.util.New;
 import org.h2.util.Utils;
+import org.h2.value.CompareMode;
 
 /**
  * A store that supports concurrent MVCC read-committed transactions.
@@ -116,6 +118,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
                                             .keyType(StringDataType.INSTANCE)
                                             .valueType(new MetaDataType(store.backgroundExceptionHandler));
 
+//        store.removeMap(TYPE_REGISTRY_NAME);    // TODO: implement type registry persistence
         typeRegistry = store.openMap(TYPE_REGISTRY_NAME, builder2);
 
         preparedTransactions = store.openMap("openTransactions",
@@ -123,17 +126,9 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
 
         RecordType undoLogValueType = new RecordType(this);
         MVMap.Builder<Long, Record> builder = new MVMap.Builder<Long, Record>()
-                        .keyType(ObjectDataType.LongType.INSTANCE)
+                        .keyType(LongDataType.INSTANCE)
                         .valueType(undoLogValueType);
         undoLog = store.openMap("undoLog", builder);
-
-
-//        typeRegistry = new MVMap<String,DataType>(StringDataType.INSTANCE,
-//                        new MetaDataType(backgroundExceptionHandler));
-//        c.put("id", 1);
-//        c.put("createVersion", currentVersion);
-//        typeRegistry.init(this, c);
-
 
         this.store.setVersionChangeListener(this);
     }
@@ -757,11 +752,11 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
     private static final class TxMapBuilder<K,V> extends MVMap.Builder<K,V> {
 
         private final MVMap<String, DataType> typeRegistry;
-        private final DataType defaultKeyType;
+        private final DataType defaultDataType;
 
-        public TxMapBuilder(MVMap<String, DataType> typeRegistry, DataType defaultKeyType) {
+        public TxMapBuilder(MVMap<String, DataType> typeRegistry, DataType defaultDataType) {
             this.typeRegistry = typeRegistry;
-            this.defaultKeyType = defaultKeyType;
+            this.defaultDataType = defaultDataType;
         }
 
         private String registerDataType(DataType dataType) {
@@ -779,34 +774,46 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
 
         @Override
         public MVMap<K,V> create(MVStore store, Map<String, Object> config) {
+            DataType keyType = getKeyType();
+            if (keyType == null) {
+                String keyTypeKey = (String) config.remove("key");
+                if (keyTypeKey != null) {
+                    keyType = typeRegistry.get(keyTypeKey);
+                    if (keyType == null) {
+                        throw DataUtils.newIllegalStateException(DataUtils.ERROR_UNKNOWNIN_DATA_TYPE,
+                                "Data type with hash {0} can not be found", keyTypeKey);
+                    }
+                    setKeyType(keyType);
+                }
+            } else {
+                registerDataType(keyType);
+            }
+
+            DataType valueType = getValueType();
+            if (valueType == null) {
+                String valueTypeKey = (String) config.remove("val");
+                if (valueTypeKey != null) {
+                    valueType = typeRegistry.get(valueTypeKey);
+                    if (valueType == null) {
+                        throw DataUtils.newIllegalStateException(DataUtils.ERROR_UNKNOWNIN_DATA_TYPE,
+                                "Data type with hash {0} can not be found", valueTypeKey);
+                    }
+                    setValueType(valueType);
+                }
+            } else {
+                registerDataType(valueType);
+            }
+
             if (getKeyType() == null) {
-                setKeyType(defaultKeyType);
+                setKeyType(defaultDataType);
             }
             if (getValueType() == null) {
-                setValueType(new VersionedValueType(defaultKeyType));
+                setValueType(new VersionedValueType(defaultDataType));
             }
 
-            String keyTypeKey = (String) config.remove("key");
-            if (keyTypeKey != null) {
-                DataType keyDataType = typeRegistry.get(keyTypeKey);
-                if (keyDataType != null && !keyTypeKey.equals(getDataTypeRegistrationKey(getKeyType()))) {
-                    setKeyType(keyDataType);
-                }
-            }
-            String valueTypeKey = (String) config.remove("val");
-            if (valueTypeKey != null && !valueTypeKey.equals(getDataTypeRegistrationKey(getValueType()))) {
-                DataType valueDataType = typeRegistry.get(valueTypeKey);
-                if (valueDataType != null) {
-                    setValueType(valueDataType);
-                }
-            }
-
-
-            DataType keyType = getKeyType();
-            DataType valueType = getValueType();
             config.put("store", store);
-            config.put("key", keyType);
-            config.put("val", valueType);
+            config.put("key", getKeyType());
+            config.put("val", getValueType());
             return create(config);
         }
 

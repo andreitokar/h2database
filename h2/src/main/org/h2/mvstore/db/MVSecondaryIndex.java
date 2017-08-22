@@ -265,7 +265,7 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
                     offset /= 2;
                     continue;
                 }
-                if (map.get(v) == null) {
+                if (v != null && map.get(v) == null) {
                     min = map.higherKey(min);
                     if (min == null) {
                         break;
@@ -342,7 +342,7 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
                 return new MVStoreCursor(session,
                         Collections.<SearchRow>emptyList().iterator(), null);
             }
-            if (key.getValue(0) != ValueNull.INSTANCE) {
+            if (key.getValue(columnIds[0]) != ValueNull.INSTANCE) {
                 break;
             }
             key = first ? map.higherKey(key) : map.lowerKey(key);

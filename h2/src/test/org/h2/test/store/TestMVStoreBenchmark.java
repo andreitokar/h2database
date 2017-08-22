@@ -18,6 +18,7 @@ import java.util.concurrent.TimeUnit;
 import org.h2.mvstore.MVMap;
 import org.h2.mvstore.MVStore;
 import org.h2.mvstore.type.ObjectDataType;
+import org.h2.mvstore.type.StringDataType;
 import org.h2.test.TestBase;
 import org.h2.util.New;
 
@@ -155,7 +156,7 @@ public class TestMVStoreBenchmark extends TestBase {
             MVStore store = new MVStore.Builder().open();
             MVMap.Builder<Integer, String> builder = new MVMap.Builder<Integer, String>()
                     .keyType(ObjectDataType.IntegerType.INSTANCE)
-                    .valueType(ObjectDataType.StringType.INSTANCE);
+                    .valueType(StringDataType.INSTANCE);
             map = store.openMap("test", builder);
 //*/
             mv = testPerformance(map, size);

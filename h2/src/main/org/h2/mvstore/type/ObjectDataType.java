@@ -435,12 +435,21 @@ public class ObjectDataType implements DataType {
 
         @Override
         public int compare(Object aObj, Object bObj) {
+//            if (aObj == bObj) {
+//                return 0;
+//            } else if (aObj == null) {
+//                return -1;
+//            } else if (bObj == null) {
+//                return 1;
+//            }
             AutoDetectDataType aType = getType(aObj);
             AutoDetectDataType bType = getType(bObj);
             int typeDiff = aType.typeId - bType.typeId;
             if (typeDiff == 0) {
                 return aType.compare(aObj, bObj);
             }
+//            throw DataUtils.newIllegalStateException(DataUtils.ERROR_INTERNAL,
+//                    "Incompatible types {0} and {1}", aType.typeId, bType.typeId);
             return Integer.signum(typeDiff);
         }
 
@@ -932,7 +941,7 @@ public class ObjectDataType implements DataType {
             case TAG_LONG_FIXED:
                 return buff.getLong();
             }
-            return Long.valueOf(tag - TAG_LONG_0_7);
+            return (long)(tag - TAG_LONG_0_7);
         }
 
         @Override
