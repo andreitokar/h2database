@@ -100,9 +100,9 @@ public final class DataUtils {
 
     /**
      * The transaction store can not be initialized because data type
-     * is not found in type registry
+     * is not found in type registry.
      */
-    public static final int ERROR_UNKNOWNIN_DATA_TYPE = 104;
+    public static final int ERROR_UNKNOWN_DATA_TYPE = 104;
 
     /**
      * The type for leaf page.

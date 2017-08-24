@@ -14,6 +14,7 @@ import java.sql.SQLException;
 import java.util.Arrays;
 import org.h2.api.ErrorCode;
 import org.h2.bytecode.RowStorage;
+import org.h2.engine.Database;
 import org.h2.message.DbException;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.WriteBuffer;
@@ -739,5 +740,4 @@ public class ValueDataType implements DataType {
         }
         return Arrays.equals(sortTypes, v.sortTypes);
     }
-
 }

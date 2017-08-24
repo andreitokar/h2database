@@ -20,11 +20,12 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
 import org.h2.engine.Constants;
+import org.h2.engine.Database;
 import org.h2.mvstore.Cursor;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.MVMap;
 import org.h2.mvstore.MVStore;
-import org.h2.mvstore.MetaDataType;
+import org.h2.mvstore.type.MetaDataType;
 import org.h2.mvstore.Page;
 import org.h2.mvstore.WriteBuffer;
 import org.h2.mvstore.rtree.MVRTreeMap;
@@ -34,7 +35,6 @@ import org.h2.mvstore.type.ObjectDataType;
 import org.h2.mvstore.type.StringDataType;
 import org.h2.util.New;
 import org.h2.util.Utils;
-import org.h2.value.CompareMode;
 
 /**
  * A store that supports concurrent MVCC read-committed transactions.
@@ -76,6 +76,8 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
      */
 //    private final ConcurrentHashMap<Integer, MVMap<Object, VersionedValue>> maps = new ConcurrentHashMap<>();
 
+    private final DataType metaDataType;
+
     private final DataType dataType;
 
 
@@ -101,7 +103,8 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
      * @param store the store
      */
     public TransactionStore(MVStore store) {
-        this(store, new ObjectDataType(), 0);
+        this(store, new DBMetaType(null, store.backgroundExceptionHandler), new ObjectDataType(), 0);
+//        this(store, new MetaDataType(store.backgroundExceptionHandler), new ObjectDataType(), 0);
     }
 
     /**
@@ -110,16 +113,23 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
      * @param dataType the data type for map keys and values
      * @param timeoutMillis lock aquisition timeout in milliseconds, 0 means no wait
      */
-    public TransactionStore(MVStore store, DataType dataType, long timeoutMillis) {
+    public TransactionStore(MVStore store, DataType metaDataType, DataType dataType, long timeoutMillis) {
         this.store = store;
+        this.metaDataType = metaDataType;
         this.dataType = dataType;
         this.timeoutMillis = timeoutMillis;
         MVMap.Builder<String, DataType> builder2 = new MVMap.Builder<String, DataType>()
                                             .keyType(StringDataType.INSTANCE)
-                                            .valueType(new MetaDataType(store.backgroundExceptionHandler));
+                                            .valueType(metaDataType);
 
-//        store.removeMap(TYPE_REGISTRY_NAME);    // TODO: implement type registry persistence
-        typeRegistry = store.openMap(TYPE_REGISTRY_NAME, builder2);
+        MVMap<String, DataType> typeRegistry = null;
+//        try {
+            typeRegistry = store.openMap(TYPE_REGISTRY_NAME, builder2);
+//        } catch (Exception e) {
+//            store.removeMap(TYPE_REGISTRY_NAME);
+//            typeRegistry = store.openMap(TYPE_REGISTRY_NAME, builder2);
+//        }
+        this.typeRegistry = typeRegistry;
 
         preparedTransactions = store.openMap("openTransactions",
                                              new MVMap.Builder<Integer, Object[]>());
@@ -131,6 +141,10 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
         undoLog = store.openMap("undoLog", builder);
 
         this.store.setVersionChangeListener(this);
+    }
+
+    public DataType getMetaDataType() {
+        return metaDataType;
     }
 
     public MVMap<Long, Record> getUndoLog() {
@@ -485,7 +499,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
     }
 
     private MVMap<Object,VersionedValue> getMap(int mapId) {
-        MVMap<Object, VersionedValue> map = openMap(mapId);
+        MVMap<Object, VersionedValue> map = store.getMap(mapId);
         assert map != null;
         return map;
     }
@@ -749,7 +763,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
         }
     }
 
-    private static final class TxMapBuilder<K,V> extends MVMap.Builder<K,V> {
+    public static final class TxMapBuilder<K,V> extends MVMap.Builder<K,V> {
 
         private final MVMap<String, DataType> typeRegistry;
         private final DataType defaultDataType;
@@ -780,7 +794,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
                 if (keyTypeKey != null) {
                     keyType = typeRegistry.get(keyTypeKey);
                     if (keyType == null) {
-                        throw DataUtils.newIllegalStateException(DataUtils.ERROR_UNKNOWNIN_DATA_TYPE,
+                        throw DataUtils.newIllegalStateException(DataUtils.ERROR_UNKNOWN_DATA_TYPE,
                                 "Data type with hash {0} can not be found", keyTypeKey);
                     }
                     setKeyType(keyType);
@@ -795,7 +809,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
                 if (valueTypeKey != null) {
                     valueType = typeRegistry.get(valueTypeKey);
                     if (valueType == null) {
-                        throw DataUtils.newIllegalStateException(DataUtils.ERROR_UNKNOWNIN_DATA_TYPE,
+                        throw DataUtils.newIllegalStateException(DataUtils.ERROR_UNKNOWN_DATA_TYPE,
                                 "Data type with hash {0} can not be found", valueTypeKey);
                     }
                     setValueType(valueType);
@@ -1834,7 +1848,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
         public K relativeKey(K key, long offset) {
             K k = offset > 0 ? map.ceilingKey(key) : map.floorKey(key);
             if (k == null) {
-                return k;
+                return null;
             }
             long index = map.getKeyIndex(k);
             return map.getKey(index + offset);
@@ -2054,7 +2068,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
     /**
      * The value type for a versioned value.
      */
-    public static final class VersionedValueType implements DataType {
+    public static final class VersionedValueType implements DataType, StatefulDataType {
 
         private final DataType valueType;
 
@@ -2147,6 +2161,32 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
         @Override
         public int hashCode() {
             return getClass().hashCode() + valueType.hashCode();
+        }
+
+        @Override
+        public void save(WriteBuffer buff, DataType metaDataType, Database database) {
+            metaDataType.write(buff, valueType);
+        }
+
+        @Override
+        public void load(ByteBuffer buff, DataType metaDataType, Database database) {
+            throw DataUtils.newUnsupportedOperationException("load()");
+        }
+
+        @Override
+        public Factory getFactory() {
+            return FACTORY;
+        }
+
+        private static final Factory FACTORY = new Factory();
+
+        public static final class Factory implements StatefulDataType.Factory {
+
+            @Override
+            public DataType create(ByteBuffer buff, DataType metaDataType, Database database) {
+                DataType valueType = (DataType) metaDataType.read(buff);
+                return new VersionedValueType(valueType);
+            }
         }
     }
 

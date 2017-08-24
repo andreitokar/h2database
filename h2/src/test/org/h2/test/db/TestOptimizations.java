@@ -36,9 +36,7 @@ public class TestOptimizations extends TestBase {
      * @param a ignored
      */
     public static void main(String... a) throws Exception {
-        TestBase init = TestBase.createCaller().init();
-        init.config.memory = true;
-        init.test();
+        TestBase.createCaller().init().test();
     }
 
     @Override

@@ -1,7 +1,9 @@
-package org.h2.mvstore;
+package org.h2.mvstore.type;
 
 import org.h2.engine.Constants;
-import org.h2.mvstore.type.DataType;
+import org.h2.mvstore.BasicDataType;
+import org.h2.mvstore.DataUtils;
+import org.h2.mvstore.WriteBuffer;
 
 import java.nio.ByteBuffer;
 
@@ -29,14 +31,11 @@ public final class MetaDataType extends BasicDataType<DataType> {
 
     @Override
     public void write(WriteBuffer buff, Object obj) {
-        String className = obj.getClass().getName();
+        Class<?> clazz = obj.getClass();
+        String className = clazz.getName();
         int len = className.length();
         buff.putVarInt(len)
             .putStringData(className, len);
-        DataType dataType = (DataType) obj;
-        if(dataType instanceof StatefulDataType) {
-            ((StatefulDataType)dataType).save(buff);
-        }
     }
 
     @Override
@@ -45,11 +44,7 @@ public final class MetaDataType extends BasicDataType<DataType> {
         String className = DataUtils.readString(buff, len);
         try {
             Class<?> clazz = Class.forName(className);
-            DataType dataType = (DataType) clazz.newInstance();
-            if(dataType instanceof StatefulDataType) {
-                ((StatefulDataType)dataType).load(buff);
-            }
-            return dataType;
+            return (DataType) clazz.newInstance();
         } catch (ClassNotFoundException | InstantiationException | IllegalAccessException e) {
             if(exceptionHandler != null) {
                 exceptionHandler.uncaughtException(Thread.currentThread(), e);

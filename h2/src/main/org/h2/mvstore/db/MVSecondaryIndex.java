@@ -25,6 +25,7 @@ import org.h2.mvstore.MVMap;
 import org.h2.mvstore.db.TransactionStore.Transaction;
 import org.h2.mvstore.db.TransactionStore.TransactionMap;
 import org.h2.mvstore.type.DataType;
+import org.h2.mvstore.type.ObjectDataType;
 import org.h2.result.Row;
 import org.h2.result.RowFactory;
 import org.h2.result.SearchRow;
@@ -60,7 +61,7 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
         // even for unique indexes, as some of the index columns could be null
         rowFactory = database.getRowFactory().createRowFactory(db, table.getColumns(), columns);
         DataType keyType = rowFactory.getDataType();
-        ValueDataType valueType = ValueNull.Type.INSTANCE;
+        DataType valueType = ObjectDataType.NoneType.INSTANCE;
         String mapName = "index." + getId();
         Transaction t = mvTable.getTransaction(null);
         dataMap = t.openMap(mapName, keyType, valueType);
@@ -151,7 +152,7 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
 
     private MVMap<SearchRow,Value> openMap(String mapName) {
         DataType keyType = rowFactory.getDataType();
-        ValueDataType valueType = ValueNull.Type.INSTANCE;
+        DataType valueType = ObjectDataType.NoneType.INSTANCE;
         MVMap.Builder<SearchRow,Value> builder = new MVMap.Builder<SearchRow,Value>()
                                                 .keyType(keyType)
                                                 .valueType(valueType);

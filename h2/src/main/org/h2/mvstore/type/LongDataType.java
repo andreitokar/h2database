@@ -17,7 +17,7 @@ public class LongDataType implements ExtendedDataType {
 
     public static final LongDataType INSTANCE = new LongDataType();
 
-    private LongDataType() {}
+    public LongDataType() {}
 
 
     @Override
@@ -77,7 +77,7 @@ public class LongDataType implements ExtendedDataType {
 
     @Override
     public void read(ByteBuffer buff, Object storage) {
-        long[] data = (long[]) storage;
+        long[] data = cast(storage);
         for (int i = 0; i < data.length; i++) {
             data[i] = DataUtils.readVarLong(buff);
         }
@@ -100,9 +100,9 @@ public class LongDataType implements ExtendedDataType {
         if (aObj instanceof Long && bObj instanceof Long) {
             Long a = (Long) aObj;
             Long b = (Long) bObj;
-            return a.compareTo(b);
+            return Long.compare(a,b);
         }
-        return compareWithNull(aObj, bObj);
+        return compareWithNulls(aObj, bObj);
     }
 
     @Override
@@ -141,11 +141,11 @@ public class LongDataType implements ExtendedDataType {
     }
 
     @SuppressWarnings("unchecked")
-    protected long[] cast(Object storage) {
+    private static long[] cast(Object storage) {
         return (long[])storage;
     }
 
-    private static int compareWithNull(Object a, Object b) {
+    private static int compareWithNulls(Object a, Object b) {
         if (a == b) {
             return 0;
         } else if (a == null) {

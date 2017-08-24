@@ -9,7 +9,11 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 
 import org.h2.engine.Constants;
+import org.h2.engine.Database;
+import org.h2.mvstore.db.StatefulDataType;
+import org.h2.mvstore.db.TransactionStore;
 import org.h2.mvstore.db.ValueDataType;
+import org.h2.mvstore.type.DataType;
 import org.h2.mvstore.type.ExtendedDataType;
 import org.h2.result.SearchRow;
 import org.h2.store.DataHandler;
@@ -23,7 +27,7 @@ import org.h2.value.CompareMode;
  *
  * @author <a href='mailto:andrei.tokar@gmail.com'>Andrei Tokar</a>
  */
-public final class RowDataType extends ValueDataType implements ExtendedDataType {  //TODO rebase to BasicDataType
+public final class RowDataType extends ValueDataType implements ExtendedDataType, StatefulDataType {  //TODO rebase to BasicDataType
 
     private final int[] indexes;
 
@@ -209,5 +213,59 @@ public final class RowDataType extends ValueDataType implements ExtendedDataType
     @Override
     public int hashCode() {
         return super.hashCode() ^ Arrays.hashCode(indexes);
+    }
+
+    @Override
+    public void save(WriteBuffer buff, DataType metaDataType, Database database) {
+        writeIntArray(buff, sortTypes);
+        writeIntArray(buff, indexes);
+    }
+
+    private static void writeIntArray(WriteBuffer buff, int[] array) {
+        if(array == null) {
+            buff.putVarInt(0);
+        } else {
+            buff.putVarInt(array.length);
+            for (int i : array) {
+                buff.putVarInt(i);
+            }
+        }
+    }
+
+    @Override
+    public void load(ByteBuffer buff, DataType metaDataType, Database database) {
+        throw DataUtils.newUnsupportedOperationException("load()");
+    }
+
+    @Override
+    public Factory getFactory() {
+        return FACTORY;
+    }
+
+
+
+    private static final Factory FACTORY = new Factory();
+
+    public static final class Factory implements StatefulDataType.Factory {
+
+        @Override
+        public DataType create(ByteBuffer buff, DataType metaDataType, Database database) {
+            int[] sortTypes = readIntArray(buff);
+            int[] indexes = readIntArray(buff);
+            CompareMode compareMode = database == null ? CompareMode.getInstance(null, 0) : database.getCompareMode();
+            return new RowDataType(compareMode, database, sortTypes, indexes);
+        }
+
+        private static int[] readIntArray(ByteBuffer buff) {
+            int len = DataUtils.readVarInt(buff);
+            if(len < 0) {
+                return null;
+            }
+            int[] res = new int[len];
+            for (int i = 0; i < res.length; i++) {
+                res[i] = DataUtils.readVarInt(buff);
+            }
+            return res;
+        }
     }
 }

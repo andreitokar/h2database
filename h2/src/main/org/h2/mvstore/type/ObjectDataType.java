@@ -21,11 +21,7 @@ import java.util.UUID;
 import org.h2.engine.Constants;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.WriteBuffer;
-import org.h2.result.SortOrder;
 import org.h2.util.New;
-import org.h2.value.Value;
-import org.h2.value.ValueLong;
-import org.h2.value.ValueNull;
 
 /**
  * A data type implementation for the most common data types, including

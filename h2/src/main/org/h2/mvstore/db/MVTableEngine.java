@@ -24,11 +24,9 @@ import org.h2.engine.Session;
 import org.h2.message.DbException;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.FileStore;
-import org.h2.mvstore.MVMap;
 import org.h2.mvstore.MVStore;
 import org.h2.mvstore.MVStoreTool;
 import org.h2.mvstore.db.TransactionStore.Transaction;
-import org.h2.mvstore.db.TransactionStore.TransactionMap;
 import org.h2.store.InDoubtTransaction;
 import org.h2.store.fs.FileChannelInputStream;
 import org.h2.store.fs.FileUtils;
@@ -121,8 +119,8 @@ public class MVTableEngine implements TableEngine {
          * The map of open tables.
          * Key: the map name, value: the table.
          */
-        final ConcurrentHashMap<String, MVTable> tableMap =
-                new ConcurrentHashMap<String, MVTable>();
+        private final ConcurrentHashMap<String, MVTable> tableMap =
+                                                    new ConcurrentHashMap<>();
 
         /**
          * The store.
@@ -160,7 +158,7 @@ public class MVTableEngine implements TableEngine {
                 if (!db.getSettings().reuseSpace) {
                     store.setReuseSpace(false);
                 }
-                this.transactionStore = new TransactionStore(store,
+                this.transactionStore = new TransactionStore(store, new DBMetaType(db, store.backgroundExceptionHandler),
                                                 new ValueDataType(db.getCompareMode(), db, null), db.getLockTimeout());
             } catch (IllegalStateException e) {
                 throw convertIllegalStateException(e);
