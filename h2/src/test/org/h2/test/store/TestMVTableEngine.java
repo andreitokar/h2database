@@ -55,7 +55,7 @@ public class TestMVTableEngine extends TestBase {
         testLobCreationThenShutdown();
         testManyTransactions();
         testAppendOnly();
-//        testLowRetentionTime();
+        testLowRetentionTime();
         testOldAndNew();
         testTemporaryTables();
         testUniqueIndex();
@@ -67,12 +67,12 @@ public class TestMVTableEngine extends TestBase {
         testTimeout();
         testExplainAnalyze();
         testTransactionLogUsuallyNotStored();
-//        testShrinkDatabaseFile();
-//        testTwoPhaseCommit();
+        testShrinkDatabaseFile();
+        testTwoPhaseCommit();
 //        testRecover();
         testSeparateKey();
         testRollback();
-//        testRollbackAfterCrash();
+        testRollbackAfterCrash();
         testReferentialIntegrity();
         testWriteDelay();
         testAutoCommit();
@@ -81,8 +81,8 @@ public class TestMVTableEngine extends TestBase {
         testExclusiveLock();
         testEncryption();
         testReadOnly();
-//        testReuseDiskSpace();
-//        testDataTypes();
+        testReuseDiskSpace();
+        testDataTypes();
         testLocking();
         testSimple();
     }
@@ -676,7 +676,7 @@ public class TestMVTableEngine extends TestBase {
             return;
         }
         deleteDb(getTestName());
-        String dbName = getTestName() + ";MV_STORE=TRUE";
+        String dbName = getTestName() + ";MV_STORE=TRUE;MAX_COMPACT_TIME=2000";
         Connection conn;
         Statement stat;
         long maxSize = 0;
@@ -699,7 +699,7 @@ public class TestMVTableEngine extends TestBase {
             assertEquals(retentionTime, rs.getInt(1));
             stat.execute("create table test(id int primary key, data varchar)");
             stat.execute("insert into test select x, space(100) " +
-                    "from system_range(1, 1000)");
+                    "from system_range(1, 100)");
             // this table is kept
             if (i < 10) {
                 stat.execute("create table test" + i +
@@ -721,8 +721,8 @@ public class TestMVTableEngine extends TestBase {
                     + Constants.SUFFIX_MV_FILE;
             long size = FileUtils.size(fileName);
             if (i < 10) {
-                maxSize = (int) (Math.max(size, maxSize) * 1.2);
-            } else if (size > maxSize) {
+                maxSize = Math.max(size, maxSize)/* * 1.2*/;
+            } else if (size > maxSize * 6 / 5) {
                 fail(i + " size: " + size + " max: " + maxSize);
             }
         }

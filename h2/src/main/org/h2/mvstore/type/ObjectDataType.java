@@ -2020,7 +2020,7 @@ public class ObjectDataType implements DataType {
 
         @Override
         public Object read(ByteBuffer buff) {
-            return null;
+            return INSTANCE;
         }
 
         @Override

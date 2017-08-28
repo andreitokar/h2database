@@ -176,7 +176,7 @@ public final class RowDataType extends ValueDataType implements ExtendedDataType
     @Override
     public SearchRow read(ByteBuffer buff) {
         SearchRow row = getRowFactory().createRow();
-        row.setKey(DataUtils.readVarInt(buff));
+        row.setKey(DataUtils.readVarLong(buff));
         if (indexes == null) {
             int columnCount = DataUtils.readVarInt(buff);
             for (int i = 0; i < columnCount; i++) {

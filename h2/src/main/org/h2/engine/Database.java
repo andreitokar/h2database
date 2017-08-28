@@ -740,9 +740,9 @@ public class Database implements DataHandler {
         systemUser.setAdmin(true);
         systemSession = new Session(this, systemUser, ++nextSessionId);
         lobSession = new Session(this, systemUser, ++nextSessionId);
-        if(mvStore != null) {
-            mvStore.getTransactionStore().init(systemSession);
-        }
+//        if(mvStore != null) {
+//            mvStore.getTransactionStore().init(systemSession);
+//        }
         CreateTableData data = new CreateTableData();
         ArrayList<Column> cols = data.columns;
         Column columnId = new Column("ID", Value.INT);
@@ -771,9 +771,9 @@ public class Database implements DataHandler {
         systemSession.commit(true);
         objectIds.set(0);
         starting = true;
-        if (mvStore != null) {
-            mvStore.getTransactionStore().endLeftoverTransactions();
-        }
+//        if (mvStore != null) {
+//            mvStore.getTransactionStore().endLeftoverTransactions();
+//        }
         Cursor cursor = metaIdIndex.find(systemSession, null, null);
         ArrayList<MetaRecord> records = New.arrayList();
         while (cursor.next()) {
@@ -784,9 +784,12 @@ public class Database implements DataHandler {
         Collections.sort(records);
         for (MetaRecord rec : records) {
             rec.execute(this, systemSession, eventListener);
+//            systemSession.commit(true);
         }
+        systemSession.commit(true);
         if (mvStore != null) {
-//            mvStore.getTransactionStore().endLeftoverTransactions();
+            mvStore.getTransactionStore().init(systemSession);
+            mvStore.getTransactionStore().endLeftoverTransactions();
             mvStore.removeTemporaryMaps(objectIds);
         }
         recompileInvalidViews(systemSession);

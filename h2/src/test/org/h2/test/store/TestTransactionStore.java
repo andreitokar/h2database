@@ -316,6 +316,7 @@ public class TestTransactionStore extends TestBase {
 
             s = MVStore.open(fileName);
             ts = new TransactionStore(s);
+            s.setVersionsToKeep(100);
             ts.init();
             tx = ts.begin();
             s.setReuseSpace(false);
@@ -343,20 +344,24 @@ public class TestTransactionStore extends TestBase {
             while (state.get() < 1) {
                 Thread.yield();
             }
+            assertTrue(s.hasData("undoLog"));
+            long v = s.getCurrentVersion();
+
             // commit while writing in the task
             tx.commit();
             // wait for the task to stop
             task.get();
+            long currentVersion = s.getCurrentVersion();
+            assertTrue("current: " + currentVersion + ", first: " + v, s.getCurrentVersion() < v + 100);
             store.close();
             s = MVStore.open(fileName);
             // roll back a bit, until we have some undo log entries
             assertTrue(s.hasMap("undoLog"));
             for (int back = 0; back < 100; back++) {
-                int minus = r.nextInt(10);
+                int minus = 1;
+//                int minus = r.nextInt(10);
                 s.rollbackTo(Math.max(0, s.getCurrentVersion() - minus));
-                ts = new TransactionStore(s);
-                MVMap<?, ?> undo = ts.getUndoLog();
-                if (undo.size() > 0) {
+                if (s.hasData("undoLog")) {
                     break;
                 }
             }

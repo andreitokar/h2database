@@ -229,8 +229,7 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
         SearchRow searchRow = convertToKey(row, false);
         TransactionMap<SearchRow,Value> map = getMap(session);
         try {
-            Value old = map.remove(searchRow);
-            if (old == null) {
+            if (map.remove(searchRow) == null) {
                 throw DbException.get(ErrorCode.ROW_NOT_FOUND_WHEN_DELETING_1,
                         getSQL() + ": " + row.getKey());
             }

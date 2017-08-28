@@ -620,17 +620,17 @@ public class Recover extends Tool implements DataHandler {
                     continue;
                 }
                 String tableId = mapName.substring("table.".length());
-                ValueDataType keyType = new ValueDataType(
-                        null, this, null);
-                ValueDataType valueType = new ValueDataType(
-                        null, this, null);
-                TransactionMap<Value, Value> dataMap = store.begin().openMap(
-                        mapName, keyType, valueType);
-                Iterator<Value> dataIt = dataMap.keyIterator(null);
+//                ValueDataType keyType = new ValueDataType(
+//                        null, this, null);
+//                ValueDataType valueType = new ValueDataType(
+//                        null, this, null);
+                TransactionMap<Long, Row> dataMap = store.begin().openMap(
+                        mapName/*, keyType, valueType*/);
+                Iterator<Long> dataIt = dataMap.keyIterator(null);
                 boolean init = false;
                 while (dataIt.hasNext()) {
-                    Value rowId = dataIt.next();
-                    Value[] values = ((ValueArray) dataMap.get(rowId)).getList();
+                    Long rowId = dataIt.next();
+                    Value[] values = dataMap.get(rowId).getValueList();
                     recordLength = values.length;
                     if (!init) {
                         setStorage(Integer.parseInt(tableId));

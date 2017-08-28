@@ -25,7 +25,6 @@ import org.h2.mvstore.Cursor;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.MVMap;
 import org.h2.mvstore.MVStore;
-import org.h2.mvstore.type.MetaDataType;
 import org.h2.mvstore.Page;
 import org.h2.mvstore.WriteBuffer;
 import org.h2.mvstore.rtree.MVRTreeMap;
@@ -115,6 +114,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
      */
     public TransactionStore(MVStore store, DataType metaDataType, DataType dataType, long timeoutMillis) {
         this.store = store;
+        this.currentTxCounter = new TxCounter(store.getOldestVersionToKeep(null));
         this.metaDataType = metaDataType;
         this.dataType = dataType;
         this.timeoutMillis = timeoutMillis;
@@ -122,14 +122,10 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
                                             .keyType(StringDataType.INSTANCE)
                                             .valueType(metaDataType);
 
-        MVMap<String, DataType> typeRegistry = null;
-//        try {
-            typeRegistry = store.openMap(TYPE_REGISTRY_NAME, builder2);
-//        } catch (Exception e) {
-//            store.removeMap(TYPE_REGISTRY_NAME);
-//            typeRegistry = store.openMap(TYPE_REGISTRY_NAME, builder2);
-//        }
-        this.typeRegistry = typeRegistry;
+        typeRegistry = store.openMap(TYPE_REGISTRY_NAME, builder2);
+
+        store.stashMapData("openTransactions");
+        store.stashMapData("undoLog");
 
         preparedTransactions = store.openMap("openTransactions",
                                              new MVMap.Builder<Integer, Object[]>());
@@ -162,7 +158,6 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
 
     public synchronized void init(RollbackListener listener) {
         if(!init) {
-            init = true;
             // remove all temporary maps
             for (String mapName : store.getMapNames()) {
                 if (mapName.startsWith("temp.")) {
@@ -170,6 +165,11 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
                     store.removeMap(temp);
                 }
             }
+
+            assert undoLog.isEmpty();
+            assert openTransactions.get().cardinality() == 0;
+            store.unstashMapData(preparedTransactions);
+            store.unstashMapData(undoLog);
 
             Long key = undoLog.firstKey();
             while (key != null) {
@@ -202,6 +202,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
 
                 key = undoLog.ceilingKey(getOperationId(transactionId + 1, 0));
             }
+            init = true;
         }
     }
 
@@ -307,11 +308,11 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
     }
 
     public Transaction begin(RollbackListener listener, long timeoutMillis) {
-        if (!init) {
-            throw DataUtils.newIllegalStateException(
-                    DataUtils.ERROR_TRANSACTION_ILLEGAL_STATE,
-                    "Not initialized");
-        }
+//        if (!init) {
+//            throw DataUtils.newIllegalStateException(
+//                    DataUtils.ERROR_TRANSACTION_ILLEGAL_STATE,
+//                    "Not initialized");
+//        }
         int transactionId;
         boolean success;
         do {
@@ -454,21 +455,10 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
      */
     <K> MVMap<K, VersionedValue> openMap(String name,
             DataType keyType, DataType valueType) {
-//        if (keyType == null) {
-//            keyType = new ObjectDataType();
-//        }
-        if (valueType == null) {
-            valueType = dataType;
-        }
-        VersionedValueType vt = new VersionedValueType(valueType);
-        MVMap<K, VersionedValue> map;
+        VersionedValueType vt = valueType == null ? null : new VersionedValueType(valueType);
         MVMap.Builder<K, VersionedValue> builder = new TxMapBuilder<K,VersionedValue>(typeRegistry, dataType)
-//                new MVMap.Builder<K, VersionedValue>()
                 .keyType(keyType).valueType(vt);
-        map = store.openMap(name, builder);
-//        @SuppressWarnings("unchecked")
-//        MVMap<Object, VersionedValue> m = (MVMap<Object, VersionedValue>) map;
-//        maps.put(map.getId(), m);
+        MVMap<K, VersionedValue> map = store.openMap(name, builder);
         return map;
     }
 
@@ -500,7 +490,11 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
 
     private MVMap<Object,VersionedValue> getMap(int mapId) {
         MVMap<Object, VersionedValue> map = store.getMap(mapId);
-        assert map != null;
+        if (map == null && !init) {
+            map = openMap(mapId);
+        }
+        assert map != null : "map with id " + mapId + " is missing" +
+                                (init ? "" : " during initialization");
         return map;
     }
 
@@ -820,9 +814,11 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
 
             if (getKeyType() == null) {
                 setKeyType(defaultDataType);
+                registerDataType(getKeyType());
             }
             if (getValueType() == null) {
                 setValueType(new VersionedValueType(defaultDataType));
+                registerDataType(getValueType());
             }
 
             config.put("store", store);
@@ -1241,6 +1237,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
          * Commit the transaction. Afterwards, this transaction is closed.
          */
         public void commit() {
+            assert store.openTransactions.get().get(transactionId);
             long state = setStatus(STATUS_COMMITTING);
             Throwable ex = null;
             try {
@@ -1262,7 +1259,11 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
                 try {
                     store.endTransaction(this);
                 } catch (Throwable e) {
-                    if (ex != null) ex.addSuppressed(e);
+                    if (ex == null) {
+                        throw e;
+                    } else {
+                        ex.addSuppressed(e);
+                    }
                 }
             }
         }

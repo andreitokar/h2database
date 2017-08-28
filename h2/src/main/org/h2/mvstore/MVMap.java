@@ -9,7 +9,6 @@ import java.nio.ByteBuffer;
 import java.util.AbstractList;
 import java.util.AbstractMap;
 import java.util.AbstractSet;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -21,7 +20,6 @@ import org.h2.mvstore.type.DataType;
 import org.h2.mvstore.type.ExtendedDataType;
 import org.h2.mvstore.type.ObjectDataType;
 import org.h2.mvstore.type.StringDataType;
-import org.h2.util.New;
 
 /**
  * A stored map.
@@ -928,6 +926,9 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                 K key = (K) p.getKey(0);
                 V value = get(key);
                 if (value != null) {
+                    if (isClosed()) {
+                        return 0;
+                    }
                     replace(key, value, value);
                 }
             }
@@ -965,6 +966,9 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                 K key = (K) p2.getKey(0);
                 V value = get(key);
                 if (value != null) {
+                    if (isClosed()) {
+                        return 0;
+                    }
                     replace(key, value, value);
                 }
                 writtenPageCount++;
@@ -1302,6 +1306,8 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     }
 
     final boolean hasChangesSince(long version) {
+        return getVersion()> version;
+/*
         RootReference rootReference = getRoot();
         Page currentRoot = rootReference.root;
         while((rootReference = rootReference.previous) != null) {
@@ -1311,6 +1317,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             }
         }
         return false;
+*/
     }
 
     /**
@@ -1359,7 +1366,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         int attempt = 0;
         while(true) {
             RootReference rootReference = getRoot();
-            if(rootReference.version >= writeVersion || isClosed()) {
+            if(rootReference.version >= writeVersion) {
                 return rootReference;
             }
             RootReference updatedRootReference = new RootReference(rootReference, writeVersion, ++attempt);
@@ -1544,10 +1551,10 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
         protected MVMap<K, V> create(Map<String, Object> config) {
             Object type = config.get("type");
-            if(type != null) {
-                throw new IllegalArgumentException("Incompatible map type");
+            if(type == null || type.equals("rtree")) {
+                return new MVMap<K, V>(config);
             }
-            return new MVMap<K, V>(config);
+            throw new IllegalArgumentException("Incompatible map type");
         }
     }
 

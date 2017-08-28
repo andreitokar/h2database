@@ -1,9 +1,12 @@
 package org.h2.bytecode;
 
 import org.h2.engine.Constants;
+import org.h2.engine.Database;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.WriteBuffer;
+import org.h2.mvstore.db.StatefulDataType;
 import org.h2.mvstore.db.ValueDataType;
+import org.h2.mvstore.type.DataType;
 import org.h2.mvstore.type.ExtendedDataType;
 import org.h2.result.Row;
 import org.h2.result.SearchRow;
@@ -150,7 +153,8 @@ public class RowStorage extends Value implements Row, Cloneable {
 
     @Override
     public final Value getValue(int index) {
-        return isNull(index) ? ValueNull.INSTANCE : get(index);
+        Value value = get(index);
+        return isNull(index) && value != null ? ValueNull.INSTANCE : value;
     }
 
     protected Value get(int index) {
@@ -539,7 +543,7 @@ public class RowStorage extends Value implements Row, Cloneable {
 
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    public static final class Type extends ValueDataType implements ExtendedDataType {
+    public static final class Type extends ValueDataType implements ExtendedDataType, StatefulDataType {
 
 
         public Type(CompareMode compareMode, DataHandler handler, int[] sortTypes) {
@@ -757,6 +761,65 @@ public class RowStorage extends Value implements Row, Cloneable {
                 }
             }
             return row;
+        }
+
+
+        @Override
+        public int hashCode() {
+            return super.hashCode()/* ^ Arrays.hashCode(indexes)*/;
+        }
+
+        @Override
+        public void save(WriteBuffer buff, DataType metaDataType, Database database) {
+            writeIntArray(buff, sortTypes);
+        }
+
+        private static void writeIntArray(WriteBuffer buff, int[] array) {
+            if(array == null) {
+                buff.putVarInt(0);
+            } else {
+                buff.putVarInt(array.length);
+                for (int i : array) {
+                    buff.putVarInt(i);
+                }
+            }
+        }
+
+        @Override
+        public void load(ByteBuffer buff, DataType metaDataType, Database database) {
+            throw DataUtils.newUnsupportedOperationException("load()");
+        }
+
+        @Override
+        public Factory getFactory() {
+            return FACTORY;
+        }
+
+
+
+        private static final Factory FACTORY = new Factory();
+
+        public static final class Factory implements StatefulDataType.Factory {
+
+            @Override
+            public DataType create(ByteBuffer buff, DataType metaDataType, Database database) {
+                int[] sortTypes = readIntArray(buff);
+//                int[] indexes = readIntArray(buff);
+                CompareMode compareMode = database == null ? CompareMode.getInstance(null, 0) : database.getCompareMode();
+                return new Type(compareMode, database, sortTypes);
+            }
+
+            private static int[] readIntArray(ByteBuffer buff) {
+                int len = DataUtils.readVarInt(buff);
+                if(len < 0) {
+                    return null;
+                }
+                int[] res = new int[len];
+                for (int i = 0; i < res.length; i++) {
+                    res[i] = DataUtils.readVarInt(buff);
+                }
+                return res;
+            }
         }
     }
 }

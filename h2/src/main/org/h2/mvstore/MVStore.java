@@ -26,11 +26,8 @@ import org.h2.compress.CompressLZF;
 import org.h2.compress.Compressor;
 import org.h2.mvstore.Page.PageChildren;
 import org.h2.mvstore.cache.CacheLongKeyLIRS;
-import org.h2.mvstore.type.DataType;
-import org.h2.mvstore.type.StringDataType;
 import org.h2.util.MathUtils;
 import org.h2.util.New;
-import org.h2.util.Utils;
 
 import static org.h2.mvstore.MVMap.INITIAL_VERSION;
 
@@ -379,6 +376,23 @@ public final class MVStore {
             }
             lastCommitTime = getTimeSinceCreation();
 
+            Set<String> rootsToRemove = new HashSet<>();
+            for (Iterator<String> it = meta.keyIterator("root."); it.hasNext();) {
+                String key = it.next();
+                if (!key.startsWith("root.")) {
+                    break;
+                }
+                String mapId = key.substring(key.lastIndexOf('.') + 1);
+                if(!meta.containsKey("map."+mapId)) {
+                    rootsToRemove.add(key);
+                }
+            }
+
+            for (String key : rootsToRemove) {
+                meta.remove(key);
+                markMetaChanged();
+            }
+
             // setAutoCommitDelay starts the thread, but only if
             // the parameter is different from the old value
             o = config.get("autoCommitDelay");
@@ -452,26 +466,22 @@ public final class MVStore {
      */
     public synchronized <M extends MVMap<K, V>, K, V> M openMap(
             String name, MVMap.MapBuilder<M, K, V> builder) {
-        checkOpen();
-        String x = meta.get("name." + name);
-        int id;
-        HashMap<String, Object> c;
+        int id = getMapId(name);
         M map;
-        if (x != null) {
-            id = DataUtils.parseHexInt(x);
+        if (id >= 0) {
             map = openMap(id, builder);
         } else {
-            c = New.hashMap();
+            HashMap<String, Object> c = New.hashMap();
             id = ++lastMapId;
             c.put("id", id);
             c.put("createVersion", currentVersion);
             map = builder.create(this, c);
             map.init();
-            markMetaChanged();
-            x = Integer.toHexString(id);
+            String x = Integer.toHexString(id);
             meta.put(MVMap.getMapKey(id), map.asString(name));
             meta.put("name." + name, x);
             map.setRootPos(0, lastStoredVersion);
+            markMetaChanged();
             @SuppressWarnings("unchecked")
             M existingMap = (M)maps.putIfAbsent(id, map);
             if(existingMap != null) {
@@ -583,6 +593,10 @@ public final class MVStore {
      */
     public boolean hasMap(String name) {
         return meta.containsKey("name." + name);
+    }
+
+    public boolean hasData(String name) {
+        return hasMap(name) && getRootPos(meta, getMapId(name)) != 0;
     }
 
     private void markMetaChanged() {
@@ -898,9 +912,16 @@ public final class MVStore {
         FileStore f = fileStore;
         if (f != null && !f.isReadOnly()) {
             stopBackgroundThread();
-            if (hasUnsavedChanges()) {
-                commit();
+            for (MVMap<?, ?> map : maps.values()) {
+                if (map.isClosed()) {
+                    if (meta.remove(MVMap.getMapRootKey(map.getId())) != null) {
+                        markMetaChanged();
+                    }
+                }
             }
+//            if (hasUnsavedChangesInternal()) {
+                commit();
+//            }
         }
         closeStore(true);
     }
@@ -996,6 +1017,8 @@ public final class MVStore {
             if (map.setWriteVersion(version) == null) {
                 assert map.isClosed();
                 assert map.getVersion() < getOldestVersionToKeep(null);
+                meta.remove(MVMap.getMapRootKey(map.getId()));
+                markMetaChanged();
                 iter.remove();
             }
         }
@@ -1026,7 +1049,7 @@ public final class MVStore {
                 try {
                     currentStoreVersion = currentVersion;
                     currentStoreThread = Thread.currentThread();
-                    if (!closed && hasUnsavedChanges()) {
+                    if (!closed && hasUnsavedChangesInternal()) {
                         long v;
                         if (fileStore == null) {
                             lastStoredVersion = currentVersion;
@@ -1089,6 +1112,7 @@ public final class MVStore {
         } else {
             lastChunkId = lastChunk.id;
             meta.put(Chunk.getMetaKey(lastChunkId), lastChunk.asString());
+            markMetaChanged();
             // never go backward in time
             time = Math.max(lastChunk.time, time);
         }
@@ -1123,14 +1147,15 @@ public final class MVStore {
         // force a metadata update
         meta.put(Chunk.getMetaKey(c.id), c.asString());
         meta.remove(Chunk.getMetaKey(c.id));
-        ArrayList<MVMap<?, ?>> list = New.arrayList(maps.values());
+        markMetaChanged();
         ArrayList<Page> changed = New.arrayList();
-        for (Iterator<MVMap<?, ?>> iter = list.iterator(); iter.hasNext(); ) {
+        for (Iterator<MVMap<?, ?>> iter = maps.values().iterator(); iter.hasNext(); ) {
             MVMap<?, ?> map = iter.next();
             MVMap.RootReference rootReference = map.setWriteVersion(version);
             if (rootReference == null) {
                 assert map.isClosed();
                 assert map.getVersion() <getOldestVersionToKeep(null);
+                meta.remove(MVMap.getMapRootKey(map.getId()));
                 iter.remove();
             } else if (map.getCreateVersion() <= storeVersion && // if map was created after storing started, skip it
                     !map.isVolatile() &&
@@ -1157,7 +1182,8 @@ public final class MVStore {
         for (Page p : changed) {
             String key = MVMap.getMapRootKey(p.getMapId());
             if (p.getTotalCount() == 0) {
-                meta.put(key, "0");
+//                meta.put(key, "0");
+                meta.remove(key);
             } else {
                 p.writeUnsavedRecursive(c, buff);
                 long root = p.getPos();
@@ -1165,6 +1191,8 @@ public final class MVStore {
             }
         }
         MVMap.RootReference metaRootReference = meta.setWriteVersion(version);
+        metaChanged = false;
+        assert metaRootReference != null;
 
         if(versionChangeListener != null) {
             versionChangeListener.onVersionChange(currentVersion);
@@ -1280,7 +1308,7 @@ public final class MVStore {
         unsavedMemory = Math.max(0, unsavedMemory
                 - currentUnsavedPageCount);
 
-        metaChanged = false;
+//        metaChanged = false;
         lastStoredVersion = storeVersion;
 
         return version;
@@ -1298,8 +1326,9 @@ public final class MVStore {
             if (c.block != Long.MAX_VALUE && !referenced.contains(c.id)) {
                 if (canOverwriteChunk(c, time)) {
                     iterator.remove();
-                    markMetaChanged();
-                    meta.remove(Chunk.getMetaKey(c.id));
+                    if (meta.remove(Chunk.getMetaKey(c.id)) != null) {
+                        markMetaChanged();
+                    }
                     long start = c.block * BLOCK_SIZE;
                     int length = c.len * BLOCK_SIZE;
                     fileStore.free(start, length);
@@ -1362,7 +1391,8 @@ public final class MVStore {
                 }
                 pos = DataUtils.parseHexLong(c.getValue());
                 if (pos != 0) {
-                    int mapId = DataUtils.parseHexInt(key.substring("root.".length()));
+                    // to allow for something like "root.tmp.123" to be processed
+                    int mapId = DataUtils.parseHexInt(key.substring(key.lastIndexOf('.') + 1));
                     collectReferencedChunks(referenced, mapId, pos, 0);
                 }
             }
@@ -1616,6 +1646,7 @@ public final class MVStore {
      */
     public boolean hasUnsavedChanges() {
         checkOpen();
+        assert !metaChanged || meta.hasChangesSince(lastStoredVersion) : metaChanged;
         if (metaChanged) {
             return true;
         }
@@ -1627,6 +1658,13 @@ public final class MVStore {
             }
         }
         return false;
+    }
+
+    public boolean hasUnsavedChangesInternal() {
+        if (meta.hasChangesSince(lastStoredVersion)) {
+            return true;
+        }
+        return hasUnsavedChanges();
     }
 
     private Chunk readChunkHeader(long block) {
@@ -1770,8 +1808,8 @@ public final class MVStore {
             buff.position(0);
             write(pos, buff.getBuffer());
             releaseWriteBuffer(buff);
-            markMetaChanged();
             meta.put(Chunk.getMetaKey(c.id), c.asString());
+            markMetaChanged();
         }
 
         // update the metadata (store at the end of the file)
@@ -1810,8 +1848,8 @@ public final class MVStore {
             buff.position(0);
             write(pos, buff.getBuffer());
             releaseWriteBuffer(buff);
-            markMetaChanged();
             meta.put(Chunk.getMetaKey(c.id), c.asString());
+            markMetaChanged();
         }
 
         // update the metadata (within the file)
@@ -1967,7 +2005,7 @@ public final class MVStore {
         for (MVMap<?, ?> m : maps.values()) {
             @SuppressWarnings("unchecked")
             MVMap<Object, Object> map = (MVMap<Object, Object>) m;
-            if (!map.rewrite(set)) {
+            if (!map.isClosed() && !map.rewrite(set)) {
                 return;
             }
         }
@@ -2357,6 +2395,7 @@ public final class MVStore {
                 fileStore.clear();
             }
             maps.clear();
+            lastChunk = null;
             freedPageSpace.clear();
             currentVersion = version;
             setWriteVersion(version);
@@ -2420,7 +2459,7 @@ public final class MVStore {
             int id = m.getId();
             if (m.getCreateVersion() >= version) {
                 m.close();
-//                maps.remove(id);
+                maps.remove(id);
             } else {
                 if (loadFromFile) {
                     m.setRootPos(getRootPos(meta, id), version);
@@ -2452,6 +2491,7 @@ public final class MVStore {
                 it.remove();
             }
         }
+/*
         for (Iterator<MVMap<?, ?>> iter = maps.values().iterator(); iter.hasNext(); ) {
             MVMap<?, ?> map = iter.next();
             if (map.removeUnusedOldVersions()) {
@@ -2460,6 +2500,7 @@ public final class MVStore {
                 iter.remove();
             }
         }
+*/
     }
 
     /**
@@ -2521,11 +2562,10 @@ public final class MVStore {
         DataUtils.checkArgument(
                 !meta.containsKey("name." + newName),
                 "A map named {0} already exists", newName);
-        markMetaChanged();
-        String x = Integer.toHexString(id);
         meta.remove("name." + oldName);
         meta.put(MVMap.getMapKey(id), map.asString(newName));
-        meta.put("name." + newName, x);
+        meta.put("name." + newName, Integer.toHexString(id));
+        markMetaChanged();
     }
 
     /**
@@ -2553,11 +2593,16 @@ public final class MVStore {
     }
 
     private void removeMap(String name, int id, boolean delayed) {
-        markMetaChanged();
-        meta.remove(MVMap.getMapKey(id));
-        meta.remove("name." + name);
-        meta.remove(MVMap.getMapRootKey(id));
+        if (meta.remove(MVMap.getMapKey(id)) != null) {
+            markMetaChanged();
+        }
+        if (meta.remove("name." + name) != null) {
+            markMetaChanged();
+        }
         if (!delayed) {
+            if (meta.remove(MVMap.getMapRootKey(id)) != null) {
+                markMetaChanged();
+            }
             maps.remove(id);
         }
     }
@@ -2582,9 +2627,29 @@ public final class MVStore {
     }
 
     public synchronized int getMapId(String name) {
-        checkOpen();
+//        checkOpen();
         String m = meta.get("name." + name);
         return m == null ? -1 : DataUtils.parseHexInt(m);
+    }
+
+    public void stashMapData(String name) {
+        int mapId = getMapId(name);
+        String rootPos = meta.remove(MVMap.getMapRootKey(mapId));
+        if (rootPos != null) {
+            meta.put("root.tmp." + Integer.toHexString(mapId), rootPos);
+            markMetaChanged();
+        }
+    }
+
+    public void unstashMapData(MVMap map) {
+        int mapId = map.getId();
+        String rootPos = meta.remove("root.tmp." + Integer.toHexString(mapId));
+        if (rootPos != null) {
+            meta.put(MVMap.getMapRootKey(mapId), rootPos);
+            markMetaChanged();
+            long root = DataUtils.parseHexLong(rootPos);
+            map.setRootPos(root, lastStoredVersion);
+        }
     }
 
     /**

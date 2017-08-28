@@ -1433,8 +1433,7 @@ public class TestMVStore extends TestBase {
 //        assertEquals(97266, s.getUnsavedMemory());
 //        assertEquals(64252, s.getUnsavedMemory());
         assertEquals(64284, s.getUnsavedMemory());
-//        assertEquals(64480, s.getUnsavedMemory());
-//        assertEquals(64644, s.getUnsavedMemory());
+//        assertEquals(64362, s.getUnsavedMemory());
         s.commit();
         assertEquals(2, s.getFileStore().getWriteCount());
         s.close();
@@ -1517,12 +1516,12 @@ public class TestMVStore extends TestBase {
         assertNull(meta.get("name.data1"));
         assertNull(m0.get("1"));
         assertEquals("Hello", m.get("1"));
-        assertEquals(2, s.commit());
+        assertEquals(3, s.commit());
         s.close();
 
         s = openStore(fileName);
         s.setRetentionTime(45000);
-        assertEquals(2, s.getCurrentVersion());
+        assertEquals(3, s.getCurrentVersion());
         meta = s.getMetaMap();
         assertTrue(meta.get("name.data") != null);
         assertTrue(meta.get("name.data0") != null);
@@ -1535,12 +1534,12 @@ public class TestMVStore extends TestBase {
         m.put("1",  "Hallo");
         s.commit();
         long v3 = s.getCurrentVersion();
-        assertEquals(3, v3);
+        assertEquals(4, v3);
         s.close();
 
         s = openStore(fileName);
         s.setRetentionTime(45000);
-        assertEquals(3, s.getCurrentVersion());
+        assertEquals(4, s.getCurrentVersion());
         m = s.openMap("data");
         m.put("1",  "Hi");
         s.close();
