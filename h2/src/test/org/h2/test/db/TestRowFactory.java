@@ -118,7 +118,7 @@ public class TestRowFactory extends TestBase {
                 fail();
             } catch(Throwable ignore) {/**/}
             irowTwo.setKey(987);
-            assertEquals("Row{987/0 5, 'World', NULL, 999, NULL, NULL, NULL, NULL}", irowTwo.toString());
+            assertEquals("Row{987/0 5, 'World', null, 999, null, null, null, null}", irowTwo.toString());
             RowStorage.Type itype = new RowStorage.Type(compareMode, null, new int[]{SortOrder.ASCENDING, SortOrder.ASCENDING, SortOrder.ASCENDING});
             assertEquals(0, itype.compare(irowTwo, irowTwo));
             assertEquals(-1, itype.compare(irowTwo, rowTwo));
@@ -128,7 +128,7 @@ public class TestRowFactory extends TestBase {
 
             RowStorage irow = icls.getConstructor().newInstance();
             irow.copyFrom(row);
-            assertEquals("Row{12345/0 3, 'Hello', NULL, 77, NULL, NULL, NULL, NULL}", irow.toString());
+            assertEquals("Row{12345/0 3, 'Hello', null, 77, null, null, null, null}", irow.toString());
             assertEquals(-1, itype.compare(irow, irowTwo));
             assertEquals(0, itype.compare(irow, row));
             assertEquals(1, itype.compare(row, irow));  // assuming NULL sorted low

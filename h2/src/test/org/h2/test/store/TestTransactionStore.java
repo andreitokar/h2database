@@ -316,7 +316,6 @@ public class TestTransactionStore extends TestBase {
 
             s = MVStore.open(fileName);
             ts = new TransactionStore(s);
-            s.setVersionsToKeep(100);
             ts.init();
             tx = ts.begin();
             s.setReuseSpace(false);
@@ -358,8 +357,7 @@ public class TestTransactionStore extends TestBase {
             // roll back a bit, until we have some undo log entries
             assertTrue(s.hasMap("undoLog"));
             for (int back = 0; back < 100; back++) {
-                int minus = 1;
-//                int minus = r.nextInt(10);
+                int minus = r.nextInt(10);
                 s.rollbackTo(Math.max(0, s.getCurrentVersion() - minus));
                 if (s.hasData("undoLog")) {
                     break;

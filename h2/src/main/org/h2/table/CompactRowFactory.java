@@ -2,11 +2,12 @@ package org.h2.table;
 
 import org.h2.bytecode.RowStorage;
 import org.h2.bytecode.RowStorageGenerator;
-import org.h2.engine.Database;
 import org.h2.mvstore.type.DataType;
 import org.h2.result.Row;
 import org.h2.result.RowFactory;
 import org.h2.result.SearchRow;
+import org.h2.store.DataHandler;
+import org.h2.value.CompareMode;
 import org.h2.value.Value;
 
 /**
@@ -31,7 +32,7 @@ public final class CompactRowFactory extends RowFactory {
     }
 
     @Override
-    public RowFactory createRowFactory(Database db, Column[] columns, IndexColumn indexColumns[]) {
+    public RowFactory createRowFactory(CompareMode compareMode, DataHandler handler, Column[] columns, IndexColumn[] indexColumns) {
         int indexes[] = null;
         int sortTypes[] = null;
         if (indexColumns != null) {
@@ -55,7 +56,7 @@ public final class CompactRowFactory extends RowFactory {
         } catch (Exception e) {
             throw new IllegalStateException("CompactRowFactory failure ", e);
         }
-        RowStorage.Type dataType = new RowStorage.Type(db.getCompareMode(), db, sortTypes);
+        RowStorage.Type dataType = new RowStorage.Type(compareMode, handler, sortTypes);
         CompactRowFactory factory = new CompactRowFactory(rowStorage, dataType);
         dataType.setRowFactory(factory);
         return factory;

@@ -606,8 +606,8 @@ public class RowStorage extends Value implements Row, Cloneable {
             int[] indexes = a.getIndexes();
 //            assert Arrays.equals(indexes, b.getIndexes());
             int comp = compare(a, b, compareMode, sortTypes, indexes);
-            int _comp = _compare(a, b, compareMode, sortTypes, indexes);
-            assert comp == _comp;
+//            int _comp = _compare(a, b, compareMode, sortTypes, indexes);
+//            assert comp == _comp;
             return comp;
         }
 
@@ -778,7 +778,7 @@ public class RowStorage extends Value implements Row, Cloneable {
             if(array == null) {
                 buff.putVarInt(0);
             } else {
-                buff.putVarInt(array.length);
+                buff.putVarInt(array.length + 1);
                 for (int i : array) {
                     buff.putVarInt(i);
                 }
@@ -810,7 +810,7 @@ public class RowStorage extends Value implements Row, Cloneable {
             }
 
             private static int[] readIntArray(ByteBuffer buff) {
-                int len = DataUtils.readVarInt(buff);
+                int len = DataUtils.readVarInt(buff) - 1;
                 if(len < 0) {
                     return null;
                 }

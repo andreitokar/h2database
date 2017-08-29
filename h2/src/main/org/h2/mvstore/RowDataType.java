@@ -225,7 +225,7 @@ public final class RowDataType extends ValueDataType implements ExtendedDataType
         if(array == null) {
             buff.putVarInt(0);
         } else {
-            buff.putVarInt(array.length);
+            buff.putVarInt(array.length + 1);
             for (int i : array) {
                 buff.putVarInt(i);
             }
@@ -257,7 +257,7 @@ public final class RowDataType extends ValueDataType implements ExtendedDataType
         }
 
         private static int[] readIntArray(ByteBuffer buff) {
-            int len = DataUtils.readVarInt(buff);
+            int len = DataUtils.readVarInt(buff) - 1;
             if(len < 0) {
                 return null;
             }

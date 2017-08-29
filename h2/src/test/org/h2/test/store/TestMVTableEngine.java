@@ -69,7 +69,7 @@ public class TestMVTableEngine extends TestBase {
         testTransactionLogUsuallyNotStored();
         testShrinkDatabaseFile();
         testTwoPhaseCommit();
-//        testRecover();
+        testRecover();
         testSeparateKey();
         testRollback();
         testRollbackAfterCrash();
@@ -309,8 +309,10 @@ public class TestMVTableEngine extends TestBase {
 
     private void testLowRetentionTime() throws SQLException {
         deleteDb(getTestName());
+        // TODO: fix lazy query execution to keep tx open until ResultSet closure
         Connection conn = getConnection(
-                getTestName() + ";RETENTION_TIME=1;WRITE_DELAY=10");
+//                getTestName() + ";RETENTION_TIME=1;WRITE_DELAY=10");
+                getTestName() + ";RETENTION_TIME=10;WRITE_DELAY=10;LAZY_QUERY_EXECUTION=0");
 //                getTestName() + ";RETENTION_TIME=10;WRITE_DELAY=10;LAZY_QUERY_EXECUTION=0;ANALYZE_AUTO=0");
         Statement stat = conn.createStatement();
         Connection conn2 = getConnection(getTestName());
@@ -676,7 +678,7 @@ public class TestMVTableEngine extends TestBase {
             return;
         }
         deleteDb(getTestName());
-        String dbName = getTestName() + ";MV_STORE=TRUE;MAX_COMPACT_TIME=2000";
+        String dbName = getTestName() + ";MV_STORE=TRUE";
         Connection conn;
         Statement stat;
         long maxSize = 0;

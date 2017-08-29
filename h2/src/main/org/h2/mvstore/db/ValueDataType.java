@@ -14,17 +14,14 @@ import java.sql.SQLException;
 import java.util.Arrays;
 import org.h2.api.ErrorCode;
 import org.h2.bytecode.RowStorage;
-import org.h2.engine.Database;
 import org.h2.message.DbException;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.WriteBuffer;
 import org.h2.mvstore.rtree.SpatialDataType;
 import org.h2.mvstore.rtree.SpatialKey;
 import org.h2.mvstore.type.DataType;
-import org.h2.mvstore.type.ExtendedDataType;
 import org.h2.result.Row;
 import org.h2.result.RowFactory;
-import org.h2.result.SearchRow;
 import org.h2.result.SortOrder;
 import org.h2.store.DataHandler;
 import org.h2.tools.SimpleResultSet;
@@ -98,7 +95,10 @@ public class ValueDataType implements DataType {
     }
 
     public RowFactory getRowFactory() {
-        return rowFactory;
+        return rowFactory != null ? rowFactory :
+                                    RowFactory.getDefaultRowFactory().createRowFactory(
+                                            compareMode, handler,
+                                            sortTypes, null, sortTypes.length);
     }
 
     public void setRowFactory(RowFactory rowFactory) {

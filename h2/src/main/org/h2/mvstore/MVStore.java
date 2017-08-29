@@ -7,16 +7,8 @@ package org.h2.mvstore;
 
 import java.lang.Thread.UncaughtExceptionHandler;
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.Map;
+import java.util.*;
 import java.util.Map.Entry;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -672,7 +664,7 @@ public final class MVStore {
                     "than the supported format {1}",
                     format, FORMAT_READ);
         }
-        lastStoredVersion = -1;
+        lastStoredVersion = INITIAL_VERSION;
         chunks.clear();
         long now = System.currentTimeMillis();
         // calculate the year (doesn't have to be exact;
@@ -717,23 +709,24 @@ public final class MVStore {
             }
             newest = test;
         }
-        setLastChunk(newest);
-        loadChunkMeta();
-        fileStore.clear();
-        // build the free space list
-        for (Chunk c : chunks.values()) {
-            if (c.pageCountLive == 0) {
-                // remove this chunk in the next save operation
-                registerFreePage(currentVersion, c.id, 0, 0);
+        do {
+            setLastChunk(newest);
+            loadChunkMeta();
+            fileStore.clear();
+            // build the free space list
+            for (Chunk c : chunks.values()) {
+                if (c.pageCountLive == 0) {
+                    // remove this chunk in the next save operation
+                    registerFreePage(currentVersion, c.id, 0, 0);
+                }
+                long start = c.block * BLOCK_SIZE;
+                int length = c.len * BLOCK_SIZE;
+                fileStore.markUsed(start, length);
             }
-            long start = c.block * BLOCK_SIZE;
-            int length = c.len * BLOCK_SIZE;
-            fileStore.markUsed(start, length);
-        }
-        assert fileStore.getLast() == _getFileLengthInUse() : fileStore.getLast() + " != " + _getFileLengthInUse();
-        // read all chunk headers and footers within the retention time,
-        // to detect unwritten data after a power failure
-        verifyLastChunks();
+            assert fileStore.getLast() == _getFileLengthInUse() : fileStore.getLast() + " != " + _getFileLengthInUse();
+            // read all chunk headers and footers within the retention time,
+            // to detect unwritten data after a power failure
+        } while((newest = verifyLastChunks()) != null);
     }
 
     private void loadChunkMeta() {
@@ -757,6 +750,7 @@ public final class MVStore {
     }
 
     private void setLastChunk(Chunk last) {
+        chunks.clear();
         lastChunk = last;
         if (last == null) {
             // no valid chunk
@@ -775,15 +769,21 @@ public final class MVStore {
         }
     }
 
-    private void verifyLastChunks() {
+    private Chunk verifyLastChunks() {
         long time = getTimeSinceCreation();
         assert lastChunk == null || chunks.containsKey(lastChunk.id) : lastChunk;
-        ArrayList<Integer> ids = new ArrayList<>(chunks.keySet());
-        Collections.sort(ids);
+        BitSet validIds = new BitSet();
+        Queue<Chunk> queue = new PriorityQueue<>(chunks.size(), new Comparator<Chunk>() {
+            @Override
+            public int compare(Chunk one, Chunk two) {
+                return Integer.compare(one.id, two.id);
+            }
+        });
+        queue.addAll(chunks.values());
         int newestValidChunk = -1;
         Chunk old = null;
-        for (Integer chunkId : ids) {
-            Chunk c = chunks.get(chunkId);
+        Chunk c;
+        while((c = queue.poll()) != null) {
             if (old != null && c.time < old.time) {
                 // old chunk (maybe leftover from a previous crash)
                 break;
@@ -795,19 +795,45 @@ public final class MVStore {
                 continue;
             }
             Chunk test = readChunkHeaderAndFooter(c.block);
-            if (test == null || test.id != c.id) {
-                break;
+            if (test == null) {
+                continue;
+            } else if (test.id != c.id) {
+                queue.offer(test);
+                chunks.put(test.id, test);
+                continue;
             }
-            newestValidChunk = chunkId;
+            validIds.set(c.id);
+
+            MVMap<String, String> oldMeta = meta.openReadOnly(c.metaRootPos, c.version);
+            boolean valid = true;
+            for(Iterator<String> iter = oldMeta.keyIterator("chunk."); valid && iter.hasNext(); ) {
+                String s = iter.next();
+                if (!s.startsWith("chunk.")) {
+                    break;
+                }
+                s = oldMeta.get(s);
+                valid = validIds.get(Chunk.fromString(s).id);
+            }
+            if (valid) {
+                newestValidChunk = c.id;
+            }
         }
+
         Chunk newest = chunks.get(newestValidChunk);
         if (newest != lastChunk) {
-            // to avoid re-using newer chunks later on, we could clear
-            // the headers and footers of those, but we might not know about all
-            // of them, so that could be incomplete - but we check that newer
-            // chunks are written after older chunks, so we are safe
-            rollbackTo(newest == null ? 0 : newest.version);
+            if (newest == null) {
+                rollbackTo(0);
+            } else if (newest.version > currentVersion) {
+                return newest;
+            } else {
+                // to avoid re-using newer chunks later on, we could clear
+                // the headers and footers of those, but we might not know about all
+                // of them, so that could be incomplete - but we check that newer
+                // chunks are written after older chunks, so we are safe
+                rollbackTo(newest.version);
+            }
         }
+        return  null;
     }
 
     /**

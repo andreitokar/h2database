@@ -5,12 +5,12 @@
  */
 package org.h2.result;
 
-import org.h2.engine.Database;
 import org.h2.mvstore.RowDataType;
 import org.h2.mvstore.type.DataType;
+import org.h2.store.DataHandler;
 import org.h2.table.Column;
-import org.h2.table.CompactRowFactory;
 import org.h2.table.IndexColumn;
+import org.h2.value.CompareMode;
 import org.h2.value.Value;
 
 /**
@@ -21,11 +21,11 @@ import org.h2.value.Value;
 public abstract class RowFactory {
 
     private static final class Holder {
-//        private static final RowFactory EFFECTIVE = DefaultRowFactory.INSTANCE;
-        static final RowFactory EFFECTIVE = new CompactRowFactory();
+        private static final RowFactory EFFECTIVE = DefaultRowFactory.INSTANCE;
+//        static final RowFactory EFFECTIVE = new CompactRowFactory();
     }
 
-    public static RowFactory getDefaultRowFactory() {
+    public static DefaultRowFactory getDefaultRowFactory() {
         return DefaultRowFactory.INSTANCE;
     }
 
@@ -34,7 +34,8 @@ public abstract class RowFactory {
     }
 
 
-    public RowFactory createRowFactory(Database db, Column columns[], IndexColumn indexColumns[]) {
+    public RowFactory createRowFactory(CompareMode compareMode, DataHandler handler,
+                                       Column[] columns, IndexColumn[] indexColumns) {
         return this;
     }
 
@@ -54,7 +55,7 @@ public abstract class RowFactory {
     /**
      * Default implementation of row factory.
      */
-    private static final class DefaultRowFactory extends RowFactory {
+    public static final class DefaultRowFactory extends RowFactory {
         private final RowDataType dataType;
         private final int         columnCount;
         private final int         map[];
@@ -65,17 +66,22 @@ public abstract class RowFactory {
             this(new RowDataType(null, null, null, null), 0, null);
         }
 
-        private DefaultRowFactory(RowDataType dataType, int columnCount, int map[]) {
+        private DefaultRowFactory(RowDataType dataType, int columnCount, int indexes[]) {
             this.dataType = dataType;
             this.columnCount = columnCount;
-            this.map = map;
+            this.map = indexes == null ? null : new int[columnCount];
+            if(indexes != null) {
+                for (int i = 0; i < indexes.length; i++) {
+                    map[indexes[i]] = i + 1;
+                }
+            }
         }
 
         @Override
-        public RowFactory createRowFactory(Database db, Column[] columns, IndexColumn[] indexColumns) {
+        public RowFactory createRowFactory(CompareMode compareMode, DataHandler handler,
+                                           Column[] columns, IndexColumn[] indexColumns) {
             int indexes[] = null;
             int sortTypes[];
-            int map[] = null;
             int columnCount = columns.length;
             if (indexColumns == null) {
                 sortTypes = new int[columnCount];
@@ -86,16 +92,19 @@ public abstract class RowFactory {
                 int len = indexColumns.length;
                 indexes = new int[len];
                 sortTypes = new int[len];
-                map = new int[columnCount];
                 for (int i = 0; i < len; i++) {
                     IndexColumn indexColumn = indexColumns[i];
                     indexes[i] = indexColumn.column.getColumnId();
-                    map[indexes[i]] = i + 1;
                     sortTypes[i] = indexColumn.sortType;
                 }
             }
-            RowDataType dataType = new RowDataType(db.getCompareMode(), db, sortTypes, indexes);
-            DefaultRowFactory defaultRowFactory = new DefaultRowFactory(dataType, columnCount, map);
+            return createRowFactory(compareMode, handler, sortTypes, indexes, columnCount);
+        }
+
+        public RowFactory createRowFactory(CompareMode compareMode, DataHandler handler,
+                                           int[] sortTypes, int[] indexes, int columnCount) {
+            RowDataType dataType = new RowDataType(compareMode, handler, sortTypes, indexes);
+            DefaultRowFactory defaultRowFactory = new DefaultRowFactory(dataType, columnCount, indexes);
             dataType.setRowFactory(defaultRowFactory);
             return defaultRowFactory;
         }

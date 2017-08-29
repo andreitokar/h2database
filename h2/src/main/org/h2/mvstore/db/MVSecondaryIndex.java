@@ -59,7 +59,7 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
         }
         // always store the row key in the map key,
         // even for unique indexes, as some of the index columns could be null
-        rowFactory = database.getRowFactory().createRowFactory(db, table.getColumns(), columns);
+        rowFactory = database.getRowFactory().createRowFactory(db.getCompareMode(), db, table.getColumns(), columns);
         DataType keyType = rowFactory.getDataType();
         DataType valueType = ObjectDataType.NoneType.INSTANCE;
         String mapName = "index." + getId();

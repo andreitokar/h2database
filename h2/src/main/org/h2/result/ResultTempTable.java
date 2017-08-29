@@ -289,7 +289,7 @@ public class ResultTempTable implements ResultExternal {
             }
             values = v2;
         }
-        return session.createRow(values, Row.MEMORY_CALCULATE);
+        return table.createRow(values, Row.MEMORY_CALCULATE);
     }
 
     private Cursor find(Row row) {

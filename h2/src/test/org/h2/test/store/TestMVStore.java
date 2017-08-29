@@ -300,7 +300,7 @@ public class TestMVStore extends TestBase {
             s.commit();
             if (i < 50) {
                 assertEquals(0, s.getCacheSizeUsed());
-            } else if (i > 450) {
+            } else if (i > 300) {
                 assertTrue(s.getCacheSizeUsed() >= 1);
             }
         }
@@ -1361,7 +1361,6 @@ public class TestMVStore extends TestBase {
         s.close();
 
         s = openStore(fileName);
-        s.setAutoCommitDelay(0);
         m = s.openMap("data");
         assertEquals("Hi", m.get("1"));
         assertEquals(null, m.get("2"));
@@ -1776,8 +1775,7 @@ public class TestMVStore extends TestBase {
                 break;
             }
         }
-        //TODO: fix me
-//        assertFalse(s.compact(50, 1024));
+        assertFalse(s.compact(50, 1024));
 
         int chunkCount3 = 0;
         for (String k : meta.keySet()) {
