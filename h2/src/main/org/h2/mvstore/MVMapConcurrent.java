@@ -60,7 +60,7 @@ public class MVMapConcurrent<K, V> extends MVMap<K, V> {
 
         @Override
         protected MVMapConcurrent<K, V> create(Map<String, Object> config) {
-            return new MVMapConcurrent<K, V>(config);
+            return new MVMapConcurrent<>(config);
         }
     }
 }

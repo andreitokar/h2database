@@ -35,7 +35,7 @@ class Database {
     private DatabaseTest test;
     private int id;
     private String name, url, user, password;
-    private final ArrayList<String[]> replace = new ArrayList<String[]>();
+    private final ArrayList<String[]> replace = new ArrayList<>();
     private String currentAction;
     private long startTimeNs;
     private long initialGCTime;
@@ -43,7 +43,7 @@ class Database {
     private Statement stat;
     private long lastTrace;
     private final Random random = new Random(1);
-    private final ArrayList<Object[]> results = new ArrayList<Object[]>();
+    private final ArrayList<Object[]> results = new ArrayList<>();
     private int totalTime;
     private int totalGCTime;
     private final AtomicInteger executedStatements = new AtomicInteger(0);

@@ -146,7 +146,7 @@ public final class MVStore {
 
     private volatile boolean reuseSpace = true;
 
-    private boolean closed;
+    private volatile boolean closed;
 
     private final FileStore fileStore;
     private final boolean fileStoreIsProvided;
@@ -178,7 +178,7 @@ public final class MVStore {
      * The map of chunks.
      */
     private final ConcurrentHashMap<Integer, Chunk> chunks =
-            new ConcurrentHashMap<Integer, Chunk>();
+            new ConcurrentHashMap<>();
 
     private long updateCounter = 0;
     private long updateAttemptCounter = 0;
@@ -190,7 +190,7 @@ public final class MVStore {
      */
     private final ConcurrentHashMap<Long,
             HashMap<Integer, Chunk>> freedPageSpace =
-            new ConcurrentHashMap<Long, HashMap<Integer, Chunk>>();
+            new ConcurrentHashMap<>();
 
     /**
      * The metadata map. Write access to this map needs to be synchronized on
@@ -199,7 +199,7 @@ public final class MVStore {
     private final MVMap<String, String> meta;
 
     private final ConcurrentHashMap<Integer, MVMap<?, ?>> maps =
-            new ConcurrentHashMap<Integer, MVMap<?, ?>>();
+            new ConcurrentHashMap<>();
 
     private final HashMap<String, Object> storeHeader = New.hashMap();
 
@@ -221,7 +221,7 @@ public final class MVStore {
 
     public final UncaughtExceptionHandler backgroundExceptionHandler;
 
-    private long currentVersion; // = INITIAL_VERSION + 1;
+    private volatile long currentVersion; // = INITIAL_VERSION + 1;
 
     private VersionChangeListener versionChangeListener;
 
@@ -1373,7 +1373,7 @@ public final class MVStore {
     private Set<Integer> collectReferencedChunks() {
         long testVersion = lastChunk.version;
         DataUtils.checkArgument(testVersion > 0, "Collect references on version 0");
-        long readCount = getFileStore().readCount;
+        long readCount = getFileStore().readCount.get();
         Set<Integer> referenced = New.hashSet();
         long oldestVersionToKeep = getOldestVersionToKeep(null);
 
@@ -2443,7 +2443,7 @@ public final class MVStore {
         // find out which chunks to remove,
         // and which is the newest chunk to keep
         // (the chunk list can have gaps)
-        ArrayList<Integer> remove = new ArrayList<Integer>();
+        ArrayList<Integer> remove = new ArrayList<>();
         Chunk keep = null;
         for (Chunk c : chunks.values()) {
             if (c.version > version) {

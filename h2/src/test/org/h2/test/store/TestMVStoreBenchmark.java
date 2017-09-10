@@ -162,12 +162,12 @@ public class TestMVStoreBenchmark extends TestBase {
             mv = testPerformance(map, size);
             store.close();
 
-//            map = new HashMap<Integer, String>(size);
-            map = new ConcurrentHashMap<Integer, String>(size);
+//            map = new HashMap<>(size);
+            map = new ConcurrentHashMap<>(size);
             hash = testPerformance(map, size);
 
-//            map = new TreeMap<Integer, String>();
-            map = new ConcurrentSkipListMap<Integer, String>();
+//            map = new TreeMap<>();
+            map = new ConcurrentSkipListMap<>();
             tree = testPerformance(map, size);
 
             if (hash < tree && mv < tree * 1.5) {

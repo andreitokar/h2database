@@ -1207,7 +1207,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
             checkNotClosed();
             MVMap<K, VersionedValue> map = store.openMap(name, keyType,
                     valueType);
-            return new TransactionMap<K, V>(this, map);
+            return new TransactionMap<>(this, map);
         }
 
         /**
@@ -1221,7 +1221,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
         public <K, V> TransactionMap<K, V> openMap(
                 MVMap<K, VersionedValue> map) {
             checkNotClosed();
-            return new TransactionMap<K, V>(this, map);
+            return new TransactionMap<>(this, map);
         }
 
         /**

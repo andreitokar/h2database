@@ -623,7 +623,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
 
         @Override
         public MVRTreeMap<V> create(Map<String, Object> config) {
-            return new MVRTreeMap<V>(config);
+            return new MVRTreeMap<>(config);
         }
     }
 }

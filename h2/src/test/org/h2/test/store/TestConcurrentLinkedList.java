@@ -149,7 +149,7 @@ public class TestConcurrentLinkedList extends TestBase {
             ConcurrentLinkedDeque<Integer> test = new ConcurrentLinkedDeque<>();
 //            ConcurrentArrayList<Integer> test = new ConcurrentArrayList<Integer>();
             // ConcurrentRing<Integer> test = new ConcurrentRing<Integer>();
-            LinkedList<Integer> x = new LinkedList<Integer>();
+            LinkedList<Integer> x = new LinkedList<>();
             StringBuilder buff = new StringBuilder();
             for (int j = 0; j < 10000; j++) {
                 buff.append("[" + j + "] ");

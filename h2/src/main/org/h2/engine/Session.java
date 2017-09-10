@@ -262,7 +262,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
 
     @Override
     public ArrayList<String> getClusterServers() {
-        return new ArrayList<String>();
+        return new ArrayList<>();
     }
 
     public boolean setCommitOrRollbackDisabled(boolean x) {
@@ -1693,12 +1693,12 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
         if (v.getTableId() == LobStorageFrontend.TABLE_RESULT ||
                 v.getTableId() == LobStorageFrontend.TABLE_TEMP) {
             if (temporaryResultLobs == null) {
-                temporaryResultLobs = new LinkedList<TimeoutValue>();
+                temporaryResultLobs = new LinkedList<>();
             }
             temporaryResultLobs.add(new TimeoutValue(v));
         } else {
             if (temporaryLobs == null) {
-                temporaryLobs = new ArrayList<Value>();
+                temporaryLobs = new ArrayList<>();
             }
             temporaryLobs.add(v);
         }

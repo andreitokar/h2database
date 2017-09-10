@@ -66,9 +66,9 @@ public class MVTable extends TableBase {
 
     static {
         if (SysProperties.THREAD_DEADLOCK_DETECTOR) {
-            WAITING_FOR_LOCK = new DebuggingThreadLocal<String>();
-            EXCLUSIVE_LOCKS = new DebuggingThreadLocal<ArrayList<String>>();
-            SHARED_LOCKS = new DebuggingThreadLocal<ArrayList<String>>();
+            WAITING_FOR_LOCK = new DebuggingThreadLocal<>();
+            EXCLUSIVE_LOCKS = new DebuggingThreadLocal<>();
+            SHARED_LOCKS = new DebuggingThreadLocal<>();
         } else {
             WAITING_FOR_LOCK = null;
             EXCLUSIVE_LOCKS = null;
@@ -78,7 +78,7 @@ public class MVTable extends TableBase {
 
     private MVPrimaryIndex primaryIndex;
     private final ArrayList<Index> indexes = New.arrayList();
-    private long lastModificationId;
+    private volatile long lastModificationId;
     private volatile Session lockExclusiveSession;
 
     // using a ConcurrentHashMap as a set
@@ -88,7 +88,7 @@ public class MVTable extends TableBase {
      * The queue of sessions waiting to lock the table. It is a FIFO queue to
      * prevent starvation, since Java's synchronized locking is biased.
      */
-    private final ArrayDeque<Session> waitingSessions = new ArrayDeque<Session>();
+    private final ArrayDeque<Session> waitingSessions = new ArrayDeque<>();
     private final Trace traceLock;
     private int changesSinceAnalyze;
     private int nextAnalyze;
@@ -775,13 +775,15 @@ public class MVTable extends TableBase {
     }
 
     private void analyzeIfRequired(Session session) {
-        if (nextAnalyze == 0 || nextAnalyze > changesSinceAnalyze++) {
-            return;
-        }
-        changesSinceAnalyze = 0;
-        int n = 2 * nextAnalyze;
-        if (n > 0) {
-            nextAnalyze = n;
+        synchronized (this) {
+            if (nextAnalyze == 0 || nextAnalyze > changesSinceAnalyze++) {
+                return;
+            }
+            changesSinceAnalyze = 0;
+            int n = 2 * nextAnalyze;
+            if (n > 0) {
+                nextAnalyze = n;
+            }
         }
         session.markTableForAnalyze(this);
     }

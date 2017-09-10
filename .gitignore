@@ -17,4 +17,5 @@
 .checkstyle
 /temp/
 /h2web/
+.pmd
 /h2/generated/

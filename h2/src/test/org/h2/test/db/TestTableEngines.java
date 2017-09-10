@@ -1516,7 +1516,7 @@ public class TestTableEngines extends TestBase {
 
         int preferredBatchSize;
 
-        final TreeSet<SearchRow> set = new TreeSet<SearchRow>(this);
+        final TreeSet<SearchRow> set = new TreeSet<>(this);
 
         TreeSetIndex(Table t, String name, IndexColumn[] cols, IndexType type) {
             initBaseIndex(t, 0, name, cols, type);

@@ -988,7 +988,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     }
 
     public final Cursor<K, V> cursor(K from, boolean snapshot) {
-        return new Cursor<K, V>(this, getRootPage(), from, snapshot);
+        return new Cursor<>(this, getRootPage(), from, snapshot);
     }
 
     @Override
@@ -999,7 +999,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
             @Override
             public Iterator<Entry<K, V>> iterator() {
-                final Cursor<K, V> cursor = new Cursor<K, V>(map, root, null);
+                final Cursor<K, V> cursor = new Cursor<>(map, root, null);
                 return new Iterator<Entry<K, V>>() {
 
                     @Override
@@ -1010,7 +1010,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                     @Override
                     public Entry<K, V> next() {
                         K k = cursor.next();
-                        return new DataUtils.MapEntry<K, V>(k, cursor.getValue());
+                        return new DataUtils.MapEntry<>(k, cursor.getValue());
                     }
 
                     @Override
