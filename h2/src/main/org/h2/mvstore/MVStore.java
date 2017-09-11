@@ -1429,7 +1429,7 @@ public final class MVStore {
             assert !referenced.isEmpty();
         }
 //*/
-        readCount = fileStore.readCount - readCount;
+        readCount = fileStore.readCount.get() - readCount;
         return referenced;
     }
 
