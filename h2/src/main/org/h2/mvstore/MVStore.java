@@ -727,6 +727,11 @@ public final class MVStore {
             // read all chunk headers and footers within the retention time,
             // to detect unwritten data after a power failure
         } while((newest = verifyLastChunks()) != null);
+
+        setWriteVersion(currentVersion);
+        if(versionChangeListener != null) {
+            versionChangeListener.onVersionChange(currentVersion);
+        }
     }
 
     private void loadChunkMeta() {
@@ -763,10 +768,6 @@ public final class MVStore {
             chunks.put(last.id, last);
             meta.setRootPos(last.metaRootPos, lastStoredVersion);
         }
-        setWriteVersion(currentVersion);
-        if(versionChangeListener != null) {
-            versionChangeListener.onVersionChange(currentVersion);
-        }
     }
 
     private Chunk verifyLastChunks() {
@@ -789,11 +790,13 @@ public final class MVStore {
                 break;
             }
             old = c;
+/*
             if (c.time + retentionTime < time) {
                 // old chunk, no need to verify
                 newestValidChunk = c.id;
                 continue;
             }
+*/
             Chunk test = readChunkHeaderAndFooter(c.block);
             if (test == null) {
                 continue;
@@ -1788,7 +1791,9 @@ public final class MVStore {
         Collections.sort(move, new Comparator<Chunk>() {
             @Override
             public int compare(Chunk o1, Chunk o2) {
-                return Long.signum(o1.block - o2.block);
+                int res = Long.signum(o1.block - o2.block);
+                assert res == Long.compare(o1.block, o2.block);
+                return res;
             }
         });
         // find which is the last block to keep
@@ -1845,7 +1850,7 @@ public final class MVStore {
 
         // now re-use the empty space
         reuseSpace = true;
-        compactRewrite(Collections.singleton(lastChunk));
+//        compactRewrite(Collections.singleton(lastChunk));
         for (Chunk c : move) {
             if (!chunks.containsKey(c.id)) {
                 // already removed during the
@@ -2316,7 +2321,7 @@ public final class MVStore {
                         return false;
                     }
                     // we store this chunk
-                    chunks.put(c2.id, c2);
+//                    chunks.put(c2.id, c2);
                 }
             }
         } catch (IllegalStateException e) {
