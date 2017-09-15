@@ -744,11 +744,13 @@ public final class MVStore {
             }
             s = meta.get(s);
             Chunk c = Chunk.fromString(s);
-            if (chunks.putIfAbsent(c.id, c) == null) {
-                if (c.block == Long.MAX_VALUE) {
-                    throw DataUtils.newIllegalStateException(
-                            DataUtils.ERROR_FILE_CORRUPT,
-                            "Chunk {0} is invalid", c.id);
+            if (c.version < lastChunk.version) {
+                if (chunks.putIfAbsent(c.id, c) == null) {
+                    if (c.block == Long.MAX_VALUE) {
+                        throw DataUtils.newIllegalStateException(
+                                DataUtils.ERROR_FILE_CORRUPT,
+                                "Chunk {0} is invalid", c.id);
+                    }
                 }
             }
         }
@@ -761,17 +763,19 @@ public final class MVStore {
             // no valid chunk
             lastMapId = 0;
             currentVersion = 0;
+            lastStoredVersion = INITIAL_VERSION;
             meta.setRootPos(0, INITIAL_VERSION);
         } else {
             lastMapId = last.mapId;
             currentVersion = last.version;
             chunks.put(last.id, last);
+            lastStoredVersion = currentVersion - 1;
             meta.setRootPos(last.metaRootPos, lastStoredVersion);
         }
     }
 
     private Chunk verifyLastChunks() {
-        long time = getTimeSinceCreation();
+//        long time = getTimeSinceCreation();
         assert lastChunk == null || chunks.containsKey(lastChunk.id) : lastChunk;
         BitSet validIds = new BitSet();
         Queue<Chunk> queue = new PriorityQueue<>(chunks.size(), new Comparator<Chunk>() {
@@ -782,14 +786,16 @@ public final class MVStore {
         });
         queue.addAll(chunks.values());
         int newestValidChunk = -1;
-        Chunk old = null;
+//        Chunk old = null;
         Chunk c;
         while((c = queue.poll()) != null) {
+/*
             if (old != null && c.time < old.time) {
                 // old chunk (maybe leftover from a previous crash)
                 break;
             }
             old = c;
+*/
 /*
             if (c.time + retentionTime < time) {
                 // old chunk, no need to verify
@@ -801,39 +807,58 @@ public final class MVStore {
             if (test == null) {
                 continue;
             } else if (test.id != c.id) {
+/*
                 queue.offer(test);
-                chunks.put(test.id, test);
+                Chunk prev = chunks.put(test.id, test);
+                if(prev != null) {
+                    long start = prev.block * BLOCK_SIZE;
+                    int length = prev.len * BLOCK_SIZE;
+                    fileStore.free(start, length);
+                }
+                fileStore.free(c.block * BLOCK_SIZE, c.len * BLOCK_SIZE);
+                c = test;
+                if (c.pageCountLive == 0) {
+                    // remove this chunk in the next save operation
+                    registerFreePage(currentVersion, c.id, 0, 0);
+                }
+                long start = c.block * BLOCK_SIZE;
+                int length = c.len * BLOCK_SIZE;
+                fileStore.markUsed(start, length);
+*/
                 continue;
             }
             validIds.set(c.id);
 
-            MVMap<String, String> oldMeta = meta.openReadOnly(c.metaRootPos, c.version);
-            boolean valid = true;
-            for(Iterator<String> iter = oldMeta.keyIterator("chunk."); valid && iter.hasNext(); ) {
-                String s = iter.next();
-                if (!s.startsWith("chunk.")) {
-                    break;
+            try {
+                MVMap<String, String> oldMeta = meta.openReadOnly(c.metaRootPos, c.version);
+                boolean valid = true;
+                for(Iterator<String> iter = oldMeta.keyIterator("chunk."); valid && iter.hasNext(); ) {
+                    String s = iter.next();
+                    if (!s.startsWith("chunk.")) {
+                        break;
+                    }
+                    s = oldMeta.get(s);
+                    valid = validIds.get(Chunk.fromString(s).id);
                 }
-                s = oldMeta.get(s);
-                valid = validIds.get(Chunk.fromString(s).id);
-            }
-            if (valid) {
-                newestValidChunk = c.id;
-            }
+                if (valid) {
+                    newestValidChunk = c.id;
+                }
+            } catch (Exception ignore) {/**/}
         }
 
         Chunk newest = chunks.get(newestValidChunk);
         if (newest != lastChunk) {
             if (newest == null) {
                 rollbackTo(0);
-            } else if (newest.version > currentVersion) {
-                return newest;
+//            } else if (newest.version > currentVersion) {
+//            } else if (newest.version != currentVersion) {
             } else {
                 // to avoid re-using newer chunks later on, we could clear
                 // the headers and footers of those, but we might not know about all
                 // of them, so that could be incomplete - but we check that newer
                 // chunks are written after older chunks, so we are safe
                 rollbackTo(newest.version);
+                return newest;
             }
         }
         return  null;

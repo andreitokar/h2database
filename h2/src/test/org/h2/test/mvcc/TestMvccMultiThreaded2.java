@@ -11,7 +11,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
-import org.h2.jdbc.JdbcSQLException;
 import org.h2.test.TestBase;
 import org.h2.util.IOUtils;
 
@@ -75,7 +74,7 @@ public class TestMvccMultiThreaded2 extends TestBase {
 
         IOUtils.closeSilently(conn);
         deleteDb(getTestName());
-        System.out.println("Operations completed: " + totalCount);
+        trace("Operations completed: " + totalCount);
     }
 
     private class SelectForUpdate extends Thread {
@@ -101,7 +100,7 @@ public class TestMvccMultiThreaded2 extends TestBase {
                     conn.commit();
                     ++count;
                     long now = System.currentTimeMillis();
-                    if (now - start > (config.fast ? 5 : 60) * 1000) {
+                    if (now - start > (config.travis ? 5 : 60) * 1000) {
                         done = true;
                     }
                 }
