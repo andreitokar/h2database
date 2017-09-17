@@ -51,7 +51,7 @@ public class TestConcurrentLinkedList extends TestBase {
         long start = System.nanoTime();
         // final ConcurrentLinkedList<Integer> test =
         //     new ConcurrentLinkedList<Integer>();
-//        final ConcurrentArrayList<Integer> test = new ConcurrentArrayList<Integer>();
+//        final ConcurrentArrayList<Integer> test = new ConcurrentArrayList<>();
         final ConcurrentLinkedDeque<Integer> test = new ConcurrentLinkedDeque<>();
         final LinkedList<Integer> x = new LinkedList<Integer>();
         final AtomicInteger counter = new AtomicInteger();
@@ -111,7 +111,7 @@ public class TestConcurrentLinkedList extends TestBase {
 
     private void testConcurrent() {
         final ConcurrentLinkedDeque<Integer> test = new ConcurrentLinkedDeque<>();
-//        final ConcurrentArrayList<Integer> test = new ConcurrentArrayList<Integer>();
+//        final ConcurrentArrayList<Integer> test = new ConcurrentArrayList<>();
         // final ConcurrentRing<Integer> test = new ConcurrentRing<Integer>();
         final AtomicInteger counter = new AtomicInteger();
         final AtomicInteger size = new AtomicInteger();
@@ -147,9 +147,9 @@ public class TestConcurrentLinkedList extends TestBase {
         Random r = new Random(0);
         for (int i = 0; i < 100; i++) {
             ConcurrentLinkedDeque<Integer> test = new ConcurrentLinkedDeque<>();
-//            ConcurrentArrayList<Integer> test = new ConcurrentArrayList<Integer>();
+//            ConcurrentArrayList<Integer> test = new ConcurrentArrayList<>();
             // ConcurrentRing<Integer> test = new ConcurrentRing<Integer>();
-            LinkedList<Integer> x = new LinkedList<Integer>();
+            LinkedList<Integer> x = new LinkedList<>();
             StringBuilder buff = new StringBuilder();
             for (int j = 0; j < 10000; j++) {
                 buff.append("[" + j + "] ");

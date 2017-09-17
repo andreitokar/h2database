@@ -64,6 +64,7 @@ import org.h2.command.ddl.DropUserDataType;
 import org.h2.command.ddl.DropView;
 import org.h2.command.ddl.GrantRevoke;
 import org.h2.command.ddl.PrepareProcedure;
+import org.h2.command.ddl.SchemaCommand;
 import org.h2.command.ddl.SetComment;
 import org.h2.command.ddl.TruncateTable;
 import org.h2.command.dml.AlterSequence;
@@ -819,7 +820,7 @@ public class Parser {
         }
         currentPrepared = command;
         int start = lastParseIndex;
-        if (!readIf("FROM") && database.getMode() == Mode.MYSQL) {
+        if (!readIf("FROM") && database.getMode() == Mode.getMySQL()) {
             readIdentifierWithSchema();
             read("FROM");
         }
@@ -1290,6 +1291,10 @@ public class Parser {
                     indexHints = parseIndexHints(table);
                 }
             }
+        }
+        // inherit alias for temporary views (usually CTE's) from table name
+        if(table.isView() && table.isTemporary() && alias==null){
+            alias = table.getName();
         }
         return new TableFilter(session, table, alias, rightsChecked,
                 currentSelect, orderInFrom++, indexHints);
@@ -4274,7 +4279,7 @@ public class Parser {
             }
         } else if (dataType.type == Value.ENUM) {
             if (readIf("(")) {
-                java.util.List<String> enumeratorList = new ArrayList<String>();
+                java.util.List<String> enumeratorList = new ArrayList<>();
                 original += '(';
                 String enumerator0 = readString();
                 enumeratorList.add(enumerator0);
@@ -4920,7 +4925,7 @@ public class Parser {
     }
 
     private Prepared parseWith() {
-        List<TableView> viewsCreated = new ArrayList<TableView>();
+        List<TableView> viewsCreated = new ArrayList<>();
         readIf("RECURSIVE");
         do {
             viewsCreated.add(parseSingleCommonTableExpression());
@@ -5017,7 +5022,7 @@ public class Parser {
         recursiveTable = schema.createTable(data);
         session.addLocalTempTable(recursiveTable);
         String querySQL;
-        List<Column> columnTemplateList = new ArrayList<Column>();
+        List<Column> columnTemplateList = new ArrayList<>();
         try {
             read("AS");
             read("(");
@@ -5787,9 +5792,18 @@ public class Parser {
                 return commandIfTableExists(schema, tableName, ifTableExists, command);
             } else if (readIf("INDEX")) {
                 // MySQL compatibility
-                String indexName = readIdentifierWithSchema();
-                DropIndex command = new DropIndex(session, getSchema());
-                command.setIndexName(indexName);
+                String indexOrConstraintName = readIdentifierWithSchema();
+                final SchemaCommand command;
+                if (schema.findIndex(session, indexOrConstraintName) != null) {
+                    DropIndex dropIndexCommand = new DropIndex(session, getSchema());
+                    dropIndexCommand.setIndexName(indexOrConstraintName);
+                    command = dropIndexCommand;
+                } else {
+                    AlterTableDropConstraint dropCommand = new AlterTableDropConstraint(
+                            session, getSchema(), false/*ifExists*/);
+                    dropCommand.setConstraintName(indexOrConstraintName);
+                    command = dropCommand;
+                }
                 return commandIfTableExists(schema, tableName, ifTableExists, command);
             } else if (readIf("PRIMARY")) {
                 read("KEY");

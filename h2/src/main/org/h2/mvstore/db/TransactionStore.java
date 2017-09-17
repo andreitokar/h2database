@@ -696,7 +696,7 @@ public final class TransactionStore {
             MVMap<K, VersionedValue> map = store.openMap(name, keyType,
                     valueType);
             int mapId = map.getId();
-            return new TransactionMap<K, V>(this, map, mapId);
+            return new TransactionMap<>(this, map, mapId);
         }
 
         /**
@@ -711,7 +711,7 @@ public final class TransactionStore {
                 MVMap<K, VersionedValue> map) {
             checkNotClosed();
             int mapId = map.getId();
-            return new TransactionMap<K, V>(this, map, mapId);
+            return new TransactionMap<>(this, map, mapId);
         }
 
         /**
@@ -850,7 +850,7 @@ public final class TransactionStore {
         public TransactionMap<K, V> getInstance(Transaction transaction,
                 long savepoint) {
             TransactionMap<K, V> m =
-                    new TransactionMap<K, V>(transaction, map, mapId);
+                    new TransactionMap<>(transaction, map, mapId);
             m.setSavepoint(savepoint);
             return m;
         }
@@ -1388,7 +1388,7 @@ public final class TransactionStore {
                         if (data != null && data.value != null) {
                             @SuppressWarnings("unchecked")
                             final V value = (V) data.value;
-                            current = new DataUtils.MapEntry<K, V>(key, value);
+                            current = new DataUtils.MapEntry<>(key, value);
                             currentKey = key;
                             return;
                         }
