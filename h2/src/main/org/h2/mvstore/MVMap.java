@@ -1124,7 +1124,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * Forget those old versions that are no longer needed.
      * @return true if map was closed previously and now it can be removed
      */
-    final boolean removeUnusedOldVersions() {
+    private final boolean removeUnusedOldVersions() {
         long oldest = store.getOldestVersionToKeep(this);
         RootReference rootReference = getRoot();
         boolean result = isClosed() && getVersion(rootReference) < oldest;
@@ -1286,10 +1286,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     private MVMap<K, V> openReadOnly(Page root, long version) {
         MVMap<K, V> m = cloneIt();
         m.readOnly = true;
-//        HashMap<String, Object> config = New.hashMap();
-//        config.put("id", id);
-//        config.put("createVersion", createVersion);
-//        m.init(store, config);
         m.setInitialRoot(root, version);
         return m;
     }
@@ -1306,18 +1302,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     }
 
     final boolean hasChangesSince(long version) {
-        return getVersion()> version;
-/*
-        RootReference rootReference = getRoot();
-        Page currentRoot = rootReference.root;
-        while((rootReference = rootReference.previous) != null) {
-            boolean changed = rootReference.root != currentRoot;
-            if(rootReference.version <= version || changed) {
-                return changed;
-            }
-        }
-        return false;
-*/
+        return getVersion() > version;
     }
 
     /**
@@ -1769,75 +1754,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         @Override
         public void read(ByteBuffer buff, Object[] obj, int len, boolean key) {
             dataType.read(buff, obj, len, key);
-        }
-    }
-
-    private static final class MVEntrySet<K, V> extends AbstractSet<Entry<K, V>> {
-
-        private final MVMap<K,V>   map;
-
-        private MVEntrySet(MVMap<K, V> map) {
-            this.map = map;
-        }
-
-        @Override
-        public Iterator<Entry<K, V>> iterator() {
-            final Cursor<K, V> cursor = new Cursor<K, V>(map, map.getRootPage(), null);
-            return new Iterator<Entry<K, V>>() {
-
-                @Override
-                public boolean hasNext() {
-                    return cursor.hasNext();
-                }
-
-                @Override
-                public Entry<K, V> next() {
-                    K k = cursor.next();
-                    return new DataUtils.MapEntry<K, V>(k, cursor.getValue());
-                }
-
-                @Override
-                public void remove() {
-                    throw DataUtils.newUnsupportedOperationException(
-                            "Removing is not supported");
-                }
-            };
-
-        }
-
-        @Override
-        public int size() {
-            return map.size();
-        }
-
-        @Override
-        public boolean contains(Object o) {
-            return map.containsKey(o);
-        }
-
-    }
-
-    private static final class MVKeySet<K> extends AbstractSet<K> {
-
-        private final MVMap<K, ?> map;
-
-        private MVKeySet(MVMap<K, ?> map) {
-            this.map = map;
-        }
-
-        @Override
-        public Iterator<K> iterator() {
-            return new Cursor<>(map, map.getRootPage(), null);
-        }
-
-        @Override
-        public int size() {
-            return map.size();
-        }
-
-        @Override
-        public boolean contains(Object o) {
-            return map.containsKey(o);
         }
     }
 }

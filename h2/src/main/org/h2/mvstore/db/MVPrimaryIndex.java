@@ -67,7 +67,7 @@ public class MVPrimaryIndex extends BaseIndex {
         if (!table.isPersistData()) {
             dataMap.map.setVolatile(true);
         }
-        Long k = dataMap.lastKey();
+        Long k = dataMap.map.lastKey(); // include uncommitted keys
         lastKey.set(k == null ? 0 : k);
     }
 
