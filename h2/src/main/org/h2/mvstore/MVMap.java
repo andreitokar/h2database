@@ -701,7 +701,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      */
     @Override
     public boolean remove(Object key, Object value) {
-        EqualsDecisionMaker<V> decisionMaker = new EqualsDecisionMaker<V>(valueType, (V)value);
+        EqualsDecisionMaker<V> decisionMaker = new EqualsDecisionMaker<>(valueType, (V)value);
         operate((K)key, null, decisionMaker);
         return decisionMaker.decision != Decision.ABORT;
     }
@@ -740,7 +740,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      */
     @Override
     public final boolean replace(K key, V oldValue, V newValue) {
-        EqualsDecisionMaker<V> decisionMaker = new EqualsDecisionMaker<V>(valueType, oldValue);
+        EqualsDecisionMaker<V> decisionMaker = new EqualsDecisionMaker<>(valueType, oldValue);
         V result = put(key, newValue, decisionMaker);
         return decisionMaker.decision != Decision.ABORT;
     }
@@ -1124,7 +1124,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * Forget those old versions that are no longer needed.
      * @return true if map was closed previously and now it can be removed
      */
-    private final boolean removeUnusedOldVersions() {
+    private boolean removeUnusedOldVersions() {
         long oldest = store.getOldestVersionToKeep(this);
         RootReference rootReference = getRoot();
         boolean result = isClosed() && getVersion(rootReference) < oldest;
@@ -1537,7 +1537,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         protected MVMap<K, V> create(Map<String, Object> config) {
             Object type = config.get("type");
             if(type == null || type.equals("rtree")) {
-                return new MVMap<K, V>(config);
+                return new MVMap<>(config);
             }
             throw new IllegalArgumentException("Incompatible map type");
         }

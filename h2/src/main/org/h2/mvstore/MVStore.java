@@ -799,8 +799,6 @@ public final class MVStore {
                 break;
             }
             old = c;
-*/
-/*
             if (c.time + retentionTime < time) {
                 // old chunk, no need to verify
                 newestValidChunk = c.id;
@@ -808,27 +806,7 @@ public final class MVStore {
             }
 */
             Chunk test = readChunkHeaderAndFooter(c.block);
-            if (test == null) {
-                continue;
-            } else if (test.id != c.id) {
-/*
-                queue.offer(test);
-                Chunk prev = chunks.put(test.id, test);
-                if(prev != null) {
-                    long start = prev.block * BLOCK_SIZE;
-                    int length = prev.len * BLOCK_SIZE;
-                    fileStore.free(start, length);
-                }
-                fileStore.free(c.block * BLOCK_SIZE, c.len * BLOCK_SIZE);
-                c = test;
-                if (c.pageCountLive == 0) {
-                    // remove this chunk in the next save operation
-                    registerFreePage(currentVersion, c.id, 0, 0);
-                }
-                long start = c.block * BLOCK_SIZE;
-                int length = c.len * BLOCK_SIZE;
-                fileStore.markUsed(start, length);
-*/
+            if (test == null || test.id != c.id) {
                 continue;
             }
             validIds.set(c.id);
@@ -854,8 +832,6 @@ public final class MVStore {
         if (newest != lastChunk) {
             if (newest == null) {
                 rollbackTo(0);
-//            } else if (newest.version > currentVersion) {
-//            } else if (newest.version != currentVersion) {
             } else {
                 // to avoid re-using newer chunks later on, we could clear
                 // the headers and footers of those, but we might not know about all
@@ -977,9 +953,7 @@ public final class MVStore {
                     }
                 }
             }
-//            if (hasUnsavedChangesInternal()) {
-                commit();
-//            }
+            commit();
         }
         closeStore(true);
     }
@@ -1011,12 +985,6 @@ public final class MVStore {
             if (fileStore != null && shrinkIfPossible) {
                 shrinkFileIfPossible(0);
             }
-/*
-            int updateFailureRatio = (int)(10000 * getUpdateFailureRatio());
-            if(updateFailureRatio != 0) {
-                System.out.println("UpdateFailurePercent: " + updateFailureRatio / 100 + "." + updateFailureRatio % 100 + "%");
-            }
-*/
             // release memory early - this is important when called
             // because of out of memory
             cache = null;
@@ -1256,7 +1224,6 @@ public final class MVStore {
             versionChangeListener.onVersionChange(currentVersion);
         }
 
-//        Page metaRoot = meta.getRootPage();
         Page metaRoot = metaRootReference.root;
         metaRoot.writeUnsavedRecursive(c, buff);
 
@@ -1366,7 +1333,6 @@ public final class MVStore {
         unsavedMemory = Math.max(0, unsavedMemory
                 - currentUnsavedPageCount);
 
-//        metaChanged = false;
         lastStoredVersion = storeVersion;
 
         return version;
@@ -1877,7 +1843,6 @@ public final class MVStore {
 
         // now re-use the empty space
         reuseSpace = true;
-//        compactRewrite(Collections.singleton(lastChunk));
         for (Chunk c : move) {
             if (!chunks.containsKey(c.id)) {
                 // already removed during the
@@ -2305,7 +2270,6 @@ public final class MVStore {
         boolean success;
         do {
             long current = this.oldestVersionToKeep.get();
-//            assert oldestVersionToKeep >= current || current == NOT_SET : oldestVersionToKeep + " < " + current;
             success = oldestVersionToKeep <= current && current != NOT_SET ||
                       this.oldestVersionToKeep.compareAndSet(current, oldestVersionToKeep);
         } while (!success);
@@ -2352,8 +2316,6 @@ public final class MVStore {
                     if (test == null || test.id != c2.id) {
                         return false;
                     }
-                    // we store this chunk
-//                    chunks.put(c2.id, c2);
                 }
             }
         } catch (IllegalStateException e) {
@@ -2387,15 +2349,6 @@ public final class MVStore {
      */
     void beforeWrite(MVMap<?, ?> map) {
         if (saveNeeded && fileStore != null && !closed && autoCommitDelay > 0) {
-/*
-            if (map == meta) {
-                // to, don't save while the metadata map is locked
-                // this is to avoid deadlocks that could occur when we
-                // synchronize on the store and then on the metadata map
-                // TODO there should be no deadlocks possible
-                return;
-            }
-*/
             saveNeeded = false;
             // check again, because it could have been written by now
             if (unsavedMemory > autoCommitMemory && autoCommitMemory > 0) {
@@ -2531,13 +2484,11 @@ public final class MVStore {
         }
         // rollback might have rolled back the stored chunk metadata as well
         if (lastChunk != null) {
-//            chunks.put(lastChunk.id, lastChunk);
             for (Chunk c : chunks.values()) {
                 meta.put(Chunk.getMetaKey(c.id), c.asString());
             }
         }
         currentVersion = version;
-//        setWriteVersion(version);       // TODO: remove this as redundant
     }
 
     private static long getRootPos(MVMap<String, String> map, int mapId) {
@@ -2554,16 +2505,6 @@ public final class MVStore {
                 it.remove();
             }
         }
-/*
-        for (Iterator<MVMap<?, ?>> iter = maps.values().iterator(); iter.hasNext(); ) {
-            MVMap<?, ?> map = iter.next();
-            if (map.removeUnusedOldVersions()) {
-                assert map.isClosed();
-                assert map.getVersion() < getOldestVersionToKeep(null);
-                iter.remove();
-            }
-        }
-*/
     }
 
     /**
@@ -2689,8 +2630,7 @@ public final class MVStore {
         return m == null ? null : DataUtils.parseMap(m).get("name");
     }
 
-    public synchronized int getMapId(String name) {
-//        checkOpen();
+    private synchronized int getMapId(String name) {
         String m = meta.get("name." + name);
         return m == null ? -1 : DataUtils.parseHexInt(m);
     }

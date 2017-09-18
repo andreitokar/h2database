@@ -41,7 +41,7 @@ import org.h2.util.Utils;
 public final class TransactionStore implements MVStore.VersionChangeListener {
 
     private static final int AVG_OPEN_TRANSACTIONS = 0x100;
-    public static final String TYPE_REGISTRY_NAME = "_";
+    private static final String TYPE_REGISTRY_NAME = "_";
 
     /**
      * The store.
@@ -103,7 +103,6 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
      */
     public TransactionStore(MVStore store) {
         this(store, new DBMetaType(null, store.backgroundExceptionHandler), new ObjectDataType(), 0);
-//        this(store, new MetaDataType(store.backgroundExceptionHandler), new ObjectDataType(), 0);
     }
 
     /**
@@ -308,11 +307,6 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
     }
 
     public Transaction begin(RollbackListener listener, long timeoutMillis) {
-//        if (!init) {
-//            throw DataUtils.newIllegalStateException(
-//                    DataUtils.ERROR_TRANSACTION_ILLEGAL_STATE,
-//                    "Not initialized");
-//        }
         int transactionId;
         boolean success;
         do {
@@ -394,7 +388,6 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
      * @param map the map
      */
     <K, V> void removeMap(TransactionMap<K, V> map) {
-//        maps.remove(map.map.getId());
         store.removeMap(map.map, true);
     }
 
@@ -472,18 +465,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
         MVMap<Object, VersionedValue> map = store.getMap(mapId);
         if (map == null) {
             MVMap.Builder<Object, VersionedValue> builder = new TxMapBuilder<Object,VersionedValue>(typeRegistry, dataType);
-
-//            VersionedValueType vt = new VersionedValueType(dataType);
-//            MVMap.Builder<Object, VersionedValue> builder =
-//                    new MVMap.Builder<Object, VersionedValue>().
-//                            keyType(dataType).valueType(vt);
             map = store.openMap(mapId, builder);
-//            if(map != null) {
-//                MVMap<Object, VersionedValue> existingMap = maps.putIfAbsent(mapId, map);
-//                if (existingMap != null) {
-//                    map = existingMap;
-//                }
-//            }
         }
         return map;
     }
@@ -1082,7 +1064,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
             return hasChanges(statusAndLogId.get());
         }
 
-        public int getOwnerId() {
+        private int getOwnerId() {
             return ownerId;
         }
 
@@ -1242,15 +1224,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
             Throwable ex = null;
             try {
                 if (hasChanges(state)) {
-//                    int status = getStatus(state);
-//                    if (!store.committingTransactions.get().get(transactionId) /*|| status != STATUS_COMMITTING*/) {
-//                        assert store.openTransactions.get().get(transactionId) : this + " " + store.openTransactions;
-//                        assert status == Transaction.STATUS_OPEN ||
-//                                status == Transaction.STATUS_PREPARED && store.preparedTransactions.get(transactionId) != null ||
-//                                // this case is only possible if called from initTransactions()
-//                                status == Transaction.STATUS_COMMITTING : status;
                     store.commit(this);
-//                    }
                 }
             } catch (Throwable e) {
                 ex = e;
@@ -1337,7 +1311,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
             }
         }
 
-        void checkNotClosed() {
+        private void checkNotClosed() {
             checkNotClosed(getStatus());
         }
 
@@ -2407,25 +2381,21 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
         public MVMap.Decision decide(Record existingValue, Record providedValue) {
             assert decision == null;
             assert existingValue != null;
-//            if (existingValue != null) {
-                VersionedValue valueToRestore = existingValue.oldValue;
-                long operationId;
-                if(valueToRestore == null ||
-                        (operationId = valueToRestore.operationId) == 0 ||
-                        getTransactionId(operationId) == transactionId
-                                && getLogId(operationId) < toLogId) {
-                    int mapId = existingValue.mapId;
-                    MVMap<Object, VersionedValue> map = store.openMap(mapId);
-                    if(map != null && !map.isClosed()) {
-                        Object key = existingValue.key;
-                        VersionedValue previousValue = map.operate(key, valueToRestore, MVMap.DecisionMaker.DEFAULT);
-                        listener.onRollback(map, key, previousValue, valueToRestore);
-                    }
+            VersionedValue valueToRestore = existingValue.oldValue;
+            long operationId;
+            if(valueToRestore == null ||
+                    (operationId = valueToRestore.operationId) == 0 ||
+                    getTransactionId(operationId) == transactionId
+                            && getLogId(operationId) < toLogId) {
+                int mapId = existingValue.mapId;
+                MVMap<Object, VersionedValue> map = store.openMap(mapId);
+                if(map != null && !map.isClosed()) {
+                    Object key = existingValue.key;
+                    VersionedValue previousValue = map.operate(key, valueToRestore, MVMap.DecisionMaker.DEFAULT);
+                    listener.onRollback(map, key, previousValue, valueToRestore);
                 }
-                decision = MVMap.Decision.REMOVE;
-//            } else {
-//                decision = MVMap.Decision.ABORT;
-//            }
+            }
+            decision = MVMap.Decision.REMOVE;
             return decision;
         }
 
@@ -2510,7 +2480,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
             } while(mapRootReference != map.getRoot() || committingTransactions != store.committingTransactions.get());
             this.committingTransactions = committingTransactions;
             this.undoLogRootPage = undoLogRootReference.root;
-            this.cursor = new Cursor<K, VersionedValue>(map, mapRootReference.root, from, true);
+            this.cursor = new Cursor<>(map, mapRootReference.root, from, true);
         }
 
         protected abstract void fetchNext();

@@ -717,7 +717,7 @@ public abstract class Page implements Cloneable {
     public static final class PageReference {
 
         public static final PageReference EMPTY = new PageReference(null, 0, 0);
-        public static final PageReference SINGLE_EMPTY[] = {EMPTY};
+        private static final PageReference SINGLE_EMPTY[] = { EMPTY };
 
         /**
          * The position, if known, or 0.
