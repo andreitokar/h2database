@@ -192,9 +192,7 @@ public final class MVStore {
      * Sometimes we hold the MVStore lock, sometimes the MVMap lock, and sometimes
      * we even sync on the ConcurrentHashMap<Integer, Chunk> object.
      */
-    private final ConcurrentHashMap<Long,
-            ConcurrentHashMap<Integer, Chunk>> freedPageSpace =
-            new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long,Map<Integer,Chunk>> freedPageSpace = new ConcurrentHashMap<>();
 
     /**
      * The metadata map. Write access to this map needs to be synchronized on
@@ -1572,36 +1570,32 @@ public final class MVStore {
     private void applyFreedSpace(long storeVersion) {
         while (true) {
             ArrayList<Chunk> modified = New.arrayList();
-            Iterator<Entry<Long, ConcurrentHashMap<Integer, Chunk>>> it;
-            it = freedPageSpace.entrySet().iterator();
+            Iterator<Entry<Long,Map<Integer,Chunk>>> it = freedPageSpace.entrySet().iterator();
             while (it.hasNext()) {
-                Entry<Long, ConcurrentHashMap<Integer, Chunk>> e = it.next();
+                Entry<Long,Map<Integer, Chunk>> e = it.next();
                 long v = e.getKey();
-                if (v > storeVersion) {
-                    continue;
+                if (v <= storeVersion) {
+                    Map<Integer, Chunk> freed = e.getValue();
+                    synchronized (freed) {
+                        for (Chunk f : freed.values()) {
+                            Chunk c = chunks.get(f.id);
+                            if (c != null) { // skip if was already removed
+                                c.maxLenLive += f.maxLenLive;
+                                c.pageCountLive += f.pageCountLive;
+                                if (c.pageCountLive < 0 && c.pageCountLive > -MARKED_FREE) {
+                                    // can happen after a rollback
+                                    c.pageCountLive = 0;
+                                }
+                                if (c.maxLenLive < 0 && c.maxLenLive > -MARKED_FREE) {
+                                    // can happen after a rollback
+                                    c.maxLenLive = 0;
+                                }
+                                modified.add(c);
+                            }
+                        }
+                    }
+                    it.remove();
                 }
-                ConcurrentHashMap<Integer, Chunk> freed = e.getValue();
-                for (Chunk f : freed.values()) {
-                    Chunk c = chunks.get(f.id);
-                    if (c == null) {
-                        // already removed
-                        continue;
-                    }
-                    // no need to synchronize, as old entries
-                    // are not concurrently modified
-                    c.maxLenLive += f.maxLenLive;
-                    c.pageCountLive += f.pageCountLive;
-                    if (c.pageCountLive < 0 && c.pageCountLive > -MARKED_FREE) {
-                        // can happen after a rollback
-                        c.pageCountLive = 0;
-                    }
-                    if (c.maxLenLive < 0 && c.maxLenLive > -MARKED_FREE) {
-                        // can happen after a rollback
-                        c.maxLenLive = 0;
-                    }
-                    modified.add(c);
-                }
-                it.remove();
             }
             for (Chunk c : modified) {
                 meta.put(Chunk.getMetaKey(c.id), c.asString());
@@ -2120,11 +2114,10 @@ public final class MVStore {
 
     private void registerFreePage(long version, int chunkId,
             long maxLengthLive, int pageCount) {
-        ConcurrentHashMap<Integer, Chunk> freed = freedPageSpace.get(version);
+        Map<Integer,Chunk> freed = freedPageSpace.get(version);
         if (freed == null) {
-            freed = new ConcurrentHashMap<>();
-            ConcurrentHashMap<Integer, Chunk> f2 = freedPageSpace.putIfAbsent(version,
-                    freed);
+            freed = new HashMap<>();
+            Map<Integer,Chunk> f2 = freedPageSpace.putIfAbsent(version, freed);
             if (f2 != null) {
                 freed = f2;
             }
@@ -2134,10 +2127,7 @@ public final class MVStore {
             Chunk chunk = freed.get(chunkId);
             if (chunk == null) {
                 chunk = new Chunk(chunkId);
-                Chunk chunk2 = freed.putIfAbsent(chunkId, chunk);
-                if (chunk2 != null) {
-                    chunk = chunk2;
-                }
+                freed.put(chunkId, chunk);
             }
             chunk.maxLenLive -= maxLengthLive;
             chunk.pageCountLive -= pageCount;
@@ -2424,9 +2414,18 @@ public final class MVStore {
         for (MVMap<?, ?> m : maps.values()) {
             m.rollbackTo(version);
         }
-        for (long v = currentVersion; v >= version && !freedPageSpace.isEmpty(); v--) {
-            freedPageSpace.remove(v);
+
+        Iterator<Entry<Long,Map<Integer,Chunk>>> it = freedPageSpace.entrySet().iterator();
+        while (it.hasNext()) {
+            Entry<Long, Map<Integer, Chunk>> e = it.next();
+            Long v = e.getKey();
+            if (v >= version) {
+                it.remove();
+            }
         }
+//        for (long v = currentVersion; v >= version && !freedPageSpace.isEmpty(); v--) {
+//            freedPageSpace.remove(v);
+//        }
         meta.rollbackTo(version);
         metaChanged = false;
         boolean loadFromFile = false;
