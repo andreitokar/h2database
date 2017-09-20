@@ -120,15 +120,9 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
         MVMap.Builder<String, DataType> builder2 = new MVMap.Builder<String, DataType>()
                                             .keyType(StringDataType.INSTANCE)
                                             .valueType(metaDataType);
-
         typeRegistry = store.openMap(TYPE_REGISTRY_NAME, builder2);
-
-        store.stashMapData("openTransactions");
-        store.stashMapData("undoLog");
-
         preparedTransactions = store.openMap("openTransactions",
                                              new MVMap.Builder<Integer, Object[]>());
-
         RecordType undoLogValueType = new RecordType(this);
         MVMap.Builder<Long, Record> builder = new MVMap.Builder<Long, Record>()
                         .keyType(LongDataType.INSTANCE)
@@ -157,19 +151,6 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
 
     public synchronized void init(RollbackListener listener) {
         if(!init) {
-            // remove all temporary maps
-            for (String mapName : store.getMapNames()) {
-                if (mapName.startsWith("temp.")) {
-                    MVMap<?,?> temp = store.openMap(mapName);
-                    store.removeMap(temp);
-                }
-            }
-
-            assert undoLog.isEmpty();
-            assert openTransactions.get().cardinality() == 0;
-            store.unstashMapData(preparedTransactions);
-            store.unstashMapData(undoLog);
-
             Long key = undoLog.firstKey();
             while (key != null) {
                 int transactionId = getTransactionId(key);

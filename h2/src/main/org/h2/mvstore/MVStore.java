@@ -2634,26 +2634,6 @@ public final class MVStore {
         return m == null ? -1 : DataUtils.parseHexInt(m);
     }
 
-    public void stashMapData(String name) {
-        int mapId = getMapId(name);
-        String rootPos = meta.remove(MVMap.getMapRootKey(mapId));
-        if (rootPos != null) {
-            meta.put("root.tmp." + Integer.toHexString(mapId), rootPos);
-            markMetaChanged();
-        }
-    }
-
-    public void unstashMapData(MVMap map) {
-        int mapId = map.getId();
-        String rootPos = meta.remove("root.tmp." + Integer.toHexString(mapId));
-        if (rootPos != null) {
-            meta.put(MVMap.getMapRootKey(mapId), rootPos);
-            markMetaChanged();
-            long root = DataUtils.parseHexLong(rootPos);
-            map.setRootPos(root, lastStoredVersion);
-        }
-    }
-
     /**
      * Commit and save all changes, if there are any, and compact the store if
      * needed.

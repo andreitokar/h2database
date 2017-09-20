@@ -161,7 +161,7 @@ public abstract class Value {
      */
     public static final int GEOMETRY = 22;
 
-    /**
+    /*
      * 23 was a short-lived experiment "TIMESTAMP UTC" which has been removed.
      */
 
@@ -419,55 +419,55 @@ public abstract class Value {
     }
 
     public Boolean getBoolean() {
-        return ((ValueBoolean) convertTo(Value.BOOLEAN)).getBoolean();
+        return convertTo(Value.BOOLEAN).getBoolean();
     }
 
     public Date getDate() {
-        return ((ValueDate) convertTo(Value.DATE)).getDate();
+        return convertTo(Value.DATE).getDate();
     }
 
     public Time getTime() {
-        return ((ValueTime) convertTo(Value.TIME)).getTime();
+        return convertTo(Value.TIME).getTime();
     }
 
     public Timestamp getTimestamp() {
-        return ((ValueTimestamp) convertTo(Value.TIMESTAMP)).getTimestamp();
+        return convertTo(Value.TIMESTAMP).getTimestamp();
     }
 
     public byte[] getBytes() {
-        return ((ValueBytes) convertTo(Value.BYTES)).getBytes();
+        return convertTo(Value.BYTES).getBytes();
     }
 
     public byte[] getBytesNoCopy() {
-        return ((ValueBytes) convertTo(Value.BYTES)).getBytesNoCopy();
+        return convertTo(Value.BYTES).getBytesNoCopy();
     }
 
     public byte getByte() {
-        return ((ValueByte) convertTo(Value.BYTE)).getByte();
+        return convertTo(Value.BYTE).getByte();
     }
 
     public short getShort() {
-        return ((ValueShort) convertTo(Value.SHORT)).getShort();
+        return convertTo(Value.SHORT).getShort();
     }
 
     public BigDecimal getBigDecimal() {
-        return ((ValueDecimal) convertTo(Value.DECIMAL)).getBigDecimal();
+        return convertTo(Value.DECIMAL).getBigDecimal();
     }
 
     public double getDouble() {
-        return ((ValueDouble) convertTo(Value.DOUBLE)).getDouble();
+        return convertTo(Value.DOUBLE).getDouble();
     }
 
     public float getFloat() {
-        return ((ValueFloat) convertTo(Value.FLOAT)).getFloat();
+        return convertTo(Value.FLOAT).getFloat();
     }
 
     public int getInt() {
-        return ((ValueInt) convertTo(Value.INT)).getInt();
+        return convertTo(Value.INT).getInt();
     }
 
     public long getLong() {
-        return ((ValueLong) convertTo(Value.LONG)).getLong();
+        return convertTo(Value.LONG).getLong();
     }
 
     public InputStream getInputStream() {
@@ -611,7 +611,7 @@ public abstract class Value {
             case BYTE: {
                 switch (getType()) {
                 case BOOLEAN:
-                    return ValueByte.get(getBoolean().booleanValue() ? (byte) 1 : (byte) 0);
+                    return ValueByte.get(getBoolean() ? (byte) 1 : (byte) 0);
                 case SHORT:
                     return ValueByte.get(convertToByte(getShort(), column));
                 case ENUM:
@@ -636,7 +636,7 @@ public abstract class Value {
             case SHORT: {
                 switch (getType()) {
                 case BOOLEAN:
-                    return ValueShort.get(getBoolean().booleanValue() ? (short) 1 : (short) 0);
+                    return ValueShort.get(getBoolean() ? (short) 1 : (short) 0);
                 case BYTE:
                     return ValueShort.get(getByte());
                 case ENUM:
@@ -661,7 +661,7 @@ public abstract class Value {
             case INT: {
                 switch (getType()) {
                 case BOOLEAN:
-                    return ValueInt.get(getBoolean().booleanValue() ? 1 : 0);
+                    return ValueInt.get(getBoolean() ? 1 : 0);
                 case BYTE:
                     return ValueInt.get(getByte());
                 case ENUM:
@@ -687,7 +687,7 @@ public abstract class Value {
             case LONG: {
                 switch (getType()) {
                 case BOOLEAN:
-                    return ValueLong.get(getBoolean().booleanValue() ? 1 : 0);
+                    return ValueLong.get(getBoolean() ? 1 : 0);
                 case BYTE:
                     return ValueLong.get(getByte());
                 case SHORT:
@@ -719,7 +719,7 @@ public abstract class Value {
                 switch (getType()) {
                 case BOOLEAN:
                     return ValueDecimal.get(BigDecimal.valueOf(
-                            getBoolean().booleanValue() ? 1 : 0));
+                            getBoolean() ? 1 : 0));
                 case BYTE:
                     return ValueDecimal.get(BigDecimal.valueOf(getByte()));
                 case SHORT:
@@ -755,7 +755,7 @@ public abstract class Value {
             case DOUBLE: {
                 switch (getType()) {
                 case BOOLEAN:
-                    return ValueDouble.get(getBoolean().booleanValue() ? 1 : 0);
+                    return ValueDouble.get(getBoolean() ? 1 : 0);
                 case BYTE:
                     return ValueDouble.get(getByte());
                 case SHORT:
@@ -778,7 +778,7 @@ public abstract class Value {
             case FLOAT: {
                 switch (getType()) {
                 case BOOLEAN:
-                    return ValueFloat.get(getBoolean().booleanValue() ? 1 : 0);
+                    return ValueFloat.get(getBoolean() ? 1 : 0);
                 case BYTE:
                     return ValueFloat.get(getByte());
                 case SHORT:

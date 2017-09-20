@@ -133,7 +133,7 @@ public class ValueDataType implements DataType {
         return compareValues((Value) a, (Value) b, SortOrder.ASCENDING);
     }
 
-    public int compareValues(Value a, Value b, int sortType) {
+    protected final int compareValues(Value a, Value b, int sortType) {
         if (a == b) {
             return 0;
         }

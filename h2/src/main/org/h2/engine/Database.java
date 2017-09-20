@@ -656,8 +656,7 @@ public class Database implements DataHandler {
                 if (readOnly ||
                         fileLockMethod == FileLock.LOCK_NO ||
                         fileLockMethod == FileLock.LOCK_SERIALIZED ||
-                        fileLockMethod == FileLock.LOCK_FS ||
-                        !persistent) {
+                        fileLockMethod == FileLock.LOCK_FS) {
                     throw DbException.getUnsupportedException(
                             "autoServerMode && (readOnly || " +
                             "fileLockMethod == NO || " +
@@ -740,9 +739,9 @@ public class Database implements DataHandler {
         systemUser.setAdmin(true);
         systemSession = new Session(this, systemUser, ++nextSessionId);
         lobSession = new Session(this, systemUser, ++nextSessionId);
-//        if(mvStore != null) {
-//            mvStore.getTransactionStore().init(systemSession);
-//        }
+        if(mvStore != null) {
+            mvStore.getTransactionStore().init(systemSession);
+        }
         CreateTableData data = new CreateTableData();
         ArrayList<Column> cols = data.columns;
         Column columnId = new Column("ID", Value.INT);
@@ -771,9 +770,6 @@ public class Database implements DataHandler {
         systemSession.commit(true);
         objectIds.set(0);
         starting = true;
-//        if (mvStore != null) {
-//            mvStore.getTransactionStore().endLeftoverTransactions();
-//        }
         Cursor cursor = metaIdIndex.find(systemSession, null, null);
         ArrayList<MetaRecord> records = New.arrayList();
         while (cursor.next()) {
@@ -784,11 +780,9 @@ public class Database implements DataHandler {
         Collections.sort(records);
         for (MetaRecord rec : records) {
             rec.execute(this, systemSession, eventListener);
-//            systemSession.commit(true);
         }
         systemSession.commit(true);
         if (mvStore != null) {
-            mvStore.getTransactionStore().init(systemSession);
             mvStore.getTransactionStore().endLeftoverTransactions();
             mvStore.removeTemporaryMaps(objectIds);
         }
@@ -956,7 +950,6 @@ public class Database implements DataHandler {
     public synchronized void removeMeta(Session session, int id) {
         if (id > 0 && !starting) {
             SearchRow r = meta.getRowFactory().createRow();
-//            SearchRow r = meta.getTemplateSimpleRow(false);
             r.setValue(0, ValueInt.get(id));
             boolean wasLocked = lockMeta(session);
             Cursor cursor = metaIdIndex.find(session, r, r);
@@ -1478,7 +1471,6 @@ public class Database implements DataHandler {
 
     private void checkMetaFree(Session session, int id) {
         SearchRow r = meta.getRowFactory().createRow();
-//        SearchRow r = meta.getTemplateSimpleRow(false);
         r.setValue(0, ValueInt.get(id));
         Cursor cursor = metaIdIndex.find(session, r, r);
         if (cursor.next()) {
@@ -1689,7 +1681,6 @@ public class Database implements DataHandler {
             objectIds.set(id);
 
             SearchRow r = meta.getRowFactory().createRow();
-//            SearchRow r = meta.getTemplateSimpleRow(false);
             r.setValue(0, ValueInt.get(id));
             Cursor cursor = metaIdIndex.find(session, r, r);
             if (cursor.next()) {
