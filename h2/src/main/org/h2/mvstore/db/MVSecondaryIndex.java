@@ -67,7 +67,7 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
         ValueDataType keyType = new ValueDataType(
                 db.getCompareMode(), db, sortTypes);
         ValueDataType valueType = new ValueDataType(null, null, null);
-        Transaction t = mvTable.getTransaction(null);
+        Transaction t = mvTable.getTransactionBegin();
         dataMap = t.openMap(mapName, keyType, valueType);
         t.commit();
         if (!keyType.equals(dataMap.getKeyType())) {
@@ -367,7 +367,7 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
     public void remove(Session session) {
         TransactionMap<Value, Value> map = getMap(session);
         if (!map.isClosed()) {
-            Transaction t = mvTable.getTransaction(session);
+            Transaction t = session.getTransaction();
             t.removeMap(map);
         }
     }
@@ -459,7 +459,7 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
         if (session == null) {
             return dataMap;
         }
-        Transaction t = mvTable.getTransaction(session);
+        Transaction t = session.getTransaction();
         return dataMap.getInstance(t, Long.MAX_VALUE);
     }
 
