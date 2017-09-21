@@ -138,11 +138,8 @@ public class RowStorage extends Value implements Row, Cloneable {
         }
     }
 
-    // TODO eliminate boxing and generate type-specific code instead
     public boolean isNull(int index) {
         throw new IllegalArgumentException(getClass().getSimpleName()+".isNull("+index+")");
-//        Value value = getValue(index);
-//        return value == null || value == ValueNull.INSTANCE;
     }
 
     // TODO eliminate boxing and generate type-specific code instead
@@ -154,7 +151,7 @@ public class RowStorage extends Value implements Row, Cloneable {
     @Override
     public final Value getValue(int index) {
         Value value = get(index);
-        return isNull(index) && value != null ? ValueNull.INSTANCE : value;
+        return value != null && isNull(index) ? ValueNull.INSTANCE : value;
     }
 
     protected Value get(int index) {
@@ -171,7 +168,7 @@ public class RowStorage extends Value implements Row, Cloneable {
         set(index, v);
     }
 
-    public void set(int index, Value v) {
+    protected void set(int index, Value v) {
         throw new IllegalArgumentException(getClass().getSimpleName()+".setValue("+index+", ..)");
     }
 
@@ -440,52 +437,55 @@ public class RowStorage extends Value implements Row, Cloneable {
         return res;
     }
 
+    ///////////////////////////////////////////////////////////////////////////
+    //      Conversion Methods      //
+    //////////////////////////////////
+
+
     protected static int toInt(Value v)
     {
-        return v == null ? Integer.MIN_VALUE + 1 : v == ValueNull.INSTANCE ? Integer.MIN_VALUE : v.getInt();
+        return v == null ? Integer.MIN_VALUE : v == ValueNull.INSTANCE ? 0 : v.getInt();
     }
 
     protected static Value convertFrom(int v)
     {
-        return ValueInt.get(v);
-//        return v == Integer.MIN_VALUE + 1 ? null : v == Integer.MIN_VALUE ? ValueNull.INSTANCE : ValueInt.get(v);
+        return v == Integer.MIN_VALUE ? null : ValueInt.get(v);
     }
 
 
     protected static long toLong(Value v)
     {
-        return v == null ? Long.MIN_VALUE + 1 : v == ValueNull.INSTANCE ? Long.MIN_VALUE : v.getLong();
+        return v == null ? Long.MIN_VALUE : v == ValueNull.INSTANCE ? 0L : v.getLong();
     }
 
     protected static Value convertFrom(long v)
     {
-        return ValueLong.get(v);
-//        return v == Long.MIN_VALUE + 1 ? null : v == Long.MIN_VALUE ? ValueNull.INSTANCE : ValueLong.get(v);
+        return v == Long.MIN_VALUE ? null : ValueLong.get(v);
     }
 
 
     protected static float toFloat(Value v)
     {
-        return v == null ? Float.NEGATIVE_INFINITY : v == ValueNull.INSTANCE ? Float.NaN : v.getFloat();
+        return v == null ? Float.NaN : v == ValueNull.INSTANCE ? 0.0f : v.getFloat();
     }
 
     protected static Value convertFrom(float v)
     {
-        return ValueFloat.get(v);
-//        return v == Float.NEGATIVE_INFINITY ? null : Float.isNaN(v) ? ValueNull.INSTANCE : ValueFloat.get(v);
+        return v == Float.NaN ? null : ValueFloat.get(v);
     }
 
 
     protected static double toDouble(Value v)
     {
-        return v == null ? Double.NEGATIVE_INFINITY : v == ValueNull.INSTANCE ? Double.NaN : v.getFloat();
+        return v == null ? Double.NaN : v == ValueNull.INSTANCE ? 0.0d : v.getDouble();
     }
 
     protected static Value convertFrom(double v)
     {
-        return ValueDouble.get(v);
-//        return v == Double.NEGATIVE_INFINITY ? null : Double.isNaN(v) ? ValueNull.INSTANCE : ValueDouble.get(v);
+        return v == Double.NaN ? null : ValueDouble.get(v);
     }
+
+    // Non-primitive types below use slightly defferent null / NULL encoding logic
 
     protected static BigDecimal toDecimal(Value v)
     {
@@ -531,6 +531,7 @@ public class RowStorage extends Value implements Row, Cloneable {
         return v == null ? null : v == NULL_STRING ? ValueNull.INSTANCE  : ValueString.get(v);
     }
 
+    @SuppressWarnings("StringEquality")
     protected static boolean isNull(String v)
     {
         return v == null || v == NULL_STRING;
@@ -541,7 +542,7 @@ public class RowStorage extends Value implements Row, Cloneable {
         return v == null || v == ValueNull.INSTANCE;
     }
 
-    ////////////////////////////////////////////////////////////////////////////////////////////
+    ///////////////////////////////////////////////////////////////////////////
 
     public static final class Type extends ValueDataType implements ExtendedDataType, StatefulDataType {
 

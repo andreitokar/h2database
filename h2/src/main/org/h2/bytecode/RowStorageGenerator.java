@@ -420,7 +420,7 @@ public final class RowStorageGenerator {
 
 
 
-        MethodVisitor gmv = cw.visitMethod(ACC_PUBLIC, "get", "(I)Lorg/h2/value/Value;", null, null);
+        MethodVisitor gmv = cw.visitMethod(ACC_PROTECTED, "get", "(I)Lorg/h2/value/Value;", null, null);
         gmv.visitCode();
         gmv.visitVarInsn(ILOAD, 1);
         Label[] getLabels = createSwitchLabels(fieldCount);
@@ -428,7 +428,7 @@ public final class RowStorageGenerator {
         gmv.visitTableSwitchInsn(0, fieldCount - 1, defaultGetLabel, getLabels);
 
 
-        MethodVisitor smv = cw.visitMethod(ACC_PUBLIC, "set", "(ILorg/h2/value/Value;)V", null, null);
+        MethodVisitor smv = cw.visitMethod(ACC_PROTECTED, "set", "(ILorg/h2/value/Value;)V", null, null);
         smv.visitCode();
         smv.visitVarInsn(ILOAD, 1);
         Label[] setLabels = createSwitchLabels(fieldCount);
@@ -510,7 +510,7 @@ public final class RowStorageGenerator {
         getMemoryVisitor.visitEnd();
 
 
-        MethodVisitor compareToVisitor = cw.visitMethod(ACC_PUBLIC, "compareToSecure",
+        MethodVisitor compareToVisitor = cw.visitMethod(ACC_PROTECTED, "compareToSecure",
                                 "(L" + ROOT_CLASS_NAME_SLASHED + ";Lorg/h2/value/CompareMode;)I", null, null);
         compareToVisitor.visitCode();
 

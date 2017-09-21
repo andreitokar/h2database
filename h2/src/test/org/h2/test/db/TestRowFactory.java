@@ -85,7 +85,7 @@ public class TestRowFactory extends TestBase {
             RowStorage row = constructor.newInstance();
             row.setValues(initargs);
             row.setKey(12345);
-            assertEquals("Row{12345/0 3, 'Hello', DATE '2017-08-04', 77, 3.619999885559082, 3.62, 10, 'ABC'}", row.toString());
+            assertEquals("Row{12345/0 3, 'Hello', DATE '2017-08-04', 77, 3.62, 3.62, 10, 'ABC'}", row.toString());
 
             RowStorage rowTwo = row.clone();
             rowTwo.setValue(0, ValueInt.get(5));
@@ -93,7 +93,7 @@ public class TestRowFactory extends TestBase {
             rowTwo.setValue(2, ValueDate.parse("2001-09-11"));
             rowTwo.setValue(3, ValueLong.get(999));
             rowTwo.setValue(4, ValueDouble.get(4.12));
-            assertEquals("Row{12345/0 5, 'World', DATE '2001-09-11', 999, 4.119999885559082, 3.62, 10, 'ABC'}", rowTwo.toString());
+            assertEquals("Row{12345/0 5, 'World', DATE '2001-09-11', 999, 4.12, 3.62, 10, 'ABC'}", rowTwo.toString());
             assertFalse(rowTwo.isNull(5));
             rowTwo.setValue(5, ValueNull.INSTANCE);
             assertTrue(rowTwo.isNull(5));
@@ -101,7 +101,7 @@ public class TestRowFactory extends TestBase {
             rowTwo.setValue(6, ValueNull.INSTANCE);
             assertTrue(rowTwo.isNull(6));
             rowTwo.setValue(7, ValueNull.INSTANCE);
-            assertEquals("Row{12345/0 5, 'World', DATE '2001-09-11', 999, 4.119999885559082, NULL, NULL, NULL}", rowTwo.toString());
+            assertEquals("Row{12345/0 5, 'World', DATE '2001-09-11', 999, 4.12, NULL, NULL, NULL}", rowTwo.toString());
 
 
             CompareMode compareMode = CompareMode.getInstance(null, 0);
@@ -129,6 +129,16 @@ public class TestRowFactory extends TestBase {
             RowStorage irow = icls.getConstructor().newInstance();
             irow.copyFrom(row);
             assertEquals("Row{12345/0 3, 'Hello', null, 77, null, null, null, null}", irow.toString());
+            assertEquals(-1, itype.compare(irow, irowTwo));
+            assertEquals(0, itype.compare(irow, row));
+            assertEquals(1, itype.compare(row, irow));  // assuming NULL sorted low
+
+            row.setValue(3, null);
+            assertTrue(row.isNull(3));
+            assertNull(row.getValue(3));
+            assertEquals("Row{12345/0 3, 'Hello', DATE '2017-08-04', null, 3.62, 3.62, 10, 'ABC'}", row.toString());
+            irow.copyFrom(row);
+            assertEquals("Row{12345/0 3, 'Hello', null, null, null, null, null, null}", irow.toString());
             assertEquals(-1, itype.compare(irow, irowTwo));
             assertEquals(0, itype.compare(irow, row));
             assertEquals(1, itype.compare(row, irow));  // assuming NULL sorted low
