@@ -439,8 +439,7 @@ public class MVTable extends TableBase {
                 database.getReferentialIntegrity()) {
             ArrayList<Constraint> constraints = getConstraints();
             if (constraints != null) {
-                for (int i = 0, size = constraints.size(); i < size; i++) {
-                    Constraint c = constraints.get(i);
+                for (Constraint c : constraints) {
                     if (!(c.getConstraintType().equals(Constraint.REFERENTIAL))) {
                         continue;
                     }
@@ -594,7 +593,7 @@ public class MVTable extends TableBase {
             addRowsToIndex(session, buffer, index);
         }
         if (SysProperties.CHECK && remaining != 0) {
-            DbException.throwInternalError("rowcount remaining=" + remaining +
+            throw DbException.throwInternalError("rowcount remaining=" + remaining +
                     " " + getName());
         }
     }
@@ -621,7 +620,7 @@ public class MVTable extends TableBase {
         }
         addRowsToIndex(session, buffer, index);
         if (SysProperties.CHECK && remaining != 0) {
-            DbException.throwInternalError("rowcount remaining=" + remaining +
+            throw DbException.throwInternalError("rowcount remaining=" + remaining +
                     " " + getName());
         }
     }
@@ -741,7 +740,7 @@ public class MVTable extends TableBase {
     public void updateRow(Session session, Row oldRow, Row newRow) {
         newRow.setKey(oldRow.getKey());
         lastModificationId = database.getNextModificationDataId();
-        Transaction t = getTransaction(session);
+        Transaction t = session.getTransaction();
         long savepoint = t.setSavepoint();
         try {
             for (int i = 0, size = indexes.size(); i < size; i++) {
@@ -749,19 +748,6 @@ public class MVTable extends TableBase {
                 assert index.isRowIdIndex() == (i == 0) : i + " " + index;
                 index.update(session, oldRow, newRow);
             }
-/*
-
-            for (int i = indexes.size() - 1; i >= 0; i--) {
-                Index index = indexes.get(i);
-                Row r = index.removeRow(session, oldRow);
-            }
-
-            for (int i = 0, size = indexes.size(); i < size; i++) {
-                Index index = indexes.get(i);
-                index.add(session, newRow);
-                assert index.isRowIdIndex() == (i == 0) : i + " " + index;
-            }
-*/
         } catch (Throwable e) {
             DbException dbException = DbException.convert(e);
             try {
@@ -862,7 +848,7 @@ public class MVTable extends TableBase {
                     .getAllSchemaObjects(DbObject.INDEX)) {
                 Index index = (Index) obj;
                 if (index.getTable() == this) {
-                    DbException.throwInternalError("index not dropped: " +
+                    throw DbException.throwInternalError("index not dropped: " +
                             index.getName());
                 }
             }

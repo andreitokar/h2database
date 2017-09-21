@@ -63,7 +63,7 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
         DataType keyType = rowFactory.getDataType();
         DataType valueType = ObjectDataType.NoneType.INSTANCE;
         String mapName = "index." + getId();
-        Transaction t = mvTable.getTransaction(null);
+        Transaction t = mvTable.getTransactionBegin();
         dataMap = t.openMap(mapName, keyType, valueType);
         t.commit();
         assert mapName.equals(dataMap.getName()) : mapName + " != " + dataMap.getName();
