@@ -67,8 +67,8 @@ public class MVPrimaryIndex extends BaseIndex {
         if (!table.isPersistData()) {
             dataMap.map.setVolatile(true);
         }
-        Long k = dataMap.map.lastKey(); // include uncommitted keys
-        lastKey.set(k == null ? 0 : k);
+        Value k = dataMap.map.lastKey();    // include uncommitted keys as well
+        lastKey.set(k == null ? 0 : k.getLong());
     }
 
     @Override
@@ -288,7 +288,7 @@ public class MVPrimaryIndex extends BaseIndex {
     public void remove(Session session) {
         TransactionMap<Long,Row> map = getMap(session);
         if (!map.isClosed()) {
-            Transaction t = mvTable.getTransaction(session);
+            Transaction t = session.getTransaction();
             t.removeMap(map);
         }
     }
@@ -416,7 +416,7 @@ public class MVPrimaryIndex extends BaseIndex {
         if (session == null) {
             return dataMap;
         }
-        Transaction t = mvTable.getTransaction(session);
+        Transaction t = session.getTransaction();
         return dataMap.getInstance(t, Long.MAX_VALUE);
     }
 
