@@ -132,14 +132,6 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
         this.store.setVersionChangeListener(this);
     }
 
-    public DataType getMetaDataType() {
-        return metaDataType;
-    }
-
-    public MVMap<Long, Record> getUndoLog() {
-        return undoLog;
-    }
-
     /**
      * Initialize the store. This is needed before a transaction can be opened.
      * If the transaction store is corrupt, this method can throw an exception,

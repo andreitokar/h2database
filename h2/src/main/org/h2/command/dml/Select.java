@@ -481,7 +481,6 @@ public class Select extends Query {
             Value value = found.getValue(columnIndex);
             if (first == null) {
                 first = topTableFilter.getTable().getRowFactory().createRow();
-//                first = topTableFilter.getTable().getTemplateSimpleRow(true);
             }
             first.setValue(columnIndex, value);
             Value[] row = { value };

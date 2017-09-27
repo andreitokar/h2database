@@ -4,9 +4,7 @@ import org.h2.engine.Constants;
 import org.h2.engine.Database;
 import org.h2.mvstore.BasicDataType;
 import org.h2.mvstore.DataUtils;
-import org.h2.mvstore.MVStore;
 import org.h2.mvstore.WriteBuffer;
-import org.h2.mvstore.db.StatefulDataType;
 import org.h2.mvstore.type.DataType;
 
 import java.nio.ByteBuffer;

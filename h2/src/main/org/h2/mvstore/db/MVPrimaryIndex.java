@@ -49,11 +49,11 @@ public class MVPrimaryIndex extends BaseIndex {
      */
     static final ValueLong MAX = ValueLong.get(Long.MAX_VALUE);
 
-    private final MVTable mvTable;
-    private final String mapName;
-    private TransactionMap<Long,Row> dataMap;
-    private final AtomicLong lastKey = new AtomicLong(0);
-    private int mainIndexColumn = -1;
+    private final MVTable                  mvTable;
+    private final String                   mapName;
+    private final TransactionMap<Long,Row> dataMap;
+    private final AtomicLong               lastKey = new AtomicLong(0);
+    private       int                      mainIndexColumn = -1;
 
     public MVPrimaryIndex(Database db, MVTable table, int id,
             IndexColumn[] columns, IndexType indexType) {
