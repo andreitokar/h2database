@@ -130,7 +130,7 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
 
                 if (indexType.isUnique()) {
                     SearchRow unique = convertToKey(row, true);
-                    checkUnique(dataMap, unique);
+                    checkUnique(dataMap, unique, row.getKey());
                 }
 
                 dataMap.putCommitted(row, ValueNull.INSTANCE);
@@ -176,7 +176,7 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
         if (indexType.isUnique()) {
             // this will detect committed entries only
             unique = convertToKey(row, true);
-            checkUnique(map, unique);
+            checkUnique(map, unique, Long.MIN_VALUE);
         }
         try {
             map.put(key, ValueNull.INSTANCE);
@@ -184,30 +184,11 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
             throw mvTable.convertException(e);
         }
         if (unique != null) {
-            Iterator<SearchRow> it = map.keyIterator(unique, true);
-            while (it.hasNext()) {
-                SearchRow k = it.next();
-                unique.setKey(k.getKey());
-                if (compareRows(unique, k) != 0) {
-                    break;
-                }
-                if (containsNullAndAllowMultipleNull(k)) {
-                    // this is allowed
-                    continue;
-                }
-                if (map.isSameTransaction(k)) {
-                    continue;
-                }
-                if (map.get(k) != null) {
-                    // committed
-                    throw getDuplicateKeyException(k.toString());
-                }
-                throw DbException.get(ErrorCode.CONCURRENT_UPDATE_1, table.getName());
-            }
+            checkUnique(map, unique, row.getKey());
         }
     }
 
-    private void checkUnique(TransactionMap<SearchRow,Value> map, SearchRow row) {
+    private void checkUnique(TransactionMap<SearchRow,Value> map, SearchRow row, long newKey) {
         Iterator<SearchRow> it = map.keyIterator(row, true);
         while (it.hasNext()) {
             SearchRow k = it.next();
@@ -215,11 +196,21 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
             if (compareRows(row, k) != 0) {
                 break;
             }
-            if (map.get(k) != null) {
-                if (!containsNullAndAllowMultipleNull(k)) {
-                    throw getDuplicateKeyException(k.toString());
+
+            if (containsNullAndAllowMultipleNull(k)) {
+                // this is allowed
+                continue;
+            }
+            if (map.isSameTransaction(k)) {
+                if (newKey == k.getKey()) {
+                    continue;
                 }
             }
+            if (map.get(k) != null) {
+                // committed
+                throw getDuplicateKeyException(k.toString());
+            }
+            throw DbException.get(ErrorCode.CONCURRENT_UPDATE_1, table.getName());
         }
     }
 
