@@ -13,7 +13,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.PriorityQueue;
 import java.util.Queue;
-
 import org.h2.api.ErrorCode;
 import org.h2.engine.Database;
 import org.h2.engine.Session;
@@ -40,13 +39,13 @@ import org.h2.value.ValueNull;
 /**
  * A table stored in a MVStore.
  */
-public class MVSecondaryIndex extends BaseIndex implements MVIndex {
+public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
 
     /**
      * The multi-value table.
      */
     private final MVTable                         mvTable;
-    private final RowFactory                      rowFactory;
+    private final RowFactory rowFactory;
     private final TransactionMap<SearchRow,Value> dataMap;
 
     public MVSecondaryIndex(Database db, MVTable table, int id, String indexName,
@@ -84,29 +83,37 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
     private static final class Source {
 
         private final Iterator<SearchRow> iterator;
-        private       SearchRow           currentRow;
-
-        private static Comparator<Source> createComparator(DataType type) {
-            return new SourceComparator(type);
-        }
+        private       SearchRow           currentRowData;
 
         public Source(Iterator<SearchRow> iterator) {
             assert iterator.hasNext();
             this.iterator = iterator;
-            this.currentRow = iterator.next();
+            this.currentRowData = iterator.next();
         }
 
-        private static final class SourceComparator implements Comparator<Source> {
+        public boolean hasNext() {
+            boolean result = iterator.hasNext();
+            if(result) {
+                currentRowData = iterator.next();
+            }
+            return result;
+        }
+
+        public SearchRow next() {
+            return currentRowData;
+        }
+
+        public static final class Comparator implements java.util.Comparator<Source> {
 
             private final DataType type;
 
-            private SourceComparator(DataType type) {
+            public Comparator(DataType type) {
                 this.type = type;
             }
 
             @Override
             public int compare(Source one, Source two) {
-                return type.compare(one.currentRow, two.currentRow);
+                return type.compare(one.currentRowData, two.currentRowData);
             }
         }
     }
@@ -116,7 +123,7 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
         ArrayList<String> mapNames = New.arrayList(bufferNames);
         int buffersCount = bufferNames.size();
         Queue<Source> queue = new PriorityQueue<>(buffersCount,
-                                        Source.createComparator(rowFactory.getDataType()));
+                                new Source.Comparator(rowFactory.getDataType()));
         for (String bufferName : bufferNames) {
             Iterator<SearchRow> iter = openMap(bufferName).keyIterator(null);
             if (iter.hasNext()) {
@@ -126,7 +133,7 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
         try {
             while (!queue.isEmpty()) {
                 Source s = queue.remove();
-                SearchRow row = s.currentRow;
+                SearchRow row = s.next();
 
                 if (indexType.isUnique()) {
                     SearchRow unique = convertToKey(row, true);
@@ -135,9 +142,7 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
 
                 dataMap.putCommitted(row, ValueNull.INSTANCE);
 
-                Iterator<SearchRow> it = s.iterator;
-                if (it.hasNext()) {
-                    s.currentRow = it.next();
+                if (s.hasNext()) {
                     queue.offer(s);
                 }
             }
@@ -405,7 +410,7 @@ public class MVSecondaryIndex extends BaseIndex implements MVIndex {
     /**
      * A cursor.
      */
-    class MVStoreCursor implements Cursor {
+    final class MVStoreCursor implements Cursor {
 
         private final Session             session;
         private final Iterator<SearchRow> it;
