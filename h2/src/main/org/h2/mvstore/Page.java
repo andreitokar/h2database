@@ -279,29 +279,31 @@ public abstract class Page implements Cloneable {
     @Override
     public String toString() {
         StringBuilder buff = new StringBuilder();
-        buff.append("id: ").append(System.identityHashCode(this)).append('\n');
-        buff.append("pos: ").append(Long.toHexString(pos)).append("\n");
-        if (pos != 0) {
-            int chunkId = DataUtils.getPageChunkId(pos);
-            buff.append("chunk: ").append(Long.toHexString(chunkId)).append("\n");
-        }
         dump(buff);
         return buff.toString();
     }
 
-    protected abstract void dump(StringBuilder buff);
+    protected void dump(StringBuilder buff) {
+        buff.append("id: ").append(System.identityHashCode(this)).append('\n');
+        buff.append("pos: ").append(Long.toHexString(pos)).append("\n");
+        if (isSaved()) {
+            int chunkId = DataUtils.getPageChunkId(pos);
+            buff.append("chunk: ").append(Long.toHexString(chunkId)).append("\n");
+        }
+    }
 
     /**
      * Create a copy of this page.
      *
      * @return a mutable copy of this page
      */
-    public Page copy() {
+    public final Page copy() {
         return copy(false);
     }
 
     public Page copy(boolean countRemoval) {
         Page newPage = clone();
+        newPage.pos = 0;
         // mark the old as deleted
         if(countRemoval) {
             removePage();
@@ -320,7 +322,6 @@ public abstract class Page implements Cloneable {
         } catch (CloneNotSupportedException impossible) {
             throw new RuntimeException(impossible);
         }
-        clone.pos = 0;
         return clone;
     }
 
@@ -538,7 +539,7 @@ public abstract class Page implements Cloneable {
     protected abstract void readPayLoad(ByteBuffer buff);
 
     public final boolean isSaved() {
-        return pos != 0;
+        return DataUtils.isPageSaved(pos);
     }
 
     /**
@@ -597,7 +598,7 @@ public abstract class Page implements Cloneable {
                 ^ DataUtils.getCheckValue(pageLength);
         buff.putInt(start, pageLength).
             putShort(start + 4, (short) check);
-        if (pos != 0) {
+        if (isSaved()) {
             throw DataUtils.newIllegalStateException(
                     DataUtils.ERROR_INTERNAL, "Page already stored");
         }
@@ -644,12 +645,12 @@ public abstract class Page implements Cloneable {
 
     @Override
     public final boolean equals(Object other) {
-        return other == this || other instanceof Page && (pos != 0 && ((Page) other).pos == pos || this == other);
+        return other == this || other instanceof Page && (isSaved() && ((Page) other).pos == pos);
     }
 
     @Override
     public final int hashCode() {
-        return pos != 0 ? (int) (pos | (pos >>> 32)) : super.hashCode();
+        return isSaved() ? (int) (pos | (pos >>> 32)) : super.hashCode();
     }
 
     protected final boolean isPersistent() {
@@ -961,6 +962,7 @@ public abstract class Page implements Cloneable {
         @Override
         @SuppressWarnings("SuspiciousSystemArraycopy")
         public Page split(int at) {
+            assert !isSaved();
             int b = getKeyCount() - at;
             Object bKeys = splitKeys(at, b);
             Object bValues = createValueStorage(b);
@@ -1093,6 +1095,7 @@ public abstract class Page implements Cloneable {
 
         @Override
         public void dump(StringBuilder buff) {
+            super.dump(buff);
             int keyCount = getKeyCount();
             for (int i = 0; i < keyCount; i++) {
                 if (i > 0) {
@@ -1172,6 +1175,7 @@ public abstract class Page implements Cloneable {
 
         @SuppressWarnings("SuspiciousSystemArraycopy")
         public Page split(int at) {
+            assert !isSaved();
             int b = getKeyCount() - at;
             Object bKeys = splitKeys(at, b - 1);
             PageReference[] aChildren = new PageReference[at + 1];
@@ -1353,7 +1357,7 @@ public abstract class Page implements Cloneable {
             for (int i = 0; i < len; i++) {
                 PageReference ref = children[i];
                 if (ref.page != null) {
-                    if (ref.page.getPos() == 0) {
+                    if (!ref.page.isSaved()) {
                         throw DataUtils.newIllegalStateException(
                                 DataUtils.ERROR_INTERNAL, "Page not written");
                     }
@@ -1381,6 +1385,7 @@ public abstract class Page implements Cloneable {
 
         @Override
         public void dump(StringBuilder buff) {
+            super.dump(buff);
             int keyCount = getKeyCount();
             for (int i = 0; i <= keyCount; i++) {
                 if (i > 0) {

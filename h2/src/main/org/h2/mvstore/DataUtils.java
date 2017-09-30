@@ -550,6 +550,16 @@ public final class DataUtils {
     }
 
     /**
+     * Find out if page was saved.
+     *
+     * @param pos the position
+     * @return true if page has been saved
+     */
+    public static boolean isPageSaved(long pos) {
+        return pos != 0;
+    }
+
+    /**
      * Get the position of this page. The following information is encoded in
      * the position: the chunk id, the offset, the maximum length, and the type
      * (node or leaf).

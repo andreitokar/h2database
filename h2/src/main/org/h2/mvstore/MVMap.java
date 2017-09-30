@@ -648,11 +648,12 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     @Override
     public void clear() {
         beforeWrite();
+        Page emptyRootPage = Page.createEmpty(this);
         RootReference rootReference;
         int attempt = 0;
         do {
             rootReference = getRoot();
-        } while (!updateRoot(rootReference, Page.createEmpty(this), ++attempt));
+        } while (!updateRoot(rootReference, emptyRootPage, ++attempt));
         rootReference.root.removeAllRecursive();
     }
 

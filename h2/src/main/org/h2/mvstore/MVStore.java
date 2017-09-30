@@ -1185,7 +1185,7 @@ public final class MVStore {
                     !map.isVolatile() &&
                     map.hasChangesSince(lastStoredVersion)) {
                 Page rootPage = rootReference.root;
-                if (rootPage.getPos() == 0 ||
+                if (!rootPage.isSaved() ||
                         // after deletion previously saved leaf
                         // may pop up as a root, but we still need
                         // to save new root pos in meta
@@ -1400,12 +1400,13 @@ public final class MVStore {
                 rootReference != null && (rootReference.version >= oldestVersionToKeep/* || rootReference.version == INITIAL_VERSION*/);
                 rootReference = rootReference.previous) {
 
-            long pos = rootReference.root.getPos();
-            if(pos != 0) {
+            Page rootPage = rootReference.root;
+            long pos = rootPage.getPos();
+            if(rootPage.isSaved()) {
                 collectReferencedChunks(referenced, meta.getId(), pos, 0);
             }
 
-            for (Cursor<String, String> c = new Cursor<>(meta, rootReference.root, "root.", true); c.hasNext(); ) {
+            for (Cursor<String, String> c = new Cursor<>(meta, rootPage, "root.", true); c.hasNext(); ) {
                 String key = c.next();
                 assert key != null;
                 if (!key.startsWith("root.")) {
@@ -2043,7 +2044,7 @@ public final class MVStore {
      * @return the page
      */
     Page readPage(MVMap<?, ?> map, long pos) {
-        if (pos == 0) {
+        if (!DataUtils.isPageSaved(pos)) {
             throw DataUtils.newIllegalStateException(
                     DataUtils.ERROR_FILE_CORRUPT, "Position 0");
         }
@@ -2496,10 +2497,9 @@ public final class MVStore {
     }
 
     private void revertTemp(long storeVersion) {
-        Set<Long> keys = freedPageSpace.keySet();
-        for (Iterator<Long> it = keys.iterator();
-             it.hasNext();) {
-            long v = it.next();
+        for (Iterator<Entry<Long, Map<Integer, Chunk>>> it = freedPageSpace.entrySet().iterator(); it.hasNext(); ) {
+            Entry<Long, Map<Integer, Chunk>> entry = it.next();
+            Long v = entry.getKey();
             if (v <= storeVersion) {
                 it.remove();
             }
