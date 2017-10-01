@@ -77,7 +77,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
     protected MVMap(MVMap<K,V> source) {
         this(source.store, source.keyType, source.valueType, source.id, source.createVersion,
-                new AtomicReference<RootReference>(source.root.get()));
+                new AtomicReference<>(source.root.get()));
     }
 
     MVMap(MVStore store) {
@@ -97,8 +97,8 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     }
 
     protected MVMap<K,V> cloneIt() {
-        return new MVMap<K,V>(store, keyType, valueType, id, createVersion,
-                                new AtomicReference<RootReference>(root.get()));
+        return new MVMap<>(store, keyType, valueType, id, createVersion,
+                                new AtomicReference<>(root.get()));
     }
 
     /**
@@ -743,6 +743,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     public final boolean replace(K key, V oldValue, V newValue) {
         EqualsDecisionMaker<V> decisionMaker = new EqualsDecisionMaker<>(valueType, oldValue);
         V result = put(key, newValue, decisionMaker);
+        assert oldValue == result || oldValue.equals(result);
         return decisionMaker.decision != Decision.ABORT;
     }
 
