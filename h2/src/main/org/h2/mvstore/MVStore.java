@@ -345,20 +345,17 @@ public final class MVStore {
             pgSplitSize = (int)cache.getMaxItemSize();
         }
         pageSplitSize = pgSplitSize;
-
         keysPerPage = Utils.getConfigParam(config, "keysPerPage", 48);
-        backgroundExceptionHandler = (UncaughtExceptionHandler)config.get("backgroundExceptionHandler");
+        backgroundExceptionHandler =
+                (UncaughtExceptionHandler)config.get("backgroundExceptionHandler");
         meta = new MVMap<>(this);
         meta.init();
-
         if (this.fileStore != null) {
             retentionTime = this.fileStore.getDefaultRetentionTime();
             int kb = Utils.getConfigParam(config, "autoCommitBufferSize", 1024);
             // 19 KB memory is about 1 KB storage
             autoCommitMemory = kb * 1024 * 19;
-
             autoCompactFillRate = Utils.getConfigParam(config, "autoCompactFillRate", 50);
-
             char[] encryptionKey = (char[]) config.get("encryptionKey");
             try {
                 if (!fileStoreIsProvided) {
@@ -1654,12 +1651,12 @@ public final class MVStore {
     }
 
     /**
-     * Get the position of the last used byte.
+     * Get the position right after the last used byte.
      *
      * @return the position
      */
     private long getFileLengthInUse() {
-        long result = fileStore.getLast();
+        long result = fileStore.getFileLengthInUse();
         assert result == _getFileLengthInUse() : result + " != " + _getFileLengthInUse();
         return result;
     }

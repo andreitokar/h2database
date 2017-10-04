@@ -173,7 +173,12 @@ public class FreeSpaceBitSet {
         return getPos(set.nextClearBit(0));
     }
 
-    public long getLast() {
+    /**
+     * Get the position of the last (infinite) free space.
+     *
+     * @return the position.
+     */
+    public long getLastFree() {
         return getPos(set.previousSetBit(set.size()-1) + 1);
     }
 

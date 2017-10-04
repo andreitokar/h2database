@@ -355,8 +355,8 @@ public class FileStore {
         return freeSpace.getFirstFree();
     }
 
-    long getLast() {
-        return freeSpace.getLast();
+    long getFileLengthInUse() {
+        return freeSpace.getLastFree();
     }
 
     /**

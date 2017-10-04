@@ -89,6 +89,10 @@ public class CacheLongKeyLIRS<V> {
         }
     }
 
+    /**
+     * Determines max size of the data item size to fit into cache
+     * @return data items size limit
+     */
     public long getMaxItemSize() {
         return Math.max(1, maxMemory / segmentCount);
     }
