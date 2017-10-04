@@ -7,12 +7,22 @@ package org.h2.mvstore;
 
 import java.lang.Thread.UncaughtExceptionHandler;
 import java.nio.ByteBuffer;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.BitSet;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Map;
 import java.util.Map.Entry;
+import java.util.PriorityQueue;
+import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
-
 import org.h2.compress.CompressDeflate;
 import org.h2.compress.CompressLZF;
 import org.h2.compress.Compressor;
@@ -20,7 +30,7 @@ import org.h2.mvstore.Page.PageChildren;
 import org.h2.mvstore.cache.CacheLongKeyLIRS;
 import org.h2.util.MathUtils;
 import org.h2.util.New;
-
+import org.h2.util.Utils;
 import static org.h2.mvstore.MVMap.INITIAL_VERSION;
 
 /*
@@ -160,14 +170,14 @@ public final class MVStore {
      * It is split in 16 segments. The stack move distance is 2% of the expected
      * number of entries.
      */
-    private CacheLongKeyLIRS<Page> cache;
+    private final CacheLongKeyLIRS<Page> cache;
 
     /**
      * The page chunk references cache. The default size is 4 MB, and the
      * average size is 2 KB. It is split in 16 segments. The stack move distance
      * is 2% of the expected number of entries.
      */
-    private CacheLongKeyLIRS<PageChildren> cacheChunkRef;
+    private final CacheLongKeyLIRS<PageChildren> cacheChunkRef;
 
     /**
      * The newest chunk. If nothing was stored yet, this field is not set.
@@ -192,7 +202,8 @@ public final class MVStore {
      * Sometimes we hold the MVStore lock, sometimes the MVMap lock, and sometimes
      * we even sync on the ConcurrentHashMap<Integer, Chunk> object.
      */
-    private final ConcurrentHashMap<Long,Map<Integer,Chunk>> freedPageSpace = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long,Map<Integer,Chunk>> freedPageSpace =
+            new ConcurrentHashMap<>();
 
     /**
      * The metadata map. Write access to this map needs to be synchronized on
@@ -297,9 +308,8 @@ public final class MVStore {
      *             occurred while opening
      * @throws IllegalArgumentException if the directory does not exist
      */
-    MVStore(HashMap<String, Object> config) {
-        Object o = config.get("compress");
-        this.compressionLevel = o == null ? 0 : (Integer) o;
+    MVStore(Map<String, Object> config) {
+        this.compressionLevel = Utils.getConfigParam(config, "compress", 0);
         String fileName = (String) config.get("fileName");
         FileStore fileStore = (FileStore) config.get("fileStore");
         fileStoreIsProvided = fileStore != null;
@@ -307,47 +317,52 @@ public final class MVStore {
             fileStore = new FileStore();
         }
         this.fileStore = fileStore;
-        o = config.get("pageSplitSize");
-        pageSplitSize = o != null         ? (Integer) o :
-                        fileStore != null ? 16 * 1024 :
-                                            4 * 1024;
-        o = config.get("keysPerPage");
-        keysPerPage = o != null ? (Integer)o : 48;
-        o = config.get("backgroundExceptionHandler");
-        this.backgroundExceptionHandler = (UncaughtExceptionHandler) o;
-        meta = new MVMap<String, String>(this);
-        meta.init();
 
-        if (this.fileStore == null) {
+        CacheLongKeyLIRS.Config cc = null;
+        if (this.fileStore != null) {
+            int mb = Utils.getConfigParam(config, "cacheSize", 16);
+            if (mb > 0) {
+                cc = new CacheLongKeyLIRS.Config();
+                cc.maxMemory = mb * 1024L * 1024L;
+                Object o = config.get("cacheConcurrency");
+                if (o != null) {
+                    cc.segmentCount = (Integer)o;
+                }
+            }
+        }
+        if (cc != null) {
+            cache = new CacheLongKeyLIRS<>(cc);
+            cc.maxMemory /= 4;
+            cacheChunkRef = new CacheLongKeyLIRS<>(cc);
+        } else {
             cache = null;
             cacheChunkRef = null;
-        } else {
+        }
+
+        int pgSplitSize = Utils.getConfigParam(config, "pageSplitSize", 16 * 1024);
+        // Make sure pages will fit into cache
+        if (cache != null && pgSplitSize > cache.getMaxItemSize()) {
+            pgSplitSize = (int)cache.getMaxItemSize();
+        }
+        pageSplitSize = pgSplitSize;
+
+        keysPerPage = Utils.getConfigParam(config, "keysPerPage", 48);
+        backgroundExceptionHandler = (UncaughtExceptionHandler)config.get("backgroundExceptionHandler");
+        meta = new MVMap<>(this);
+        meta.init();
+
+        if (this.fileStore != null) {
             retentionTime = this.fileStore.getDefaultRetentionTime();
-            boolean readOnly = config.containsKey("readOnly");
-            o = config.get("cacheSize");
-            int mb = o == null ? 16 : (Integer) o;
-            if (mb > 0) {
-                CacheLongKeyLIRS.Config cc = new CacheLongKeyLIRS.Config();
-                cc.maxMemory = mb * 1024L * 1024L;
-                o = config.get("cacheConcurrency");
-                if (o != null) {
-                    cc.segmentCount = (Integer) o;
-                }
-                cache = new CacheLongKeyLIRS<Page>(cc);
-                cc.maxMemory /= 4;
-                cacheChunkRef = new CacheLongKeyLIRS<PageChildren>(cc);
-            }
-            o = config.get("autoCommitBufferSize");
-            int kb = o == null ? 1024 : (Integer) o;
+            int kb = Utils.getConfigParam(config, "autoCommitBufferSize", 1024);
             // 19 KB memory is about 1 KB storage
             autoCommitMemory = kb * 1024 * 19;
 
-            o = config.get("autoCompactFillRate");
-            autoCompactFillRate = o == null ? 50 : (Integer) o;
+            autoCompactFillRate = Utils.getConfigParam(config, "autoCompactFillRate", 50);
 
             char[] encryptionKey = (char[]) config.get("encryptionKey");
             try {
                 if (!fileStoreIsProvided) {
+                    boolean readOnly = config.containsKey("readOnly");
                     this.fileStore.open(fileName, readOnly, encryptionKey);
                 }
                 if (this.fileStore.size() == 0) {
@@ -389,8 +404,7 @@ public final class MVStore {
 
             // setAutoCommitDelay starts the thread, but only if
             // the parameter is different from the old value
-            o = config.get("autoCommitDelay");
-            int delay = o == null ? 1000 : (Integer) o;
+            int delay = Utils.getConfigParam(config, "autoCommitDelay", 1000);
             setAutoCommitDelay(delay);
         }
     }
@@ -985,8 +999,12 @@ public final class MVStore {
             }
             // release memory early - this is important when called
             // because of out of memory
-            cache = null;
-            cacheChunkRef = null;
+            if (cache != null) {
+                cache.clear();
+            }
+            if (cacheChunkRef != null) {
+                cacheChunkRef.clear();
+            }
             for (MVMap<?, ?> m : New.arrayList(maps.values())) {
                 m.close();
             }

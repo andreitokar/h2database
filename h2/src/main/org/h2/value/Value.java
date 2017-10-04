@@ -611,7 +611,7 @@ public abstract class Value {
             case BYTE: {
                 switch (getType()) {
                 case BOOLEAN:
-                    return ValueByte.get(getBoolean() ? (byte) 1 : (byte) 0);
+                    return ValueByte.get((byte)(getBoolean() ? 1 : 0));
                 case SHORT:
                     return ValueByte.get(convertToByte(getShort(), column));
                 case ENUM:
@@ -636,7 +636,7 @@ public abstract class Value {
             case SHORT: {
                 switch (getType()) {
                 case BOOLEAN:
-                    return ValueShort.get(getBoolean() ? (short) 1 : (short) 0);
+                    return ValueShort.get((short)(getBoolean() ? 1 : 0));
                 case BYTE:
                     return ValueShort.get(getByte());
                 case ENUM:

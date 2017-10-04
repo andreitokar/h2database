@@ -8,7 +8,6 @@ package org.h2.value;
 import java.io.InputStream;
 import java.io.Reader;
 import java.math.BigDecimal;
-import java.nio.ByteBuffer;
 import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -16,11 +15,6 @@ import java.sql.Time;
 import java.sql.Timestamp;
 import org.h2.engine.Mode;
 import org.h2.message.DbException;
-import org.h2.mvstore.WriteBuffer;
-import org.h2.mvstore.db.ValueDataType;
-import org.h2.mvstore.type.ExtendedDataType;
-import org.h2.result.SortOrder;
-import org.h2.store.DataHandler;
 import org.h2.table.Column;
 
 /**
@@ -178,4 +172,5 @@ public class ValueNull extends Value {
     public boolean equals(Object other) {
         return other == this;
     }
+
 }

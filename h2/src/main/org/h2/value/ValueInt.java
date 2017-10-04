@@ -5,18 +5,11 @@
  */
 package org.h2.value;
 
-import java.nio.ByteBuffer;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 
 import org.h2.api.ErrorCode;
 import org.h2.message.DbException;
-import org.h2.mvstore.DataUtils;
-import org.h2.mvstore.WriteBuffer;
-import org.h2.mvstore.db.ValueDataType;
-import org.h2.mvstore.type.ExtendedDataType;
-import org.h2.result.SortOrder;
-import org.h2.store.DataHandler;
 import org.h2.util.MathUtils;
 
 /**
@@ -185,4 +178,5 @@ public class ValueInt extends Value {
     public boolean equals(Object other) {
         return other instanceof ValueInt && value == ((ValueInt) other).value;
     }
+
 }

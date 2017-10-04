@@ -130,12 +130,14 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
             }
         }
         try {
+            SearchRow unique = rowFactory.createRow();
             while (!queue.isEmpty()) {
                 Source s = queue.remove();
                 SearchRow row = s.next();
 
                 if (indexType.isUnique()) {
-                    SearchRow unique = convertToKey(row, true);
+                    unique.copyFrom(row);
+                    unique.setKey(Long.MIN_VALUE);
                     checkUnique(dataMap, unique, row.getKey());
                 }
 

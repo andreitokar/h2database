@@ -5,18 +5,10 @@
  */
 package org.h2.value;
 
-import java.nio.ByteBuffer;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 
-import org.h2.engine.Constants;
 import org.h2.engine.SysProperties;
-import org.h2.mvstore.DataUtils;
-import org.h2.mvstore.WriteBuffer;
-import org.h2.mvstore.db.ValueDataType;
-import org.h2.mvstore.type.ExtendedDataType;
-import org.h2.result.SortOrder;
-import org.h2.store.DataHandler;
 import org.h2.util.MathUtils;
 import org.h2.util.StringUtils;
 
@@ -173,4 +165,5 @@ public class ValueString extends Value {
     protected Value getNew(String s) {
         return ValueString.get(s);
     }
+
 }

@@ -28,7 +28,7 @@ public class ValueStringIgnoreCase extends ValueString {
 
     @Override
     protected int compareSecure(Value o, CompareMode mode) {
-        ValueString v = (ValueString) o;
+        ValueStringIgnoreCase v = (ValueStringIgnoreCase) o;
         return mode.compareString(value, v.value, true);
     }
 

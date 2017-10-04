@@ -102,8 +102,7 @@ public class ValueDouble extends Value {
 
     @Override
     protected int compareSecure(Value o, CompareMode mode) {
-        ValueDouble v = (ValueDouble) o;
-        return compare(v);
+        return compare((ValueDouble) o);
     }
 
     private int compare(ValueDouble v) {
@@ -143,7 +142,7 @@ public class ValueDouble extends Value {
 
     @Override
     public Object getObject() {
-        return Double.valueOf(value);
+        return value;
     }
 
     @Override
@@ -178,7 +177,8 @@ public class ValueDouble extends Value {
     @Override
     public boolean equals(Object other) {
         return other instanceof ValueDouble
-            && Double.doubleToLongBits(value) == Double.doubleToLongBits(((ValueDouble) other).value);
+            && Double.doubleToLongBits(value) ==
+               Double.doubleToLongBits(((ValueDouble)other).value);
     }
 
 }

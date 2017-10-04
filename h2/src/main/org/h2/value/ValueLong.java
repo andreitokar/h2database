@@ -7,17 +7,11 @@ package org.h2.value;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
-import java.nio.ByteBuffer;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 
 import org.h2.api.ErrorCode;
 import org.h2.message.DbException;
-import org.h2.mvstore.WriteBuffer;
-import org.h2.mvstore.db.ValueDataType;
-import org.h2.mvstore.type.ExtendedDataType;
-import org.h2.result.SortOrder;
-import org.h2.store.DataHandler;
 
 /**
  * Implementation of the BIGINT data type.
@@ -73,7 +67,7 @@ public class ValueLong extends Value {
         // if the operands have the same sign,
         // and the result has a different sign, then it is an overflow
         // it can not be an overflow when one of the operands is 0
-        if (sv != so || sr == so || sv == 0 || so == 0) {
+        if (sv != so || sr == so || sv == 0) {
             return ValueLong.get(result);
         }
         throw getOverflow();
@@ -175,8 +169,7 @@ public class ValueLong extends Value {
 
     @Override
     protected int compareSecure(Value o, CompareMode mode) {
-        ValueLong v = (ValueLong) o;
-        return compare(v);
+        return compare((ValueLong)o);
     }
 
     private int compare(ValueLong v) {
@@ -231,6 +224,4 @@ public class ValueLong extends Value {
     public boolean equals(Object other) {
         return other instanceof ValueLong && value == ((ValueLong) other).value;
     }
-
-
 }

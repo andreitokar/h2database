@@ -70,13 +70,6 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
 
     private final MVMap<String, DataType> typeRegistry;
 
-    /**
-     * The map of maps.
-     */
-//    private final ConcurrentHashMap<Integer, MVMap<Object, VersionedValue>> maps = new ConcurrentHashMap<>();
-
-    private final DataType metaDataType;
-
     private final DataType dataType;
 
 
@@ -114,13 +107,13 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
     public TransactionStore(MVStore store, DataType metaDataType, DataType dataType, long timeoutMillis) {
         this.store = store;
         this.currentTxCounter = new TxCounter(store.getOldestVersionToKeep(null));
-        this.metaDataType = metaDataType;
         this.dataType = dataType;
         this.timeoutMillis = timeoutMillis;
-        MVMap.Builder<String, DataType> builder2 = new MVMap.Builder<String, DataType>()
-                                            .keyType(StringDataType.INSTANCE)
-                                            .valueType(metaDataType);
-        typeRegistry = store.openMap(TYPE_REGISTRY_NAME, builder2);
+        MVMap.Builder<String, DataType> typeRegistryBuilder =
+                                    new MVMap.Builder<String, DataType>()
+                                                .keyType(StringDataType.INSTANCE)
+                                                .valueType(metaDataType);
+        typeRegistry = store.openMap(TYPE_REGISTRY_NAME, typeRegistryBuilder);
         preparedTransactions = store.openMap("openTransactions",
                                              new MVMap.Builder<Integer, Object[]>());
         RecordType undoLogValueType = new RecordType(this);
@@ -789,7 +782,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
                 MVMap<K, V> map = (MVMap<K, V>) new MVRTreeMap<V>(config);
                 return map;
             }
-            return new TMVMap<K,V>(config);
+            return new TMVMap<>(config);
         }
 
         private static final class TMVMap<K,V> extends MVMap<K,V> {
@@ -880,11 +873,32 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
          * such transactions should be committed.
          */
         public static final int STATUS_COMMITTING   = 3;
+
+        /**
+         * The status of a transaction that has been logically committed or rather
+         * marked as committed, because it might be still listed among prepared,
+         * if it was prepared for commit, undo log entries might still exists for it
+         * and not all of it's changes within map's are re-written as committed yet.
+         * Nevertheless, those changes should be already viewed by other
+         * transactions as committed.
+         * This transaction's id can not be re-used until all the above is completed
+         * and transaction is closed.
+         */
         public static final int STATUS_COMMITTED    = 4;
+
+        /**
+         * The status of a transaction that currently in a process of rolling back
+         * to a savepoint.
+         */
         public static final int STATUS_ROLLING_BACK = 5;
+
+        /**
+         * The status of a transaction that has been rolled back completely,
+         * but undo operations are not finished yet.
+         */
         public static final int STATUS_ROLLED_BACK  = 6;
 
-        public static final String STATUS_NAMES[] = {
+        private static final String STATUS_NAMES[] = {
                 "CLOSED", "OPEN", "PREPARED", "COMMITTING",
                 "COMMITTED", "ROLLING_BACK", "ROLLED_BACK"
         };
@@ -894,7 +908,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
          */
         final TransactionStore store;
 
-        final RollbackListener listener;
+        private final RollbackListener listener;
 
         /**
          * The transaction id.

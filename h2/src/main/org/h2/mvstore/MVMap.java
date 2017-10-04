@@ -15,7 +15,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicReference;
-
 import org.h2.mvstore.type.DataType;
 import org.h2.mvstore.type.ExtendedDataType;
 import org.h2.mvstore.type.ObjectDataType;
@@ -743,8 +742,9 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     public final boolean replace(K key, V oldValue, V newValue) {
         EqualsDecisionMaker<V> decisionMaker = new EqualsDecisionMaker<>(valueType, oldValue);
         V result = put(key, newValue, decisionMaker);
-        assert oldValue == result || oldValue.equals(result);
-        return decisionMaker.decision != Decision.ABORT;
+        boolean res = decisionMaker.decision != Decision.ABORT;
+        assert !res || areValuesEqual(oldValue, result) : oldValue + " != " + result;
+        return res;
     }
 
     /**
