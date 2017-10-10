@@ -38,7 +38,7 @@ import org.h2.util.Utils;
 /**
  * A store that supports concurrent MVCC read-committed transactions.
  */
-public final class TransactionStore implements MVStore.VersionChangeListener {
+public final class TransactionStore {
 
     private static final int AVG_OPEN_TRANSACTIONS = 0x100;
     private static final String TYPE_REGISTRY_NAME = "_";
@@ -80,8 +80,6 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
     private volatile Transaction[] spilledTransactions = new Transaction[AVG_OPEN_TRANSACTIONS];
     private final AtomicReference<BitSet> openTransactions = new AtomicReference<>(new BitSet());
     private final AtomicReference<BitSet> committingTransactions = new AtomicReference<>(new BitSet());
-    private final ConcurrentLinkedQueue<TxCounter> versions = new ConcurrentLinkedQueue<>();
-    private volatile TxCounter currentTxCounter = new TxCounter(MVMap.INITIAL_VERSION);
 
 
     /**
@@ -106,7 +104,6 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
      */
     public TransactionStore(MVStore store, DataType metaDataType, DataType dataType, long timeoutMillis) {
         this.store = store;
-        this.currentTxCounter = new TxCounter(store.getOldestVersionToKeep(null));
         this.dataType = dataType;
         this.timeoutMillis = timeoutMillis;
         MVMap.Builder<String, DataType> typeRegistryBuilder =
@@ -121,8 +118,6 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
                         .keyType(LongDataType.INSTANCE)
                         .valueType(undoLogValueType);
         undoLog = store.openMap("undoLog", builder);
-
-        this.store.setVersionChangeListener(this);
     }
 
     /**
@@ -483,7 +478,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
 
         int status = t.getStatus();
         t.closeIt();
-        clearTxSavePoint(t.txCounter);
+        store.clearTxSavePoint(t.txCounter);
 
         assert verifyUndoIsEmptyForTx(txId);
 
@@ -637,72 +632,6 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
             }
 
         };
-    }
-
-    /**
-     * Register opened transaction.
-     * This would increment usage counter for the current version.
-     * This version (and all after it) should not be dropped until all
-     * transactions involved are closed and usage counter goes to zero.
-     * @return TxCounter to be decremented when transaction closed.
-     */
-    private TxCounter registerTxSavePoint() {
-        TxCounter txCounter;
-        while(true) {
-            txCounter = currentTxCounter;
-            if(txCounter.counter.getAndIncrement() >= 0) {
-                break;
-            }
-            // The only way for counter to be negative
-            // if it was retrieved right before onVersionChange()
-            // and now onVersionChange() is done.
-            // Thit version is available for reclamation now
-            // and should not be used here, so restore count
-            // not to upset accounting and try again with a new
-            // version (currentTxCounter should have changed).
-            assert txCounter != currentTxCounter : txCounter;
-            txCounter.counter.decrementAndGet();
-        }
-        return txCounter;
-    }
-
-    private void clearTxSavePoint(TxCounter txCounter) {
-        if(txCounter != null) {
-            if(txCounter.counter.decrementAndGet() <= 0) {
-                dropUnusedVersions();
-            }
-        }
-    }
-
-    @Override
-    public void onVersionChange(long version) {
-        TxCounter txCounter = this.currentTxCounter;
-        versions.add(txCounter);
-        currentTxCounter = new TxCounter(version);
-        txCounter.counter.decrementAndGet();
-        dropUnusedVersions();
-    }
-
-    private void dropUnusedVersions() {
-        TxCounter txCounter;
-        while ((txCounter = versions.peek()) != null
-                && txCounter.counter.get() < 0
-                && versions.remove(txCounter)) {/**/}
-        store.setOldestVersionToKeep(txCounter == null ? currentTxCounter.version : txCounter.version);
-    }
-
-    public static final class TxCounter {
-        private final long version;
-        private final AtomicInteger counter = new AtomicInteger();
-
-        private TxCounter(long version) {
-            this.version = version;
-        }
-
-        @Override
-        public String toString() {
-            return "v=" + version + " / cnt=" + counter;
-        }
     }
 
     public static final class TxMapBuilder<K,V> extends MVMap.Builder<K,V> {
@@ -931,7 +860,7 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
 
         private int ownerId;
 
-        private TxCounter txCounter;
+        private MVStore.TxCounter txCounter;
 
         private Transaction(TransactionStore store, int transactionId, int status,
                             String name, long logId, long timeoutMillis, RollbackListener listener) {
@@ -1091,14 +1020,14 @@ public final class TransactionStore implements MVStore.VersionChangeListener {
 
         public void markStatementStart() {
             markStatementEnd();
-            txCounter = store.registerTxSavePoint();
+            txCounter = store.store.registerTxSavePoint();
         }
 
         public void markStatementEnd() {
-            TxCounter counter = txCounter;
+            MVStore.TxCounter counter = txCounter;
             txCounter = null;
             if(counter != null) {
-                store.clearTxSavePoint(counter);
+                store.store.clearTxSavePoint(counter);
             }
         }
 

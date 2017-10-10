@@ -21,7 +21,9 @@ import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import org.h2.compress.CompressDeflate;
 import org.h2.compress.CompressLZF;
@@ -232,18 +234,19 @@ public final class MVStore {
 
     private Compressor compressorHigh;
 
-    private final UncaughtExceptionHandler backgroundExceptionHandler;
+    public final UncaughtExceptionHandler backgroundExceptionHandler;
 
     private volatile long currentVersion; // = INITIAL_VERSION + 1;
-
-    private VersionChangeListener versionChangeListener;
 
     /**
      * The version of the last stored chunk, or -1 if nothing was stored so far.
      */
     private long lastStoredVersion = INITIAL_VERSION;
 
-    private final AtomicLong oldestVersionToKeep = new AtomicLong(NOT_SET);
+    private final AtomicLong oldestVersionToKeep = new AtomicLong(/*NOT_SET*/);
+    private final ConcurrentLinkedQueue<TxCounter> versions = new ConcurrentLinkedQueue<>();
+//    private volatile TxCounter currentTxCounter = new TxCounter(MVMap.INITIAL_VERSION);
+    private volatile TxCounter currentTxCounter = new TxCounter(currentVersion);
 
     /**
      * The estimated memory used by unsaved pages. This number is not accurate,
@@ -403,6 +406,9 @@ public final class MVStore {
             // the parameter is different from the old value
             int delay = Utils.getConfigParam(config, "autoCommitDelay", 1000);
             setAutoCommitDelay(delay);
+
+//            this.currentTxCounter = new TxCounter(getOldestVersionToKeep(null));
+//            this.currentTxCounter = new TxCounter(currentVersion);
         }
     }
 
@@ -569,13 +575,14 @@ public final class MVStore {
 
     private MVMap<String, String> getMetaMap(long version) {
         Chunk c = getChunkForVersion(version);
-        if(c == null || c.block == Long.MAX_VALUE) {
-            return meta;
-        } else {
+        DataUtils.checkArgument(c != null, "Unknown version {0}", version);
+//        if(c == null || c.block == Long.MAX_VALUE) {
+//            return meta;
+//        } else {
             c = readChunkHeader(c.block);
             MVMap<String, String> oldMeta = meta.openReadOnly(c.metaRootPos, version);
             return oldMeta;
-        }
+//        }
     }
 
     private Chunk getChunkForVersion(long version) {
@@ -742,9 +749,6 @@ public final class MVStore {
         } while((newest = verifyLastChunks()) != null);
 
         setWriteVersion(currentVersion);
-        if(versionChangeListener != null) {
-            versionChangeListener.onVersionChange(currentVersion);
-        }
     }
 
     private void loadChunkMeta() {
@@ -1062,6 +1066,7 @@ public final class MVStore {
             }
         }
         meta.setWriteVersion(version);
+        onVersionChange(version);
     }
 
     /**
@@ -1095,9 +1100,6 @@ public final class MVStore {
                             v = ++currentVersion;
                             setWriteVersion(v);
                             metaChanged = false;
-                            if(versionChangeListener != null) {
-                                versionChangeListener.onVersionChange(currentVersion);
-                            }
                         } else {
                             if (fileStore.isReadOnly()) {
                                 throw DataUtils.newIllegalStateException(
@@ -1193,12 +1195,13 @@ public final class MVStore {
             MVMap.RootReference rootReference = map.setWriteVersion(version);
             if (rootReference == null) {
                 assert map.isClosed();
-                assert map.getVersion() <getOldestVersionToKeep(null);
+                assert map.getVersion() < getOldestVersionToKeep(null);
                 meta.remove(MVMap.getMapRootKey(map.getId()));
                 iter.remove();
             } else if (map.getCreateVersion() <= storeVersion && // if map was created after storing started, skip it
                     !map.isVolatile() &&
                     map.hasChangesSince(lastStoredVersion)) {
+                assert rootReference.version <= version : rootReference.version + " > " + version;
                 Page rootPage = rootReference.root;
                 if (!rootPage.isSaved() ||
                         // after deletion previously saved leaf
@@ -1230,12 +1233,10 @@ public final class MVStore {
             }
         }
         MVMap.RootReference metaRootReference = meta.setWriteVersion(version);
-        metaChanged = false;
         assert metaRootReference != null;
-
-        if(versionChangeListener != null) {
-            versionChangeListener.onVersionChange(currentVersion);
-        }
+        assert metaRootReference.version == version : metaRootReference.version + " != " + version;
+        metaChanged = false;
+        onVersionChange(version);
 
         Page metaRoot = metaRootReference.root;
         metaRoot.writeUnsavedRecursive(c, buff);
@@ -1392,8 +1393,9 @@ public final class MVStore {
 /*
         MVMap.RootReference rootReference = meta.getRoot();
         do {
-            if(rootReference.root.getPos() != 0) {
-                collectReferencedChunks(referenced, meta.getId(), rootReference.root.getPos(), 0);
+            long pos = rootReference.root.getPos();
+            if(DataUtils.isPageSaved(pos)) {
+                collectReferencedChunks(referenced, meta.getId(), pos, 0);
             }
 
             for (Cursor<String, String> c = new Cursor<>(meta, rootReference.root, "root.", true); c.hasNext(); ) {
@@ -1402,9 +1404,10 @@ public final class MVStore {
                 if (!key.startsWith("root.")) {
                     break;
                 }
-                long pos = DataUtils.parseHexLong(c.getValue());
-                if (pos != 0) {
-                    int mapId = DataUtils.parseHexInt(key.substring("root.".length()));
+                pos = DataUtils.parseHexLong(c.getValue());
+                if (DataUtils.isPageSaved(pos)) {
+                    // to allow for something like "root.tmp.123" to be processed
+                    int mapId = DataUtils.parseHexInt(key.substring(key.lastIndexOf('.') + 1));
                     collectReferencedChunks(referenced, mapId, pos, 0);
                 }
             }
@@ -1428,7 +1431,7 @@ public final class MVStore {
                     break;
                 }
                 pos = DataUtils.parseHexLong(c.getValue());
-                if (pos != 0) {
+                if (DataUtils.isPageSaved(pos)) {
                     // to allow for something like "root.tmp.123" to be processed
                     int mapId = DataUtils.parseHexInt(key.substring(key.lastIndexOf('.') + 1));
                     collectReferencedChunks(referenced, mapId, pos, 0);
@@ -2111,8 +2114,9 @@ public final class MVStore {
             }
         }
 
-        Chunk c = getChunkIfFound(pos);
-        if(c != null) {
+        Chunk c = getChunk(pos);
+//        Chunk c = getChunkIfFound(pos);
+//        if(c != null) {
             long version = currentVersion;
             if (map == meta && currentStoreVersion >= 0) {
                 if (Thread.currentThread() == currentStoreThread) {
@@ -2125,7 +2129,7 @@ public final class MVStore {
             }
             registerFreePage(version, c.id,
                     DataUtils.getPageMaxLength(pos), 1);
-        }
+//        }
     }
 
     private void registerFreePage(long version, int chunkId,
@@ -2257,16 +2261,19 @@ public final class MVStore {
      */
     public long getOldestVersionToKeep(MVMap map) {
         long v = oldestVersionToKeep.get();
-        if(v == NOT_SET) {
-            v = map == null ? currentVersion : map.getVersion();
+//        v = Math.max(v - versionsToKeep, INITIAL_VERSION);
+//        if(v == NOT_SET) {
+//            if(map != null) {
+//                v = Math.min(v, map.getVersion());
+//            }
             if (fileStore == null) {
                 v = Math.max(v - versionsToKeep, INITIAL_VERSION);
                 return v;
             }
-        }
+//        }
 
-        long storeVersion = lastStoredVersion;
-        if (storeVersion < v && storeVersion != INITIAL_VERSION) {
+        long storeVersion = currentStoreVersion;
+        if (storeVersion != INITIAL_VERSION && storeVersion < v) {
             v = storeVersion;
         }
         return v;
@@ -2276,7 +2283,7 @@ public final class MVStore {
         boolean success;
         do {
             long current = this.oldestVersionToKeep.get();
-            success = oldestVersionToKeep <= current && current != NOT_SET ||
+            success = oldestVersionToKeep <= current /* && current != NOT_SET*/ ||
                       this.oldestVersionToKeep.compareAndSet(current, oldestVersionToKeep);
         } while (!success);
     }
@@ -2869,12 +2876,70 @@ public final class MVStore {
         return updateAttemptCounter == 0 ? 0 : 1 - ((double)updateCounter / updateAttemptCounter);
     }
 
-    public synchronized void setVersionChangeListener(VersionChangeListener versionChangeListener) {
-        this.versionChangeListener = versionChangeListener;
+    /**
+     * Register opened transaction.
+     * This would increment usage counter for the current version.
+     * This version (and all after it) should not be dropped until all
+     * transactions involved are closed and usage counter goes to zero.
+     * @return TxCounter to be decremented when transaction closed.
+     */
+    public TxCounter registerTxSavePoint() {
+        TxCounter txCounter;
+        while(true) {
+            txCounter = currentTxCounter;
+            if(txCounter.counter.getAndIncrement() >= 0) {
+                break;
+            }
+            // The only way for counter to be negative
+            // if it was retrieved right before onVersionChange()
+            // and now onVersionChange() is done.
+            // Thit version is available for reclamation now
+            // and should not be used here, so restore count
+            // not to upset accounting and try again with a new
+            // version (currentTxCounter should have changed).
+            assert txCounter != currentTxCounter : txCounter;
+            txCounter.counter.decrementAndGet();
+        }
+        return txCounter;
     }
 
-    public interface VersionChangeListener {
-        void onVersionChange(long version);
+    public void clearTxSavePoint(TxCounter txCounter) {
+        if(txCounter != null) {
+            if(txCounter.counter.decrementAndGet() <= 0) {
+                dropUnusedVersions();
+            }
+        }
+    }
+
+    private void onVersionChange(long version) {
+        TxCounter txCounter = this.currentTxCounter;
+        assert txCounter.counter.get() >= 0;
+        versions.add(txCounter);
+        currentTxCounter = new TxCounter(version);
+        txCounter.counter.decrementAndGet();
+        dropUnusedVersions();
+    }
+
+    private void dropUnusedVersions() {
+        TxCounter txCounter;
+        while ((txCounter = versions.peek()) != null
+                && txCounter.counter.get() < 0
+                && versions.remove(txCounter)) {/**/}
+        setOldestVersionToKeep(txCounter == null ? currentTxCounter.version : txCounter.version);
+    }
+
+    public static final class TxCounter {
+        private final long version;
+        private final AtomicInteger counter = new AtomicInteger();
+
+        private TxCounter(long version) {
+            this.version = version;
+        }
+
+        @Override
+        public String toString() {
+            return "v=" + version + " / cnt=" + counter;
+        }
     }
 
     /**

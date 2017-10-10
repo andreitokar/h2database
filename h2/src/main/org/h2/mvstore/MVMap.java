@@ -1127,16 +1127,18 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @return true if map was closed previously and now it can be removed
      */
     private boolean removeUnusedOldVersions() {
-        long oldest = store.getOldestVersionToKeep(this);
+        long oldest = store.getOldestVersionToKeep(isClosed() ? null : this);
         RootReference rootReference = getRoot();
         boolean result = isClosed() && getVersion(rootReference) < oldest;
+        boolean head = true;
         RootReference previous;
         while ((previous = rootReference.previous) != null) {
-            if (previous.version < oldest) {
-                previous.previous = null;
+            if (previous.version < oldest && !head) {
+                rootReference.previous = null;
                 break;
             }
             rootReference = previous;
+            head = false;
         }
         return result;
     }
@@ -1255,18 +1257,21 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                 version, createVersion);
         removeUnusedOldVersions();
         RootReference rootReference = getRoot();
+        RootReference lastRootReference = null;
         boolean persistent = store.getFileStore() != null;
         while (rootReference != null && (rootReference.version > version)) {
+            lastRootReference = rootReference;
             rootReference = rootReference.previous;
         }
 
-        if (rootReference == null || rootReference.version == version && rootReference.previous == null || rootReference.version < 0 && persistent) {
+        if (rootReference == null) {
             // smaller than all in-memory versions
-            if(persistent) {
+//            if(persistent) {
                 MVMap<K, V> map = openReadOnly(store.getRootPos(getId(), version), version);
                 return map;
-            }
-            throw DataUtils.newIllegalArgumentException("Version {0} not found", version);
+//            }
+//            rootReference = lastRootReference;
+//            throw DataUtils.newIllegalArgumentException("Version {0} not found", version);
         }
         MVMap<K, V> m = openReadOnly(rootReference.root, version);
         assert m.getVersion() <= version : m.getVersion() + " <= " + version;
@@ -1355,10 +1360,16 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             RootReference rootReference = getRoot();
             if(rootReference.version >= writeVersion) {
                 return rootReference;
+            } else if (isClosed()) {
+                if (rootReference.version < store.getOldestVersionToKeep(null)) {
+                    return null;
+                }
+                return rootReference;
             }
             RootReference updatedRootReference = new RootReference(rootReference, writeVersion, ++attempt);
             if(root.compareAndSet(rootReference, updatedRootReference)) {
-                return removeUnusedOldVersions() ? null : updatedRootReference;
+                removeUnusedOldVersions();
+                return  updatedRootReference;
             }
         }
     }

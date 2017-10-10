@@ -104,6 +104,7 @@ public class TestConcurrent extends TestMVStore {
                 open();
         try {
             s.setRetentionTime(0);
+            s.setVersionsToKeep(0);
             final MVMap<Integer, Integer> dataMap = s.openMap("data");
             Task task = new Task() {
                 @Override
@@ -111,17 +112,26 @@ public class TestConcurrent extends TestMVStore {
                     int i = 0;
                     while (!stop) {
                         s.compact(100, 1024 * 1024);
-                        dataMap.put(i % 1000, i * 10);
+                        MVStore.TxCounter token = s.registerTxSavePoint();
+                        try {
+                            dataMap.put(i % 1000, i * 10);
+                        } finally {
+                            s.clearTxSavePoint(token);
+                        }
                         s.commit();
                         i++;
-                        Thread.yield();
                     }
                 }
             };
             task.execute();
             for (int i = 0; i < 1000 && !task.isFinished(); i++) {
                 s.compact(100, 1024 * 1024);
-                dataMap.put(i % 1000, i * 10);
+                MVStore.TxCounter token = s.registerTxSavePoint();
+                try {
+                    dataMap.put(i % 1000, i * 10);
+                } finally {
+                    s.clearTxSavePoint(token);
+                }
                 s.commit();
             }
             task.get();
