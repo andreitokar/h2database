@@ -517,6 +517,7 @@ public class ValueDataType implements DataType {
             return ValueBoolean.get(false);
         case INT_NEG:
             return ValueInt.get(-readVarInt(buff));
+        case Value.ENUM:
         case Value.INT:
             return ValueInt.get(readVarInt(buff));
         case LONG_NEG:
