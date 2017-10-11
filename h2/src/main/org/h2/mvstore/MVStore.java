@@ -25,6 +25,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import org.h2.compress.CompressDeflate;
 import org.h2.compress.CompressLZF;
 import org.h2.compress.Compressor;
@@ -256,7 +257,6 @@ public final class MVStore {
     private int unsavedMemory;
     private int autoCommitMemory;
     private volatile boolean saveNeeded;
-    private final AtomicBoolean commitIsInProgress = new AtomicBoolean();
 
     /**
      * The time the store was created, in milliseconds since 1970.
@@ -283,7 +283,11 @@ public final class MVStore {
      */
     private volatile long currentStoreVersion = -1;
 
-    private Thread currentStoreThread;
+    /**
+     * Holds reference to a thread performing store operation (if any)
+     * or null if there is none is in progress.
+     */
+    private final AtomicReference<Thread> currentStoreThread = new AtomicReference<>();
 
     private volatile boolean metaChanged;
 
@@ -295,7 +299,7 @@ public final class MVStore {
     private int autoCompactFillRate;
     private long autoCompactLastFileOpCount;
 
-    private Object compactSync = new Object();
+    private final Object compactSync = new Object();
 
     private IllegalStateException panicException;
 
@@ -1088,11 +1092,10 @@ public final class MVStore {
     public long commit() {
         // unlike synchronization, this will also prevent re-entrance,
         // which may be possible, if the meta map have changed
-        if (commitIsInProgress.compareAndSet(false, true)) {
+        if (currentStoreThread.compareAndSet(null, Thread.currentThread())) {
             synchronized (this) {
                 try {
                     currentStoreVersion = currentVersion;
-                    currentStoreThread = Thread.currentThread();
                     if (!closed && hasUnsavedChangesInternal()) {
                         long v;
                         if (fileStore == null) {
@@ -1119,8 +1122,7 @@ public final class MVStore {
                     // in any case reset the current store version,
                     // to allow closing the store
                     currentStoreVersion = -1;
-                    currentStoreThread = null;
-                    commitIsInProgress.set(false);
+                    currentStoreThread.set(null);
                 }
             }
         }
@@ -1248,37 +1250,14 @@ public final class MVStore {
                 Chunk.FOOTER_LENGTH, BLOCK_SIZE);
         buff.limit(length);
 
-        // the length of the file that is still in use
-        // (not necessarily the end of the file)
-        long end = getFileLengthInUse();
-        long filePos;
-        if (reuseSpace) {
-            filePos = fileStore.allocate(length);
-        } else {
-            filePos = end;
-        }
-        // end is not necessarily the end of the file
-        boolean storeAtEndOfFile = filePos + length >= fileStore.size();
-
-        if (!reuseSpace) {
-            // we can not mark it earlier, because it
-            // might have been allocated by one of the
-            // removed chunks
-            fileStore.markUsed(end, length);
-        }
-
+        long filePos = allocateFileSpace(length, !reuseSpace);
         c.block = filePos / BLOCK_SIZE;
         c.len = length / BLOCK_SIZE;
         assert fileStore.getFileLengthInUse() == _getFileLengthInUse() : fileStore.getFileLengthInUse() + " != " + _getFileLengthInUse() + " " + c;
         c.metaRootPos = metaRoot.getPos();
         // calculate and set the likely next position
         if (reuseSpace) {
-            int predictBlocks = c.len;
-            long predictedNextStart = fileStore.allocate(
-                    predictBlocks * BLOCK_SIZE);
-            fileStore.free(predictedNextStart, predictBlocks * BLOCK_SIZE);
-            assert fileStore.getFileLengthInUse() == _getFileLengthInUse() : fileStore.getFileLengthInUse() + " != " + _getFileLengthInUse() + " " + c;
-            c.next = predictedNextStart / BLOCK_SIZE;
+            c.next = fileStore.predictAllocation(c.len * BLOCK_SIZE) / BLOCK_SIZE;
         } else {
             // just after this chunk
             c.next = 0;
@@ -1296,6 +1275,8 @@ public final class MVStore {
 
         // whether we need to write the store header
         boolean writeStoreHeader = false;
+        // end of the used space is not necessarily the end of the file
+        boolean storeAtEndOfFile = filePos + length >= fileStore.size();
         if (!storeAtEndOfFile) {
             if (lastChunk == null) {
                 writeStoreHeader = true;
@@ -1353,29 +1334,28 @@ public final class MVStore {
     }
 
     private synchronized void freeUnusedChunks() {
-        if (lastChunk == null || !reuseSpace) {
-            return;
-        }
-        Set<Integer> referenced = collectReferencedChunks();
-        long time = getTimeSinceCreation();
+        if (lastChunk != null && reuseSpace) {
+            Set<Integer> referenced = collectReferencedChunks();
+            long time = getTimeSinceCreation();
 
-        for (Iterator<Chunk> iterator = chunks.values().iterator(); iterator.hasNext(); ) {
-            Chunk c = iterator.next();
-            if (c.block != Long.MAX_VALUE && !referenced.contains(c.id)) {
-                if (canOverwriteChunk(c, time)) {
-                    iterator.remove();
-                    if (meta.remove(Chunk.getMetaKey(c.id)) != null) {
-                        markMetaChanged();
-                    }
-                    long start = c.block * BLOCK_SIZE;
-                    int length = c.len * BLOCK_SIZE;
-                    fileStore.free(start, length);
-                    assert fileStore.getFileLengthInUse() == _getFileLengthInUse() : fileStore.getFileLengthInUse() + " != " + _getFileLengthInUse();
-                } else {
-                    if (c.unused == 0) {
-                        c.unused = time;
-                        meta.put(Chunk.getMetaKey(c.id), c.asString());
-                        markMetaChanged();
+            for (Iterator<Chunk> iterator = chunks.values().iterator(); iterator.hasNext(); ) {
+                Chunk c = iterator.next();
+                if (c.block != Long.MAX_VALUE && !referenced.contains(c.id)) {
+                    if (canOverwriteChunk(c, time)) {
+                        iterator.remove();
+                        if (meta.remove(Chunk.getMetaKey(c.id)) != null) {
+                            markMetaChanged();
+                        }
+                        long start = c.block * BLOCK_SIZE;
+                        int length = c.len * BLOCK_SIZE;
+                        fileStore.free(start, length);
+                        assert fileStore.getFileLengthInUse() == _getFileLengthInUse() : fileStore.getFileLengthInUse() + " != " + _getFileLengthInUse();
+                    } else {
+                        if (c.unused == 0) {
+                            c.unused = time;
+                            meta.put(Chunk.getMetaKey(c.id), c.asString());
+                            markMetaChanged();
+                        }
                     }
                 }
             }
@@ -1742,11 +1722,9 @@ public final class MVStore {
 
     /**
      * Compact by moving all chunks next to each other.
-     *
-     * @return if anything was written
      */
-    public synchronized boolean compactMoveChunks() {
-        return compactMoveChunks(100, Long.MAX_VALUE);
+    public void compactMoveChunks() {
+        compactMoveChunks(100, Long.MAX_VALUE);
     }
 
     /**
@@ -1758,32 +1736,25 @@ public final class MVStore {
      * @param targetFillRate do nothing if the file store fill rate is higher
      *            than this
      * @param moveSize the number of bytes to move
-     * @return if anything was written
      */
-    public synchronized boolean compactMoveChunks(int targetFillRate, long moveSize) {
+    public synchronized void compactMoveChunks(int targetFillRate, long moveSize) {
         checkOpen();
-        if (lastChunk == null || !reuseSpace) {
-            // nothing to do
-            return false;
-        }
-        int oldRetentionTime = retentionTime;
-        boolean oldReuse = reuseSpace;
-        try {
-            retentionTime = -1;
-            freeUnusedChunks();
-            if (fileStore.getFillRate() > targetFillRate) {
-                return false;
+        if (lastChunk != null && reuseSpace) {
+            int oldRetentionTime = retentionTime;
+            boolean oldReuse = reuseSpace;
+            try {
+                retentionTime = -1;
+                freeUnusedChunks();
+                if (fileStore.getFillRate() <= targetFillRate) {
+                    long start = fileStore.getFirstFree() / BLOCK_SIZE;
+                    ArrayList<Chunk> move = compactGetMoveBlocks(start, moveSize);
+                    compactMoveChunks(move);
+                }
+            } finally {
+                reuseSpace = oldReuse;
+                retentionTime = oldRetentionTime;
             }
-            long start = fileStore.getFirstFree() / BLOCK_SIZE;
-            ArrayList<Chunk> move = compactGetMoveBlocks(start, moveSize);
-            compactMoveChunks(move);
-            freeUnusedChunks();
-            storeNow();
-        } finally {
-            reuseSpace = oldReuse;
-            retentionTime = oldRetentionTime;
         }
-        return true;
     }
 
     private ArrayList<Chunk> compactGetMoveBlocks(long startBlock, long moveSize) {
@@ -1824,29 +1795,7 @@ public final class MVStore {
 
     private void compactMoveChunks(ArrayList<Chunk> move) {
         for (Chunk c : move) {
-            WriteBuffer buff = getWriteBuffer();
-            long start = c.block * BLOCK_SIZE;
-            int length = c.len * BLOCK_SIZE;
-            buff.limit(length);
-            ByteBuffer readBuff = fileStore.readFully(start, length);
-            Chunk.readChunkHeader(readBuff, start);
-            int chunkHeaderLen = readBuff.position();
-            buff.position(chunkHeaderLen);
-            buff.put(readBuff);
-            long pos = getFileLengthInUse();
-            fileStore.markUsed(pos, length);
-            fileStore.free(start, length);
-            c.block = pos / BLOCK_SIZE;
-            c.next = 0;
-            buff.position(0);
-            c.writeChunkHeader(buff, chunkHeaderLen);
-            buff.position(length - Chunk.FOOTER_LENGTH);
-            buff.put(c.getFooterBytes());
-            buff.position(0);
-            write(pos, buff.getBuffer());
-            releaseWriteBuffer(buff);
-            meta.put(Chunk.getMetaKey(c.id), c.asString());
-            markMetaChanged();
+            moveChunk(c, true);
         }
 
         // update the metadata (store at the end of the file)
@@ -1854,44 +1803,62 @@ public final class MVStore {
         commit();
         sync();
 
+        Chunk chunk = this.lastChunk;
+
         // now re-use the empty space
         reuseSpace = true;
         for (Chunk c : move) {
-            if (!chunks.containsKey(c.id)) {
-                // already removed during the
-                // previous store operation
-                continue;
+            // ignore if already removed during the previous store operation
+            if (chunks.containsKey(c.id)) {
+                moveChunk(c, false);
             }
-            WriteBuffer buff = getWriteBuffer();
-            long start = c.block * BLOCK_SIZE;
-            int length = c.len * BLOCK_SIZE;
-            buff.limit(length);
-            ByteBuffer readBuff = fileStore.readFully(start, length);
-            Chunk.readChunkHeader(readBuff, start);
-            int chunkHeaderLen = readBuff.position();
-            buff.position(chunkHeaderLen);
-            buff.put(readBuff);
-            long pos = fileStore.allocate(length);
-            assert fileStore.getFileLengthInUse() == _getFileLengthInUse() : fileStore.getFileLengthInUse() + " != " + _getFileLengthInUse();
-            fileStore.free(start, length);
-            assert fileStore.getFileLengthInUse() == _getFileLengthInUse() : fileStore.getFileLengthInUse() + " != " + _getFileLengthInUse();
-            c.block = pos / BLOCK_SIZE;
-            c.next = 0;
-            buff.position(0);
-            c.writeChunkHeader(buff, chunkHeaderLen);
-            buff.position(length - Chunk.FOOTER_LENGTH);
-            buff.put(c.getFooterBytes());
-            buff.position(0);
-            write(pos, buff.getBuffer());
-            releaseWriteBuffer(buff);
-            meta.put(Chunk.getMetaKey(c.id), c.asString());
-            markMetaChanged();
         }
 
         // update the metadata (within the file)
         commit();
         sync();
+        if (chunks.containsKey(chunk.id)) {
+            moveChunk(chunk, false);
+            commit();
+        }
         shrinkFileIfPossible(0);
+        sync();
+    }
+
+    private void moveChunk(Chunk c, boolean toTheEnd) {
+        WriteBuffer buff = getWriteBuffer();
+        long start = c.block * BLOCK_SIZE;
+        int length = c.len * BLOCK_SIZE;
+        buff.limit(length);
+        ByteBuffer readBuff = fileStore.readFully(start, length);
+        Chunk.readChunkHeader(readBuff, start);
+        int chunkHeaderLen = readBuff.position();
+        buff.position(chunkHeaderLen);
+        buff.put(readBuff);
+        long pos = allocateFileSpace(length, toTheEnd);
+        fileStore.free(start, length);
+        c.block = pos / BLOCK_SIZE;
+        c.next = 0;
+        buff.position(0);
+        c.writeChunkHeader(buff, chunkHeaderLen);
+        buff.position(length - Chunk.FOOTER_LENGTH);
+        buff.put(c.getFooterBytes());
+        buff.position(0);
+        write(pos, buff.getBuffer());
+        releaseWriteBuffer(buff);
+        meta.put(Chunk.getMetaKey(c.id), c.asString());
+        markMetaChanged();
+    }
+
+    private long allocateFileSpace(int length, boolean atTheEnd) {
+        long filePos;
+        if (atTheEnd) {
+            filePos = getFileLengthInUse();
+            fileStore.markUsed(filePos, length);
+        } else {
+            filePos = fileStore.allocate(length);
+        }
+        return filePos;
     }
 
     /**
@@ -2118,14 +2085,13 @@ public final class MVStore {
 //        Chunk c = getChunkIfFound(pos);
 //        if(c != null) {
             long version = currentVersion;
-            if (map == meta && currentStoreVersion >= 0) {
-                if (Thread.currentThread() == currentStoreThread) {
-                    // if the meta map is modified while storing,
-                    // then this freed page needs to be registered
-                    // with the stored chunk, so that the old chunk
-                    // can be re-used
-                    version = currentStoreVersion;
-                }
+            if (map == meta && currentStoreVersion >= 0
+                    && Thread.currentThread() == currentStoreThread.get()) {
+                // if the meta map is modified while storing,
+                // then this freed page needs to be registered
+                // with the stored chunk, so that the old chunk
+                // can be re-used
+                version = currentStoreVersion;
             }
             registerFreePage(version, c.id,
                     DataUtils.getPageMaxLength(pos), 1);

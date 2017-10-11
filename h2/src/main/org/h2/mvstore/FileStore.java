@@ -338,6 +338,16 @@ public class FileStore {
     }
 
     /**
+     * Calculate starting position of the prospective allocation.
+     *
+     * @param length the number of bytes to allocate
+     * @return the start position in bytes
+     */
+    public long predictAllocation(int length) {
+        return freeSpace.predictAllocation(length);
+    }
+
+    /**
      * Mark the space as free.
      *
      * @param pos the position in bytes
