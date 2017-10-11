@@ -74,12 +74,12 @@ public class FileStore {
     /**
      * The encrypted file (if encryption is used).
      */
-    protected FileChannel encryptedFile;
+    private FileChannel encryptedFile;
 
     /**
      * The file lock.
      */
-    protected FileLock fileLock;
+    private FileLock fileLock;
 
     @Override
     public String toString() {

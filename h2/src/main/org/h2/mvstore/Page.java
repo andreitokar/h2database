@@ -8,12 +8,10 @@ package org.h2.mvstore;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.HashSet;
-
 import org.h2.compress.Compressor;
 import org.h2.engine.Constants;
 import org.h2.mvstore.type.ExtendedDataType;
 import org.h2.util.New;
-
 import static org.h2.mvstore.DataUtils.PAGE_TYPE_LEAF;
 
 /**
@@ -182,6 +180,75 @@ public abstract class Page implements Cloneable {
     }
 
     /**
+     * Read an inner node page from the buffer, but ignore the keys and
+     * values.
+     *
+     * @param fileStore the file store
+     * @param pos the position
+     * @param filePos the position in the file
+     * @param maxPos the maximum position (the end of the chunk)
+     */
+    static void readChildrensPositions(FileStore fileStore, long pos,
+                                       long filePos, long maxPos,
+                                       MVStore.ChunkIdsCollector collector) {
+        ByteBuffer buff;
+        int maxLength = DataUtils.getPageMaxLength(pos);
+        if (maxLength == DataUtils.PAGE_LARGE) {
+            buff = fileStore.readFully(filePos, 128);
+            maxLength = buff.getInt();
+            // read the first bytes again
+        }
+        maxLength = (int) Math.min(maxPos - filePos, maxLength);
+        int length = maxLength;
+        if (length < 0) {
+            throw DataUtils.newIllegalStateException(
+                    DataUtils.ERROR_FILE_CORRUPT,
+                    "Illegal page length {0} reading at {1}; max pos {2} ",
+                    length, filePos, maxPos);
+        }
+        buff = fileStore.readFully(filePos, length);
+        int chunkId = DataUtils.getPageChunkId(pos);
+        int offset = DataUtils.getPageOffset(pos);
+        int start = buff.position();
+        int pageLength = buff.getInt();
+        if (pageLength > maxLength) {
+            throw DataUtils.newIllegalStateException(
+                    DataUtils.ERROR_FILE_CORRUPT,
+                    "File corrupted in chunk {0}, expected page length =< {1}, got {2}",
+                    chunkId, maxLength, pageLength);
+        }
+        buff.limit(start + pageLength);
+        short check = buff.getShort();
+        int m = DataUtils.readVarInt(buff);
+        int mapId = collector.getMapId();
+        if (m != mapId) {
+            throw DataUtils.newIllegalStateException(
+                    DataUtils.ERROR_FILE_CORRUPT,
+                    "File corrupted in chunk {0}, expected map id {1}, got {2}",
+                    chunkId, mapId, m);
+        }
+        int checkTest = DataUtils.getCheckValue(chunkId)
+                ^ DataUtils.getCheckValue(offset)
+                ^ DataUtils.getCheckValue(pageLength);
+        if (check != (short) checkTest) {
+            throw DataUtils.newIllegalStateException(
+                    DataUtils.ERROR_FILE_CORRUPT,
+                    "File corrupted in chunk {0}, expected check value {1}, got {2}",
+                    chunkId, checkTest, check);
+        }
+        int len = DataUtils.readVarInt(buff);
+        int type = buff.get();
+        if ((type & 1) != DataUtils.PAGE_TYPE_NODE) {
+            throw DataUtils.newIllegalStateException(
+                    DataUtils.ERROR_FILE_CORRUPT,
+                    "Position {0} expected to be a non-leaf", pos);
+        }
+        for (int i = 0; i <= len; i++) {
+            collector.visit(buff.getLong());
+        }
+    }
+
+    /**
      * Get the id of the page's owner map
      * @return id
      */
@@ -264,6 +331,14 @@ public abstract class Page implements Cloneable {
         return pos;
     }
 
+    /**
+     * Get the value for the given key, or null if not found.
+     * Search is done in the tree rooted at given page.
+     *
+     * @param key the key
+     * @param p the root page
+     * @return the value, or null if not found
+     */
     public static Object get(Page p, Object key) {
         while (true) {
             int index = p.binarySearch(key);
@@ -754,160 +829,6 @@ public abstract class Page implements Cloneable {
             return "Cnt:" + count + ", pos:" + DataUtils.getPageChunkId(pos) +
                     "-" + DataUtils.getPageOffset(pos) + ":" + DataUtils.getPageMaxLength(pos) +
                     (DataUtils.getPageType(pos) == 0 ? " leaf" : " node") + ", " + page;
-        }
-    }
-
-    /**
-     * Contains information about which other pages are referenced (directly or
-     * indirectly) by the given page. This is a subset of the page data, for
-     * pages of type node. This information is used for garbage collection (to
-     * quickly find out which chunks are still in use).
-     */
-    public static final class PageChildren {
-
-        /**
-         * An empty array of type long.
-         */
-        private static final long[] EMPTY_ARRAY = new long[0];
-
-        /**
-         * The position of the page.
-         */
-        final long pos;
-
-        /**
-         * The page positions of (direct or indirect) children. Depending on the
-         * use case, this can be the complete list, or only a subset of all
-         * children, for example only only one reference to a child in another
-         * chunk.
-         */
-        long[] children;
-
-        /**
-         * Whether this object only contains the list of chunks.
-         */
-        boolean chunkList;
-
-        private PageChildren(long pos, long[] children) {
-            this.pos = pos;
-            this.children = children;
-        }
-
-        PageChildren(Page p) {
-            this.pos = p.getPos();
-            int count = p.getRawChildPageCount();
-            this.children = new long[count];
-            for (int i = 0; i < count; i++) {
-                children[i] = p.getChildPagePos(i);
-            }
-        }
-
-        int getMemory() {
-            return 64 + 8 * children.length;
-        }
-
-        /**
-         * Read an inner node page from the buffer, but ignore the keys and
-         * values.
-         *
-         * @param fileStore the file store
-         * @param pos the position
-         * @param mapId the map id
-         * @param filePos the position in the file
-         * @param maxPos the maximum position (the end of the chunk)
-         * @return the page children object
-         */
-        static PageChildren read(FileStore fileStore, long pos, int mapId,
-                long filePos, long maxPos) {
-            ByteBuffer buff;
-            int maxLength = DataUtils.getPageMaxLength(pos);
-            if (maxLength == DataUtils.PAGE_LARGE) {
-                buff = fileStore.readFully(filePos, 128);
-                maxLength = buff.getInt();
-                // read the first bytes again
-            }
-            maxLength = (int) Math.min(maxPos - filePos, maxLength);
-            int length = maxLength;
-            if (length < 0) {
-                throw DataUtils.newIllegalStateException(
-                        DataUtils.ERROR_FILE_CORRUPT,
-                        "Illegal page length {0} reading at {1}; max pos {2} ",
-                        length, filePos, maxPos);
-            }
-            buff = fileStore.readFully(filePos, length);
-            int chunkId = DataUtils.getPageChunkId(pos);
-            int offset = DataUtils.getPageOffset(pos);
-            int start = buff.position();
-            int pageLength = buff.getInt();
-            if (pageLength > maxLength) {
-                throw DataUtils.newIllegalStateException(
-                        DataUtils.ERROR_FILE_CORRUPT,
-                        "File corrupted in chunk {0}, expected page length =< {1}, got {2}",
-                        chunkId, maxLength, pageLength);
-            }
-            buff.limit(start + pageLength);
-            short check = buff.getShort();
-            int m = DataUtils.readVarInt(buff);
-            if (m != mapId) {
-                throw DataUtils.newIllegalStateException(
-                        DataUtils.ERROR_FILE_CORRUPT,
-                        "File corrupted in chunk {0}, expected map id {1}, got {2}",
-                        chunkId, mapId, m);
-            }
-            int checkTest = DataUtils.getCheckValue(chunkId)
-                    ^ DataUtils.getCheckValue(offset)
-                    ^ DataUtils.getCheckValue(pageLength);
-            if (check != (short) checkTest) {
-                throw DataUtils.newIllegalStateException(
-                        DataUtils.ERROR_FILE_CORRUPT,
-                        "File corrupted in chunk {0}, expected check value {1}, got {2}",
-                        chunkId, checkTest, check);
-            }
-            int len = DataUtils.readVarInt(buff);
-            int type = buff.get();
-            if ((type & 1) != DataUtils.PAGE_TYPE_NODE) {
-                throw DataUtils.newIllegalStateException(
-                        DataUtils.ERROR_FILE_CORRUPT,
-                        "Position {0} expected to be a non-leaf", pos);
-            }
-            long[] children = new long[len + 1];
-            for (int i = 0; i <= len; i++) {
-                children[i] = buff.getLong();
-            }
-            return new PageChildren(pos, children);
-        }
-
-        /**
-         * Only keep one reference to the same chunk. Only leaf references are
-         * removed (references to inner nodes are not removed, as they could
-         * indirectly point to other chunks).
-         */
-        void removeDuplicateChunkReferences() {
-            HashSet<Integer> chunks = New.hashSet();
-            // we don't need references to leaves in the same chunk
-            chunks.add(DataUtils.getPageChunkId(pos));
-            for (int i = 0; i < children.length; i++) {
-                long p = children[i];
-                int chunkId = DataUtils.getPageChunkId(p);
-                boolean wasNew = chunks.add(chunkId);
-                if (DataUtils.getPageType(p) == DataUtils.PAGE_TYPE_NODE) {
-                    continue;
-                }
-                if (wasNew) {
-                    continue;
-                }
-                removeChild(i--);
-            }
-        }
-
-        private void removeChild(int index) {
-            if (index == 0 && children.length == 1) {
-                children = EMPTY_ARRAY;
-                return;
-            }
-            long[] c2 = new long[children.length - 1];
-            DataUtils.copyExcept(children, c2, children.length, index);
-            children = c2;
         }
     }
 

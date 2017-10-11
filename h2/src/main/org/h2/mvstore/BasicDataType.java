@@ -26,33 +26,33 @@ public abstract class BasicDataType<T> implements ExtendedDataType {
 
 
     @Override
-    public Object createStorage(int size) {
+    public final Object createStorage(int size) {
         return new Object[size];
     }
 
     @Override
-    public Object clone(Object storage) {
+    public final Object clone(Object storage) {
         return cast(storage).clone();
     }
 
     @Override
-    public int getLength(Object storage) {
+    public final int getLength(Object storage) {
         return cast(storage).length;
     }
 
     @Override
-    public Object getValue(Object storage, int indx) {
+    public final T getValue(Object storage, int indx) {
         return cast(storage)[indx];
     }
 
     @Override
     @SuppressWarnings("unchecked")
-    public void setValue(Object storage, int indx, Object value) {
+    public final void setValue(Object storage, int indx, Object value) {
         cast(storage)[indx] = (T)value;
     }
 
     @Override
-    public int getMemorySize(Object storage) {
+    public final int getMemorySize(Object storage) {
         T[] data = cast(storage);
         int size = data.length * Constants.MEMORY_POINTER;
         for (T item : data) {
@@ -67,7 +67,7 @@ public abstract class BasicDataType<T> implements ExtendedDataType {
     }
 
     @Override
-    public void writeStorage(WriteBuffer buff, Object storage) {
+    public final void writeStorage(WriteBuffer buff, Object storage) {
         T[] data = cast(storage);
         for (T item : data) {
             write(buff, item);
@@ -75,7 +75,7 @@ public abstract class BasicDataType<T> implements ExtendedDataType {
     }
 
     @Override
-    public void read(ByteBuffer buff, Object storage) {
+    public final void read(ByteBuffer buff, Object storage) {
         T[] data = cast(storage);
         for (int i = 0; i < data.length; i++) {
             data[i] = read(buff);
@@ -97,21 +97,21 @@ public abstract class BasicDataType<T> implements ExtendedDataType {
 
 
     @Override
-    public void write(WriteBuffer buff, Object[] obj, int len, boolean key) {
+    public final void write(WriteBuffer buff, Object[] obj, int len, boolean key) {
         for (int i = 0; i < len; i++) {
             write(buff, obj[i]);
         }
     }
 
     @Override
-    public void read(ByteBuffer buff, Object[] obj, int len, boolean key) {
+    public final void read(ByteBuffer buff, Object[] obj, int len, boolean key) {
         for (int i = 0; i < len; i++) {
             obj[i] = read(buff);
         }
     }
 
     @SuppressWarnings("unchecked")
-    protected T[] cast(Object storage) {
+    private T[] cast(Object storage) {
         return (T[])storage;
     }
 }

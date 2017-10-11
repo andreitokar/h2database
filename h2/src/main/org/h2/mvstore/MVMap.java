@@ -1026,14 +1026,12 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
             @Override
             public int size() {
-//                throw DataUtils.newUnsupportedOperationException("MVMap.entrySet().size() is not supported.");
                 return MVMap.this.size();
             }
 
             @Override
             public boolean contains(Object o) {
-                throw DataUtils.newUnsupportedOperationException("MVMap.entrySet().contains() is not supported.");
-//                return MVMap.this.containsKey(o);
+                return MVMap.this.containsKey(o);
             }
 
         };
@@ -1115,7 +1113,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @param version the version
      */
     final void rollbackTo(long version) {
-//        beforeWrite();
         // check if the map was removed and re-created later ?
         if (version > createVersion) {
             rollbackRoot(version);
@@ -1124,12 +1121,13 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
     /**
      * Forget those old versions that are no longer needed.
-     * @return true if map was closed previously and now it can be removed
+     * @param rootReference to inspect
      */
-    private boolean removeUnusedOldVersions() {
-        long oldest = store.getOldestVersionToKeep(isClosed() ? null : this);
-        RootReference rootReference = getRoot();
-        boolean result = isClosed() && getVersion(rootReference) < oldest;
+    private void removeUnusedOldVersions(RootReference rootReference) {
+        long oldest = store.getOldestVersionToKeep();
+        // We are trying to keep at least one previous version (if any) here.
+        // This is not really necessary, just need to mimic existing
+        // behaviour embeded in tests.
         boolean head = true;
         RootReference previous;
         while ((previous = rootReference.previous) != null) {
@@ -1140,7 +1138,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             rootReference = previous;
             head = false;
         }
-        return result;
     }
 
     public final boolean isReadOnly() {
@@ -1255,23 +1252,16 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         DataUtils.checkArgument(version >= createVersion,
                 "Unknown version {0}; this map was created in version is {1}",
                 version, createVersion);
-        removeUnusedOldVersions();
         RootReference rootReference = getRoot();
-        RootReference lastRootReference = null;
-        boolean persistent = store.getFileStore() != null;
-        while (rootReference != null && (rootReference.version > version)) {
-            lastRootReference = rootReference;
+        removeUnusedOldVersions(rootReference);
+        while (rootReference != null && rootReference.version > version) {
             rootReference = rootReference.previous;
         }
 
         if (rootReference == null) {
             // smaller than all in-memory versions
-//            if(persistent) {
-                MVMap<K, V> map = openReadOnly(store.getRootPos(getId(), version), version);
-                return map;
-//            }
-//            rootReference = lastRootReference;
-//            throw DataUtils.newIllegalArgumentException("Version {0} not found", version);
+            MVMap<K, V> map = openReadOnly(store.getRootPos(getId(), version), version);
+            return map;
         }
         MVMap<K, V> m = openReadOnly(rootReference.root, version);
         assert m.getVersion() <= version : m.getVersion() + " <= " + version;
@@ -1361,15 +1351,15 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             if(rootReference.version >= writeVersion) {
                 return rootReference;
             } else if (isClosed()) {
-                if (rootReference.version < store.getOldestVersionToKeep(null)) {
+                if (rootReference.version < store.getOldestVersionToKeep()) {
                     return null;
                 }
                 return rootReference;
             }
             RootReference updatedRootReference = new RootReference(rootReference, writeVersion, ++attempt);
             if(root.compareAndSet(rootReference, updatedRootReference)) {
-                removeUnusedOldVersions();
-                return  updatedRootReference;
+                removeUnusedOldVersions(updatedRootReference);
+                return updatedRootReference;
             }
         }
     }

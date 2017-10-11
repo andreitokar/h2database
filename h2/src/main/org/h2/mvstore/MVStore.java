@@ -22,14 +22,13 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import org.h2.compress.CompressDeflate;
 import org.h2.compress.CompressLZF;
 import org.h2.compress.Compressor;
-import org.h2.mvstore.Page.PageChildren;
+import org.h2.engine.Constants;
 import org.h2.mvstore.cache.CacheLongKeyLIRS;
 import org.h2.util.MathUtils;
 import org.h2.util.New;
@@ -150,7 +149,6 @@ public final class MVStore {
      * is incorrect.
      */
     private static final int MARKED_FREE = 10000000;
-    private static final long NOT_SET = Long.MAX_VALUE;
 
     /**
      * The background thread, if any.
@@ -180,7 +178,7 @@ public final class MVStore {
      * average size is 2 KB. It is split in 16 segments. The stack move distance
      * is 2% of the expected number of entries.
      */
-    private final CacheLongKeyLIRS<PageChildren> cacheChunkRef;
+    private final CacheLongKeyLIRS<int[]> cacheChunkRef;
 
     /**
      * The newest chunk. If nothing was stored yet, this field is not set.
@@ -237,16 +235,15 @@ public final class MVStore {
 
     public final UncaughtExceptionHandler backgroundExceptionHandler;
 
-    private volatile long currentVersion; // = INITIAL_VERSION + 1;
+    private volatile long currentVersion;
 
     /**
      * The version of the last stored chunk, or -1 if nothing was stored so far.
      */
     private long lastStoredVersion = INITIAL_VERSION;
 
-    private final AtomicLong oldestVersionToKeep = new AtomicLong(/*NOT_SET*/);
+    private final AtomicLong oldestVersionToKeep = new AtomicLong();
     private final ConcurrentLinkedQueue<TxCounter> versions = new ConcurrentLinkedQueue<>();
-//    private volatile TxCounter currentTxCounter = new TxCounter(MVMap.INITIAL_VERSION);
     private volatile TxCounter currentTxCounter = new TxCounter(currentVersion);
 
     /**
@@ -410,9 +407,6 @@ public final class MVStore {
             // the parameter is different from the old value
             int delay = Utils.getConfigParam(config, "autoCommitDelay", 1000);
             setAutoCommitDelay(delay);
-
-//            this.currentTxCounter = new TxCounter(getOldestVersionToKeep(null));
-//            this.currentTxCounter = new TxCounter(currentVersion);
         }
     }
 
@@ -1063,7 +1057,7 @@ public final class MVStore {
             MVMap<?, ?> map = iter.next();
             if (map.setWriteVersion(version) == null) {
                 assert map.isClosed();
-                assert map.getVersion() < getOldestVersionToKeep(null);
+                assert map.getVersion() < getOldestVersionToKeep();
                 meta.remove(MVMap.getMapRootKey(map.getId()));
                 markMetaChanged();
                 iter.remove();
@@ -1197,7 +1191,7 @@ public final class MVStore {
             MVMap.RootReference rootReference = map.setWriteVersion(version);
             if (rootReference == null) {
                 assert map.isClosed();
-                assert map.getVersion() < getOldestVersionToKeep(null);
+                assert map.getVersion() < getOldestVersionToKeep();
                 meta.remove(MVMap.getMapRootKey(map.getId()));
                 iter.remove();
             } else if (map.getCreateVersion() <= storeVersion && // if map was created after storing started, skip it
@@ -1226,7 +1220,6 @@ public final class MVStore {
         for (Page p : changed) {
             String key = MVMap.getMapRootKey(p.getMapId());
             if (p.getTotalCount() == 0) {
-//                meta.put(key, "0");
                 meta.remove(key);
             } else {
                 p.writeUnsavedRecursive(c, buff);
@@ -1287,7 +1280,7 @@ public final class MVStore {
                 long headerVersion = DataUtils.readHexLong(
                         storeHeader, "version", 0);
                 if (lastChunk.version - headerVersion > 20) {
-                    // we write after at least 20 entries
+                    // we write after at least every 20 versions
                     writeStoreHeader = true;
                 } else {
                     int chunkId = DataUtils.readHexInt(storeHeader, "chunk", 0);
@@ -1363,45 +1356,21 @@ public final class MVStore {
     }
 
     private Set<Integer> collectReferencedChunks() {
-        long testVersion = lastChunk.version;
-        DataUtils.checkArgument(testVersion > 0, "Collect references on version 0");
-        long readCount = getFileStore().readCount.get();
-        Set<Integer> referenced = New.hashSet();
-        long oldestVersionToKeep = getOldestVersionToKeep(null);
-
-        collectReferencedChunks(referenced, meta.getId(), lastChunk.metaRootPos, 0);
-/*
-        MVMap.RootReference rootReference = meta.getRoot();
-        do {
-            long pos = rootReference.root.getPos();
-            if(DataUtils.isPageSaved(pos)) {
-                collectReferencedChunks(referenced, meta.getId(), pos, 0);
-            }
-
-            for (Cursor<String, String> c = new Cursor<>(meta, rootReference.root, "root.", true); c.hasNext(); ) {
-                String key = c.next();
-                assert key != null;
-                if (!key.startsWith("root.")) {
-                    break;
-                }
-                pos = DataUtils.parseHexLong(c.getValue());
-                if (DataUtils.isPageSaved(pos)) {
-                    // to allow for something like "root.tmp.123" to be processed
-                    int mapId = DataUtils.parseHexInt(key.substring(key.lastIndexOf('.') + 1));
-                    collectReferencedChunks(referenced, mapId, pos, 0);
-                }
-            }
-        } while(rootReference.version >= oldestVersionToKeep && (rootReference = rootReference.previous) != null);
-
-/*/
+        ChunkIdsCollector collector = new ChunkIdsCollector(meta.getId());
+        Set<Long> inspectedRoots = New.hashSet();
+        long pos = lastChunk.metaRootPos;
+        inspectedRoots.add(pos);
+        collector.visit(pos);
+        long oldestVersionToKeep = getOldestVersionToKeep();
         for (MVMap.RootReference rootReference = meta.getRoot();
-                rootReference != null && (rootReference.version >= oldestVersionToKeep/* || rootReference.version == INITIAL_VERSION*/);
+                rootReference != null && rootReference.version >= oldestVersionToKeep;
                 rootReference = rootReference.previous) {
 
             Page rootPage = rootReference.root;
-            long pos = rootPage.getPos();
-            if(rootPage.isSaved()) {
-                collectReferencedChunks(referenced, meta.getId(), pos, 0);
+            pos = rootPage.getPos();
+            if(rootPage.isSaved() && inspectedRoots.add(pos)) {
+                collector.setMapId(meta.getId());
+                collector.visit(pos);
             }
 
             for (Cursor<String, String> c = new Cursor<>(meta, rootPage, "root.", true); c.hasNext(); ) {
@@ -1411,90 +1380,109 @@ public final class MVStore {
                     break;
                 }
                 pos = DataUtils.parseHexLong(c.getValue());
-                if (DataUtils.isPageSaved(pos)) {
+                if (DataUtils.isPageSaved(pos) && inspectedRoots.add(pos)) {
                     // to allow for something like "root.tmp.123" to be processed
                     int mapId = DataUtils.parseHexInt(key.substring(key.lastIndexOf('.') + 1));
-                    collectReferencedChunks(referenced, mapId, pos, 0);
+                    collector.setMapId(mapId);
+                    collector.visit(pos);
                 }
             }
-
-//            if(rootReference.version < oldestVersionToKeep) {
-//                break;
-//            }
-            assert !referenced.isEmpty();
         }
-//*/
-        readCount = fileStore.readCount.get() - readCount;
-        return referenced;
+        return collector.referenced;
     }
 
-    private void collectReferencedChunks(Set<Integer> targetChunkSet,
-            int mapId, long pos, int level) {
-        int c = DataUtils.getPageChunkId(pos);
-        targetChunkSet.add(c);
-        if (DataUtils.getPageType(pos) == DataUtils.PAGE_TYPE_LEAF) {
-            return;
-        }
-        PageChildren refs = readPageChunkReferences(mapId, pos);
-        if (!refs.chunkList) {
-            Set<Integer> target = New.hashSet();
-            for (long p : refs.children) {
-                collectReferencedChunks(target, mapId, p, level + 1);
-            }
-            // we don't need a reference to this chunk
-            target.remove(c);
-            long[] children = new long[target.size()];
-            int i = 0;
-            for (Integer p : target) {
-                children[i++] = DataUtils.getPagePos(p, 0, 0,
-                        DataUtils.PAGE_TYPE_LEAF);
-            }
-            refs.children = children;
-            refs.chunkList = true;
-            if (cacheChunkRef != null) {
-                cacheChunkRef.put(refs.pos, refs, refs.getMemory());
-            }
-        }
-        for (long p : refs.children) {
-            targetChunkSet.add(DataUtils.getPageChunkId(p));
-        }
-    }
 
-    private PageChildren readPageChunkReferences(int mapId, long pos) {
-        PageChildren r;
-        if (cacheChunkRef != null) {
-            r = cacheChunkRef.get(pos);
-        } else {
-            r = null;
+    public final class ChunkIdsCollector {
+
+        private final Set<Integer>      referenced = New.hashSet();
+        private final ChunkIdsCollector parent;
+        private       ChunkIdsCollector child;
+        private       int               mapId;
+
+        private ChunkIdsCollector(int mapId) {
+            this.parent = null;
+            this.mapId = mapId;
         }
-        if (r == null) {
-            // if possible, create it from the cached page
-            if (cache != null) {
-                Page p = cache.get(pos);
-                if (p != null) {
-                    r = new PageChildren(p);
-                }
-            }
-            if (r == null) {
-                // page was not cached: read the data
-                Chunk c = getChunk(pos);
-                long filePos = c.block * BLOCK_SIZE;
-                filePos += DataUtils.getPageOffset(pos);
-                if (filePos < 0) {
-                    throw DataUtils.newIllegalStateException(
-                            DataUtils.ERROR_FILE_CORRUPT,
-                            "Negative position {0}; p={1}, c={2}", filePos, pos, c.toString());
-                }
-                long maxPos = (c.block + c.len) * BLOCK_SIZE;
-                r = PageChildren.read(fileStore, pos, mapId, filePos, maxPos);
-            }
-            r.removeDuplicateChunkReferences();
-            if (cacheChunkRef != null) {
-                cacheChunkRef.put(pos, r, r.getMemory());
+
+        private ChunkIdsCollector(ChunkIdsCollector parent) {
+            this.parent = parent;
+            this.mapId = parent.mapId;
+        }
+
+        public int getMapId() {
+            return mapId;
+        }
+
+        public void setMapId(int mapId) {
+            this.mapId = mapId;
+            if (child != null) {
+                child.setMapId(mapId);
             }
         }
-//        assert r.children.length > 0;
-        return r;
+
+        public void visit(long pos) {
+            register(DataUtils.getPageChunkId(pos));
+            if (DataUtils.getPageType(pos) != DataUtils.PAGE_TYPE_LEAF) {
+                int chunkIds[];
+                if (cacheChunkRef != null && (chunkIds = cacheChunkRef.get(pos)) != null) {
+                    // there is a cached set of chunk ids for this position
+                    for (int chunkId : chunkIds) {
+                        register(chunkId);
+                    }
+                } else {
+                    ChunkIdsCollector childCollector = getChild();
+                    Page page;
+                    if (cache != null && (page = cache.get(pos)) != null) {
+                        // there is a full page in cache, use it
+                        int count = page.getRawChildPageCount();
+                        for (int i = 0; i < count; i++) {
+                            childCollector.visit(page.getChildPagePos(i));
+                        }
+                    } else {
+                        // page was not cached: read the data
+                        Chunk chunk = getChunk(pos);
+                        long filePos = chunk.block * BLOCK_SIZE;
+                        filePos += DataUtils.getPageOffset(pos);
+                        if (filePos < 0) {
+                            throw DataUtils.newIllegalStateException(
+                                    DataUtils.ERROR_FILE_CORRUPT,
+                                    "Negative position {0}; p={1}, c={2}", filePos, pos, chunk.toString());
+                        }
+                        long maxPos = (chunk.block + chunk.len) * BLOCK_SIZE;
+                        Page.readChildrensPositions(fileStore, pos, filePos, maxPos, childCollector);
+                    }
+                    // and cache resulting set of chunk ids
+                    if (cacheChunkRef != null) {
+                        chunkIds = childCollector.getChunkIds();
+                        cacheChunkRef.put(pos, chunkIds, Constants.MEMORY_ARRAY + 4 * chunkIds.length);
+                    }
+                }
+            }
+        }
+
+        private ChunkIdsCollector getChild() {
+            if (child == null) {
+                child = new ChunkIdsCollector(this);
+            } else {
+                child.referenced.clear();
+            }
+            return child;
+        }
+
+        private void register(int chunkId) {
+            if (referenced.add(chunkId) && parent != null) {
+                parent.register(chunkId);
+            }
+        }
+
+        private int[] getChunkIds() {
+            int chunkIds[] = new int[referenced.size()];
+            int indx = 0;
+            for (int chunkId : referenced) {
+                chunkIds[indx++] = chunkId;
+            }
+            return chunkIds;
+        }
     }
 
     /**
@@ -1747,7 +1735,7 @@ public final class MVStore {
                 freeUnusedChunks();
                 if (fileStore.getFillRate() <= targetFillRate) {
                     long start = fileStore.getFirstFree() / BLOCK_SIZE;
-                    ArrayList<Chunk> move = compactGetMoveBlocks(start, moveSize);
+                    ArrayList<Chunk> move = findChunksToMove(start, moveSize);
                     compactMoveChunks(move);
                 }
             } finally {
@@ -1757,7 +1745,7 @@ public final class MVStore {
         }
     }
 
-    private ArrayList<Chunk> compactGetMoveBlocks(long startBlock, long moveSize) {
+    private ArrayList<Chunk> findChunksToMove(long startBlock, long moveSize) {
         ArrayList<Chunk> move = New.arrayList();
         for (Chunk c : chunks.values()) {
             if (c.block > startBlock) {
@@ -1899,7 +1887,7 @@ public final class MVStore {
             checkOpen();
             ArrayList<Chunk> old;
             synchronized (this) {
-                old = compactGetOldChunks(targetFillRate, write);
+                old = findOldChunks(targetFillRate, write);
             }
             if (old == null || old.isEmpty()) {
                 return false;
@@ -1909,7 +1897,7 @@ public final class MVStore {
         }
     }
 
-    private ArrayList<Chunk> compactGetOldChunks(int targetFillRate, int write) {
+    private ArrayList<Chunk> findOldChunks(int targetFillRate, int write) {
         if (lastChunk == null) {
             // nothing to do
             return null;
@@ -2225,18 +2213,12 @@ public final class MVStore {
      *
      * @return the version
      */
-    public long getOldestVersionToKeep(MVMap map) {
+    public long getOldestVersionToKeep() {
         long v = oldestVersionToKeep.get();
-//        v = Math.max(v - versionsToKeep, INITIAL_VERSION);
-//        if(v == NOT_SET) {
-//            if(map != null) {
-//                v = Math.min(v, map.getVersion());
-//            }
-            if (fileStore == null) {
-                v = Math.max(v - versionsToKeep, INITIAL_VERSION);
-                return v;
-            }
-//        }
+        if (fileStore == null) {
+            v = Math.max(v - versionsToKeep, INITIAL_VERSION);
+            return v;
+        }
 
         long storeVersion = currentStoreVersion;
         if (storeVersion != INITIAL_VERSION && storeVersion < v) {
@@ -2245,11 +2227,11 @@ public final class MVStore {
         return v;
     }
 
-    public void setOldestVersionToKeep(long oldestVersionToKeep) {
+    private void setOldestVersionToKeep(long oldestVersionToKeep) {
         boolean success;
         do {
             long current = this.oldestVersionToKeep.get();
-            success = oldestVersionToKeep <= current /* && current != NOT_SET*/ ||
+            success = oldestVersionToKeep <= current ||
                       this.oldestVersionToKeep.compareAndSet(current, oldestVersionToKeep);
         } while (!success);
     }
@@ -2891,7 +2873,7 @@ public final class MVStore {
         while ((txCounter = versions.peek()) != null
                 && txCounter.counter.get() < 0
                 && versions.remove(txCounter)) {/**/}
-        setOldestVersionToKeep(txCounter == null ? currentTxCounter.version : txCounter.version);
+        setOldestVersionToKeep(txCounter != null ? txCounter.version : currentTxCounter.version);
     }
 
     public static final class TxCounter {
