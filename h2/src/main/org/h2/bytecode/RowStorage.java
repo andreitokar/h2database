@@ -1,26 +1,24 @@
 package org.h2.bytecode;
 
-import org.h2.engine.Constants;
 import org.h2.engine.Database;
+import org.h2.mvstore.BasicDataType;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.WriteBuffer;
 import org.h2.mvstore.db.StatefulDataType;
 import org.h2.mvstore.db.ValueDataType;
 import org.h2.mvstore.type.DataType;
-import org.h2.mvstore.type.ExtendedDataType;
 import org.h2.result.Row;
+import org.h2.result.RowFactory;
 import org.h2.result.SearchRow;
 import org.h2.result.SortOrder;
 import org.h2.store.Data;
 import org.h2.store.DataHandler;
 import org.h2.value.*;
 import sun.reflect.generics.reflectiveObjects.NotImplementedException;
-
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
-import java.util.Arrays;
 
 /**
  * Class RowStorage is the base class for all schema-aware auto-generated
@@ -544,11 +542,25 @@ public class RowStorage extends Value implements Row, Cloneable {
 
     ///////////////////////////////////////////////////////////////////////////
 
-    public static final class Type extends ValueDataType implements ExtendedDataType, StatefulDataType {
+    public static final class Type extends BasicDataType<RowStorage> implements StatefulDataType {
+
+        private final ValueDataType valueDataType;
+        private final CompareMode   compareMode;
+        private final int[]         sortTypes;
 
 
         public Type(CompareMode compareMode, DataHandler handler, int[] sortTypes) {
-            super(compareMode, handler, sortTypes);
+            this.valueDataType = new ValueDataType(compareMode, handler, sortTypes);
+            this.compareMode = compareMode;
+            this.sortTypes = sortTypes;
+        }
+
+        public RowFactory getRowFactory() {
+            return valueDataType.getRowFactory();
+        }
+
+        public void setRowFactory(RowFactory rowFactory) {
+            valueDataType.setRowFactory(rowFactory);
         }
 
         @Override
@@ -557,32 +569,8 @@ public class RowStorage extends Value implements Row, Cloneable {
         }
 
         @Override
-        public Object clone(Object storage) {
-            return ((RowStorage[])storage).clone();
-        }
-
-        @Override
-        public int getLength(Object storage) {
-            return ((RowStorage[])storage).length;
-        }
-
-        @Override
-        public Object getValue(Object storage, int indx) {
-            return ((RowStorage[])storage)[indx];
-        }
-
-        @Override
-        public void setValue(Object storage, int indx, Object value) {
-            ((RowStorage[])storage)[indx] = (RowStorage) value;
-        }
-
-        @Override
-        public int getMemorySize(Object storage) {
-            int size = getLength(storage) * Constants.MEMORY_POINTER;
-            for (RowStorage row : ((RowStorage[]) storage)) {
-                size += row.getMemory();
-            }
-            return size;
+        public int getMemory(Object obj) {
+            return ((RowStorage)obj).getMemory();
         }
 
         @Override
@@ -708,14 +696,6 @@ public class RowStorage extends Value implements Row, Cloneable {
         }
 
         @Override
-        public void writeStorage(WriteBuffer buff, Object storage) {
-            RowStorage[] data = (RowStorage[]) storage;
-            for (RowStorage row : data) {
-                write(buff, row);
-            }
-        }
-
-        @Override
         public void write(WriteBuffer buff, Object obj) {
             write(buff, (RowStorage)obj);
         }
@@ -727,21 +707,13 @@ public class RowStorage extends Value implements Row, Cloneable {
                 int columnCount = row.getColumnCount();
                 for (int i = 0; i < columnCount; i++) {
                     Value value = row.getValue(i);
-                    super.write(buff, value);
+                    valueDataType.write(buff, value);
                 }
             } else {
                 for (int i : indexes) {
                     Value value = row.getValue(i);
-                    super.write(buff, value);
+                    valueDataType.write(buff, value);
                 }
-            }
-        }
-
-        @Override
-        public void read(ByteBuffer buff, Object storage) {
-            RowStorage[] data = (RowStorage[]) storage;
-            for (int k = 0; k < data.length; k++) {
-                data[k] = read(buff);
             }
         }
 
@@ -752,12 +724,12 @@ public class RowStorage extends Value implements Row, Cloneable {
             if (indexes == null) {
                 int columnCount = row.getColumnCount();
                 for (int i = 0; i < columnCount; i++) {
-                    Value value = readValue(buff);
+                    Value value = valueDataType.readValue(buff);
                     row.setValue(i, value);
                 }
             } else {
                 for (int i : indexes) {
-                    Value value = readValue(buff);
+                    Value value = valueDataType.readValue(buff);
                     row.setValue(i, value);
                 }
             }

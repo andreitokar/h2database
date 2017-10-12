@@ -19,6 +19,7 @@ import java.util.concurrent.atomic.AtomicReferenceArray;
 
 import org.h2.engine.Constants;
 import org.h2.engine.Database;
+import org.h2.mvstore.BasicDataType;
 import org.h2.mvstore.Cursor;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.MVMap;
@@ -2099,10 +2100,10 @@ public final class TransactionStore {
     /**
      * A data type for undo log values
      */
-    public static final class RecordType implements DataType {
+    public static final class RecordType extends BasicDataType<Record> {
         private final TransactionStore transactionStore;
 
-        public RecordType(TransactionStore transactionStore) {
+        private RecordType(TransactionStore transactionStore) {
             this.transactionStore = transactionStore;
         }
 
@@ -2121,22 +2122,6 @@ public final class TransactionStore {
         }
 
         @Override
-        public void read(ByteBuffer buff, Object[] obj,
-                int len, boolean key) {
-            for (int i = 0; i < len; i++) {
-                obj[i] = read(buff);
-            }
-        }
-
-        @Override
-        public void write(WriteBuffer buff, Object[] obj,
-                int len, boolean key) {
-            for (int i = 0; i < len; i++) {
-                write(buff, obj[i]);
-            }
-        }
-
-        @Override
         public void write(WriteBuffer buff, Object obj) {
             Record record = (Record) obj;
             MVMap<Object, VersionedValue> map = transactionStore.getMap(record.mapId);
@@ -2152,7 +2137,7 @@ public final class TransactionStore {
         }
 
         @Override
-        public Object read(ByteBuffer buff) {
+        public Record read(ByteBuffer buff) {
             int mapId = DataUtils.readVarInt(buff);
             MVMap<Object, VersionedValue> map = transactionStore.getMap(mapId);
             Object key = map.getKeyType().read(buff);

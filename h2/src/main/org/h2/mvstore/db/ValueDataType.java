@@ -15,6 +15,7 @@ import java.util.Arrays;
 import org.h2.api.ErrorCode;
 import org.h2.bytecode.RowStorage;
 import org.h2.message.DbException;
+import org.h2.mvstore.BasicDataType;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.WriteBuffer;
 import org.h2.mvstore.rtree.SpatialDataType;
@@ -56,7 +57,7 @@ import org.h2.value.ValueUuid;
 /**
  * A row type.
  */
-public class ValueDataType implements DataType {
+public class ValueDataType extends BasicDataType<Value> {
 
     private static final int INT_0_15 = 32;
     private static final int LONG_0_7 = 48;
@@ -133,7 +134,7 @@ public class ValueDataType implements DataType {
         return compareValues((Value) a, (Value) b, SortOrder.ASCENDING);
     }
 
-    protected final int compareValues(Value a, Value b, int sortType) {
+    public final int compareValues(Value a, Value b, int sortType) {
         if (a == b) {
             return 0;
         }
@@ -170,20 +171,6 @@ public class ValueDataType implements DataType {
 
     private static int getMemory(Value v) {
         return v == null ? 0 : v.getMemory();
-    }
-
-    @Override
-    public void read(ByteBuffer buff, Object[] obj, int len, boolean key) {
-        for (int i = 0; i < len; i++) {
-            obj[i] = read(buff);
-        }
-    }
-
-    @Override
-    public void write(WriteBuffer buff, Object[] obj, int len, boolean key) {
-        for (int i = 0; i < len; i++) {
-            write(buff, obj[i]);
-        }
     }
 
     @Override
@@ -502,7 +489,7 @@ public class ValueDataType implements DataType {
      *
      * @return the value
      */
-    protected Value readValue(ByteBuffer buff) {
+    public Value readValue(ByteBuffer buff) {
         int type = buff.get() & 255;
         return (Value)read(buff, type);
     }

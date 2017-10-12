@@ -22,11 +22,11 @@ public abstract class BasicDataType<T> implements ExtendedDataType {
     public abstract void write(WriteBuffer buff, Object obj);
 
     @Override
-    public abstract T read(ByteBuffer buff);
+    public abstract Object read(ByteBuffer buff);
 
 
     @Override
-    public final Object createStorage(int size) {
+    public Object createStorage(int size) {
         return new Object[size];
     }
 
@@ -78,7 +78,7 @@ public abstract class BasicDataType<T> implements ExtendedDataType {
     public final void read(ByteBuffer buff, Object storage) {
         T[] data = cast(storage);
         for (int i = 0; i < data.length; i++) {
-            data[i] = read(buff);
+            data[i] = (T)read(buff);
         }
 
     }

@@ -7,14 +7,11 @@ package org.h2.mvstore;
 
 import java.nio.ByteBuffer;
 import java.util.Arrays;
-
-import org.h2.engine.Constants;
 import org.h2.engine.Database;
 import org.h2.mvstore.db.StatefulDataType;
-import org.h2.mvstore.db.TransactionStore;
 import org.h2.mvstore.db.ValueDataType;
 import org.h2.mvstore.type.DataType;
-import org.h2.mvstore.type.ExtendedDataType;
+import org.h2.result.RowFactory;
 import org.h2.result.SearchRow;
 import org.h2.store.DataHandler;
 import org.h2.value.CompareMode;
@@ -27,12 +24,15 @@ import org.h2.value.CompareMode;
  *
  * @author <a href='mailto:andrei.tokar@gmail.com'>Andrei Tokar</a>
  */
-public final class RowDataType extends ValueDataType implements ExtendedDataType, StatefulDataType {  //TODO rebase to BasicDataType
+public final class RowDataType extends BasicDataType<SearchRow> implements StatefulDataType {
 
-    private final int[] indexes;
+    private final ValueDataType valueDataType;
+    private final int[]         sortTypes;
+    private final int[]         indexes;
 
     public RowDataType(CompareMode compareMode, DataHandler handler, int[] sortTypes, int[] indexes) {
-        super(compareMode, handler, sortTypes);
+        this.valueDataType = new ValueDataType(compareMode, handler, sortTypes);
+        this.sortTypes = sortTypes;
         this.indexes = indexes;
     }
 
@@ -40,38 +40,17 @@ public final class RowDataType extends ValueDataType implements ExtendedDataType
         return indexes;
     }
 
+    public RowFactory getRowFactory() {
+        return valueDataType.getRowFactory();
+    }
+
+    public void setRowFactory(RowFactory rowFactory) {
+        valueDataType.setRowFactory(rowFactory);
+    }
+
     @Override
     public Object createStorage(int size) {
         return new SearchRow[size];
-    }
-
-    @Override
-    public Object clone(Object storage) {
-        return ((SearchRow[])storage).clone();
-    }
-
-    @Override
-    public int getLength(Object storage) {
-        return ((SearchRow[])storage).length;
-    }
-
-    @Override
-    public Object getValue(Object storage, int indx) {
-        return ((SearchRow[])storage)[indx];
-    }
-
-    @Override
-    public void setValue(Object storage, int indx, Object value) {
-        ((SearchRow[])storage)[indx] = (SearchRow)value;
-    }
-
-    @Override
-    public int getMemorySize(Object storage) {
-        int size = getLength(storage) * Constants.MEMORY_POINTER;
-        for (SearchRow row : ((SearchRow[]) storage)) {
-            size += row.getMemory();
-        }
-        return size;
     }
 
     @Override
@@ -90,7 +69,7 @@ public final class RowDataType extends ValueDataType implements ExtendedDataType
             int len = a.getColumnCount();
             assert len == b.getColumnCount() : len + " != " + b.getColumnCount();
             for (int i = 0; i < len; i++) {
-                int comp = compareValues(a.getValue(i), b.getValue(i), sortTypes[i]);
+                int comp = valueDataType.compareValues(a.getValue(i), b.getValue(i), sortTypes[i]);
                 if (comp != 0) {
                     return comp;
                 }
@@ -100,7 +79,7 @@ public final class RowDataType extends ValueDataType implements ExtendedDataType
             assert sortTypes.length == indexes.length;
             for (int i = 0; i < indexes.length; i++) {
                 int indx = indexes[i];
-                int comp = compareValues(a.getValue(indx), b.getValue(indx), sortTypes[i]);
+                int comp = valueDataType.compareValues(a.getValue(indx), b.getValue(indx), sortTypes[i]);
                 if (comp != 0) {
                     return comp;
                 }
@@ -138,53 +117,23 @@ public final class RowDataType extends ValueDataType implements ExtendedDataType
     }
 
     @Override
-    public void writeStorage(WriteBuffer buff, Object storage) {
-        SearchRow rows[] = (SearchRow[]) storage;
-        for (SearchRow row : rows) {
-            write(buff, row);
-        }
-    }
-
-    @Override
-    public void read(ByteBuffer buff, Object storage) {
-        SearchRow rows[] = (SearchRow[]) storage;
-        for (int i = 0; i < rows.length; i++) {
-            rows[i] = read(buff);
-        }
-    }
-
-    @Override
     public int getMemory(Object obj) {
         SearchRow row = (SearchRow) obj;
         return row.getMemory();
     }
 
     @Override
-    public void read(ByteBuffer buff, Object[] obj, int len, boolean key) {
-        for (int i = 0; i < len; i++) {
-            obj[i] = read(buff);
-        }
-    }
-
-    @Override
-    public void write(WriteBuffer buff, Object[] obj, int len, boolean key) {
-        for (int i = 0; i < len; i++) {
-            write(buff, obj[i]);
-        }
-    }
-
-    @Override
     public SearchRow read(ByteBuffer buff) {
-        SearchRow row = getRowFactory().createRow();
+        SearchRow row = valueDataType.getRowFactory().createRow();
         row.setKey(DataUtils.readVarLong(buff));
         if (indexes == null) {
             int columnCount = DataUtils.readVarInt(buff);
             for (int i = 0; i < columnCount; i++) {
-                row.setValue(i, readValue(buff));
+                row.setValue(i, valueDataType.readValue(buff));
             }
         } else {
             for (int i : indexes) {
-                row.setValue(i, readValue(buff));
+                row.setValue(i, valueDataType.readValue(buff));
             }
         }
         return row;
@@ -201,11 +150,11 @@ public final class RowDataType extends ValueDataType implements ExtendedDataType
             int columnCount = row.getColumnCount();
             buff.putVarInt(columnCount);
             for (int i = 0; i < columnCount; i++) {
-                super.write(buff, row.getValue(i));
+                valueDataType.write(buff, row.getValue(i));
             }
         } else {
             for (int i : indexes) {
-                super.write(buff, row.getValue(i));
+                valueDataType.write(buff, row.getValue(i));
             }
         }
     }
