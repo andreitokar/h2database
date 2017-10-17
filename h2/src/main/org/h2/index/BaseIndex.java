@@ -359,6 +359,21 @@ public abstract class BaseIndex extends SchemaObjectBase implements Index {
         if (a == b) {
             return 0;
         }
+        // null is never stored;
+        // comparison with null is used to retrieve all entries
+        // in which case null is always lower than all entries
+        // (even for descending ordered indexes)
+        if (a == null) {
+            return -1;
+        } else if (b == null) {
+            return 1;
+        }
+        boolean aNull = a == ValueNull.INSTANCE;
+        boolean bNull = b == ValueNull.INSTANCE;
+        if (aNull || bNull) {
+            return SortOrder.compareNull(aNull, sortType);
+        }
+
         int comp = table.compareTypeSafe(a, b);
         if ((sortType & SortOrder.DESCENDING) != 0) {
             comp = -comp;

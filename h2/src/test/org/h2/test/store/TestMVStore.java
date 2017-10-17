@@ -50,6 +50,8 @@ public class TestMVStore extends TestBase {
 
     @Override
     public void test() throws Exception {
+        testBulkInsert();
+
         testRemoveMapRollback();
         testProvidedFileStoreNotOpenedAndClosed();
         testVolatileMap();
@@ -109,6 +111,26 @@ public class TestMVStore extends TestBase {
 
         // longer running tests
         testLargerThan2G();
+    }
+
+    private void testBulkInsert() {
+        String fileName = getBaseDir() + "/" + getTestName();
+        FileUtils.delete(fileName);
+        MVStore store = new MVStore.Builder().
+                autoCommitDisabled().
+                fileName(fileName).
+                open();
+        MVMap<Integer,String> map = store.openMap("test");
+        MVMap.BufferingAgent<Integer, String> agent = map.getBufferingAgent();
+        for (int i = 0; i < 200000; i++) {
+            agent.put(i, "v"+i);
+        }
+        agent.close();
+        assertEquals(200000, map.size());
+        assertEquals("v55", map.get(55));
+        assertEquals("v7300", map.get(7300));
+        assertFalse(map.containsValue(200000));
+        store.close();
     }
 
     private void testRemoveMapRollback() {

@@ -49,8 +49,8 @@ public final class RowDataType extends BasicDataType<SearchRow> implements State
     }
 
     @Override
-    public Object createStorage(int size) {
-        return new SearchRow[size];
+    public Object createStorage(int capacity) {
+        return new SearchRow[capacity];
     }
 
     @Override
@@ -89,12 +89,13 @@ public final class RowDataType extends BasicDataType<SearchRow> implements State
     }
 
     @Override
-    public int binarySearch(Object key, Object storage, int initialGuess) {
-        return binarySearch((SearchRow)key, (SearchRow[])storage, initialGuess);
+    public int binarySearch(Object key, Object storage, int size, int initialGuess) {
+        return binarySearch((SearchRow)key, (SearchRow[])storage, size, initialGuess);
     }
 
-    public int binarySearch(SearchRow key, SearchRow keys[], int initialGuess) {
-        int low = 0, high = keys.length - 1;
+    public int binarySearch(SearchRow key, SearchRow keys[], int size, int initialGuess) {
+        int low = 0;
+        int high = size - 1;
         // the cached index minus one, so that
         // for the first time (when cachedCompare is 0),
         // the default value is used
@@ -157,6 +158,19 @@ public final class RowDataType extends BasicDataType<SearchRow> implements State
                 valueDataType.write(buff, row.getValue(i));
             }
         }
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (obj == this) {
+            return true;
+        } else if (obj == null || obj.getClass() != RowDataType.class) {
+            return false;
+        }
+        RowDataType other = (RowDataType) obj;
+        return Arrays.equals(indexes, other.indexes)
+//            && Arrays.equals(sortTypes, other.sortTypes)
+            && valueDataType.equals(other.valueDataType);
     }
 
     @Override

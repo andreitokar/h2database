@@ -759,8 +759,8 @@ public class ObjectDataType implements DataType {
         }
 
         @Override
-        public Object createStorage(int size) {
-            return new int[size];
+        public Object createStorage(int capacity) {
+            return new int[capacity];
         }
 
         @Override
@@ -769,7 +769,7 @@ public class ObjectDataType implements DataType {
         }
 
         @Override
-        public int getLength(Object storage) {
+        public int getCapacity(Object storage) {
             return ((int[])storage).length;
         }
 
@@ -784,19 +784,19 @@ public class ObjectDataType implements DataType {
         }
 
         @Override
-        public int getMemorySize(Object storage) {
-            return getLength(storage) * 4;
+        public int getMemorySize(Object storage, int size) {
+            return size * 4;
         }
 
         @Override
-        public int binarySearch(Object what, Object storage, int initialGuess) {
+        public int binarySearch(Object what, Object storage, int size, int initialGuess) {
             if (what == null) {
                 return -1;
             }
             int[] data = (int[]) storage;
             int key = ((Integer) what);
             int low = 0;
-            int high = data.length - 1;
+            int high = size - 1;
             // the cached index minus one, so that
             // for the first time (when cachedCompare is 0),
             // the default value is used
@@ -824,17 +824,17 @@ public class ObjectDataType implements DataType {
         }
 
         @Override
-        public void writeStorage(WriteBuffer buff, Object storage) {
+        public void writeStorage(WriteBuffer buff, Object storage, int size) {
             int[] data = (int[]) storage;
-            for (int x : data) {
-                write(buff, x);
+            for (int i = 0; i < size; i++) {
+                write(buff, data[i]);
             }
         }
 
         @Override
-        public void read(ByteBuffer buff, Object storage) {
+        public void read(ByteBuffer buff, Object storage, int size) {
             int[] data = (int[]) storage;
-            for (int i = 0; i < data.length; i++) {
+            for (int i = 0; i < size; i++) {
                 int tag = buff.get();
                 data[i] = readInt(buff, tag);
             }
@@ -941,8 +941,8 @@ public class ObjectDataType implements DataType {
         }
 
         @Override
-        public Object createStorage(int size) {
-            return new long[size];
+        public Object createStorage(int capacity) {
+            return new long[capacity];
         }
 
         @Override
@@ -951,7 +951,7 @@ public class ObjectDataType implements DataType {
         }
 
         @Override
-        public int getLength(Object storage) {
+        public int getCapacity(Object storage) {
             return ((long[])storage).length;
         }
 
@@ -966,19 +966,19 @@ public class ObjectDataType implements DataType {
         }
 
         @Override
-        public int getMemorySize(Object storage) {
-            return getLength(storage) * 8;
+        public int getMemorySize(Object storage, int size) {
+            return size * 8;
         }
 
         @Override
-        public int binarySearch(Object what, Object storage, int initialGuess) {
+        public int binarySearch(Object what, Object storage, int size, int initialGuess) {
             if (what == null) {
                 return -1;
             }
             long[] data = (long[]) storage;
             long key = ((Long) what);
             int low = 0;
-            int high = data.length - 1;
+            int high = size - 1;
             // the cached index minus one, so that
             // for the first time (when cachedCompare is 0),
             // the default value is used
@@ -1006,17 +1006,17 @@ public class ObjectDataType implements DataType {
         }
 
         @Override
-        public void writeStorage(WriteBuffer buff, Object storage) {
+        public void writeStorage(WriteBuffer buff, Object storage, int size) {
             long[] data = (long[]) storage;
-            for (long x : data) {
-                buff.putVarLong(x);
+            for (int i = 0; i < size; i++) {
+                buff.putVarLong(data[i]);
             }
         }
 
         @Override
-        public void read(ByteBuffer buff, Object storage) {
+        public void read(ByteBuffer buff, Object storage, int size) {
             long[] data = (long[]) storage;
-            for (int i = 0; i < data.length; i++) {
+            for (int i = 0; i < size; i++) {
                 data[i] = DataUtils.readVarLong(buff);
             }
         }
@@ -1155,8 +1155,8 @@ public class ObjectDataType implements DataType {
         }
 
         @Override
-        public Object createStorage(int size) {
-            return new double[size];
+        public Object createStorage(int capacity) {
+            return new double[capacity];
         }
 
         @Override
@@ -1165,7 +1165,7 @@ public class ObjectDataType implements DataType {
         }
 
         @Override
-        public int getLength(Object storage) {
+        public int getCapacity(Object storage) {
             return ((double[])storage).length;
         }
 
@@ -1180,19 +1180,19 @@ public class ObjectDataType implements DataType {
         }
 
         @Override
-        public int getMemorySize(Object storage) {
-            return getLength(storage) * 8;
+        public int getMemorySize(Object storage, int size) {
+            return size * 8;
         }
 
         @Override
-        public int binarySearch(Object what, Object storage, int initialGuess) {
+        public int binarySearch(Object what, Object storage, int size, int initialGuess) {
             if (what == null) {
                 return -1;
             }
             double[] data = (double[]) storage;
             double key = ((Long) what);
             int low = 0;
-            int high = data.length - 1;
+            int high = size - 1;
             // the cached index minus one, so that
             // for the first time (when cachedCompare is 0),
             // the default value is used
@@ -1220,17 +1220,17 @@ public class ObjectDataType implements DataType {
         }
 
         @Override
-        public void writeStorage(WriteBuffer buff, Object storage) {
+        public void writeStorage(WriteBuffer buff, Object storage, int size) {
             double[] data = (double[]) storage;
-            for (double x : data) {
-                write(buff, x);
+            for (int i = 0; i < size; i++) {
+                write(buff, data[i]);
             }
         }
 
         @Override
-        public void read(ByteBuffer buff, Object storage) {
+        public void read(ByteBuffer buff, Object storage, int size) {
             double[] data = (double[]) storage;
-            for (int i = 0; i < data.length; i++) {
+            for (int i = 0; i < size; i++) {
                 data[i] = readDouble(buff, buff.get());
             }
         }
@@ -1423,8 +1423,8 @@ public class ObjectDataType implements DataType {
         }
 
         @Override
-        public Object createStorage(int size) {
-            return new String[size];
+        public Object createStorage(int capacity) {
+            return new String[capacity];
         }
 
         @Override
@@ -1433,7 +1433,7 @@ public class ObjectDataType implements DataType {
         }
 
         @Override
-        public int getLength(Object storage) {
+        public int getCapacity(Object storage) {
             return ((String[])storage).length;
         }
 
@@ -1448,24 +1448,25 @@ public class ObjectDataType implements DataType {
         }
 
         @Override
-        public int getMemorySize(Object storage) {
+        public int getMemorySize(Object storage, int size) {
             String[] data = (String[]) storage;
-            int size = 0;
-            for (String s : data) {
-                size += s.length();
+            int res = 0;
+            for (int i = 0; i < size; i++) {
+                String s = data[i];
+                res += s.length();
             }
-            return size * 2 + data.length * (Constants.MEMORY_POINTER + Constants.MEMORY_OBJECT);
+            return res * 2 + size * (Constants.MEMORY_POINTER + Constants.MEMORY_OBJECT);
         }
 
         @Override
-        public int binarySearch(Object what, Object storage, int initialGuess) {
+        public int binarySearch(Object what, Object storage, int size, int initialGuess) {
             if (what == null) {
                 return -1;
             }
             String[] data = (String[]) storage;
             String key = ((String) what);
             int low = 0;
-            int high = data.length - 1;
+            int high = size - 1;
             // the cached index minus one, so that
             // for the first time (when cachedCompare is 0),
             // the default value is used
@@ -1493,17 +1494,17 @@ public class ObjectDataType implements DataType {
         }
 
         @Override
-        public void writeStorage(WriteBuffer buff, Object storage) {
+        public void writeStorage(WriteBuffer buff, Object storage, int size) {
             String[] data = (String[]) storage;
-            for (String x : data) {
-                write(buff, x);
+            for (int i = 0; i < size; i++) {
+                write(buff, data[i]);
             }
         }
 
         @Override
-        public void read(ByteBuffer buff, Object storage) {
+        public void read(ByteBuffer buff, Object storage, int size) {
             String[] data = (String[]) storage;
-            for (int i = 0; i < data.length; i++) {
+            for (int i = 0; i < size; i++) {
                 int tag = buff.get();
                 data[i] = readString(buff, tag);
             }
@@ -1954,7 +1955,7 @@ public class ObjectDataType implements DataType {
         public NoneType() {}
 
         @Override
-        public Object createStorage(int size) {
+        public Object createStorage(int capacity) {
             return null;
         }
 
@@ -1964,7 +1965,7 @@ public class ObjectDataType implements DataType {
         }
 
         @Override
-        public int getLength(Object storage) {
+        public int getCapacity(Object storage) {
             return 0;
         }
 
@@ -1979,22 +1980,22 @@ public class ObjectDataType implements DataType {
         }
 
         @Override
-        public int getMemorySize(Object storage) {
+        public int getMemorySize(Object storage, int size) {
             return 0;
         }
 
         @Override
-        public int binarySearch(Object key, Object storage, int initialGuess) {
+        public int binarySearch(Object key, Object storage, int size, int initialGuess) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        public void writeStorage(WriteBuffer buff, Object storage) {
+        public void writeStorage(WriteBuffer buff, Object storage, int size) {
 
         }
 
         @Override
-        public void read(ByteBuffer buff, Object storage) {
+        public void read(ByteBuffer buff, Object storage, int size) {
 
         }
 

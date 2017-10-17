@@ -259,7 +259,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                         if (index < 0) {
                             return null;
                         }
-                        if (attempt > 1 && !(needUnlock = lockRoot(decisionMaker, rootReference, attempt, contention))) {
+                        if (attempt > 2 && !(needUnlock = lockRoot(decisionMaker, rootReference, attempt, contention))) {
                             continue;
                         }
                         if (p.getTotalCount() == 1 && pos != null) {
@@ -278,7 +278,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                         break;
                     }
                     case PUT: {
-                        if (attempt > 1 && !(needUnlock = lockRoot(decisionMaker, rootReference, attempt, contention))) {
+                        if (attempt > 2 && !(needUnlock = lockRoot(decisionMaker, rootReference, attempt, contention))) {
                             continue;
                         }
                         value = decisionMaker.selectValue(result, value);
@@ -302,7 +302,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                                             new Page.PageReference(p),
                                             new Page.PageReference(split)
                                     };
-                                    p = Page.create(this, keys, null, children, totalCount, 0);
+                                    p = Page.create(this, 1, keys, null, children, totalCount, 0);
                                     break;
                                 }
                                 Page c = p;
@@ -357,12 +357,12 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         boolean success = lockRoot(rootReference);
         if (!success) {
             decisionMaker.reset();
-            if(attempt > 3) {
-                if (attempt <= 10) {
+            if(attempt > 4) {
+                if (attempt <= 24) {
                     Thread.yield();
                 } else {
                     try {
-                        Thread.sleep(0, 1000 / contention + 500);
+                        Thread.sleep(0, 100 / contention + 50);
                     } catch (InterruptedException ignore) {/**/}
                 }
             }
@@ -757,6 +757,71 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     @Override
     public final V replace(K key, V value) {
         return put(key, value, DecisionMaker.IF_PRESENT);
+    }
+
+    private void appendLeafPage(Page split) {
+        assert split.getKeyCount() > 0;
+        RootReference rootReference = getRoot();
+        int unsavedMemory = 0;
+        Page p = split;
+        CursorPos pos = null;
+        CursorPos tip = null;
+        Page rootPage = rootReference.root;
+        if (rootPage.getTotalCount() > 0) {
+            Object key = split.getKey(0);
+            pos = traverseDown(rootPage, key);
+            assert pos.index < 0 : pos.index;
+            int index = -pos.index - 1;
+            assert index == pos.page.getKeyCount() : index + " != " + pos.page.getKeyCount();
+            p = pos.page;
+            pos = pos.parent;
+            tip = pos;
+            while (true) {
+                long totalCount = p.getTotalCount();
+                if (pos == null) {
+                    Object keys = getExtendedKeyType().createStorage(1);
+                    getExtendedKeyType().setValue(keys, 0, key);
+                    Page.PageReference children[] = {
+                            new Page.PageReference(p),
+                            new Page.PageReference(split)
+                    };
+                    p = Page.create(this, 1, keys, null, children, totalCount + split.getTotalCount(), 0);
+                    break;
+                }
+                Page c = p;
+                p = pos.page;
+                index = pos.index;
+                pos = pos.parent;
+                p = p.copy();
+                p.setChild(index, split);
+                p.insertNode(index, key, c);
+                int keyCount;
+                if ((keyCount = p.getKeyCount()) <= store.getKeysPerPage() && (p.getMemory() < store.getMaxPageSize() || keyCount <= (p.isLeaf() ? 1: 2))) {
+                    break;
+                }
+                int at = keyCount - 2;
+                key = p.getKey(at);
+                split = p.split(at);
+                unsavedMemory += p.getMemory() + split.getMemory();
+            }
+        }
+        unsavedMemory += p.getMemory();
+        while (pos != null) {
+            Page c = p;
+            p = pos.page;
+            p = p.copy();
+            p.setChild(pos.index, c);
+            unsavedMemory += p.getMemory();
+            pos = pos.parent;
+        }
+        setRoot(p);
+        while (tip != null) {
+            tip.page.removePage();
+            tip = tip.parent;
+        }
+        if (store.getFileStore() != null) {
+            store.registerUnsavedPage(unsavedMemory);
+        }
     }
 
     private void rollbackRoot(long version)
@@ -1227,6 +1292,10 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         return createVersion;
     }
 
+    public BufferingAgent<K,V> getBufferingAgent() {
+        return new BufferingAgentImpl<>(this);
+    }
+
     /**
      * Remove the given page (make the space available).
      *
@@ -1654,8 +1723,8 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         }
 
         @Override
-        public Object createStorage(int size) {
-            return new Object[size];
+        public Object createStorage(int capacity) {
+            return new Object[capacity];
         }
 
         @Override
@@ -1665,7 +1734,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         }
 
         @Override
-        public int getLength(Object storage) {
+        public int getCapacity(Object storage) {
             Object data[] = (Object[])storage;
             return data.length;
         }
@@ -1683,19 +1752,19 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         }
 
         @Override
-        public int getMemorySize(Object storage) {
+        public int getMemorySize(Object storage, int size) {
             Object data[] = (Object[])storage;
             int mem = 0;
-            for (Object key : data) {
-                mem += dataType.getMemory(key);
+            for (int i = 0; i < size; i++) {
+                mem += dataType.getMemory(data[i]);
             }
             return mem;
         }
 
         @Override
-        public int binarySearch(Object key, Object storage, int initialGuess) {
+        public int binarySearch(Object key, Object storage, int size, int initialGuess) {
             Object keys[] = (Object[])storage;
-            int low = 0, high = keys.length - 1;
+            int low = 0, high = size - 1;
             // the cached index minus one, so that
             // for the first time (when cachedCompare is 0),
             // the default value is used
@@ -1718,13 +1787,13 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         }
 
         @Override
-        public void writeStorage(WriteBuffer buff, Object storage) {
+        public void writeStorage(WriteBuffer buff, Object storage, int size) {
             Object data[] = (Object[])storage;
             dataType.write(buff, data, data.length, true);
         }
 
         @Override
-        public void read(ByteBuffer buff, Object storage) {
+        public void read(ByteBuffer buff, Object storage, int size) {
             Object data[] = (Object[])storage;
             dataType.read(buff, data, data.length, true);
         }
@@ -1757,6 +1826,60 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         @Override
         public void read(ByteBuffer buff, Object[] obj, int len, boolean key) {
             dataType.read(buff, obj, len, key);
+        }
+    }
+
+    public interface BufferingAgent<K,V> {
+        void put(K key, V value);
+        void close();
+    }
+
+    public static final class BufferingAgentImpl<K,V> implements BufferingAgent<K,V>, AutoCloseable {
+        private final MVMap<K,V> map;
+        private final K          keysBuffer[];
+        private final V          valuesBuffer[];
+        private final int        keysPerPage;
+        private       int        keyCount;
+
+        @SuppressWarnings("unchecked")
+        private BufferingAgentImpl(MVMap<K, V> map) {
+            this.map = map;
+            this.keysPerPage = map.getStore().getKeysPerPage();
+            this.keysBuffer = (K[])new Object[keysPerPage];
+            this.valuesBuffer = (V[])new Object[keysPerPage];
+        }
+
+        @Override
+        public void put(K key, V value) {
+            keysBuffer[keyCount] = key;
+            valuesBuffer[keyCount] = value;
+            if (++keyCount >= keysPerPage) {
+                flush();
+            }
+        }
+
+        @Override
+        public void close() {
+            flush();
+        }
+
+        public void flush() {
+            if (keyCount > 0) {
+                Page page = Page.create(map, keyCount,
+                                        createAndFillStorage(map.getExtendedKeyType(), keyCount, keysBuffer),
+                                        createAndFillStorage(map.getExtendedValueType(), keyCount, valuesBuffer),
+                                        null, keyCount, 0);
+                map.appendLeafPage(page);
+                keyCount = 0;
+            }
+        }
+
+        private Object createAndFillStorage(ExtendedDataType dataType, int count, Object dataBuffer[]) {
+            Object storage = dataType.createStorage(count);
+            for (int i = 0; i < count; i++) {
+                dataType.setValue(storage, i, dataBuffer[i]);
+            }
+            return storage;
         }
     }
 }

@@ -15,11 +15,11 @@ import java.nio.ByteBuffer;
  */
 public interface ExtendedDataType extends DataType {
 
-    Object createStorage(int size);
+    Object createStorage(int capacity);
 
     Object clone(Object storage);
 
-    int getLength(Object storage);
+    int getCapacity(Object storage);
 
     Object getValue(Object storage, int indx);
 
@@ -28,14 +28,15 @@ public interface ExtendedDataType extends DataType {
     /**
      * Estimate the used memory in bytes.
      *
-     * @param storage the object
+     * @param storage opaque representation
+     * @param size number of data items in the storage
      * @return the used memory
      */
-    int getMemorySize(Object storage);
+    int getMemorySize(Object storage, int size);
 
-    int binarySearch(Object key, Object storage, int initialGuess);
+    int binarySearch(Object key, Object storage, int size, int initialGuess);
 
-    void writeStorage(WriteBuffer buff, Object storage);
+    void writeStorage(WriteBuffer buff, Object storage, int size);
 
-    void read(ByteBuffer buff, Object storage);
+    void read(ByteBuffer buff, Object storage, int size);
 }

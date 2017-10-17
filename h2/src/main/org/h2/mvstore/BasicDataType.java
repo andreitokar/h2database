@@ -26,8 +26,8 @@ public abstract class BasicDataType<T> implements ExtendedDataType {
 
 
     @Override
-    public Object createStorage(int size) {
-        return new Object[size];
+    public Object createStorage(int capacity) {
+        return new Object[capacity];
     }
 
     @Override
@@ -36,7 +36,7 @@ public abstract class BasicDataType<T> implements ExtendedDataType {
     }
 
     @Override
-    public final int getLength(Object storage) {
+    public final int getCapacity(Object storage) {
         return cast(storage).length;
     }
 
@@ -52,32 +52,32 @@ public abstract class BasicDataType<T> implements ExtendedDataType {
     }
 
     @Override
-    public final int getMemorySize(Object storage) {
+    public final int getMemorySize(Object storage, int size) {
         T[] data = cast(storage);
-        int size = data.length * Constants.MEMORY_POINTER;
-        for (T item : data) {
-            size += getMemory(item);
+        int res = data.length * Constants.MEMORY_POINTER;
+        for (int i = 0; i < size; i++) {
+            res += getMemory(data[i]);
         }
-        return size;
+        return res;
     }
 
     @Override
-    public int binarySearch(Object key, Object storage, int initialGuess) {
+    public int binarySearch(Object key, Object storage, int size, int initialGuess) {
         throw new UnsupportedOperationException();
     }
 
     @Override
-    public final void writeStorage(WriteBuffer buff, Object storage) {
+    public final void writeStorage(WriteBuffer buff, Object storage, int size) {
         T[] data = cast(storage);
-        for (T item : data) {
-            write(buff, item);
+        for (int i = 0; i < size; i++) {
+            write(buff, data[i]);
         }
     }
 
     @Override
-    public final void read(ByteBuffer buff, Object storage) {
+    public final void read(ByteBuffer buff, Object storage, int size) {
         T[] data = cast(storage);
-        for (int i = 0; i < data.length; i++) {
+        for (int i = 0; i < size; i++) {
             data[i] = (T)read(buff);
         }
 

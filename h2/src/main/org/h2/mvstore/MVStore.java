@@ -413,11 +413,13 @@ public final class MVStore {
     }
 
     private void panic(IllegalStateException e) {
-        if (backgroundExceptionHandler != null) {
-            backgroundExceptionHandler.uncaughtException(null, e);
+        if (!closed) {
+            if (backgroundExceptionHandler != null) {
+                backgroundExceptionHandler.uncaughtException(null, e);
+            }
+            panicException = e;
+            closeImmediately();
         }
-        panicException = e;
-        closeImmediately();
         throw e;
     }
 
@@ -945,7 +947,6 @@ public final class MVStore {
             fileStore.writeFully(pos, buffer);
         } catch (IllegalStateException e) {
             panic(e);
-            throw e;
         }
     }
 
@@ -1028,7 +1029,7 @@ public final class MVStore {
         if (c == null) {
             int chunkId = DataUtils.getPageChunkId(pos);
             throw DataUtils.newIllegalStateException(
-                    DataUtils.ERROR_FILE_CORRUPT,
+                    DataUtils.ERROR_CHUNK_NOT_FOUND,
                     "Chunk {0} not found", chunkId);
         }
         return c;
@@ -2050,7 +2051,7 @@ public final class MVStore {
     void removePage(MVMap<?, ?> map, long pos, int memory) {
         // we need to keep temporary pages,
         // to support reading old versions and rollback
-        if (pos == 0) {
+        if (!DataUtils.isPageSaved(pos)) {
             // the page was not yet stored:
             // just using "unsavedMemory -= memory" could result in negative
             // values, because in some cases a page is allocated, but never

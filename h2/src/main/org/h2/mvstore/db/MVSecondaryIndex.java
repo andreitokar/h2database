@@ -69,14 +69,23 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
         }
     }
 
+    // TODO: proper implementation within DataType. We need this override to eliminate Value-boxing
+//    @Override
+//    public int compareRows(SearchRow rowData, SearchRow compare) {
+//        return dataMap.getKeyType().compare(rowData, compare);
+//    }
+
     @Override
     public void addRowsToBuffer(List<Row> rows, String bufferName) {
         MVMap<SearchRow,Value> map = openMap(bufferName);
+        MVMap.BufferingAgent<SearchRow, Value> agent = map.getBufferingAgent();
         for (Row row : rows) {
             SearchRow r = rowFactory.createRow();
             r.copyFrom(row);
-            map.put(r, ValueNull.INSTANCE);
+            agent.put(r, ValueNull.INSTANCE);
+//            map.put(r, ValueNull.INSTANCE);
         }
+        agent.close();
     }
 
     private static final class Source {
@@ -119,6 +128,7 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
 
     @Override
     public void addBufferedRows(List<String> bufferNames) {
+        MVMap.BufferingAgent<SearchRow,Value> agent = dataMap.getBufferingAgent();
         ArrayList<String> mapNames = New.arrayList(bufferNames);
         int buffersCount = bufferNames.size();
         Queue<Source> queue = new PriorityQueue<>(buffersCount,
@@ -141,13 +151,15 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
                     checkUnique(dataMap, unique, row.getKey());
                 }
 
-                dataMap.putCommitted(row, ValueNull.INSTANCE);
+                agent.put(row, ValueNull.INSTANCE);
+//                dataMap.putCommitted(row, ValueNull.INSTANCE);
 
                 if (s.hasNext()) {
                     queue.offer(s);
                 }
             }
         } finally {
+            agent.close();
             for (String tempMapName : mapNames) {
                 MVMap<SearchRow,Value> map = openMap(tempMapName);
                 map.getStore().removeMap(map);

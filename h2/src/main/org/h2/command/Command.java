@@ -264,6 +264,9 @@ public abstract class Command implements CommandInterface {
                     database.shutdownImmediately();
                     throw DbException.convert(e);
                 } catch (Throwable e) {
+                    if (database.getMvStore() != null && database.getMvStore().isClosed()) {
+                        database.shutdownImmediately();
+                    }
                     throw DbException.convert(e);
                 }
             }

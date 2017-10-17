@@ -31,6 +31,7 @@ import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.db.MVTableEngine.Store;
 import org.h2.mvstore.db.TransactionStore.Transaction;
 import org.h2.result.Row;
+import org.h2.result.SearchRow;
 import org.h2.result.SortOrder;
 import org.h2.schema.SchemaObject;
 import org.h2.table.Column;
@@ -583,7 +584,7 @@ public class MVTable extends TableBase {
             remaining--;
         }
         sortRows(buffer, index);
-        if (bufferNames.size() > 0) {
+        if (!bufferNames.isEmpty()) {
             String mapName = store.nextTemporaryMapName();
             index.addRowsToBuffer(buffer, mapName);
             bufferNames.add(mapName);
@@ -657,10 +658,10 @@ public class MVTable extends TableBase {
         list.clear();
     }
 
-    private static void sortRows(ArrayList<Row> list, final Index index) {
-        Collections.sort(list, new Comparator<Row>() {
+    private static void sortRows(ArrayList<? extends SearchRow> list, final Index index) {
+        Collections.sort(list, new Comparator<SearchRow>() {
             @Override
-            public int compare(Row r1, Row r2) {
+            public int compare(SearchRow r1, SearchRow r2) {
                 return index.compareRows(r1, r2);
             }
         });

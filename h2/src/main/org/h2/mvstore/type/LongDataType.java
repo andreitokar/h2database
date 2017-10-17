@@ -21,8 +21,8 @@ public class LongDataType implements ExtendedDataType {
 
 
     @Override
-    public Object createStorage(int size) {
-        return new long[size];
+    public Object createStorage(int capacity) {
+        return new long[capacity];
     }
 
     @Override
@@ -31,7 +31,7 @@ public class LongDataType implements ExtendedDataType {
     }
 
     @Override
-    public int getLength(Object storage) {
+    public int getCapacity(Object storage) {
         return cast(storage).length;
     }
 
@@ -51,8 +51,8 @@ public class LongDataType implements ExtendedDataType {
     }
 
     @Override
-    public int getMemorySize(Object storage) {
-        return getLength(storage) * 8;
+    public int getMemorySize(Object storage, int size) {
+        return size * 8;
     }
 
     @Override
@@ -69,16 +69,17 @@ public class LongDataType implements ExtendedDataType {
     }
 
     @Override
-    public void writeStorage(WriteBuffer buff, Object storage) {
-        for (long x : cast(storage)) {
-            buff.putVarLong(x);
+    public void writeStorage(WriteBuffer buff, Object storage, int size) {
+        long[] cast = cast(storage);
+        for (int i = 0; i < size; i++) {
+            buff.putVarLong(cast[i]);
         }
     }
 
     @Override
-    public void read(ByteBuffer buff, Object storage) {
+    public void read(ByteBuffer buff, Object storage, int size) {
         long[] data = cast(storage);
-        for (int i = 0; i < data.length; i++) {
+        for (int i = 0; i < size; i++) {
             data[i] = DataUtils.readVarLong(buff);
         }
     }
@@ -106,14 +107,13 @@ public class LongDataType implements ExtendedDataType {
     }
 
     @Override
-    public int binarySearch(Object what, Object storage, int initialGuess) {
+    public int binarySearch(Object what, Object storage, int size, int initialGuess) {
         if (what == null) {
             return -1;
         }
-        long[] data = cast(storage);
         long key = ((Long) what);
         int low = 0;
-        int high = data.length - 1;
+        int high = size - 1;
         // the cached index minus one, so that
         // for the first time (when cachedCompare is 0),
         // the default value is used

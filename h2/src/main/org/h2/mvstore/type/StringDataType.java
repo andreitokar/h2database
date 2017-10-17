@@ -58,8 +58,8 @@ public final class StringDataType implements ExtendedDataType {
     }
 
     @Override
-    public Object createStorage(int size) {
-        return new String[size];
+    public Object createStorage(int capacity) {
+        return new String[capacity];
     }
 
     @Override
@@ -68,7 +68,7 @@ public final class StringDataType implements ExtendedDataType {
     }
 
     @Override
-    public int getLength(Object storage) {
+    public int getCapacity(Object storage) {
         return ((String[])storage).length;
     }
 
@@ -83,24 +83,25 @@ public final class StringDataType implements ExtendedDataType {
     }
 
     @Override
-    public int getMemorySize(Object storage) {
+    public int getMemorySize(Object storage, int size) {
         String[] data = (String[]) storage;
-        int size = 0;
-        for (String s : data) {
-            size += s.length();
+        int res = 0;
+        for (int i = 0; i < size; i++) {
+            String s = data[i];
+            res += s.length();
         }
-        return size * 2 + data.length * (Constants.MEMORY_POINTER + Constants.MEMORY_OBJECT);
+        return res * 2 + size * (Constants.MEMORY_POINTER + Constants.MEMORY_OBJECT);
     }
 
     @Override
-    public int binarySearch(Object what, Object storage, int initialGuess) {
+    public int binarySearch(Object what, Object storage, int size, int initialGuess) {
         if (what == null) {
             return -1;
         }
         String[] data = (String[]) storage;
         String key = ((String) what);
         int low = 0;
-        int high = data.length - 1;
+        int high = size - 1;
         // the cached index minus one, so that
         // for the first time (when cachedCompare is 0),
         // the default value is used
@@ -128,17 +129,17 @@ public final class StringDataType implements ExtendedDataType {
     }
 
     @Override
-    public void writeStorage(WriteBuffer buff, Object storage) {
+    public void writeStorage(WriteBuffer buff, Object storage, int size) {
         String[] data = (String[]) storage;
-        for (String x : data) {
-            write(buff, x);
+        for (int i = 0; i < size; i++) {
+            write(buff, data[i]);
         }
     }
 
     @Override
-    public void read(ByteBuffer buff, Object storage) {
+    public void read(ByteBuffer buff, Object storage, int size) {
         String[] data = (String[]) storage;
-        for (int i = 0; i < data.length; i++) {
+        for (int i = 0; i < size; i++) {
             data[i] = read(buff);
         }
     }

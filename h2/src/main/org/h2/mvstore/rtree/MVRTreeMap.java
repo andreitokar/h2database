@@ -12,10 +12,8 @@ import java.util.Map;
 import org.h2.mvstore.CursorPos;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.MVMap;
-import org.h2.mvstore.MVStore;
 import org.h2.mvstore.Page;
 import org.h2.mvstore.type.DataType;
-import org.h2.mvstore.type.ObjectDataType;
 import org.h2.util.New;
 
 /**
@@ -163,7 +161,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
                         new Page.PageReference(split),
                         Page.PageReference.EMPTY
                 };
-                p = Page.create(this, keys, null, children, totalCount, 0);
+                p = Page.create(this, 2, keys, null, children, totalCount, 0);
                 if(store.getFileStore() != null) {
                     store.registerUnsavedPage(p.getMemory());
                 }

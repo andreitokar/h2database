@@ -1166,17 +1166,22 @@ public final class TransactionStore {
         public void rollbackToSavepoint(long savepointId) {
             long lastState = setStatus(STATUS_ROLLING_BACK);
             long logId = getTxLogId(lastState);
-            store.rollbackTo(this, logId, savepointId);
-            assert savepointId > 0 || store.verifyUndoIsEmptyForTx(transactionId);
-
-            long expectedState = composeState(STATUS_ROLLING_BACK, logId, hasRollback(lastState));
-            long newState = composeState(STATUS_OPEN, savepointId, true);
-            if (!statusAndLogId.compareAndSet(expectedState, newState)) {
-                throw DataUtils.newIllegalStateException(
-                        DataUtils.ERROR_TRANSACTION_ILLEGAL_STATE,
-                        "Transaction {0} concurrently modified " +
-                                "while rollback to savepoint was in progress",
-                        transactionId);
+            Throwable ex = null;
+            try {
+                store.rollbackTo(this, logId, savepointId);
+                assert savepointId > 0 || store.verifyUndoIsEmptyForTx(transactionId);
+            } catch (Throwable e) {
+                ex = e;
+            } finally {
+                long expectedState = composeState(STATUS_ROLLING_BACK, logId, hasRollback(lastState));
+                long newState = composeState(STATUS_OPEN, savepointId, true);
+                if (!statusAndLogId.compareAndSet(expectedState, newState)) {
+                    throw DataUtils.newIllegalStateException(
+                            DataUtils.ERROR_TRANSACTION_ILLEGAL_STATE,
+                            "Transaction {0} concurrently modified " +
+                                    "while rollback to savepoint was in progress",
+                            transactionId, ex);
+                }
             }
         }
 
@@ -1449,6 +1454,21 @@ public final class TransactionStore {
             return (V) (oldValue == null ? null : oldValue.value);
         }
 
+        public MVMap.BufferingAgent<K,V> getBufferingAgent() {
+            final MVMap.BufferingAgent<K, VersionedValue> agent = map.getBufferingAgent();
+            return new MVMap.BufferingAgent<K, V>() {
+                @Override
+                public void put(K key, V value) {
+                    agent.put(key, new VersionedValue(value));
+                }
+
+                @Override
+                public void close() {
+                    agent.close();
+                }
+            };
+        }
+
         private V set(K key, V value) {
             TxDecisionMaker decisionMaker = new TxDecisionMaker(map.getId(), key, transaction);
             Transaction blockingTransaction;
@@ -1625,14 +1645,12 @@ public final class TransactionStore {
          *
          * @param key the key
          * @param maxLog the maximum log id of the entry
+         * @param undoLogRootPage undoLog snapshot
+         * @param committingTransactions set of transactions being committed
+         *                              at the time of undoLog snapshot
          * @param data the value stored in the main map
          * @return the value
          */
-        private VersionedValue getValue(K key, long maxLog, VersionedValue data) {
-            return getValue(key, maxLog, transaction.store.undoLog.getRootPage(),
-                            transaction.store.committingTransactions.get(), data);
-        }
-
         private VersionedValue getValue(K key, long maxLog, Page undoLogRootPage,
                                         BitSet committingTransactions, VersionedValue data) {
             boolean first = true;

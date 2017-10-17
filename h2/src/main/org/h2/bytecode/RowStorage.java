@@ -3,6 +3,7 @@ package org.h2.bytecode;
 import org.h2.engine.Database;
 import org.h2.mvstore.BasicDataType;
 import org.h2.mvstore.DataUtils;
+import org.h2.mvstore.RowDataType;
 import org.h2.mvstore.WriteBuffer;
 import org.h2.mvstore.db.StatefulDataType;
 import org.h2.mvstore.db.ValueDataType;
@@ -19,6 +20,7 @@ import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.util.Arrays;
 
 /**
  * Class RowStorage is the base class for all schema-aware auto-generated
@@ -564,8 +566,8 @@ public class RowStorage extends Value implements Row, Cloneable {
         }
 
         @Override
-        public Object createStorage(int size) {
-            return new RowStorage[size];
+        public Object createStorage(int capacity) {
+            return new RowStorage[capacity];
         }
 
         @Override
@@ -668,12 +670,13 @@ public class RowStorage extends Value implements Row, Cloneable {
         }
 
         @Override
-        public int binarySearch(Object key, Object storage, int initialGuess) {
-            return binarySearch((RowStorage)key, ((RowStorage[])storage), initialGuess);
+        public int binarySearch(Object key, Object storage, int size, int initialGuess) {
+            return binarySearch((RowStorage)key, ((RowStorage[])storage), size, initialGuess);
         }
 
-        public int binarySearch(RowStorage key, RowStorage[] keys, int initialGuess) {
-            int low = 0, high = keys.length - 1;
+        public int binarySearch(RowStorage key, RowStorage[] keys, int size, int initialGuess) {
+            int low = 0;
+            int high = size - 1;
             // the cached index minus one, so that
             // for the first time (when cachedCompare is 0),
             // the default value is used
@@ -734,6 +737,20 @@ public class RowStorage extends Value implements Row, Cloneable {
                 }
             }
             return row;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == this) {
+                return true;
+            } else if (obj == null || obj.getClass() != Type.class) {
+                return false;
+            }
+            Type other = (Type) obj;
+            return valueDataType.equals(other.valueDataType)
+//                && Arrays.equals(indexes, other.indexes)
+//                && Arrays.equals(sortTypes, other.sortTypes)
+                    ;
         }
 
 
