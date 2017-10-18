@@ -536,8 +536,8 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
      *
      * @param sql the SQL statement
      * @param rightsChecked true if the rights have already been checked
-     * @param literalsChecked true if the sql string has already been checked for literals (only used if
-     *                        ALLOW_LITERALS NONE is set).
+     * @param literalsChecked true if the sql string has already been checked
+     *            for literals (only used if ALLOW_LITERALS NONE is set).
      * @return the prepared statement
      */
     public Prepared prepare(String sql, boolean rightsChecked, boolean literalsChecked) {
