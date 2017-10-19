@@ -220,6 +220,12 @@ public class MathUtils {
      * @return the next power of two value
      */
     public static int nextPowerOf2(int x) {
+        int res = x > 1 ? Integer.highestOneBit((x - 1) << 1) : 1;
+        assert res == _nextPowerOf2(x);
+        return res;
+    }
+
+    private static int _nextPowerOf2(int x) {
         long i = 1;
         while (i < x && i < (Integer.MAX_VALUE / 2)) {
             i += i;
@@ -235,6 +241,12 @@ public class MathUtils {
      * @return the next power of two value
      */
     public static long nextPowerOf2(long x) {
+        long res = x > 1 ? Long.highestOneBit((x - 1) << 1) : 1;
+        assert res == _nextPowerOf2(x);
+        return res;
+    }
+
+    private static long _nextPowerOf2(long x) {
         long i = 1;
         while (i < x && i < (Long.MAX_VALUE / 2)) {
             i += i;
