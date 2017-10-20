@@ -1764,7 +1764,8 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         @Override
         public int binarySearch(Object key, Object storage, int size, int initialGuess) {
             Object keys[] = (Object[])storage;
-            int low = 0, high = size - 1;
+            int low = 0;
+            int high = size - 1;
             // the cached index minus one, so that
             // for the first time (when cachedCompare is 0),
             // the default value is used
@@ -1789,13 +1790,13 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         @Override
         public void writeStorage(WriteBuffer buff, Object storage, int size) {
             Object data[] = (Object[])storage;
-            dataType.write(buff, data, data.length, true);
+            dataType.write(buff, data, size, true);
         }
 
         @Override
         public void read(ByteBuffer buff, Object storage, int size) {
             Object data[] = (Object[])storage;
-            dataType.read(buff, data, data.length, true);
+            dataType.read(buff, data, size, true);
         }
 
         @Override

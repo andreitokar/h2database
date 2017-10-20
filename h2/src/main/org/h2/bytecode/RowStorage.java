@@ -756,7 +756,7 @@ public class RowStorage extends Value implements Row, Cloneable {
 
         @Override
         public int hashCode() {
-            return super.hashCode()/* ^ Arrays.hashCode(indexes)*/;
+            return valueDataType.hashCode()/* ^ Arrays.hashCode(indexes)*/;
         }
 
         @Override

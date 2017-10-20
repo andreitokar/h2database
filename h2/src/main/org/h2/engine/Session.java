@@ -1740,7 +1740,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
     public void onRollback(MVMap<Object, TransactionStore.VersionedValue> map, Object key,
                            TransactionStore.VersionedValue existingValue,
                            TransactionStore.VersionedValue restoredValue) {
-        // Here we are relying on the fact that map which backs tabel's primary index
+        // Here we are relying on the fact that map which backs table's primary index
         // has the same name as the table itself
         MVTableEngine.Store mvStore = database.getMvStore();
         if(mvStore != null) {

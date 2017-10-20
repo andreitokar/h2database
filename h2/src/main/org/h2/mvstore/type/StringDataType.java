@@ -87,8 +87,7 @@ public final class StringDataType implements ExtendedDataType {
         String[] data = (String[]) storage;
         int res = 0;
         for (int i = 0; i < size; i++) {
-            String s = data[i];
-            res += s.length();
+            res += data[i].length();
         }
         return res * 2 + size * (Constants.MEMORY_POINTER + Constants.MEMORY_OBJECT);
     }

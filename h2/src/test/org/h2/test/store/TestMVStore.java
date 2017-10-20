@@ -129,7 +129,7 @@ public class TestMVStore extends TestBase {
         assertEquals(200000, map.size());
         assertEquals("v55", map.get(55));
         assertEquals("v7300", map.get(7300));
-        assertFalse(map.containsValue(200000));
+        assertFalse(map.containsKey(200000));
         store.close();
     }
 

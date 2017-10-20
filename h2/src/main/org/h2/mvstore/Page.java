@@ -732,7 +732,7 @@ public abstract class Page implements Cloneable {
 
     @Override
     public final boolean equals(Object other) {
-        return other == this || other instanceof Page && (isSaved() && ((Page) other).pos == pos);
+        return other == this || other instanceof Page && isSaved() && ((Page) other).pos == pos;
     }
 
     @Override
