@@ -739,6 +739,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
     public void rollback() {
         checkCommitRollback();
         currentTransactionName = null;
+        transactionStart = 0;
 //*
         boolean needCommit = undoLog.size() > 0 || transaction != null && transaction.hasChanges();
         if(needCommit) {
@@ -1098,6 +1099,8 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
      */
     public void rollbackToSavepoint(String name) {
         checkCommitRollback();
+        currentTransactionName = null;
+        transactionStart = 0;
         if (savepoints == null) {
             throw DbException.get(ErrorCode.SAVEPOINT_IS_INVALID_1, name);
         }
