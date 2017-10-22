@@ -14,7 +14,6 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.concurrent.atomic.AtomicInteger;
-
 import org.h2.bytecode.RowStorage;
 import org.h2.bytecode.RowStorageGenerator;
 import org.h2.mvstore.type.DataType;
@@ -25,7 +24,16 @@ import org.h2.result.SearchRow;
 import org.h2.result.SortOrder;
 import org.h2.table.CompactRowFactory;
 import org.h2.test.TestBase;
-import org.h2.value.*;
+import org.h2.value.CompareMode;
+import org.h2.value.Value;
+import org.h2.value.ValueDate;
+import org.h2.value.ValueDecimal;
+import org.h2.value.ValueDouble;
+import org.h2.value.ValueFloat;
+import org.h2.value.ValueInt;
+import org.h2.value.ValueLong;
+import org.h2.value.ValueNull;
+import org.h2.value.ValueString;
 
 /**
  * Test {@link RowFactory} setting.

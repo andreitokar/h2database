@@ -64,7 +64,7 @@ public class TestConcurrent extends TestMVStore {
         testConcurrentRead();
     }
 
-    private void testInterruptReopen() throws Exception {
+    private void testInterruptReopen() {
         String fileName = "retry:nio:" + getBaseDir() + "/" + getTestName();
         FileUtils.delete(fileName);
         final MVStore s = new MVStore.Builder().
@@ -108,15 +108,15 @@ public class TestConcurrent extends TestMVStore {
             final MVMap<Integer, Integer> dataMap = s.openMap("data");
             Task task = new Task() {
                 @Override
-                public void call() throws Exception {
+                public void call() {
                     int i = 0;
                     while (!stop) {
                         s.compact(100, 1024 * 1024);
-                        MVStore.TxCounter token = s.registerTxSavePoint();
+                        MVStore.TxCounter token = s.registerVersionUsage();
                         try {
                             dataMap.put(i % 1000, i * 10);
                         } finally {
-                            s.clearTxSavePoint(token);
+                            s.deregisterVersionUsage(token);
                         }
                         s.commit();
                         i++;
@@ -126,11 +126,11 @@ public class TestConcurrent extends TestMVStore {
             task.execute();
             for (int i = 0; i < 1000 && !task.isFinished(); i++) {
                 s.compact(100, 1024 * 1024);
-                MVStore.TxCounter token = s.registerTxSavePoint();
+                MVStore.TxCounter token = s.registerVersionUsage();
                 try {
                     dataMap.put(i % 1000, i * 10);
                 } finally {
-                    s.clearTxSavePoint(token);
+                    s.deregisterVersionUsage(token);
                 }
                 s.commit();
             }
@@ -163,7 +163,7 @@ public class TestConcurrent extends TestMVStore {
         for (int i = 0; i < tasks.length; i++) {
             tasks[i] = new Task() {
                 @Override
-                public void call() throws Exception {
+                public void call() {
                     Random r = new Random();
                     WriteBuffer buff = new WriteBuffer();
                     while (!stop) {
@@ -209,7 +209,7 @@ public class TestConcurrent extends TestMVStore {
             s.setAutoCommitDelay(1);
             Task task = new Task() {
                 @Override
-                public void call() throws Exception {
+                public void call() {
                     while (!stop) {
                         s.compact(100, 1024 * 1024);
                     }
@@ -221,7 +221,7 @@ public class TestConcurrent extends TestMVStore {
             final AtomicInteger counter = new AtomicInteger();
             Task task2 = new Task() {
                 @Override
-                public void call() throws Exception {
+                public void call() {
                     while (!stop) {
                         int i = counter.getAndIncrement();
                         dataMap.put(i, i * 10);
@@ -258,7 +258,7 @@ public class TestConcurrent extends TestMVStore {
         }
         Task task = new Task() {
             @Override
-            public void call() throws Exception {
+            public void call() {
                 int i = 0;
                 while (!stop) {
                     map.put(i % 100, i % 100);
@@ -292,7 +292,7 @@ public class TestConcurrent extends TestMVStore {
         try {
             Task task = new Task() {
                 @Override
-                public void call() throws Exception {
+                public void call() {
                     while (!stop) {
                         s.compact(100, 1024 * 1024);
                         Thread.yield();
@@ -302,7 +302,7 @@ public class TestConcurrent extends TestMVStore {
             task.execute();
             Task task2 = new Task() {
                 @Override
-                public void call() throws Exception {
+                public void call() {
                     while (!stop) {
                         s.compact(100, 1024 * 1024);
                         Thread.yield();
@@ -336,7 +336,7 @@ public class TestConcurrent extends TestMVStore {
                 m.put(1, 1);
                 Task task = new Task() {
                     @Override
-                    public void call() throws Exception {
+                    public void call() {
                         while (!stop) {
                             m.put(1, 1);
                             s.commit();
@@ -399,7 +399,7 @@ public class TestConcurrent extends TestMVStore {
                 final AtomicInteger counter = new AtomicInteger();
                 Task task = new Task() {
                     @Override
-                    public void call() throws Exception {
+                    public void call() {
                         while (!stop) {
                             int x = counter.getAndIncrement();
                             if (x >= count) {
@@ -464,7 +464,7 @@ public class TestConcurrent extends TestMVStore {
             final AtomicInteger counter = new AtomicInteger();
             Task task = new Task() {
                 @Override
-                public void call() throws Exception {
+                public void call() {
                     while (!stop) {
                         counter.incrementAndGet();
                         s.commit();
@@ -496,7 +496,7 @@ public class TestConcurrent extends TestMVStore {
                 final AtomicInteger counter = new AtomicInteger();
                 Task task = new Task() {
                     @Override
-                    public void call() throws Exception {
+                    public void call() {
                         while (!stop) {
                             s.setStoreVersion(counter.incrementAndGet());
                             s.commit();
@@ -542,7 +542,7 @@ public class TestConcurrent extends TestMVStore {
             final Random rand = new Random(1);
             Task task = new Task() {
                 @Override
-                public void call() throws Exception {
+                public void call() {
                     try {
                         while (!stop) {
                             if (rand.nextBoolean()) {
@@ -664,7 +664,7 @@ public class TestConcurrent extends TestMVStore {
         final Random r = new Random();
         Task task = new Task() {
             @Override
-            public void call() throws Exception {
+            public void call() {
                 while (!stop) {
                     int x = r.nextInt(len);
                     if (r.nextBoolean()) {

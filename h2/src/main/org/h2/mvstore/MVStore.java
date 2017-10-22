@@ -12,16 +12,16 @@ import java.util.Arrays;
 import java.util.BitSet;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -195,16 +195,10 @@ public final class MVStore {
     private long updateAttemptCounter = 0;
 
     /**
-     * The map of temporarily freed storage space caused by freed pages. The key
-     * is the unsaved version, the value is the map of chunks. The maps contains
-     * the number of freed entries per chunk.
-     * <p>
-     * Access is partially synchronized, hence the need for concurrent maps.
-     * Sometimes we hold the MVStore lock, sometimes the MVMap lock, and sometimes
-     * we even sync on the ConcurrentHashMap<Integer, Chunk> object.
+     * The map of temporarily freed storage space caused by freed pages.
+     * It contains the number of freed entries per chunk.
      */
-    private final ConcurrentHashMap<Long,Map<Integer,Chunk>> freedPageSpace =
-            new ConcurrentHashMap<>();
+    private final Map<Integer,Chunk> freedPageSpace = New.hashMap();
 
     /**
      * The metadata map. Write access to this map needs to be synchronized on
@@ -243,7 +237,7 @@ public final class MVStore {
     private long lastStoredVersion = INITIAL_VERSION;
 
     private final AtomicLong oldestVersionToKeep = new AtomicLong();
-    private final ConcurrentLinkedQueue<TxCounter> versions = new ConcurrentLinkedQueue<>();
+    private final Deque<TxCounter> versions = new LinkedList<>();
     private volatile TxCounter currentTxCounter = new TxCounter(currentVersion);
 
     /**
@@ -737,10 +731,6 @@ public final class MVStore {
             fileStore.clear();
             // build the free space list
             for (Chunk c : chunks.values()) {
-                if (c.pageCountLive == 0) {
-                    // remove this chunk in the next save operation
-                    registerFreePage(currentVersion, c.id, 0, 0);
-                }
                 long start = c.block * BLOCK_SIZE;
                 int length = c.len * BLOCK_SIZE;
                 fileStore.markUsed(start, length);
@@ -1211,7 +1201,6 @@ public final class MVStore {
                 }
             }
         }
-        applyFreedSpace(storeVersion);
         WriteBuffer buff = getWriteBuffer();
         // need to patch the header later
         c.writeChunkHeader(buff, 0);
@@ -1230,6 +1219,7 @@ public final class MVStore {
                 meta.put(key, Long.toHexString(root));
             }
         }
+        applyFreedSpace();
         MVMap.RootReference metaRootReference = meta.setWriteVersion(version);
         assert metaRootReference != null;
         assert metaRootReference.version == version : metaRootReference.version + " != " + version;
@@ -1260,7 +1250,6 @@ public final class MVStore {
         }
         buff.position(0);
         c.writeChunkHeader(buff, headerLength);
-        revertTemp(storeVersion);
 
         buff.position(buff.limit() - Chunk.FOOTER_LENGTH);
         buff.put(c.getFooterBytes());
@@ -1554,45 +1543,36 @@ public final class MVStore {
      * Apply the freed space to the chunk metadata. The metadata is updated, but
      * completely free chunks are not removed from the set of chunks, and the
      * disk space is not yet marked as free.
-     *
-     * @param storeVersion apply up to the given version
      */
-    private void applyFreedSpace(long storeVersion) {
+    private void applyFreedSpace() {
         while (true) {
             ArrayList<Chunk> modified = New.arrayList();
-            Iterator<Entry<Long,Map<Integer,Chunk>>> it = freedPageSpace.entrySet().iterator();
-            while (it.hasNext()) {
-                Entry<Long,Map<Integer, Chunk>> e = it.next();
-                long v = e.getKey();
-                if (v <= storeVersion) {
-                    Map<Integer, Chunk> freed = e.getValue();
-                    synchronized (freed) {
-                        for (Chunk f : freed.values()) {
-                            Chunk c = chunks.get(f.id);
-                            if (c != null) { // skip if was already removed
-                                c.maxLenLive += f.maxLenLive;
-                                c.pageCountLive += f.pageCountLive;
-                                if (c.pageCountLive < 0 && c.pageCountLive > -MARKED_FREE) {
-                                    // can happen after a rollback
-                                    c.pageCountLive = 0;
-                                }
-                                if (c.maxLenLive < 0 && c.maxLenLive > -MARKED_FREE) {
-                                    // can happen after a rollback
-                                    c.maxLenLive = 0;
-                                }
-                                modified.add(c);
-                            }
+            synchronized (freedPageSpace) {
+                for (Chunk f : freedPageSpace.values()) {
+                    Chunk c = chunks.get(f.id);
+                    if (c != null) { // skip if was already removed
+                        c.maxLenLive += f.maxLenLive;
+                        c.pageCountLive += f.pageCountLive;
+                        if (c.pageCountLive < 0 && c.pageCountLive > -MARKED_FREE) {
+                            // can happen after a rollback
+                            c.pageCountLive = 0;
                         }
+                        if (c.maxLenLive < 0 && c.maxLenLive > -MARKED_FREE) {
+                            // can happen after a rollback
+                            c.maxLenLive = 0;
+                        }
+                        modified.add(c);
                     }
-                    it.remove();
                 }
+                freedPageSpace.clear();
             }
             for (Chunk c : modified) {
                 meta.put(Chunk.getMetaKey(c.id), c.asString());
             }
-            if (modified.size() == 0) {
+            if (modified.isEmpty()) {
                 break;
             }
+            markMetaChanged();
         }
     }
 
@@ -1666,7 +1646,7 @@ public final class MVStore {
         return false;
     }
 
-    public boolean hasUnsavedChangesInternal() {
+    private boolean hasUnsavedChangesInternal() {
         if (meta.hasChangesSince(lastStoredVersion)) {
             return true;
         }
@@ -2064,6 +2044,7 @@ public final class MVStore {
         // but we don't optimize for rollback.
         // We could also keep the page in the cache, as somebody
         // could still read it (reading the old version).
+/*
         if (cache != null) {
             if (DataUtils.getPageType(pos) == DataUtils.PAGE_TYPE_LEAF) {
                 // keep nodes in the cache, because they are still used for
@@ -2071,43 +2052,17 @@ public final class MVStore {
                 cache.remove(pos);
             }
         }
-
-        Chunk c = getChunk(pos);
-//        Chunk c = getChunkIfFound(pos);
-//        if(c != null) {
-            long version = currentVersion;
-            if (map == meta && currentStoreVersion >= 0
-                    && Thread.currentThread() == currentStoreThread.get()) {
-                // if the meta map is modified while storing,
-                // then this freed page needs to be registered
-                // with the stored chunk, so that the old chunk
-                // can be re-used
-                version = currentStoreVersion;
-            }
-            registerFreePage(version, c.id,
-                    DataUtils.getPageMaxLength(pos), 1);
-//        }
-    }
-
-    private void registerFreePage(long version, int chunkId,
-            long maxLengthLive, int pageCount) {
-        Map<Integer,Chunk> freed = freedPageSpace.get(version);
-        if (freed == null) {
-            freed = new HashMap<>();
-            Map<Integer,Chunk> f2 = freedPageSpace.putIfAbsent(version, freed);
-            if (f2 != null) {
-                freed = f2;
-            }
-        }
+*/
+        int chunkId = DataUtils.getPageChunkId(pos);
         // synchronize, because pages could be freed concurrently
-        synchronized (freed) {
-            Chunk chunk = freed.get(chunkId);
+        synchronized (freedPageSpace) {
+            Chunk chunk = freedPageSpace.get(chunkId);
             if (chunk == null) {
                 chunk = new Chunk(chunkId);
-                freed.put(chunkId, chunk);
+                freedPageSpace.put(chunkId, chunk);
             }
-            chunk.maxLenLive -= maxLengthLive;
-            chunk.pageCountLive -= pageCount;
+            chunk.maxLenLive -= DataUtils.getPageMaxLength(pos);
+            chunk.pageCountLive -= 1;
         }
     }
 
@@ -2234,6 +2189,7 @@ public final class MVStore {
         boolean success;
         do {
             long current = this.oldestVersionToKeep.get();
+            // Oldest version may only advance, never goes back
             success = oldestVersionToKeep <= current ||
                       this.oldestVersionToKeep.compareAndSet(current, oldestVersionToKeep);
         } while (!success);
@@ -2376,7 +2332,10 @@ public final class MVStore {
             }
             maps.clear();
             lastChunk = null;
-            freedPageSpace.clear();
+            synchronized (freedPageSpace) {
+                freedPageSpace.clear();
+            }
+            versions.clear();
             currentVersion = version;
             setWriteVersion(version);
             metaChanged = false;
@@ -2389,17 +2348,12 @@ public final class MVStore {
             m.rollbackTo(version);
         }
 
-        Iterator<Entry<Long,Map<Integer,Chunk>>> it = freedPageSpace.entrySet().iterator();
-        while (it.hasNext()) {
-            Entry<Long, Map<Integer, Chunk>> e = it.next();
-            Long v = e.getKey();
-            if (v >= version) {
-                it.remove();
-            }
+        TxCounter txCounter;
+        while ((txCounter = versions.peekLast()) != null && txCounter.version >= version) {
+            versions.removeLast();
         }
-//        for (long v = currentVersion; v >= version && !freedPageSpace.isEmpty(); v--) {
-//            freedPageSpace.remove(v);
-//        }
+        currentTxCounter = new TxCounter(version);
+
         meta.rollbackTo(version);
         metaChanged = false;
         boolean loadFromFile = false;
@@ -2419,7 +2373,6 @@ public final class MVStore {
             // remove the youngest first, so we don't create gaps
             // (in case we remove many chunks)
             Collections.sort(remove, Collections.reverseOrder());
-            revertTemp(version);
             loadFromFile = true;
             for (int id : remove) {
                 Chunk c = chunks.remove(id);
@@ -2452,6 +2405,8 @@ public final class MVStore {
             } else {
                 if (loadFromFile) {
                     m.setRootPos(getRootPos(meta, id), version);
+                } else {
+                    m.rollbackRoot(version);
                 }
             }
         }
@@ -2467,16 +2422,6 @@ public final class MVStore {
     private static long getRootPos(MVMap<String, String> map, int mapId) {
         String root = map.get(MVMap.getMapRootKey(mapId));
         return root == null ? 0 : DataUtils.parseHexLong(root);
-    }
-
-    private void revertTemp(long storeVersion) {
-        for (Iterator<Entry<Long, Map<Integer, Chunk>>> it = freedPageSpace.entrySet().iterator(); it.hasNext(); ) {
-            Entry<Long, Map<Integer, Chunk>> entry = it.next();
-            Long v = entry.getKey();
-            if (v <= storeVersion) {
-                it.remove();
-            }
-        }
     }
 
     /**
@@ -2596,13 +2541,13 @@ public final class MVStore {
      * @param id the map id
      * @return the name, or null if not found
      */
-    public synchronized String getMapName(int id) {
+    public String getMapName(int id) {
         checkOpen();
         String m = meta.get(MVMap.getMapKey(id));
         return m == null ? null : DataUtils.parseMap(m).get("name");
     }
 
-    private synchronized int getMapId(String name) {
+    private int getMapId(String name) {
         String m = meta.get("name." + name);
         return m == null ? -1 : DataUtils.parseHexInt(m);
     }
@@ -2828,13 +2773,13 @@ public final class MVStore {
     }
 
     /**
-     * Register opened transaction.
+     * Register opened operation (transaction).
      * This would increment usage counter for the current version.
      * This version (and all after it) should not be dropped until all
      * transactions involved are closed and usage counter goes to zero.
-     * @return TxCounter to be decremented when transaction closed.
+     * @return TxCounter to be decremented when operation finishes (transaction closed).
      */
-    public TxCounter registerTxSavePoint() {
+    public TxCounter registerVersionUsage() {
         TxCounter txCounter;
         while(true) {
             txCounter = currentTxCounter;
@@ -2854,10 +2799,16 @@ public final class MVStore {
         return txCounter;
     }
 
-    public void clearTxSavePoint(TxCounter txCounter) {
+    public void deregisterVersionUsage(TxCounter txCounter) {
         if(txCounter != null) {
             if(txCounter.counter.decrementAndGet() <= 0) {
-                dropUnusedVersions();
+                if (currentStoreThread.compareAndSet(null, Thread.currentThread())) {
+                    try {
+                        dropUnusedVersions();
+                    } finally {
+                        currentStoreThread.set(null);
+                    }
+                }
             }
         }
     }
@@ -2874,8 +2825,9 @@ public final class MVStore {
     private void dropUnusedVersions() {
         TxCounter txCounter;
         while ((txCounter = versions.peek()) != null
-                && txCounter.counter.get() < 0
-                && versions.remove(txCounter)) {/**/}
+                && txCounter.counter.get() < 0) {
+            versions.remove();
+        }
         setOldestVersionToKeep(txCounter != null ? txCounter.version : currentTxCounter.version);
     }
 

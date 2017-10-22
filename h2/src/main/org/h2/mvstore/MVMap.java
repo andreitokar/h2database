@@ -824,7 +824,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         }
     }
 
-    private void rollbackRoot(long version)
+    void rollbackRoot(long version)
     {
         RootReference rootReference = getRoot();
         RootReference previous;

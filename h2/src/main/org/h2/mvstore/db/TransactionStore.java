@@ -477,7 +477,7 @@ public final class TransactionStore {
 
         int status = t.getStatus();
         t.closeIt();
-        store.clearTxSavePoint(t.txCounter);
+        store.deregisterVersionUsage(t.txCounter);
 
         assert verifyUndoIsEmptyForTx(txId);
 
@@ -512,12 +512,10 @@ public final class TransactionStore {
 
         if (store.getAutoCommitDelay() == 0) {
             store.commit();
-            return;
-        }
-        // to avoid having to store the transaction log,
-        // if there is no open transaction,
-        // and if there have been many changes, store them now
-        if (undoLog.isEmpty()) {
+        } else if (undoLog.isEmpty()) {
+            // to avoid having to store the transaction log,
+            // if there is no open transaction,
+            // and if there have been many changes, store them now
             int unsaved = store.getUnsavedMemory();
             int max = store.getAutoCommitMemory();
             // save at 3/4 capacity
@@ -1019,14 +1017,14 @@ public final class TransactionStore {
 
         public void markStatementStart() {
             markStatementEnd();
-            txCounter = store.store.registerTxSavePoint();
+            txCounter = store.store.registerVersionUsage();
         }
 
         public void markStatementEnd() {
             MVStore.TxCounter counter = txCounter;
             txCounter = null;
             if(counter != null) {
-                store.store.clearTxSavePoint(counter);
+                store.store.deregisterVersionUsage(counter);
             }
         }
 
