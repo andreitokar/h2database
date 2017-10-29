@@ -21,6 +21,8 @@ Change Log
 
 <h2>Next Version (unreleased)</h2>
 <ul>
+<li>Issue #643: H2 doesn't use index when I use IN and EQUAL in one query 
+</li>
 <li>Reset transaction start timestamp on ROLLBACK
 </li>
 <li>Issue #632: CREATE OR REPLACE VIEW creates incorrect columns names
@@ -123,7 +125,7 @@ Change Log
 </li>
 <li>Added support for invisible columns.
 </li>
-<li>Added an ENUM data type, with syntax similar to that of MySQL and Oracle.
+<li>Added an ENUM data type, with syntax similar to that of MySQL.
 </li>
 <li>MVStore: for object data types, the cache size memory estimation
     was sometimes far off in a read-only scenario.
