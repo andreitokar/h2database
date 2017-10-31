@@ -1051,11 +1051,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @return the cursor
      */
     public final Cursor<K, V> cursor(K from) {
-        return cursor(from, true);
-    }
-
-    public final Cursor<K, V> cursor(K from, boolean snapshot) {
-        return new Cursor<>(this, getRootPage(), from, snapshot);
+        return new Cursor<>(this, getRootPage(), from);
     }
 
     @Override
@@ -1111,7 +1107,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
             @Override
             public Iterator<K> iterator() {
-                return new Cursor<K, V>(map, root, null, true);
+                return new Cursor<K, V>(map, root, null);
             }
 
             @Override

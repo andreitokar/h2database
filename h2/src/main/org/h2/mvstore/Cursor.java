@@ -16,26 +16,20 @@ import java.util.Iterator;
 public final class Cursor<K, V> implements Iterator<K> {
 
     private final MVMap<K, ?> map;
-    private final boolean snapshot;
     private       CursorPos   cursorPos;
-    private       K           anchor;
     private       K           current;
     private       K           last;
-    private       V           currentValue;
+    private       V           lastValue;
     private       Page        lastPage;
 
-    Cursor(MVMap<K, ?> map, Page root, K from) {
-        this(map, root, from, true);
-    }
-
-    public Cursor(MVMap<K, ?> map, Page root, K from, boolean snapshot) {
+    public Cursor(MVMap<K, ?> map, Page root, K from) {
         this.map = map;
-        this.snapshot = snapshot;
-        this.anchor = from;
+        this.last = from;
         this.cursorPos = traverseDown(root, from);
     }
 
     @Override
+    @SuppressWarnings("unchecked")
     public boolean hasNext() {
         if (current != null) {
             return true;
@@ -43,12 +37,7 @@ public final class Cursor<K, V> implements Iterator<K> {
         while (cursorPos != null) {
             Page page = cursorPos.page;
             int index = cursorPos.index;
-            if(!snapshot && page.isRemoved()) {
-                cursorPos = traverseDown(map.getRootPage(), anchor);
-                if (last != null) {
-                    ++cursorPos.index;
-                }
-            } else if (index >= (page.isLeaf() ? page.getKeyCount() : map.getChildPageCount(page))) {
+            if (index >= (page.isLeaf() ? page.getKeyCount() : map.getChildPageCount(page))) {
                 cursorPos = cursorPos.parent;
                 if(cursorPos == null)
                 {
@@ -62,7 +51,7 @@ public final class Cursor<K, V> implements Iterator<K> {
                     index = 0;
                 }
                 current = last = (K) page.getKey(index);
-                currentValue = (V) page.getValue(index);
+                lastValue = (V) page.getValue(index);
                 lastPage = page;
                 ++cursorPos.index;
                 return true;
@@ -76,10 +65,8 @@ public final class Cursor<K, V> implements Iterator<K> {
         if(!hasNext()) {
             return null;
         }
-        anchor = current;
-        last = current;
         current = null;
-        return anchor;
+        return last;
     }
 
     /**
@@ -97,7 +84,7 @@ public final class Cursor<K, V> implements Iterator<K> {
      * @return the value or null
      */
     public V getValue() {
-        return currentValue;
+        return lastValue;
     }
 
     /**
@@ -122,8 +109,8 @@ public final class Cursor<K, V> implements Iterator<K> {
             }
         } else if(hasNext()) {
             long index = map.getKeyIndex(next());
-            anchor = map.getKey(index + n);
-            cursorPos = traverseDown(map.getRootPage(), anchor);
+            last = map.getKey(index + n);
+            cursorPos = traverseDown(map.getRootPage(), last);
         }
     }
 
@@ -133,10 +120,6 @@ public final class Cursor<K, V> implements Iterator<K> {
                 "Removal is not supported");
     }
 
-    private static CursorPos traverseDown(Page p, Object key) {
-        return traverseDown(p, key, null);
-    }
-
     /**
      * Fetch the next entry that is equal or larger than the given key, starting
      * from the given page. This method retains the stack.
@@ -144,7 +127,8 @@ public final class Cursor<K, V> implements Iterator<K> {
      * @param p the page to start
      * @param key the key to search
      */
-    private static CursorPos traverseDown(Page p, Object key, CursorPos pos) {
+    private static CursorPos traverseDown(Page p, Object key) {
+        CursorPos cursorPos = null;
         while (!p.isLeaf()) {
             assert p.getKeyCount() > 0;
             int index = 0;
@@ -154,7 +138,7 @@ public final class Cursor<K, V> implements Iterator<K> {
                     index = -index;
                 }
             }
-            pos = new CursorPos(p, index, pos);
+            cursorPos = new CursorPos(p, index, cursorPos);
             p = p.getChildPage(index);
         }
         int index = 0;
@@ -164,6 +148,6 @@ public final class Cursor<K, V> implements Iterator<K> {
                 index = -index - 1;
             }
         }
-        return new CursorPos(p, index, pos);
+        return new CursorPos(p, index, cursorPos);
     }
 }

@@ -1371,7 +1371,7 @@ public final class TransactionStore {
                 // the undo log is larger than the map -
                 // count the entries of the map
                 size = 0;
-                Cursor<K, VersionedValue> cursor = new Cursor<>(map, mapRootReference.root, null, true);
+                Cursor<K, VersionedValue> cursor = new Cursor<>(map, mapRootReference.root, null);
                 while (cursor.hasNext()) {
                     K key = cursor.next();
                     VersionedValue data = getValue(key, readLogId, undoLogRootReference.root, committingTransactions, cursor.getValue());
@@ -1385,7 +1385,7 @@ public final class TransactionStore {
             // scan the undo log and subtract invisible entries
             MVMap<Object,Object> temp = transaction.store.createTempMap(map.getKeyType(),ObjectDataType.NoneType.INSTANCE);
             try {
-                Cursor<Long, Record> cursor = new Cursor<>(transaction.store.undoLog, undoLogRootReference.root, null, true);
+                Cursor<Long, Record> cursor = new Cursor<>(transaction.store.undoLog, undoLogRootReference.root, null);
                 while (cursor.hasNext()) {
                     /*Long undoKey = */cursor.next();
                     Record op = cursor.getValue();
@@ -2395,7 +2395,7 @@ public final class TransactionStore {
             } while(mapRootReference != map.getRoot() || committingTransactions != store.committingTransactions.get());
             this.committingTransactions = committingTransactions;
             this.undoLogRootPage = undoLogRootReference.root;
-            this.cursor = new Cursor<>(map, mapRootReference.root, from, true);
+            this.cursor = new Cursor<>(map, mapRootReference.root, from);
         }
 
         protected abstract void fetchNext();

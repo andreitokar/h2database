@@ -72,8 +72,6 @@ public abstract class Page implements Cloneable {
      */
     private Object keys;
 
-    private volatile boolean removed;
-
     /**
      * Whether the page is an in-memory (not stored, or not yet stored) page,
      * and it is removed. This is to keep track of pages that concurrently
@@ -772,7 +770,6 @@ public abstract class Page implements Cloneable {
      * Remove the page.
      */
     public final void removePage() {
-        removed = true;
         if(isPersistent()) {
             long p = pos;
             if (p == 0) {
@@ -780,10 +777,6 @@ public abstract class Page implements Cloneable {
             }
             map.removePage(p, memory);
         }
-    }
-
-    public boolean isRemoved() {
-        return removed;
     }
 
     public abstract void removeAllRecursive();

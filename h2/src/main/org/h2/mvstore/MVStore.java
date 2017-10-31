@@ -1365,7 +1365,7 @@ public final class MVStore {
                 collector.visit(pos);
             }
 
-            for (Cursor<String, String> c = new Cursor<>(meta, rootPage, "root.", true); c.hasNext(); ) {
+            for (Cursor<String, String> c = new Cursor<>(meta, rootPage, "root."); c.hasNext(); ) {
                 String key = c.next();
                 assert key != null;
                 if (!key.startsWith("root.")) {
