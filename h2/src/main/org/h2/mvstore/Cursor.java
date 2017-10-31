@@ -13,42 +13,62 @@ import java.util.Iterator;
  * @param <K> the key type
  * @param <V> the value type
  */
-public class Cursor<K, V> implements Iterator<K> {
+public final class Cursor<K, V> implements Iterator<K> {
 
     private final MVMap<K, ?> map;
-    private final K from;
-    private CursorPos pos;
-    private K current, last;
-    private V currentValue, lastValue;
-    private Page lastPage;
-    private final Page root;
-    private boolean initialized;
+    private final Page        root;
+    private       CursorPos   pos;
+    private       K           current;
+    private       K           last;
+    private       V           lastValue;
+    private       Page        lastPage;
 
     Cursor(MVMap<K, ?> map, Page root, K from) {
         this.map = map;
         this.root = root;
-        this.from = from;
+        min(root, from);
     }
 
     @Override
+    @SuppressWarnings("unchecked")
     public boolean hasNext() {
-        if (!initialized) {
-            min(root, from);
-            initialized = true;
-            fetchNext();
+        if (current != null) {
+            return true;
         }
-        return current != null;
+        while (pos != null) {
+            Page page = pos.page;
+            int index = pos.index;
+            if (index >= (page.isLeaf() ? page.getKeyCount() : map.getChildPageCount(page))) {
+                pos = pos.parent;
+                if(pos == null)
+                {
+                    return false;
+                }
+                ++pos.index;
+            } else {
+                while (!page.isLeaf()) {
+                    page = page.getChildPage(index);
+                    pos = new CursorPos(page, 0, pos);
+                    index = 0;
+                }
+                current = last = (K) page.getKey(index);
+                lastValue = (V) page.getValue(index);
+                lastPage = page;
+                ++pos.index;
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override
     public K next() {
-        hasNext();
-        K c = current;
-        last = current;
-        lastValue = currentValue;
-        lastPage = pos == null ? null : pos.page;
-        fetchNext();
-        return c;
+        if (!hasNext()) {
+            return null;
+        }
+        K tmp = current;
+        current = null;
+        return tmp;
     }
 
     /**
@@ -69,6 +89,11 @@ public class Cursor<K, V> implements Iterator<K> {
         return lastValue;
     }
 
+    /**
+     * Get the page where last retrieved key is located.
+     *
+     * @return the page
+     */
     Page getPage() {
         return lastPage;
     }
@@ -84,16 +109,16 @@ public class Cursor<K, V> implements Iterator<K> {
             return;
         }
         if (n < 10) {
-            while (n-- > 0) {
-                fetchNext();
+            while (n-- > 0 && hasNext()) {
+                next();
             }
-            return;
+        } else {
+            long index = map.getKeyIndex(current);
+            K k = map.getKey(index + n);
+            pos = null;
+            min(root, k);
+            current = null;
         }
-        long index = map.getKeyIndex(current);
-        K k = map.getKey(index + n);
-        pos = null;
-        min(root, k);
-        fetchNext();
     }
 
     @Override
@@ -107,50 +132,27 @@ public class Cursor<K, V> implements Iterator<K> {
      * from the given page. This method retains the stack.
      *
      * @param p the page to start
-     * @param from the key to search
+     * @param key the key to search
      */
-    private void min(Page p, K from) {
-        while (true) {
-            if (p.isLeaf()) {
-                int x = from == null ? 0 : p.binarySearch(from);
-                if (x < 0) {
-                    x = -x - 1;
+    private void min(Page p, K key) {
+        while (!p.isLeaf()) {
+            int index = 0;
+            if (key != null) {
+                index = p.binarySearch(key) + 1;
+                if (index < 0) {
+                    index = -index;
                 }
-                pos = new CursorPos(p, x, pos);
-                break;
             }
-            int x = from == null ? -1 : p.binarySearch(from);
-            if (x < 0) {
-                x = -x - 1;
-            } else {
-                x++;
-            }
-            pos = new CursorPos(p, x + 1, pos);
-            p = p.getChildPage(x);
+            pos = new CursorPos(p, index, pos);
+            p = p.getChildPage(index);
         }
-    }
-
-    /**
-     * Fetch the next entry if there is one.
-     */
-    @SuppressWarnings("unchecked")
-    private void fetchNext() {
-        while (pos != null) {
-            if (pos.index < pos.page.getKeyCount()) {
-                int index = pos.index++;
-                current = (K) pos.page.getKey(index);
-                currentValue = (V) pos.page.getValue(index);
-                return;
-            }
-            pos = pos.parent;
-            if (pos == null) {
-                break;
-            }
-            if (pos.index < map.getChildPageCount(pos.page)) {
-                min(pos.page.getChildPage(pos.index++), null);
+        int index = 0;
+        if (key != null) {
+            index =  p.binarySearch(key);
+            if (index < 0) {
+                index = -index - 1;
             }
         }
-        current = null;
+        pos = new CursorPos(p, index, pos);
     }
-
 }
