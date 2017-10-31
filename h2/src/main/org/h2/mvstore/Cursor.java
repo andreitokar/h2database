@@ -17,11 +17,12 @@ public final class Cursor<K, V> implements Iterator<K> {
 
     private final MVMap<K, ?> map;
     private final boolean snapshot;
-    private CursorPos cursorPos;
-    private K anchor;
-    private K current, last;
-    private V currentValue;
-    private Page lastPage;
+    private       CursorPos   cursorPos;
+    private       K           anchor;
+    private       K           current;
+    private       K           last;
+    private       V           currentValue;
+    private       Page        lastPage;
 
     Cursor(MVMap<K, ?> map, Page root, K from) {
         this(map, root, from, true);
@@ -36,10 +37,38 @@ public final class Cursor<K, V> implements Iterator<K> {
 
     @Override
     public boolean hasNext() {
-        if(current == null) {
-            fetchNext();
+        if (current != null) {
+            return true;
         }
-        return current != null;
+        while (cursorPos != null) {
+            Page page = cursorPos.page;
+            int index = cursorPos.index;
+            if(!snapshot && page.isRemoved()) {
+                cursorPos = traverseDown(map.getRootPage(), anchor);
+                if (last != null) {
+                    ++cursorPos.index;
+                }
+            } else if (index >= (page.isLeaf() ? page.getKeyCount() : map.getChildPageCount(page))) {
+                cursorPos = cursorPos.parent;
+                if(cursorPos == null)
+                {
+                    return false;
+                }
+                ++cursorPos.index;
+            } else {
+                while (!page.isLeaf()) {
+                    page = page.getChildPage(index);
+                    cursorPos = new CursorPos(page, 0, cursorPos);
+                    index = 0;
+                }
+                current = last = (K) page.getKey(index);
+                currentValue = (V) page.getValue(index);
+                lastPage = page;
+                ++cursorPos.index;
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override
@@ -59,7 +88,7 @@ public final class Cursor<K, V> implements Iterator<K> {
      * @return the key or null
      */
     public K getKey() {
-        return current;
+        return last;
     }
 
     /**
@@ -71,6 +100,11 @@ public final class Cursor<K, V> implements Iterator<K> {
         return currentValue;
     }
 
+    /**
+     * Get the page where last retrieved key is located.
+     *
+     * @return the page
+     */
     Page getPage() {
         return lastPage;
     }
@@ -99,44 +133,17 @@ public final class Cursor<K, V> implements Iterator<K> {
                 "Removal is not supported");
     }
 
-    /**
-     * Fetch the next entry if there is one.
-     */
-    @SuppressWarnings("unchecked")
-    private void fetchNext() {
-        while(cursorPos != null) {
-            Page page = cursorPos.page;
-            if(!snapshot && page.isRemoved()) {
-                cursorPos = traverseDown(map.getRootPage(), anchor);
-                if(last != null) {
-                    ++cursorPos.index;
-                }
-            } else if (page.isLeaf()) {
-                if (cursorPos.index < page.getKeyCount()) {
-                    int index = cursorPos.index++;
-                    current = (K) page.getKey(index);
-                    currentValue = (V) page.getValue(index);
-                    lastPage = page;
-                    assert last != current : last + " == " + current;
-                    return;
-                }
-                cursorPos = cursorPos.parent;
-            } else {
-                int index = ++cursorPos.index;
-                if (index < map.getChildPageCount(page)) {
-                    cursorPos = traverseDown(page.getChildPage(index), null, cursorPos);
-                } else {
-                    cursorPos = cursorPos.parent;
-                }
-            }
-        }
-        current = null;
-    }
-
     private static CursorPos traverseDown(Page p, Object key) {
         return traverseDown(p, key, null);
     }
 
+    /**
+     * Fetch the next entry that is equal or larger than the given key, starting
+     * from the given page. This method retains the stack.
+     *
+     * @param p the page to start
+     * @param key the key to search
+     */
     private static CursorPos traverseDown(Page p, Object key, CursorPos pos) {
         while (!p.isLeaf()) {
             assert p.getKeyCount() > 0;
