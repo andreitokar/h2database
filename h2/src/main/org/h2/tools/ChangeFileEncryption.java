@@ -98,8 +98,9 @@ public class ChangeFileEncryption extends Tool {
         }
         if ((encryptPassword == null && decryptPassword == null) || cipher == null) {
             showUsage();
-            throw new SQLException(
+            System.out.println(
                     "Encryption or decryption password not set, or cipher not set");
+            return;
         }
         try {
             process(dir, db, cipher, decryptPassword, encryptPassword, quiet);
