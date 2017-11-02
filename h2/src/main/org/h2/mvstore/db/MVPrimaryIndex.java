@@ -397,8 +397,8 @@ public class MVPrimaryIndex extends BaseIndex {
      */
     Cursor find(Session session, ValueLong first, ValueLong last) {
         TransactionMap<Long,Row> map = getMap(session);
-        return new MVStoreCursor(map.entryIterator(first == null ? null : first.getLong()),
-                                            last == null ? null : last.getLong());
+        return new MVStoreCursor(map.entryIterator(first == null ? null : first.getLong(),
+                                                   last == null ? null : last.getLong()));
     }
 
     @Override

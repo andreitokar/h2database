@@ -2351,15 +2351,20 @@ public final class TransactionStore {
     }
 
     private static final class EntryIterator<K,V> extends TMIterator<K,Entry<K,V>> {
+        private final K to;
 
-        public EntryIterator(TransactionMap<K, ?> transactionMap, K from) {
+        public EntryIterator(TransactionMap<K, ?> transactionMap, K from, K to) {
             super(transactionMap, from);
+            this.to = to;
         }
 
         @Override
         protected void fetchNext() {
             while (cursor.hasNext()) {
                 K key = cursor.next();
+                if (to != null && compare(key, to) > 0) {
+                    break;
+                }
                 VersionedValue data = cursor.getValue();
                 data = getCommittedValue(key, data);
                 if (data != null && data.value != null) {
@@ -2427,6 +2432,10 @@ public final class TransactionStore {
         protected final VersionedValue getCommittedValue(K key, VersionedValue data) {
             return transactionMap.getValue(key, transactionMap.readLogId, undoLogRootPage,
                                            committingTransactions, data);
+        }
+
+        protected final int compare(K one, K two) {
+            return transactionMap.getKeyType().compare(one, two);
         }
     }
 }
