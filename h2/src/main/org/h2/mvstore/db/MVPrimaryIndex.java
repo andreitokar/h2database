@@ -225,7 +225,7 @@ public class MVPrimaryIndex extends BaseIndex {
         Long min = extractPKFromRow(first, Long.MIN_VALUE);
         Long max = extractPKFromRow(last, Long.MAX_VALUE);
         TransactionMap<Long,Row> map = getMap(session);
-        return new MVStoreCursor(map.entryIterator(min), max);
+        return new MVStoreCursor(map.entryIterator(min, max));
     }
 
     private Long extractPKFromRow(SearchRow row, long defaultValue) {
@@ -312,12 +312,12 @@ public class MVPrimaryIndex extends BaseIndex {
         TransactionMap<Long,Row> map = getMap(session);
         Long rowId = first ? map.firstKey() : map.lastKey();
         if (rowId == null) {
-            return new MVStoreCursor(Collections.<Entry<Long,Row>> emptyList().iterator(), null);
+            return new MVStoreCursor(Collections.<Entry<Long,Row>> emptyList().iterator());
         }
         Row value = map.get(rowId);
         Entry<Long,Row> e = new DataUtils.MapEntry<>(rowId, value);
         List<Entry<Long,Row>> list = Collections.singletonList(e);
-        MVStoreCursor c = new MVStoreCursor(list.iterator(), rowId);
+        MVStoreCursor c = new MVStoreCursor(list.iterator());
         c.next();
         return c;
     }
@@ -441,13 +441,11 @@ public class MVPrimaryIndex extends BaseIndex {
     static final class MVStoreCursor implements Cursor {
 
         private final Iterator<Entry<Long,Row>> it;
-        private final Long                      last;
         private       Entry<Long,Row>           current;
         private       Row                       row;
 
-        private MVStoreCursor(Iterator<Entry<Long, Row>> it, Long last) {
+        private MVStoreCursor(Iterator<Entry<Long, Row>> it) {
             this.it = it;
-            this.last = last;
         }
 
         @Override
@@ -468,9 +466,6 @@ public class MVPrimaryIndex extends BaseIndex {
         @Override
         public boolean next() {
             current = it.hasNext() ? it.next() : null;
-            if (current != null && current.getKey() > last) {
-                current = null;
-            }
             row = null;
             return current != null;
         }

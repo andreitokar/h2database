@@ -1805,8 +1805,8 @@ public final class TransactionStore {
          * @param from the first key to return
          * @return the iterator
          */
-        public Iterator<Entry<K, V>> entryIterator(final K from) {
-            return new EntryIterator<K,V>(this, from);
+        public Iterator<Entry<K, V>> entryIterator(final K from, final K to) {
+            return new EntryIterator<K,V>(this, from, to);
         }
 
         /**
