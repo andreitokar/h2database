@@ -24,7 +24,6 @@ public final class Cursor<K, V> implements Iterator<K> {
 
     public Cursor(MVMap<K, ?> map, Page root, K from) {
         this.map = map;
-        this.last = from;
         this.cursorPos = traverseDown(root, from);
     }
 

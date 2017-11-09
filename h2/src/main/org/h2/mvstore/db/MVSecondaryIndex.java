@@ -69,11 +69,13 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
         }
     }
 
-    // TODO: proper implementation within DataType. We need this override to eliminate Value-boxing
-//    @Override
-//    public int compareRows(SearchRow rowData, SearchRow compare) {
-//        return dataMap.getKeyType().compare(rowData, compare);
-//    }
+    @Override
+    public int compareRows(SearchRow rowData, SearchRow compare) {
+//        int expected = super.compareRows(rowData, compare);
+        int comp = dataMap.getKeyType().compare(rowData, compare);
+//        assert comp == expected : comp + " != " + expected;
+        return comp;
+    }
 
     @Override
     public void addRowsToBuffer(List<Row> rows, String bufferName) {
@@ -189,11 +191,11 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
     @Override
     public void add(Session session, Row row) {
         TransactionMap<SearchRow,Value> map = getMap(session);
-        SearchRow key = convertToKey(row, false);
+        SearchRow key = convertToKey(row, null);
         SearchRow unique = null;
         if (indexType.isUnique()) {
             // this will detect committed entries only
-            unique = convertToKey(row, true);
+            unique = convertToKey(row, Boolean.FALSE);
             checkUnique(map, unique, Long.MIN_VALUE);
         }
         try {
@@ -234,7 +236,7 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
 
     @Override
     public void remove(Session session, Row row) {
-        SearchRow searchRow = convertToKey(row, false);
+        SearchRow searchRow = convertToKey(row, null);
         TransactionMap<SearchRow,Value> map = getMap(session);
         try {
             if (map.remove(searchRow) == null) {
@@ -252,8 +254,9 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
     }
 
     private Cursor find(Session session, SearchRow first, boolean bigger, SearchRow last) {
-        SearchRow min = convertToKey(first, true);
+        SearchRow min = convertToKey(first, bigger);
         TransactionMap<SearchRow,Value> map = getMap(session);
+/*
         if (bigger && min != null) {
             // search for the next: first skip 1, then 2, 4, 8, until
             // we have a higher key; then skip 4, 2,...
@@ -288,18 +291,19 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
                         Collections.<SearchRow>emptyList().iterator(), null);
             }
         }
-        return new MVStoreCursor(session, map.keyIterator(min), convertToKey(last, false));
+*/
+        return new MVStoreCursor(session, map.keyIterator(min), convertToKey(last, Boolean.TRUE));
     }
 
-    private SearchRow convertToKey(SearchRow r, boolean min) {
+    private SearchRow convertToKey(SearchRow r, Boolean minmax) {
         if (r == null) {
             return null;
         }
 
         SearchRow row = rowFactory.createRow();
         row.copyFrom(r);
-        if (min) {
-            row.setKey(Long.MIN_VALUE);
+        if (minmax != null) {
+            row.setKey(minmax ? Long.MAX_VALUE : Long.MIN_VALUE);
         }
         return row;
     }

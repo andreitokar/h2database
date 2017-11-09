@@ -611,32 +611,39 @@ public class RowStorage extends Value implements Row, Cloneable {
 //                assert !aIsEmpty;
 //                assert !bIsEmpty;
 
-                if (aIsEmpty) {
+                if (indexes == null) {
+                    if (aIsEmpty || bIsEmpty) {
+                        // can't compare further
+                        return 0;
+                    }
+                } else if (aIsEmpty) {
                     if (!bIsEmpty) {
                         return -1;
                     }
                 } else if (bIsEmpty) {
                     return 1;
-                } else {
+                }
 
-                    int sortType = sortTypes == null ? SortOrder.ASCENDING : sortTypes[i];
-                    boolean aIsNull = a.isNull(indx);
-                    boolean bIsNull = b.isNull(indx);
-                    if (aIsNull != bIsNull) {
-                        return SortOrder.compareNull(aIsNull, sortType);
-                    }
-                    if (!aIsNull) { // && !bIsNull
-                        int res = a.compareToSecure(b, compareMode, indx);
-                        if (res != 0) {
-                            if ((sortType & SortOrder.DESCENDING) != 0) {
-                                res = -res;
-                            }
-                            return Integer.compare(res, 0);
+                int sortType = sortTypes == null ? SortOrder.ASCENDING : sortTypes[i];
+                boolean aIsNull = a.isNull(indx);
+                boolean bIsNull = b.isNull(indx);
+                if (aIsNull != bIsNull) {
+                    return SortOrder.compareNull(aIsNull, sortType);
+                }
+                if (!aIsNull) { // && !bIsNull
+                    int res = a.compareToSecure(b, compareMode, indx);
+                    if (res != 0) {
+                        if ((sortType & SortOrder.DESCENDING) != 0) {
+                            res = -res;
                         }
+                        return Integer.compare(res, 0);
                     }
                 }
             }
-            return indexes == null ? 0 : Long.compare(a.getKey(), b.getKey());
+            long aKey = a.getKey();
+            long bKey = b.getKey();
+            return indexes == null || aKey == SearchRow.MATCH_ALL_ROW_KEY
+                                   || bKey == SearchRow.MATCH_ALL_ROW_KEY ? 0 : Long.compare(aKey, bKey);
         }
 
         private int _compare(RowStorage a, RowStorage b, CompareMode compareMode, int sortTypes[], int indexes[]) {

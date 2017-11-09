@@ -95,6 +95,11 @@ public class MVPrimaryIndex extends BaseIndex {
     }
 
     @Override
+    public int compareRows(SearchRow rowOne, SearchRow rowTwo) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
     public void add(Session session, Row row) {
         if (mainIndexColumn == -1) {
             if (row.getKey() == 0) {

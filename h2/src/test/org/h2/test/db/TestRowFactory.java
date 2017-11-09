@@ -139,7 +139,7 @@ public class TestRowFactory extends TestBase {
             assertEquals("Row{12345/0 3, 'Hello', null, 77, null, null, null, null}", irow.toString());
             assertEquals(-1, itype.compare(irow, irowTwo));
             assertEquals(0, itype.compare(irow, row));
-            assertEquals(1, itype.compare(row, irow));  // assuming NULL sorted low
+            assertEquals(0, itype.compare(row, irow));
 
             row.setValue(3, null);
             assertTrue(row.isNull(3));
@@ -148,8 +148,8 @@ public class TestRowFactory extends TestBase {
             irow.copyFrom(row);
             assertEquals("Row{12345/0 3, 'Hello', null, null, null, null, null, null}", irow.toString());
             assertEquals(-1, itype.compare(irow, irowTwo));
-            assertEquals(0, itype.compare(irow, row));
-            assertEquals(1, itype.compare(row, irow));  // assuming NULL sorted low
+            assertEquals(1, itype.compare(irow, row));
+            assertEquals(0, itype.compare(row, irow));
         } catch (InstantiationException | IllegalAccessException | InvocationTargetException | NoSuchMethodException e) {
             e.printStackTrace();
         }

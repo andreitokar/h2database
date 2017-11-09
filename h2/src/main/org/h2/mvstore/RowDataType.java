@@ -15,6 +15,7 @@ import org.h2.result.RowFactory;
 import org.h2.result.SearchRow;
 import org.h2.store.DataHandler;
 import org.h2.value.CompareMode;
+import org.h2.value.Value;
 
 /**
  * Class RowDataType.
@@ -79,12 +80,21 @@ public final class RowDataType extends BasicDataType<SearchRow> implements State
             assert sortTypes.length == indexes.length;
             for (int i = 0; i < indexes.length; i++) {
                 int indx = indexes[i];
+                Value v1 = a.getValue(indx);
+                Value v2 = b.getValue(indx);
+                if (v1 == null || v2 == null) {
+                    // can't compare further
+                    break;
+                }
                 int comp = valueDataType.compareValues(a.getValue(indx), b.getValue(indx), sortTypes[i]);
                 if (comp != 0) {
                     return comp;
                 }
             }
-            return Long.compare(a.getKey(), b.getKey());
+            long aKey = a.getKey();
+            long bKey = b.getKey();
+            return aKey == SearchRow.MATCH_ALL_ROW_KEY || bKey == SearchRow.MATCH_ALL_ROW_KEY ?
+                                                                        0 : Long.compare(aKey, bKey);
         }
     }
 
