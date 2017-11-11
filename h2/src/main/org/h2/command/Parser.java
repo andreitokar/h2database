@@ -3486,7 +3486,7 @@ public class Parser {
         addExpected(token);
         return false;
     }
-    
+
     /*
      * Reads passed token in list, in order and returns true on first match.
      * If none of the token matches returns false
@@ -3499,7 +3499,7 @@ public class Parser {
         }
         return false;
     }
-    
+
     /*
      * Reads every token in list, in order - returns true if all are found.
      * If any are not found, returns false - AND resets parsing back to state when called.
@@ -4179,6 +4179,8 @@ public class Parser {
         case 'C':
             if (s.equals("CHECK")) {
                 return KEYWORD;
+            } else if ("CONSTRAINT".equals(s)) {
+                return KEYWORD;
             }
             return getKeywordOrIdentifier(s, "CROSS", KEYWORD);
         case 'D':
@@ -4192,6 +4194,8 @@ public class Parser {
             if ("FROM".equals(s)) {
                 return KEYWORD;
             } else if ("FOR".equals(s)) {
+                return KEYWORD;
+            } else if ("FOREIGN".equals(s)) {
                 return KEYWORD;
             } else if ("FULL".equals(s)) {
                 return KEYWORD;
