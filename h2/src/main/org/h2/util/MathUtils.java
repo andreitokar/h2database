@@ -204,7 +204,7 @@ public class MathUtils {
      * @param s the message to print
      * @param t the stack trace
      */
-    static void warn(String s, Throwable t) {
+    private static void warn(String s, Throwable t) {
         // not a fatal problem, but maybe reduced security
         System.out.println("Warning: " + s);
         if (t != null) {
@@ -213,7 +213,7 @@ public class MathUtils {
     }
 
     /**
-     * Get the value that is equal or higher than this value, and that is a
+     * Get the value that is equal to or higher than this value, and that is a
      * power of two.
      *
      * @param x the original value
@@ -270,30 +270,6 @@ public class MathUtils {
         } else {
             return (int) l;
         }
-    }
-
-    /**
-     * Compare two values. Returns -1 if the first value is smaller, 1 if
-     * bigger, and 0 if equal.
-     *
-     * @param a the first value
-     * @param b the second value
-     * @return the result
-     */
-    public static int compareInt(int a, int b) {
-        return a == b ? 0 : a < b ? -1 : 1;
-    }
-
-    /**
-     * Compare two values. Returns -1 if the first value is smaller, 1 if
-     * bigger, and 0 if equal.
-     *
-     * @param a the first value
-     * @param b the second value
-     * @return the result
-     */
-    public static int compareLong(long a, long b) {
-        return a == b ? 0 : a < b ? -1 : 1;
     }
 
     /**
