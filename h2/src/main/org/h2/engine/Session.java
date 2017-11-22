@@ -682,6 +682,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
             for (Table table : tablesToAnalyze) {
                 Analyze.analyzeTable(this, table, rows, false);
             }
+            database.unlockMeta(this); // analyze can lock the meta
         }
         tablesToAnalyze = null;
     }

@@ -135,17 +135,12 @@ public class TableView extends Table {
                 return e;
             }
         }
-        ArrayList<TableView> views = getViews();
-        if (views != null) {
-            views = New.arrayList(views);
-        }
+        ArrayList<TableView> dependentViews = new ArrayList<>(getDependentViews());
         initColumnsAndTables(session, false);
-        if (views != null) {
-            for (TableView v : views) {
-                DbException e = v.recompile(session, force, false);
-                if (e != null && !force) {
-                    return e;
-                }
+        for (TableView v : dependentViews) {
+            DbException e = v.recompile(session, force, false);
+            if (e != null && !force) {
+                return e;
             }
         }
         if (clearIndexCache) {
@@ -156,14 +151,14 @@ public class TableView extends Table {
 
     private void initColumnsAndTables(Session session, boolean literalsChecked) {
         Column[] cols;
-        removeViewFromTables();
+        removeDependentViewFromTables();
         try {
             Query query = compileViewQuery(session, querySQL, literalsChecked);
             this.querySQL = query.getPlanSQL();
             tables = New.arrayList(query.getTables());
             ArrayList<Expression> expressions = query.getExpressions();
             ArrayList<Column> list = New.arrayList();
-            ColumnNamer columnNamer= new ColumnNamer(session);                        
+            ColumnNamer columnNamer= new ColumnNamer(session);
             for (int i = 0, count = query.getColumnCount(); i < count; i++) {
                 Expression expr = expressions.get(i);
                 String name = null;
@@ -231,7 +226,7 @@ public class TableView extends Table {
         }
         setColumns(cols);
         if (getId() != 0) {
-            addViewToTables();
+            addDependentViewToTables();
         }
     }
 
@@ -422,7 +417,7 @@ public class TableView extends Table {
 
     @Override
     public void removeChildrenAndResources(Session session) {
-        removeViewFromTables();
+        removeDependentViewFromTables();
         super.removeChildrenAndResources(session);
         database.removeMeta(session, getId());
         querySQL = null;
@@ -506,18 +501,18 @@ public class TableView extends Table {
         return null;
     }
 
-    private void removeViewFromTables() {
+    private void removeDependentViewFromTables() {
         if (tables != null) {
             for (Table t : tables) {
-                t.removeView(this);
+                t.removeDependentView(this);
             }
             tables.clear();
         }
     }
 
-    private void addViewToTables() {
+    private void addDependentViewToTables() {
         for (Table t : tables) {
-            t.addView(this);
+            t.addDependentView(this);
         }
     }
 
