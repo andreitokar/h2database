@@ -1087,8 +1087,8 @@ public final class MVStore {
                         long v;
                         if (fileStore == null) {
                             lastStoredVersion = currentVersion;
-                            v = ++currentVersion;
-                            setWriteVersion(v);
+                            ++currentVersion;
+                            setWriteVersion(currentVersion);
                             metaChanged = false;
                         } else {
                             if (fileStore.isReadOnly()) {
@@ -1096,8 +1096,7 @@ public final class MVStore {
                                         DataUtils.ERROR_WRITING_FAILED, "This store is read-only");
                             }
                             try {
-                                v = storeNow();
-                                assert v == currentVersion : v + " != " + currentVersion;
+                                storeNow();
                             } catch (IllegalStateException e) {
                                 panic(e);
                             } catch (Throwable e) {
@@ -1116,7 +1115,7 @@ public final class MVStore {
         return currentVersion;
     }
 
-    private long storeNow() {
+    private void storeNow() {
         assert Thread.holdsLock(this);
         long time = getTimeSinceCreation();
         int freeDelay = retentionTime / 10;
@@ -1314,8 +1313,6 @@ public final class MVStore {
                 - currentUnsavedPageCount);
 
         lastStoredVersion = storeVersion;
-
-        return version;
     }
 
     private synchronized void freeUnusedChunks() {
@@ -1631,7 +1628,6 @@ public final class MVStore {
      * @return if there are any changes
      */
     public boolean hasUnsavedChanges() {
-        checkOpen();
         assert !metaChanged || meta.hasChangesSince(lastStoredVersion) : metaChanged;
         if (metaChanged) {
             return true;

@@ -282,11 +282,12 @@ public final class TransactionStore {
             clone.set(transactionId);
             success = openTransactions.compareAndSet(original, clone);
         } while(!success);
-        int status = Transaction.STATUS_OPEN;
+
         if(timeoutMillis <= 0) {
             timeoutMillis = this.timeoutMillis;
         }
-        Transaction transaction = registerTransaction(transactionId, status, null, 0, timeoutMillis, listener);
+        Transaction transaction = registerTransaction(transactionId, Transaction.STATUS_OPEN,
+                                                        null, 0, timeoutMillis, listener);
         return transaction;
     }
 
@@ -316,6 +317,7 @@ public final class TransactionStore {
                 t.getName() != null) {
             Object[] v = { t.getStatus(), t.getName() };
             preparedTransactions.put(t.getId(), v);
+            t.wasStored = true;
         }
     }
 
@@ -475,7 +477,6 @@ public final class TransactionStore {
     void endTransaction(Transaction t) {
         int txId = t.transactionId;
 
-        int status = t.getStatus();
         t.closeIt();
         store.deregisterVersionUsage(t.txCounter);
 
@@ -502,12 +503,8 @@ public final class TransactionStore {
 
         assert verifyUndoIsEmptyWhenIdle();
 
-        if (status == Transaction.STATUS_PREPARED
-                || status == Transaction.STATUS_COMMITTING
-                || status == Transaction.STATUS_COMMITTED) {
-            if(!preparedTransactions.isClosed()) {
-                preparedTransactions.remove(txId);
-            }
+        if (t.wasStored && !preparedTransactions.isClosed()) {
+            preparedTransactions.remove(txId);
         }
 
         if (store.getAutoCommitDelay() == 0) {
@@ -858,6 +855,9 @@ public final class TransactionStore {
         private int ownerId;
 
         private MVStore.TxCounter txCounter;
+
+        private boolean wasStored;
+        private boolean hasWaiters;
 
         private Transaction(TransactionStore store, int transactionId, int status,
                             String name, long logId, long timeoutMillis, RollbackListener listener) {
@@ -1241,7 +1241,9 @@ public final class TransactionStore {
         }
 
         private synchronized void _closeIt() {
-            notifyAll();
+            if (hasWaiters) {
+                notifyAll();
+            }
         }
 
         public boolean waitFor(Transaction toWaitFor) {
@@ -1252,6 +1254,7 @@ public final class TransactionStore {
         }
 
         private synchronized boolean waitForThisToEnd(long millis) {
+            hasWaiters = true;
             long until = System.currentTimeMillis() + millis;
             while(getStatus() != STATUS_CLOSED) {
                 long dur = until - System.currentTimeMillis();
@@ -1328,14 +1331,10 @@ public final class TransactionStore {
          * Get a clone of this map for the given transaction.
          *
          * @param transaction the transaction
-         * @param savepoint the savepoint
          * @return the map
          */
-        public TransactionMap<K, V> getInstance(Transaction transaction,
-                long savepoint) {
-            TransactionMap<K, V> m = new TransactionMap<>(transaction, map);
-            m.setSavepoint(savepoint);
-            return m;
+        public TransactionMap<K, V> getInstance(Transaction transaction) {
+            return new TransactionMap<>(transaction, map);
         }
 
         /**
@@ -1784,19 +1783,20 @@ public final class TransactionStore {
          * @return the iterator
          */
         public Iterator<K> keyIterator(K from) {
-            return keyIterator(from, false);
+            return keyIterator(from, null, false);
         }
 
         /**
          * Iterate over keys.
          *
          * @param from the first key to return
+         * @param to the last key to return or null if there is no limit
          * @param includeUncommitted whether uncommitted entries should be
          *            included
          * @return the iterator
          */
-        public Iterator<K> keyIterator(K from, boolean includeUncommitted) {
-            return new KeyIterator<K>(this, from, includeUncommitted);
+        public Iterator<K> keyIterator(K from, K to, boolean includeUncommitted) {
+            return new KeyIterator<K>(this, from, to, includeUncommitted);
         }
 
         /**
@@ -2326,66 +2326,42 @@ public final class TransactionStore {
     }
 
     private static final class KeyIterator<K> extends TMIterator<K,K> {
-        private final boolean includeUncommitted;
 
-        public KeyIterator(TransactionMap<K, ?> transactionMap, K from, boolean includeUncommitted) {
-            super(transactionMap, from);
-            this.includeUncommitted = includeUncommitted;
+        public KeyIterator(TransactionMap<K, ?> transactionMap,
+                           K from, K to, boolean includeUncommitted) {
+            super(transactionMap, from, to, includeUncommitted);
         }
 
         @Override
-        protected void fetchNext() {
-            while (cursor.hasNext()) {
-                K key = cursor.next();
-                current = key;
-                VersionedValue data = cursor.getValue();
-                if (!includeUncommitted) {
-                    data = getCommittedValue(key, data);
-                }
-                if(data != null && data.value != null) {
-                    return;
-                }
-            }
-            current = null;
+        protected K registerCurrent(K key, VersionedValue data) {
+            return key;
         }
     }
 
     private static final class EntryIterator<K,V> extends TMIterator<K,Entry<K,V>> {
-        private final K to;
 
         public EntryIterator(TransactionMap<K, ?> transactionMap, K from, K to) {
-            super(transactionMap, from);
-            this.to = to;
+            super(transactionMap, from, to, false);
         }
 
         @Override
-        protected void fetchNext() {
-            while (cursor.hasNext()) {
-                K key = cursor.next();
-                if (to != null && compare(key, to) > 0) {
-                    break;
-                }
-                VersionedValue data = cursor.getValue();
-                data = getCommittedValue(key, data);
-                if (data != null && data.value != null) {
-                    @SuppressWarnings("unchecked")
-                    V value = (V) data.value;
-                    current = new DataUtils.MapEntry<K, V>(key, value);
-                    return;
-                }
-            }
-            current = null;
+        protected Entry<K, V> registerCurrent(K key, VersionedValue data) {
+            @SuppressWarnings("unchecked")
+            V value = (V) data.value;
+            return new DataUtils.MapEntry<K, V>(key, value);
         }
     }
 
     private abstract static class TMIterator<K,X> implements Iterator<X> {
-        private   final TransactionMap<K,?>       transactionMap;
-        private   final BitSet                    committingTransactions;
-        private   final Page                      undoLogRootPage;
-        protected final Cursor<K, VersionedValue> cursor;
-        protected       X                         current;
+        private final TransactionMap<K,?>      transactionMap;
+        private final BitSet                   committingTransactions;
+        private final Page                     undoLogRootPage;
+        private final Cursor<K,VersionedValue> cursor;
+        private final K                        to;
+        private final boolean                  includeUncommitted;
+        private       X                        current;
 
-        protected TMIterator(TransactionMap<K,?> transactionMap, K from)
+        protected TMIterator(TransactionMap<K,?> transactionMap, K from, K to, boolean includeUncommitted)
         {
             this.transactionMap = transactionMap;
             TransactionStore store = transactionMap.transaction.store;
@@ -2401,9 +2377,31 @@ public final class TransactionStore {
             this.committingTransactions = committingTransactions;
             this.undoLogRootPage = undoLogRootReference.root;
             this.cursor = new Cursor<>(map, mapRootReference.root, from);
+            this.to = to;
+            this.includeUncommitted = includeUncommitted;
         }
 
-        protected abstract void fetchNext();
+        protected abstract X registerCurrent(K key, VersionedValue data);
+
+        private void fetchNext() {
+            while (cursor.hasNext()) {
+                K key = cursor.next();
+                if (to != null && transactionMap.getKeyType().compare(key, to) > 0) {
+                    break;
+                }
+                VersionedValue data = cursor.getValue();
+                if (!includeUncommitted) {
+                    data = transactionMap.getValue(key, transactionMap.readLogId,
+                                                   undoLogRootPage,
+                                                   committingTransactions, data);
+                }
+                if (data != null && data.value != null) {
+                    current = registerCurrent(key, data);
+                    return;
+                }
+            }
+            current = null;
+        }
 
         @Override
         public final boolean hasNext() {
@@ -2427,15 +2425,6 @@ public final class TransactionStore {
         public final void remove() {
             throw DataUtils.newUnsupportedOperationException(
                     "Removing is not supported");
-        }
-
-        protected final VersionedValue getCommittedValue(K key, VersionedValue data) {
-            return transactionMap.getValue(key, transactionMap.readLogId, undoLogRootPage,
-                                           committingTransactions, data);
-        }
-
-        protected final int compare(K one, K two) {
-            return transactionMap.getKeyType().compare(one, two);
         }
     }
 }

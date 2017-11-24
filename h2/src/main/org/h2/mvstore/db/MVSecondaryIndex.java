@@ -209,7 +209,7 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
     }
 
     private void checkUnique(TransactionMap<SearchRow,Value> map, SearchRow row, long newKey) {
-        Iterator<SearchRow> it = map.keyIterator(row, true);
+        Iterator<SearchRow> it = map.keyIterator(row, null, true);
         while (it.hasNext()) {
             SearchRow k = it.next();
             row.setKey(k.getKey());
@@ -255,44 +255,9 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
 
     private Cursor find(Session session, SearchRow first, boolean bigger, SearchRow last) {
         SearchRow min = convertToKey(first, bigger);
+        SearchRow max = convertToKey(last, Boolean.TRUE);
         TransactionMap<SearchRow,Value> map = getMap(session);
-/*
-        if (bigger && min != null) {
-            // search for the next: first skip 1, then 2, 4, 8, until
-            // we have a higher key; then skip 4, 2,...
-            // (binary search), until 1
-            int offset = 1;
-            while (true) {
-                SearchRow v = map.relativeKey(min, offset);
-                if (v != null) {
-                    boolean foundHigher = compareRows(v, first) > 0;
-                    if (!foundHigher) {
-                        offset += offset;
-                        min = v;
-                        continue;
-                    }
-                }
-                if (offset > 1) {
-                    offset /= 2;
-                    continue;
-                }
-                if (v != null && map.get(v) == null) {
-                    min = map.higherKey(min);
-                    if (min == null) {
-                        break;
-                    }
-                    continue;
-                }
-                min = v;
-                break;
-            }
-            if (min == null) {
-                return new MVStoreCursor(session,
-                        Collections.<SearchRow>emptyList().iterator(), null);
-            }
-        }
-*/
-        return new MVStoreCursor(session, map.keyIterator(min), convertToKey(last, Boolean.TRUE));
+        return new MVStoreCursor(session, map.keyIterator(min, max, false));
     }
 
     private SearchRow convertToKey(SearchRow r, Boolean minmax) {
@@ -352,7 +317,7 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
         while (true) {
             if (key == null) {
                 return new MVStoreCursor(session,
-                        Collections.<SearchRow>emptyList().iterator(), null);
+                        Collections.<SearchRow>emptyList().iterator());
             }
             if (key.getValue(columnIds[0]) != ValueNull.INSTANCE) {
                 break;
@@ -360,7 +325,7 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
             key = first ? map.higherKey(key) : map.lowerKey(key);
         }
         List<SearchRow> list = Collections.singletonList(key);
-        MVStoreCursor cursor = new MVStoreCursor(session, list.iterator(), null);
+        MVStoreCursor cursor = new MVStoreCursor(session, list.iterator());
         cursor.next();
         return cursor;
     }
@@ -421,7 +386,7 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
             return dataMap;
         }
         Transaction t = session.getTransaction();
-        return dataMap.getInstance(t, Long.MAX_VALUE);
+        return dataMap.getInstance(t);
     }
 
     /**
@@ -431,14 +396,12 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
 
         private final Session             session;
         private final Iterator<SearchRow> it;
-        private final SearchRow           last;
         private       SearchRow           current;
         private       Row                 row;
 
-        private MVStoreCursor(Session session, Iterator<SearchRow> it, SearchRow last) {
+        private MVStoreCursor(Session session, Iterator<SearchRow> it) {
             this.session = session;
             this.it = it;
-            this.last = last;
         }
 
         @Override
@@ -460,11 +423,6 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
         @Override
         public boolean next() {
             current = it.hasNext() ? it.next() : null;
-            if (current != null) {
-                if (last != null && compareRows(getSearchRow(), last) > 0) {
-                    current = null;
-                }
-            }
             row = null;
             return current != null;
         }
@@ -473,7 +431,6 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
         public boolean previous() {
             throw DbException.getUnsupportedException("previous");
         }
-
     }
 
 }
