@@ -95,7 +95,7 @@ public class SimpleRow implements SearchRow {
 
     @Override
     public boolean isNull(int indx) {
-        return data[indx] == ValueNull.INSTANCE;
+        return data[indx] == null || data[indx] == ValueNull.INSTANCE;
     }
 
     @Override

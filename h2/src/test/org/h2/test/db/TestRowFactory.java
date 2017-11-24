@@ -16,13 +16,16 @@ import java.sql.Statement;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.h2.bytecode.RowStorage;
 import org.h2.bytecode.RowStorageGenerator;
+import org.h2.java.util.Arrays;
 import org.h2.mvstore.type.DataType;
 import org.h2.result.Row;
 import org.h2.result.RowFactory;
 import org.h2.result.RowImpl;
 import org.h2.result.SearchRow;
 import org.h2.result.SortOrder;
+import org.h2.table.Column;
 import org.h2.table.CompactRowFactory;
+import org.h2.table.IndexColumn;
 import org.h2.test.TestBase;
 import org.h2.value.CompareMode;
 import org.h2.value.Value;
@@ -42,6 +45,10 @@ import org.h2.value.ValueString;
  */
 public class TestRowFactory extends TestBase {
 
+    private int[] valueTypes = { Value.INT, Value.STRING, Value.UNKNOWN, Value.LONG, Value.DOUBLE,
+                         Value.FLOAT, Value.DECIMAL, Value.STRING_FIXED };
+    private int[] columnIndexes = {3, 0, 1};
+
     /**
      * Run just this test.
      *
@@ -53,6 +60,7 @@ public class TestRowFactory extends TestBase {
 
     @Override
     public void test() throws Exception {
+        testCompareImplementations();
         tetRowStorage();
         testCompactRowFactory();
         testMyRowFactory();
@@ -73,15 +81,13 @@ public class TestRowFactory extends TestBase {
     }
 
     private void tetRowStorage() {
-        int[] valueTypes = { Value.INT, Value.STRING, Value.UNKNOWN, Value.LONG, Value.DOUBLE,
-                             Value.FLOAT, Value.DECIMAL, Value.STRING_FIXED };
         Class<? extends RowStorage> cls = generateClass(valueTypes, null);
-        Class<? extends RowStorage> icls = generateClass(valueTypes, new int[]{3, 0, 1});
+        Class<? extends RowStorage> icls = generateClass(valueTypes, columnIndexes);
 
         try {
             Constructor<? extends RowStorage> constructor = cls.getConstructor();
             Value[] initargs = {
-                    ValueInt.get(3),
+                    ValueNull.INSTANCE,
                     ValueString.get("Hello"),
                     ValueDate.parse("2017-08-04"),
                     ValueLong.get(77),
@@ -93,6 +99,10 @@ public class TestRowFactory extends TestBase {
             RowStorage row = constructor.newInstance();
             row.setValues(initargs);
             row.setKey(12345);
+            assertEquals(ValueNull.INSTANCE, row.getValue(0));
+            assertTrue(row.isNull(0));
+            assertFalse(row.isEmpty(0));
+            row.setValue(0, ValueInt.get(3));
             assertEquals("Row{12345/0 3, 'Hello', DATE '2017-08-04', 77, 3.62, 3.62, 10, 'ABC'}", row.toString());
 
             RowStorage rowTwo = row.clone();
@@ -113,12 +123,21 @@ public class TestRowFactory extends TestBase {
 
 
             CompareMode compareMode = CompareMode.getInstance(null, 0);
-            RowStorage.Type type = new RowStorage.Type(compareMode, null, null);
+            RowStorage.Type type = new RowStorage.Type(compareMode, null, null, null);
             assertEquals(-1, type.compare(row, rowTwo));
             assertEquals(1, type.compare(rowTwo, row));
 
             RowStorage irowTwo = icls.getConstructor().newInstance();
+            assertTrue(irowTwo.isEmpty(2));
+            assertTrue(irowTwo.isNull(2));
+            assertFalse(irowTwo.isEmpty(0));
+//            assertTrue(irowTwo.isNull(0));
+            irowTwo.setValue(0, ValueNull.INSTANCE);
+            assertTrue(irowTwo.isNull(0));
+            assertFalse(irowTwo.isEmpty(0));
             irowTwo.setValue(0, ValueInt.get(5));
+            assertFalse(irowTwo.isNull(0));
+            assertFalse(irowTwo.isEmpty(0));
             irowTwo.setValue(1, ValueString.get("World"));
             irowTwo.setValue(3, ValueLong.get(999));
             try {
@@ -127,7 +146,7 @@ public class TestRowFactory extends TestBase {
             } catch(Throwable ignore) {/**/}
             irowTwo.setKey(987);
             assertEquals("Row{987/0 5, 'World', null, 999, null, null, null, null}", irowTwo.toString());
-            RowStorage.Type itype = new RowStorage.Type(compareMode, null, new int[]{SortOrder.ASCENDING, SortOrder.ASCENDING, SortOrder.ASCENDING});
+            RowStorage.Type itype = new RowStorage.Type(compareMode, null, new int[]{SortOrder.ASCENDING, SortOrder.ASCENDING, SortOrder.ASCENDING}, columnIndexes);
             assertEquals(0, itype.compare(irowTwo, irowTwo));
             assertEquals(-1, itype.compare(irowTwo, rowTwo));
             irowTwo.setKey(12345);
@@ -147,11 +166,76 @@ public class TestRowFactory extends TestBase {
             assertEquals("Row{12345/0 3, 'Hello', DATE '2017-08-04', null, 3.62, 3.62, 10, 'ABC'}", row.toString());
             irow.copyFrom(row);
             assertEquals("Row{12345/0 3, 'Hello', null, null, null, null, null, null}", irow.toString());
-            assertEquals(-1, itype.compare(irow, irowTwo));
-            assertEquals(1, itype.compare(irow, row));
+            assertEquals(0, itype.compare(irow, irowTwo));
+            assertEquals(0, itype.compare(irow, row));
             assertEquals(0, itype.compare(row, irow));
         } catch (InstantiationException | IllegalAccessException | InvocationTargetException | NoSuchMethodException e) {
             e.printStackTrace();
+        }
+    }
+
+    private void testCompareImplementations() {
+        compareImplementations(valueTypes, columnIndexes);
+    }
+
+    private void compareImplementations(int[] valueTypes, int[] columnIndexes) {
+        CompareMode compareMode = CompareMode.getInstance(null, 0);
+        int[] sortTypes = new int[columnIndexes == null ? valueTypes.length : columnIndexes.length];
+        Arrays.fill(sortTypes, SortOrder.ASCENDING);
+
+        Column[] columns = new Column[valueTypes.length];
+        for (int i = 0; i < columns.length; i++) {
+            Column column = new Column("c" + i, valueTypes[i]);
+            column.setTable(null, i);
+            columns[i] = column;
+        }
+
+        IndexColumn[] indexColumns = null;
+        if (columnIndexes != null) {
+            Column[] columnsInIndex = new Column[columnIndexes.length];
+            for (int i = 0; i < columnsInIndex.length; i++) {
+                columnsInIndex[i] = columns[columnIndexes[i]];
+            }
+            indexColumns = IndexColumn.wrap(columnsInIndex);
+        }
+
+        RowFactory drf = RowFactory.DefaultRowFactory.getRowFactory().createRowFactory(compareMode, null, columns, indexColumns);
+        RowFactory crf = CompactRowFactory.getRowFactory().createRowFactory(compareMode, null, columns, indexColumns);
+
+        compareImplementations(drf, crf, null);
+        Value[] initargs = {
+                ValueNull.INSTANCE,
+                ValueString.get("Hello"),
+                ValueDate.parse("2017-08-04"),
+                ValueLong.get(77),
+                ValueDouble.get(3.62),
+                ValueFloat.get(3.62f),
+                ValueDecimal.get(BigDecimal.TEN),
+                ValueString.get("ABC")
+        };
+        compareImplementations(drf, crf, initargs);
+    }
+
+    private void compareImplementations(RowFactory base, RowFactory test, Value[] initargs) {
+        SearchRow brow = initargs == null ? base.createRow() : base.createRow(initargs, Row.MEMORY_CALCULATE);
+        SearchRow trow = initargs == null ? test.createRow() : test.createRow(initargs, Row.MEMORY_CALCULATE);
+        compareRows(brow, trow);
+        assertEquals(0, test.getDataType().compare(trow, trow));
+        assertEquals(0, base.getDataType().compare(brow, trow));
+        trow.copyFrom(brow);
+        compareRows(brow, trow);
+        assertEquals(0, test.getDataType().compare(trow, trow));
+        assertEquals(0, base.getDataType().compare(brow, trow));
+    }
+
+    private void compareRows(SearchRow baseRow, SearchRow testRow) {
+        assertEquals(baseRow.toString(), testRow.toString());
+        String msg = baseRow + " " + testRow;
+        assertEquals(baseRow.getKey(), testRow.getKey());
+        assertEquals(msg, baseRow.getColumnCount(), testRow.getColumnCount());
+        for (int i = 0; i < baseRow.getColumnCount(); i++) {
+            assertEquals(baseRow.isNull(i), testRow.isNull(i));
+            assertEquals(baseRow.getValue(i), testRow.getValue(i));
         }
     }
 

@@ -492,22 +492,24 @@ public class TestOptimizations extends TestBase {
         deleteDb("optimizations");
         Connection conn = getConnection("optimizations");
         Statement stat = conn.createStatement();
-        ResultSet rs;
-
         stat.execute("create table test(id int primary key, name varchar) " +
                 "as select 1, 'Hello'");
-        stat.execute("select * from (select * from test) " +
-                "where id=1 and name in('Hello', 'World')");
-
+        stat.execute("create index idx2 on test(id, name)");
+        try (ResultSet rs = stat.executeQuery("select * from (select * from test) " +
+                "where id=1 and name in('Hello', 'World')")){
+            assertTrue(rs.next());
+            assertEquals(1, rs.getInt(1));
+            assertFalse(rs.next());
+        }
         stat.execute("drop table test");
 
         stat.execute("create table test(id int, name varchar) as select 1, 'Hello'");
         stat.execute("create index idx2 on test(id, name)");
-        rs = stat.executeQuery("select count(*) from test " +
-                "where id=1 and name in('Hello', 'x')");
-        rs.next();
-        assertEquals(1, rs.getInt(1));
-
+        try (ResultSet rs = stat.executeQuery("select count(*) from test " +
+                "where id=1 and name in('Hello', 'x')")) {
+            assertTrue(rs.next());
+            assertEquals(1, rs.getInt(1));
+        }
         conn.close();
     }
 

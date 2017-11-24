@@ -9,6 +9,7 @@ import org.h2.result.SearchRow;
 import org.h2.store.DataHandler;
 import org.h2.value.CompareMode;
 import org.h2.value.Value;
+import org.h2.value.ValueNull;
 
 /**
  * Class CompactRowFactory.
@@ -50,14 +51,19 @@ public final class CompactRowFactory extends RowFactory {
             types[i] = columns[i].getType();
         }
         Class<? extends RowStorage> clazz = RowStorageGenerator.generateStorageClass(types, indexes);
-        RowStorage rowStorage;
+        RowStorage templateRow;
         try {
-            rowStorage = clazz.newInstance();
+            templateRow = clazz.newInstance();
         } catch (Exception e) {
             throw new IllegalStateException("CompactRowFactory failure ", e);
         }
-        RowStorage.Type dataType = new RowStorage.Type(compareMode, handler, sortTypes);
-        CompactRowFactory factory = new CompactRowFactory(rowStorage, dataType);
+        if (indexes != null) {
+            for (int index : indexes) {
+                templateRow.setValue(index, ValueNull.INSTANCE);
+            }
+        }
+        RowStorage.Type dataType = new RowStorage.Type(compareMode, handler, sortTypes, indexes);
+        CompactRowFactory factory = new CompactRowFactory(templateRow, dataType);
         dataType.setRowFactory(factory);
         return factory;
     }
@@ -75,10 +81,10 @@ public final class CompactRowFactory extends RowFactory {
 
     @Override
     public SearchRow createRow() {
-        if(instance == null)
-        {
-            return RowFactory.getDefaultRowFactory().createRow();
-        }
+//        if(instance == null)
+//        {
+//            return RowFactory.getDefaultRowFactory().createRow();
+//        }
         return instance.clone();
     }
 
@@ -86,7 +92,8 @@ public final class CompactRowFactory extends RowFactory {
     public DataType getDataType() {
         if(dataType == null)
         {
-            return RowFactory.getDefaultRowFactory().getDataType();
+            throw new IllegalStateException();
+//            return RowFactory.getDefaultRowFactory().getDataType();
         }
         return dataType;
     }

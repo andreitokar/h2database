@@ -728,6 +728,9 @@ public class Database implements DataHandler {
             if (dbSettings.mvStore) {
                 getPageStore();
             }
+//            if (mvStore != null) {
+//                setWriteDelay(writeDelay);
+//            }
         }
         systemUser = new User(this, 0, SYSTEM_USER_NAME, true);
         mainSchema = new Schema(this, 0, Constants.SCHEMA_MAIN, systemUser, true);
@@ -995,7 +998,7 @@ public class Database implements DataHandler {
                 if (SysProperties.CHECK) {
                     checkMetaFree(session, id);
                 }
-            } else if (!wasLocked) {
+            }/* else*/ if (!wasLocked) {
                 unlockMetaDebug(session);
                 // must not keep the lock if it was not locked
                 // otherwise updating sequences may cause a deadlock

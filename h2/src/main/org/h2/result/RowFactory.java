@@ -9,6 +9,7 @@ import org.h2.mvstore.RowDataType;
 import org.h2.mvstore.type.DataType;
 import org.h2.store.DataHandler;
 import org.h2.table.Column;
+import org.h2.table.CompactRowFactory;
 import org.h2.table.IndexColumn;
 import org.h2.value.CompareMode;
 import org.h2.value.Value;
@@ -22,7 +23,7 @@ public abstract class RowFactory {
 
     private static final class Holder {
         private static final RowFactory EFFECTIVE = DefaultRowFactory.INSTANCE;
-//        static final RowFactory EFFECTIVE = new CompactRowFactory();
+//        private static final RowFactory EFFECTIVE = new CompactRowFactory();
     }
 
     public static DefaultRowFactory getDefaultRowFactory() {

@@ -625,20 +625,23 @@ public final class RowStorageGenerator {
             int type = valueTypes[i];
             ValueType valueType = ValueType.get(type);
             Label label = labels[i];
-            labels[i] = null;
-            mv.visitLabel(label);
-            mv.visitFrame(F_SAME, 0, null, 0, null);
-            if (valueType.requireNullabilityBit()) {
-                mv.visitVarInsn(ALOAD, 0); // this
-                mv.visitFieldInsn(GETFIELD, className, FLD_NAME_BITMASK, bitMaskType.typeDescriptor);
-                bitMaskType.visitGet(mv, bitIndex);
-                mv.visitInsn(IRETURN);
-                ++bitIndex;
-            } else {
-                mv.visitVarInsn(ALOAD, 0);  // this
-                mv.visitFieldInsn(GETFIELD, className, valueType.getFieldName(i), valueType.descriptor);
-                mv.visitMethodInsn(INVOKESTATIC, className, "isNull", "(" + valueType.descriptor + ")Z", false);
-                mv.visitInsn(IRETURN);
+            if (label != null) {    // could happen in case when indexes has same value twice
+                                    // like in ridiculous case CREATE INDEX ON test(a,a)
+                labels[i] = null;
+                mv.visitLabel(label);
+                mv.visitFrame(F_SAME, 0, null, 0, null);
+                if (valueType.requireNullabilityBit()) {
+                    mv.visitVarInsn(ALOAD, 0); // this
+                    mv.visitFieldInsn(GETFIELD, className, FLD_NAME_BITMASK, bitMaskType.typeDescriptor);
+                    bitMaskType.visitGet(mv, bitIndex);
+                    mv.visitInsn(IRETURN);
+                    ++bitIndex;
+                } else {
+                    mv.visitVarInsn(ALOAD, 0);  // this
+                    mv.visitFieldInsn(GETFIELD, className, valueType.getFieldName(i), valueType.descriptor);
+                    mv.visitMethodInsn(INVOKESTATIC, className, "isNull", "(" + valueType.descriptor + ")Z", false);
+                    mv.visitInsn(IRETURN);
+                }
             }
         }
 
@@ -683,14 +686,17 @@ public final class RowStorageGenerator {
             ValueType valueType = ValueType.get(type);
             if (valueType.requireNullabilityBit()) {
                 Label label = labels[i];
-                labels[i] = null;
-                mv.visitLabel(label);
-                mv.visitFrame(F_SAME, 0, null, 0, null);
-//                mv.visitVarInsn(ALOAD, 0); // this
-//                mv.visitFieldInsn(GETFIELD, className, FLD_NAME_BITMASK, bitMaskType.typeDescriptor);
-                bitMaskType.visitSet(mv, className, bitIndex, isNullify);
-                mv.visitInsn(RETURN);
-                ++bitIndex;
+                if (label != null) {    // could happen in case when indexes has same value twice
+                                        // like in ridiculous case CREATE INDEX ON test(a,a)
+                    labels[i] = null;
+                    mv.visitLabel(label);
+                    mv.visitFrame(F_SAME, 0, null, 0, null);
+                    //                mv.visitVarInsn(ALOAD, 0); // this
+                    //                mv.visitFieldInsn(GETFIELD, className, FLD_NAME_BITMASK, bitMaskType.typeDescriptor);
+                    bitMaskType.visitSet(mv, className, bitIndex, isNullify);
+                    mv.visitInsn(RETURN);
+                    ++bitIndex;
+                }
             }
         }
 
@@ -708,7 +714,7 @@ public final class RowStorageGenerator {
     }
 
     //
-    // public long getLong(int index) tec.
+    // public long getLong(int index) etc.
     //
     private static void generateRawAccessor(ClassWriter cw, int[] valueTypes, int[] indexes, String className) {
         int fieldCount = valueTypes.length;
@@ -734,13 +740,15 @@ public final class RowStorageGenerator {
                         int type = valueTypes[i];
                         if (ValueType.get(type) == valueType) {
                             Label label = labels[i];
-                            labels[i] = null;
+                            if (label != null) {
+                                labels[i] = null;
 
-                            mv.visitLabel(label);
-                            mv.visitFrame(F_SAME, 0, null, 0, null);
-                            mv.visitVarInsn(ALOAD, 0);  // this
-                            mv.visitFieldInsn(GETFIELD, className, valueType.getFieldName(i), valueType.descriptor);
-                            mv.visitInsn(valueType.getReturnInstruction());
+                                mv.visitLabel(label);
+                                mv.visitFrame(F_SAME, 0, null, 0, null);
+                                mv.visitVarInsn(ALOAD, 0);  // this
+                                mv.visitFieldInsn(GETFIELD, className, valueType.getFieldName(i), valueType.descriptor);
+                                mv.visitInsn(valueType.getReturnInstruction());
+                            }
                         }
                     }
                     for (Label label : labels) {
@@ -779,21 +787,24 @@ public final class RowStorageGenerator {
 
         for (int i : indexes) {
             Label label = labels[i];
-            labels[i] = null;
-            int type = valueTypes[i];
-            ValueType valueType = ValueType.get(type);
+            if (label != null) {    // could happen in case when indexes has same value twice
+                                    // like in ridiculous case CREATE INDEX ON test(a,a)
+                labels[i] = null;
+                int type = valueTypes[i];
+                ValueType valueType = ValueType.get(type);
 
-            mv.visitLabel(label);
-            mv.visitFrame(F_SAME, 0, null, 0, null);
-            mv.visitVarInsn(ALOAD, 0);  // this
-            mv.visitFieldInsn(GETFIELD, className, valueType.getFieldName(i), valueType.descriptor);
-            mv.visitVarInsn(ALOAD, 1);  // other
-            mv.visitIntInsn(SIPUSH, i);
-            mv.visitMethodInsn(INVOKEVIRTUAL, ROOT_CLASS_NAME_SLASHED, valueType.getRawAccessorName(), "(I)"+valueType.descriptor, false);
-//            mv.visitTypeInsn(CHECKCAST, className); // (this.class) other
-//            mv.visitFieldInsn(GETFIELD, className, valueType.getFieldName(i), valueType.descriptor);
-            valueType.visitCompareTo(mv, className);
-            mv.visitInsn(IRETURN);
+                mv.visitLabel(label);
+                mv.visitFrame(F_SAME, 0, null, 0, null);
+                mv.visitVarInsn(ALOAD, 0);  // this
+                mv.visitFieldInsn(GETFIELD, className, valueType.getFieldName(i), valueType.descriptor);
+                mv.visitVarInsn(ALOAD, 1);  // other
+                mv.visitIntInsn(SIPUSH, i);
+                mv.visitMethodInsn(INVOKEVIRTUAL, ROOT_CLASS_NAME_SLASHED, valueType.getRawAccessorName(), "(I)" + valueType.descriptor, false);
+                //            mv.visitTypeInsn(CHECKCAST, className); // (this.class) other
+                //            mv.visitFieldInsn(GETFIELD, className, valueType.getFieldName(i), valueType.descriptor);
+                valueType.visitCompareTo(mv, className);
+                mv.visitInsn(IRETURN);
+            }
         }
 
         for (Label label : labels) {
@@ -827,18 +838,21 @@ public final class RowStorageGenerator {
 
         for (int i : indexes) {
             Label label = labels[i];
-            labels[i] = null;
-            int type = valueTypes[i];
-            ValueType valueType = ValueType.get(type);
+            if (label != null) {    // could happen in case when indexes has same value twice
+                                    // like in ridiculous case CREATE INDEX ON test(a,a)
+                labels[i] = null;
+                int type = valueTypes[i];
+                ValueType valueType = ValueType.get(type);
 
-            mv.visitLabel(label);
-            mv.visitFrame(F_SAME, 0, null, 0, null);
-            mv.visitVarInsn(ALOAD, 0);  // this
-            mv.visitVarInsn(ALOAD, 1);  // other
-            mv.visitIntInsn(SIPUSH, i);
-            mv.visitMethodInsn(INVOKEVIRTUAL, ROOT_CLASS_NAME_SLASHED, valueType.getRawAccessorName(), "(I)"+valueType.descriptor, false);
-            mv.visitFieldInsn(PUTFIELD, className, valueType.getFieldName(i), valueType.descriptor);
-            mv.visitInsn(RETURN);
+                mv.visitLabel(label);
+                mv.visitFrame(F_SAME, 0, null, 0, null);
+                mv.visitVarInsn(ALOAD, 0);  // this
+                mv.visitVarInsn(ALOAD, 1);  // other
+                mv.visitIntInsn(SIPUSH, i);
+                mv.visitMethodInsn(INVOKEVIRTUAL, ROOT_CLASS_NAME_SLASHED, valueType.getRawAccessorName(), "(I)" + valueType.descriptor, false);
+                mv.visitFieldInsn(PUTFIELD, className, valueType.getFieldName(i), valueType.descriptor);
+                mv.visitInsn(RETURN);
+            }
         }
 
         for (Label label : labels) {

@@ -3,7 +3,6 @@ package org.h2.bytecode;
 import org.h2.engine.Database;
 import org.h2.mvstore.BasicDataType;
 import org.h2.mvstore.DataUtils;
-import org.h2.mvstore.RowDataType;
 import org.h2.mvstore.WriteBuffer;
 import org.h2.mvstore.db.StatefulDataType;
 import org.h2.mvstore.db.ValueDataType;
@@ -15,7 +14,6 @@ import org.h2.result.SortOrder;
 import org.h2.store.Data;
 import org.h2.store.DataHandler;
 import org.h2.value.*;
-import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.sql.PreparedStatement;
@@ -128,11 +126,21 @@ public class RowStorage extends Value implements Row, Cloneable {
         int[] indexes = getIndexes();
         if (indexes == null) {
             int columnCount = getColumnCount();
-            for (int i = 0; i < columnCount; i++) {
-                copyFrom(source, i);
+            for (int indx = 0; indx < columnCount; indx++) {
+                if (source.isNull(indx)) {
+                    nullify(indx);
+                } else {
+                    clearNull(indx);
+                }
+                copyFrom(source, indx);
             }
         } else {
             for (int indx : indexes) {
+                if (source.isNull(indx)) {
+                    nullify(indx);
+                } else {
+                    clearNull(indx);
+                }
                 copyFrom(source, indx);
             }
         }
@@ -150,6 +158,9 @@ public class RowStorage extends Value implements Row, Cloneable {
 
     @Override
     public final Value getValue(int index) {
+        if (index == ROWID_INDEX) {
+            return ValueLong.get(this.key);
+        }
         Value value = get(index);
         return value != null && isNull(index) ? ValueNull.INSTANCE : value;
     }
@@ -160,16 +171,20 @@ public class RowStorage extends Value implements Row, Cloneable {
 
     @Override
     public final void setValue(int index, Value v) {
-        if(isNull(v)) {
-            nullify(index);
+        if (index == ROWID_INDEX) {
+            this.key = v.getLong();
         } else {
-            clearNull(index);
+            if (isNull(v)) {
+                nullify(index);
+            } else {
+                clearNull(index);
+            }
+            set(index, v);
         }
-        set(index, v);
     }
 
     protected void set(int index, Value v) {
-        throw new IllegalArgumentException(getClass().getSimpleName()+".setValue("+index+", ..)");
+//        throw new IllegalArgumentException(getClass().getSimpleName()+".setValue("+index+", ..)");
     }
 
 
@@ -321,7 +336,7 @@ public class RowStorage extends Value implements Row, Cloneable {
 
     @Override
     public void set(PreparedStatement prep, int parameterIndex) throws SQLException {
-        throw new NotImplementedException();
+        throw new UnsupportedOperationException();
     }
 
     @Override
@@ -455,7 +470,11 @@ public class RowStorage extends Value implements Row, Cloneable {
 
     protected static long toLong(Value v)
     {
-        return v == null ? Long.MIN_VALUE : v == ValueNull.INSTANCE ? 0L : v.getLong();
+        try {
+            return v == null ? Long.MIN_VALUE : v == ValueNull.INSTANCE ? 0L : v.getLong();
+        } catch (Exception e) {
+            return 0L;
+        }
     }
 
     protected static Value convertFrom(long v)
@@ -512,7 +531,7 @@ public class RowStorage extends Value implements Row, Cloneable {
 
     protected static Value convertFrom(byte v[])
     {
-        return v == null ? null : v == NULL_BYTES ? ValueNull.INSTANCE  : ValueString.get(new String(v));
+        return v == null ? null : v == NULL_BYTES ? ValueNull.INSTANCE  : ValueStringFixed.get(new String(v));
     }
 
     protected static boolean isNull(byte v[])
@@ -549,12 +568,14 @@ public class RowStorage extends Value implements Row, Cloneable {
         private final ValueDataType valueDataType;
         private final CompareMode   compareMode;
         private final int[]         sortTypes;
+        private final int[]         indexes;
 
 
-        public Type(CompareMode compareMode, DataHandler handler, int[] sortTypes) {
+        public Type(CompareMode compareMode, DataHandler handler, int[] sortTypes, int[] indexes) {
             this.valueDataType = new ValueDataType(compareMode, handler, sortTypes);
             this.compareMode = compareMode;
             this.sortTypes = sortTypes;
+            this.indexes = indexes;
         }
 
         public RowFactory getRowFactory() {
@@ -594,7 +615,7 @@ public class RowStorage extends Value implements Row, Cloneable {
 
         public int compare(RowStorage a, RowStorage b) {
             assert a.getColumnCount() == b.getColumnCount();
-            int[] indexes = a.getIndexes();
+//            int[] indexes = a.getIndexes();
 //            assert Arrays.equals(indexes, b.getIndexes());
             int comp = compare(a, b, compareMode, sortTypes, indexes);
 //            int _comp = _compare(a, b, compareMode, sortTypes, indexes);
@@ -611,10 +632,10 @@ public class RowStorage extends Value implements Row, Cloneable {
 //                assert !aIsEmpty;
 //                assert !bIsEmpty;
 
-                if (indexes == null) {
+                if (indexes != null) {
                     if (aIsEmpty || bIsEmpty) {
                         // can't compare further
-                        return 0;
+                        break;
                     }
                 } else if (aIsEmpty) {
                     if (!bIsEmpty) {
@@ -755,20 +776,21 @@ public class RowStorage extends Value implements Row, Cloneable {
             }
             Type other = (Type) obj;
             return valueDataType.equals(other.valueDataType)
-//                && Arrays.equals(indexes, other.indexes)
-//                && Arrays.equals(sortTypes, other.sortTypes)
+                && Arrays.equals(indexes, other.indexes)
+                && Arrays.equals(sortTypes, other.sortTypes)
                     ;
         }
 
 
         @Override
         public int hashCode() {
-            return valueDataType.hashCode()/* ^ Arrays.hashCode(indexes)*/;
+            return valueDataType.hashCode() ^ Arrays.hashCode(indexes) ^ Arrays.hashCode(sortTypes);
         }
 
         @Override
         public void save(WriteBuffer buff, DataType metaDataType, Database database) {
             writeIntArray(buff, sortTypes);
+            writeIntArray(buff, indexes);
         }
 
         private static void writeIntArray(WriteBuffer buff, int[] array) {
@@ -801,9 +823,9 @@ public class RowStorage extends Value implements Row, Cloneable {
             @Override
             public DataType create(ByteBuffer buff, DataType metaDataType, Database database) {
                 int[] sortTypes = readIntArray(buff);
-//                int[] indexes = readIntArray(buff);
+                int[] indexes = readIntArray(buff);
                 CompareMode compareMode = database == null ? CompareMode.getInstance(null, 0) : database.getCompareMode();
-                return new Type(compareMode, database, sortTypes);
+                return new Type(compareMode, database, sortTypes, indexes);
             }
 
             private static int[] readIntArray(ByteBuffer buff) {
