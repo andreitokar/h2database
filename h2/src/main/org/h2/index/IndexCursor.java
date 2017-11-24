@@ -244,20 +244,7 @@ public class IndexCursor implements Cursor {
             }
         }
         int comp = a.compareTo(b, table.getDatabase().getCompareMode());
-        if (comp == 0) {
-            return a;
-        }
-        if (a == ValueNull.INSTANCE || b == ValueNull.INSTANCE) {
-            if (session.getDatabase().getSettings().optimizeIsNull) {
-                throw new IllegalStateException("?????");
-//                 column IS NULL AND column <op> <not null> is always false
-//                return null;
-            }
-        }
-        if (!bigger) {
-            comp = -comp;
-        }
-        return comp > 0 ? a : b;
+        return (comp > 0) ^ !bigger ? a : b;
     }
 
     /**
