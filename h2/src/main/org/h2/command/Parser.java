@@ -162,6 +162,7 @@ import org.h2.value.ValueNull;
 import org.h2.value.ValueString;
 import org.h2.value.ValueTime;
 import org.h2.value.ValueTimestamp;
+import org.h2.value.ValueTimestampTimeZone;
 
 /**
  * The parser is used to convert a SQL statement string to an command object.
@@ -3128,6 +3129,17 @@ public class Parser {
                     read("FOR");
                     Sequence sequence = readSequence();
                     r = new SequenceValue(sequence);
+                } else if (equalsToken("TIMESTAMP", name) && readIf("WITH")) {
+                    read("TIME");
+                    read("ZONE");
+                    if (currentTokenType != VALUE
+                            || currentValue.getType() != Value.STRING) {
+                        throw getSyntaxError();
+                    }
+                    String timestamp = currentValue.getString();
+                    read();
+                    r = ValueExpression
+                            .get(ValueTimestampTimeZone.parse(timestamp));
                 } else if (currentTokenType == VALUE &&
                         currentValue.getType() == Value.STRING) {
                     if (equalsToken("DATE", name) ||
@@ -5291,8 +5303,9 @@ public class Parser {
         ArrayList<Expression> withExpressions = theQuery.getExpressions();
         for (int i = 0; i < withExpressions.size(); ++i) {
             Expression columnExp = withExpressions.get(i);
-            // use the passed in column name if supplied, otherwise use alias (if found) otherwise use column name
-            // derived from column expression
+            // use the passed in column name if supplied, otherwise use alias
+            // (if found) otherwise use column name derived from column
+            // expression
             String columnName = columnNamer.getColumnName(columnExp,i,cols);
             columnTemplateList.add(new Column(columnName,
                     columnExp.getType()));

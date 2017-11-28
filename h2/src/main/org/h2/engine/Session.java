@@ -377,7 +377,8 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
      * @param table the table
      */
     public void removeLocalTempTable(Table table) {
-        // Exception thrown in org.h2.engine.Database.removeMeta if line below is missing with TestGeneralCommonTableQueries
+        // Exception thrown in org.h2.engine.Database.removeMeta if line below
+        // is missing with TestGeneralCommonTableQueries
         database.lockMeta(this);
         modificationId++;
         localTempTables.remove(table.getName());
@@ -982,7 +983,8 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
                         modificationId++;
                         table.setModified();
                         it.remove();
-                        // Exception thrown in org.h2.engine.Database.removeMeta if line below is missing with TestDeadlock
+                        // Exception thrown in org.h2.engine.Database.removeMeta
+                        // if line below is missing with TestDeadlock
                         database.lockMeta(this);
                         table.removeChildrenAndResources(this);
                         if (closeSession) {

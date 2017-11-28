@@ -359,6 +359,7 @@ public abstract class Table extends SchemaObjectBase {
         return null;
     }
 
+    @Override
     public String getCreateSQLForCopy(Table table, String quotedName) {
         throw DbException.throwInternalError(toString());
     }
