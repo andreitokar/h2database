@@ -1974,8 +1974,8 @@ public final class TransactionStore {
     /**
      * The value type for a versioned value.
      */
-    public static final class VersionedValueType implements DataType, StatefulDataType {
-
+    public static final class VersionedValueType extends BasicDataType<VersionedValue> implements StatefulDataType
+    {
         private final DataType valueType;
 
         VersionedValueType(DataType valueType) {
@@ -1992,64 +1992,17 @@ public final class TransactionStore {
         }
 
         @Override
-        public int compare(Object aObj, Object bObj) {
-            if (aObj == bObj) {
+        public int compare(Object a, Object b) {
+            if (a == b) {
                 return 0;
             }
-            VersionedValue a = (VersionedValue) aObj;
-            VersionedValue b = (VersionedValue) bObj;
-            int comp = Long.compare(a.operationId, b.operationId);
+            VersionedValue one = (VersionedValue) a;
+            VersionedValue two = (VersionedValue) b;
+            int comp = Long.compare(one.operationId, two.operationId);
             if (comp == 0) {
-                comp = valueType.compare(a.value, b.value);
+                comp = valueType.compare(one.value, two.value);
             }
             return comp;
-        }
-
-        @Override
-        public void read(ByteBuffer buff, Object[] obj, int len, boolean key) {
-            if (buff.get() == 0) {
-                // fast path (no op ids or null entries)
-                for (int i = 0; i < len; i++) {
-                    obj[i] = new VersionedValue(valueType.read(buff));
-                }
-            } else {
-                // slow path (some entries may be null)
-                for (int i = 0; i < len; i++) {
-                    obj[i] = read(buff);
-                }
-            }
-        }
-
-        @Override
-        public Object read(ByteBuffer buff) {
-            long operationId = DataUtils.readVarLong(buff);
-            Object value = buff.get() == 1 ? valueType.read(buff) : null;
-            return new VersionedValue(operationId, value);
-        }
-
-        @Override
-        public void write(WriteBuffer buff, Object[] obj, int len, boolean key) {
-            boolean fastPath = true;
-            for (int i = 0; i < len; i++) {
-                VersionedValue v = (VersionedValue) obj[i];
-                if (v.operationId != 0 || v.value == null) {
-                    fastPath = false;
-                }
-            }
-            if (fastPath) {
-                buff.put((byte) 0);
-                for (int i = 0; i < len; i++) {
-                    VersionedValue v = (VersionedValue) obj[i];
-                    valueType.write(buff, v.value);
-                }
-            } else {
-                // slow path:
-                // store op ids, and some entries may be null
-                buff.put((byte) 1);
-                for (int i = 0; i < len; i++) {
-                    write(buff, obj[i]);
-                }
-            }
         }
 
         @Override
@@ -2062,6 +2015,13 @@ public final class TransactionStore {
                 buff.put((byte) 1);
                 valueType.write(buff, v.value);
             }
+        }
+
+        @Override
+        public Object read(ByteBuffer buff) {
+            long operationId = DataUtils.readVarLong(buff);
+            Object value = buff.get() == 1 ? valueType.read(buff) : null;
+            return new VersionedValue(operationId, value);
         }
 
         @Override

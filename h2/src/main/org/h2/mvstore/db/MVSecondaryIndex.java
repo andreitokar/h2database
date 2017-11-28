@@ -142,19 +142,15 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
             }
         }
         try {
-            SearchRow unique = rowFactory.createRow();
             while (!queue.isEmpty()) {
                 Source s = queue.remove();
                 SearchRow row = s.next();
 
                 if (indexType.isUnique()) {
-                    unique.copyFrom(row);
-                    unique.setKey(Long.MIN_VALUE);
-                    checkUnique(dataMap, unique, row.getKey());
+                    checkUnique(dataMap, row, row.getKey());
                 }
 
                 agent.put(row, ValueNull.INSTANCE);
-//                dataMap.putCommitted(row, ValueNull.INSTANCE);
 
                 if (s.hasNext()) {
                     queue.offer(s);
@@ -192,30 +188,23 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
     public void add(Session session, Row row) {
         TransactionMap<SearchRow,Value> map = getMap(session);
         SearchRow key = convertToKey(row, null);
-        SearchRow unique = null;
         if (indexType.isUnique()) {
-            // this will detect committed entries only
-            unique = convertToKey(row, Boolean.FALSE);
-            checkUnique(map, unique, Long.MIN_VALUE);
+            checkUnique(map, row, Long.MIN_VALUE);
         }
         try {
             map.put(key, ValueNull.INSTANCE);
         } catch (IllegalStateException e) {
             throw mvTable.convertException(e);
         }
-        if (unique != null) {
-            checkUnique(map, unique, row.getKey());
+        if (indexType.isUnique()) {
+            checkUnique(map, row, row.getKey());
         }
     }
 
     private void checkUnique(TransactionMap<SearchRow,Value> map, SearchRow row, long newKey) {
-        Iterator<SearchRow> it = map.keyIterator(row, null, true);
+        Iterator<SearchRow> it = map.keyIterator(convertToKey(row, Boolean.FALSE), convertToKey(row, Boolean.TRUE), true);
         while (it.hasNext()) {
             SearchRow k = it.next();
-            row.setKey(k.getKey());
-            if (compareRows(row, k) != 0) {
-                break;
-            }
 
             if (containsNullAndAllowMultipleNull(k)) {
                 // this is allowed
