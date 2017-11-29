@@ -932,15 +932,11 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
             // MVCC: keep shared locks (insert / update / delete)
             return;
         }
-        // locks is modified in the loop
-        for (int i = 0; i < locks.size(); i++) {
-            Table t = locks.get(i);
+        for (Iterator<Table> iter = locks.iterator(); iter.hasNext(); ) {
+            Table t = iter.next();
             if (!t.isLockedExclusively()) {
-                synchronized (database) {
-                    t.unlock(this);
-                    locks.remove(i);
-                }
-                i--;
+                t.unlock(this);
+                iter.remove();
             }
         }
     }

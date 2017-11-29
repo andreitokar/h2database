@@ -409,26 +409,27 @@ public class MVTable extends TableBase {
     @Override
     public void unlock(Session s) {
         if (database != null) {
-            traceLock(s, lockExclusiveSession == s, "unlock");
-            if (lockExclusiveSession == s) {
+            boolean wasLocked = lockExclusiveSession == s;
+            traceLock(s, wasLocked, "unlock");
+            if (wasLocked) {
                 lockExclusiveSession = null;
                 if (SysProperties.THREAD_DEADLOCK_DETECTOR) {
                     if (EXCLUSIVE_LOCKS.get() != null) {
                         EXCLUSIVE_LOCKS.get().remove(getName());
                     }
                 }
-            }
-            synchronized (getLockSyncObject()) {
-                if (lockSharedSessions.size() > 0) {
-                    lockSharedSessions.remove(s);
-                    if (SysProperties.THREAD_DEADLOCK_DETECTOR) {
-                        if (SHARED_LOCKS.get() != null) {
-                            SHARED_LOCKS.get().remove(getName());
-                        }
+            } else {
+                wasLocked = lockSharedSessions.remove(s) != null;
+                if (SysProperties.THREAD_DEADLOCK_DETECTOR) {
+                    if (SHARED_LOCKS.get() != null) {
+                        SHARED_LOCKS.get().remove(getName());
                     }
                 }
-                if (!waitingSessions.isEmpty()) {
-                    getLockSyncObject().notifyAll();
+            }
+            if (wasLocked && !waitingSessions.isEmpty()) {
+                Object lockSyncObject = getLockSyncObject();
+                synchronized (lockSyncObject) {
+                    lockSyncObject.notifyAll();
                 }
             }
         }

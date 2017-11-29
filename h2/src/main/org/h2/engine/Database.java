@@ -935,6 +935,17 @@ public class Database implements DataHandler {
         }
         if (SysProperties.CHECK2) {
             final Session prev = metaLockDebugging.get();
+            if (prev != null && prev != session) {
+                metaLockDebuggingStack.get().printStackTrace();
+                throw new IllegalStateException("meta currently locked by "
+                        + prev
+                        + " and trying to be locked by different session, "
+                        + session + " on same thread");
+            }
+        }
+        boolean wasLocked = meta.lock(session, true, true);
+        if (SysProperties.CHECK2 && !wasLocked && meta.isLockedExclusively() /* && false*/) {
+            final Session prev = metaLockDebugging.get();
             if (prev == null) {
                 metaLockDebugging.set(session);
                 metaLockDebuggingStack.set(new Throwable());
@@ -946,7 +957,6 @@ public class Database implements DataHandler {
                         + session + " on same thread");
             }
         }
-        boolean wasLocked = meta.lock(session, true, true);
         return wasLocked;
     }
 
@@ -987,29 +997,31 @@ public class Database implements DataHandler {
             SearchRow r = meta.getRowFactory().createRow();
             r.setValue(0, ValueInt.get(id));
             boolean wasLocked = lockMeta(session);
-            Cursor cursor = metaIdIndex.find(session, r, r);
-            if (cursor.next()) {
-                if (SysProperties.CHECK) {
-                    if (lockMode != Constants.LOCK_MODE_OFF && !wasLocked) {
-                        throw DbException.throwInternalError();
+            try {
+                Cursor cursor = metaIdIndex.find(session, r, r);
+                if (cursor.next()) {
+                    if (SysProperties.CHECK) {
+                        if (lockMode != Constants.LOCK_MODE_OFF && !wasLocked) {
+                            throw DbException.throwInternalError();
+                        }
+                    }
+                    Row found = cursor.get();
+                    found = meta.removeRow(session, found);
+                    if (isMultiVersion()) {
+                        // TODO this should work without MVCC, but avoid risks at
+                        // the moment
+                        session.log(meta, UndoLogRecord.DELETE, found);
+                    }
+                    if (SysProperties.CHECK) {
+                        checkMetaFree(session, id);
                     }
                 }
-                Row found = cursor.get();
-                found = meta.removeRow(session, found);
-                if (isMultiVersion()) {
-                    // TODO this should work without MVCC, but avoid risks at
-                    // the moment
-                    session.log(meta, UndoLogRecord.DELETE, found);
+            } finally {
+                if (!wasLocked) {
+                    // must not keep the lock if it was not locked
+                    // otherwise updating sequences may cause a deadlock
+                    unlockMeta(session);
                 }
-                if (SysProperties.CHECK) {
-                    checkMetaFree(session, id);
-                }
-            }/* else*/ if (!wasLocked) {
-                unlockMetaDebug(session);
-                // must not keep the lock if it was not locked
-                // otherwise updating sequences may cause a deadlock
-                meta.unlock(session);
-                session.unlock(meta);
             }
             objectIds.clear(id);
         }

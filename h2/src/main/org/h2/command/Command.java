@@ -258,12 +258,15 @@ public abstract class Command implements CommandInterface {
                 try {
                     return update();
                 } catch (DbException e) {
+                    database.unlockMetaDebug(session);
                     start = filterConcurrentUpdate(e, start);
                 } catch (OutOfMemoryError e) {
+                    database.unlockMetaDebug(session);
                     callStop = false;
                     database.shutdownImmediately();
                     throw DbException.convert(e);
                 } catch (Throwable e) {
+                    database.unlockMetaDebug(session);
                     if (database.getMvStore() != null && database.getMvStore().isClosed()) {
                         database.shutdownImmediately();
                     }
