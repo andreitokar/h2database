@@ -1310,8 +1310,8 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
         }
         if (removeLobMap == null) {
             removeLobMap = New.hashMap();
-            removeLobMap.put(v.toString(), v);
         }
+        removeLobMap.put(v.toString(), v);
     }
 
     /**
