@@ -219,7 +219,71 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         DataUtils.checkArgument(value != null, "The value may not be null");
         return operate(key, value, decisionMaker);
     }
+/*
+    public void delete(K from, K to) {
+        beforeWrite();
+        RootReference rootReference;
+        while(!lockRoot(rootReference = getRoot())) {}
+        Page root = rootReference.root;
+        int index = root.binarySearch(from) + 1;
+        if (index < 0) {
+            index = -index;
+            Page childPage = root.getChildPage(index - 1);
+            int i = childPage.binarySearch(from);
+            assert i != 0;
+            assert i != -1;
+            if (i < 0) {
+                i = -i - 1;
+                if (i >= childPage.getKeyCount()) {
+                    childPage = null; // totally left of the deletion interval
+                }
+            }
+            if (childPage != null) {
+                childPage = childPage.copy();
+                childPage.deleteFrom(i);
+                root.setChild(index - 1, childPage);
+            }
+        }
 
+
+        CursorPos cursorPos = traverseDown(root, from);
+
+        CursorPos keeper = null;
+        while (true) {
+            Page page = cursorPos.page;
+            int index = cursorPos.index;
+            if (index >= (page.isLeaf() ? page.getKeyCount() : map.getChildPageCount(page))) {
+                CursorPos tmp = cursorPos;
+                cursorPos = cursorPos.parent;
+                tmp.parent = keeper;
+                keeper = tmp;
+                if(cursorPos == null) {
+                    return;
+                }
+            } else {
+                while (!page.isLeaf()) {
+                    page = page.getChildPage(index);
+                    cursorPos = new CursorPos(page, 0, cursorPos);
+                    assert keeper != null;
+                    CursorPos tmp = keeper;
+                    keeper = keeper.parent;
+                    tmp.parent = cursorPos;
+                    tmp.page = page;
+                    tmp.index = 0;
+                    cursorPos = tmp;
+                    index = 0;
+                }
+                K key = (K) page.getKey(index);
+                V value = (V) page.getValue(index);
+                if(processor.process(key, value)) {
+                    return;
+                }
+            }
+            ++cursorPos.index;
+        }
+
+    }
+*/
     public V operate(K key, V value, DecisionMaker<? super V> decisionMaker) {
         beforeWrite();
         int attempt = 0;
@@ -646,9 +710,9 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      */
     @Override
     public void clear() {
-        beforeWrite();
-        Page emptyRootPage = Page.createEmpty(this);
         RootReference rootReference;
+//        beforeWrite();
+        Page emptyRootPage = Page.createEmpty(this);
         int attempt = 0;
         do {
             rootReference = getRoot();

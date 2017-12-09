@@ -16,6 +16,7 @@ import java.util.Iterator;
 public final class Cursor<K, V> implements Iterator<K> {
 
     private final MVMap<K, ?> map;
+    private final K           to;
     private       CursorPos   cursorPos;
     private       K           current;
     private       K           last;
@@ -23,8 +24,13 @@ public final class Cursor<K, V> implements Iterator<K> {
     private       Page        lastPage;
 
     public Cursor(MVMap<K, ?> map, Page root, K from) {
+        this(map, root, from, null);
+    }
+    
+    public Cursor(MVMap<K, ?> map, Page root, K from, K to) {
         this.map = map;
         this.cursorPos = traverseDown(root, from);
+        this.to = to;
     }
 
     @Override
@@ -49,7 +55,11 @@ public final class Cursor<K, V> implements Iterator<K> {
                     cursorPos = new CursorPos(page, 0, cursorPos);
                     index = 0;
                 }
-                current = last = (K) page.getKey(index);
+                K key = (K) page.getKey(index);
+                if (to != null && map.getKeyType().compare(key, to) > 0) {
+                    return false;
+                }
+                current = last = key;
                 lastValue = (V) page.getValue(index);
                 lastPage = page;
                 ++cursorPos.index;
@@ -148,5 +158,46 @@ public final class Cursor<K, V> implements Iterator<K> {
             }
         }
         return new CursorPos(p, index, cursorPos);
+    }
+
+    public interface Processor<K,V> {
+        boolean process(K key, V value);
+    }
+
+    public static <K,V> void process(Page root, K from, Processor<K,V> processor) {
+        CursorPos cursorPos = traverseDown(root, from);
+        CursorPos keeper = null;
+        while (true) {
+            Page page = cursorPos.page;
+            int index = cursorPos.index;
+            if (index >= (page.isLeaf() ? page.getKeyCount() : root.map.getChildPageCount(page))) {
+                CursorPos tmp = cursorPos;
+                cursorPos = cursorPos.parent;
+                tmp.parent = keeper;
+                keeper = tmp;
+                if(cursorPos == null) {
+                    return;
+                }
+            } else {
+                while (!page.isLeaf()) {
+                    page = page.getChildPage(index);
+//                    cursorPos = new CursorPos(page, 0, cursorPos);
+                    assert keeper != null;
+                    CursorPos tmp = keeper;
+                    keeper = keeper.parent;
+                    tmp.parent = cursorPos;
+                    tmp.page = page;
+                    tmp.index = 0;
+                    cursorPos = tmp;
+                    index = 0;
+                }
+                K key = (K) page.getKey(index);
+                V value = (V) page.getValue(index);
+                if(processor.process(key, value)) {
+                    return;
+                }
+            }
+            ++cursorPos.index;
+        }
     }
 }
