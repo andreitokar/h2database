@@ -2320,7 +2320,7 @@ public final class MVStore {
             for (MVMap<?, ?> m : maps.values()) {
                 m.close();
             }
-            meta.setInitialRoot(Page.createEmpty(meta), INITIAL_VERSION);
+            meta.setInitialRoot(meta.createEmptyLeaf(), INITIAL_VERSION);
 
             chunks.clear();
             if (fileStore != null) {

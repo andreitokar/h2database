@@ -51,6 +51,8 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     private final ExtendedDataType extendedKeyType;
     private final DataType valueType;
     private final ExtendedDataType extendedValueType;
+    private final int keysPerPage;
+    private final boolean singleWriter;
 
 
     /**
@@ -70,21 +72,29 @@ public class MVMap<K, V> extends AbstractMap<K, V>
              (DataType)config.get("val"),
              DataUtils.readHexInt(config, "id", 0),
              DataUtils.readHexLong(config, "createVersion", 0),
-             new AtomicReference<RootReference>());
-        setInitialRoot(Page.createEmpty(this), store.getCurrentVersion());
+             new AtomicReference<RootReference>(),
+                ((MVStore)config.get("store")).getKeysPerPage(),
+//                (Integer)config.get("keysPerPage"),
+                config.containsKey("singleWriter") && (Boolean)config.get("singleWriter")
+                );
+        setInitialRoot(createEmptyLeaf(), store.getCurrentVersion());
     }
 
+    // constructor for cloneIt()
     protected MVMap(MVMap<K,V> source) {
         this(source.store, source.keyType, source.valueType, source.id, source.createVersion,
-                new AtomicReference<>(source.root.get()));
+                new AtomicReference<>(source.root.get()), source.keysPerPage, source.singleWriter);
     }
 
+    // meta map constructor
     MVMap(MVStore store) {
-        this(store, StringDataType.INSTANCE,StringDataType.INSTANCE, 0, 0, new AtomicReference<RootReference>());
-        setInitialRoot(Page.createEmpty(this), store.getCurrentVersion());
+        this(store, StringDataType.INSTANCE,StringDataType.INSTANCE, 0, 0, new AtomicReference<RootReference>(),
+                store.getKeysPerPage(), false);
+        setInitialRoot(createEmptyLeaf(), store.getCurrentVersion());
     }
 
-    private MVMap(MVStore store, DataType keyType, DataType valueType, int id, long createVersion, AtomicReference<RootReference> root) {
+    private MVMap(MVStore store, DataType keyType, DataType valueType, int id, long createVersion,
+                  AtomicReference<RootReference> root, int keysPerPage, boolean singleWriter) {
         this.store = store;
         this.id = id;
         this.createVersion = createVersion;
@@ -93,11 +103,12 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         this.valueType = valueType;
         this.extendedValueType = valueType instanceof ExtendedDataType ? (ExtendedDataType) valueType : new DataTypeExtentionWrapper(valueType);
         this.root = root;
+        this.keysPerPage = keysPerPage;
+        this.singleWriter = singleWriter;
     }
 
     protected MVMap<K,V> cloneIt() {
-        return new MVMap<>(store, keyType, valueType, id, createVersion,
-                                new AtomicReference<>(root.get()));
+        return new MVMap<>(this);
     }
 
     /**
@@ -712,7 +723,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     public void clear() {
         RootReference rootReference;
 //        beforeWrite();
-        Page emptyRootPage = Page.createEmpty(this);
+        Page emptyRootPage = createEmptyLeaf();
         int attempt = 0;
         do {
             rootReference = getRoot();
@@ -825,49 +836,47 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
     private void appendLeafPage(Page split) {
         assert split.getKeyCount() > 0;
-        RootReference rootReference = getRoot();
+        appendLeafPage(split, traverseDown(getRootPage(), split.getKey(0)));
+    }
+
+    private void appendLeafPage(Page split, CursorPos pos) {
+        assert split.map == this;
+//        assert singleWriter;
+        assert pos != null;
+        assert split.getKeyCount() > 0;
+        Object key = split.getKey(0);
+        assert pos.index < 0 : pos.index;
+        int index = -pos.index - 1;
+        assert index == pos.page.getKeyCount() : index + " != " + pos.page.getKeyCount();
+        Page p = pos.page;
+        pos = pos.parent;
+        CursorPos tip = pos;
         int unsavedMemory = 0;
-        Page p = split;
-        CursorPos pos = null;
-        CursorPos tip = null;
-        Page rootPage = rootReference.root;
-        if (rootPage.getTotalCount() > 0) {
-            Object key = split.getKey(0);
-            pos = traverseDown(rootPage, key);
-            assert pos.index < 0 : pos.index;
-            int index = -pos.index - 1;
-            assert index == pos.page.getKeyCount() : index + " != " + pos.page.getKeyCount();
-            p = pos.page;
-            pos = pos.parent;
-            tip = pos;
-            while (true) {
-                long totalCount = p.getTotalCount();
-                if (pos == null) {
-                    Object keys = getExtendedKeyType().createStorage(1);
-                    getExtendedKeyType().setValue(keys, 0, key);
-                    Page.PageReference children[] = {
-                            new Page.PageReference(p),
-                            new Page.PageReference(split)
-                    };
-                    p = Page.create(this, 1, keys, null, children, totalCount + split.getTotalCount(), 0);
-                    break;
-                }
-                Page c = p;
-                p = pos.page;
-                index = pos.index;
-                pos = pos.parent;
-                p = p.copy();
-                p.setChild(index, split);
-                p.insertNode(index, key, c);
-                int keyCount;
-                if ((keyCount = p.getKeyCount()) <= store.getKeysPerPage() && (p.getMemory() < store.getMaxPageSize() || keyCount <= (p.isLeaf() ? 1: 2))) {
-                    break;
-                }
-                int at = keyCount - 2;
-                key = p.getKey(at);
-                split = p.split(at);
-                unsavedMemory += p.getMemory() + split.getMemory();
+        while (true) {
+            if (pos == null) {
+                Object keys = getExtendedKeyType().createStorage(store.getKeysPerPage());
+                getExtendedKeyType().setValue(keys, 0, key);
+                Page.PageReference children[] = new Page.PageReference[store.getKeysPerPage() + 1];
+                children[0] = new Page.PageReference(p);
+                children[1] = new Page.PageReference(split);
+                p = Page.create(this, 1, keys, null, children, p.getTotalCount() + split.getTotalCount(), 0);
+                break;
             }
+            Page c = p;
+            p = pos.page;
+            index = pos.index;
+            pos = pos.parent;
+            p = p.copy();
+            p.setChild(index, split);
+            p.insertNode(index, key, c);
+            int keyCount;
+            if ((keyCount = p.getKeyCount()) <= store.getKeysPerPage() && (p.getMemory() < store.getMaxPageSize() || keyCount <= (p.isLeaf() ? 1 : 2))) {
+                break;
+            }
+            int at = keyCount - 2;
+            key = p.getKey(at);
+            split = p.split(at);
+            unsavedMemory += p.getMemory() + split.getMemory();
         }
         unsavedMemory += p.getMemory();
         while (pos != null) {
@@ -878,6 +887,8 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             unsavedMemory += p.getMemory();
             pos = pos.parent;
         }
+        // we assume that this thread is the only mutator of the map
+        // so it should be zero contention changing root
         setRoot(p);
         while (tip != null) {
             tip.page.removePage();
@@ -1020,7 +1031,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     }
 
     private Page readOrCreateRootPage(long rootPos) {
-        Page root = rootPos == 0 ? Page.createEmpty(this) : readPage(rootPos);
+        Page root = rootPos == 0 ? createEmptyLeaf() : readPage(rootPos);
         return root;
     }
 
@@ -1428,6 +1439,10 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         return getVersion() > version;
     }
 
+    public boolean isSingleWriter() {
+        return singleWriter;
+    }
+
     /**
      * Get the child page count for this page. This is to allow another map
      * implementation to override the default, in case the last child is not to
@@ -1490,6 +1505,14 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         }
     }
 
+    public Page createEmptyLeaf() {
+        return Page.createEmptyLeaf(this, singleWriter);
+    }
+
+    public Page createEmptyNode() {
+        return Page.createEmptyNode(this, singleWriter);
+    }
+
     /**
      * Copy a map. All pages are copied.
      *
@@ -1528,6 +1551,27 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             }
         }
         return target;
+    }
+
+    public CursorPos getAppendCursorPos() {
+        Page rootPage = getRootPage();
+        return rootPage.getAppendCursorPos(null);
+    }
+
+    public CursorPos append(K key, V value, CursorPos cursorPos) {
+        Page page = cursorPos.page;
+        assert page.isLeaf();
+        int keyCount = page.getKeyCount();
+        assert keyCount == cursorPos.index;
+        assert page.map.getKeyType().compare(page.getKey(keyCount - 1), key) < 0;
+        if (keyCount < store.getKeysPerPage()) {
+            page.insertLeaf(keyCount, key, value);
+        } else {
+            Page extraPage = Page.createEmptyLeaf(this, true);
+            extraPage.insertLeaf(0, key, value);
+            appendLeafPage(extraPage, cursorPos);
+        }
+        return null;
     }
 
     @Override
@@ -1650,6 +1694,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @param <V> the value type
      */
     public static class Builder<K, V> extends BasicBuilder<MVMap<K, V>, K, V> {
+        private boolean singleWriter;
 
         public Builder() {}
 
@@ -1663,7 +1708,13 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             return this;
         }
 
+        public Builder<K,V> singleWriter() {
+            singleWriter = true;
+            return this;
+        }
+
         protected MVMap<K, V> create(Map<String, Object> config) {
+            config.put("singleWriter", singleWriter);
             Object type = config.get("type");
             if(type == null || type.equals("rtree")) {
                 return new MVMap<>(config);

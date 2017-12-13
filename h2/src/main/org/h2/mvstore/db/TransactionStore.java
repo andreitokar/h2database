@@ -116,6 +116,7 @@ public final class TransactionStore {
                                              new MVMap.Builder<Integer, Object[]>());
         RecordType undoLogValueType = new RecordType(this);
         builder = new MVMap.Builder<Long, Record>()
+                        .singleWriter()
                         .keyType(LongDataType.INSTANCE)
                         .valueType(undoLogValueType);
         for (int i = 0; i < undoLogs.length; i++) {

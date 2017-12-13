@@ -146,7 +146,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
             V result = operate(p, key, value, decisionMaker);
             if (!p.isLeaf() && p.getTotalCount() == 0) {
                 p.removePage();
-                p = Page.createEmpty(this);
+                p = createEmptyLeaf();
             } else if (p.getKeyCount() > store.getKeysPerPage() || p.getMemory() > store.getMaxPageSize()
                                                                 && p.getKeyCount() > 3) {
                 // only possible if this is the root, else we would have
@@ -412,14 +412,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
     }
 
     private Page newPage(boolean leaf) {
-        Page page;
-        Object[] values;
-        Page.PageReference[] refs;
-        if (leaf) {
-            page = Page.createEmpty(this);
-        } else {
-            page = Page.createEmptyNode(this);
-        }
+        Page page = leaf ? createEmptyLeaf() : createEmptyNode();
         if(store.getFileStore() != null)
         {
             store.registerUnsavedPage(page.getMemory());

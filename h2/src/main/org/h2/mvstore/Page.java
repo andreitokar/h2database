@@ -5,6 +5,7 @@
  */
 package org.h2.mvstore;
 
+import java.lang.reflect.Array;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import org.h2.compress.Compressor;
@@ -30,11 +31,6 @@ import static org.h2.mvstore.DataUtils.PAGE_TYPE_LEAF;
  * node: children (1 more than keys)
  */
 public abstract class Page implements Cloneable {
-
-    /**
-     * An empty object array.
-     */
-    private static final Object[] EMPTY_OBJECT_ARRAY = new Object[0];
 
     /**
      * Marker value for memory field, meaning that memory accounting is replaced by key count.
@@ -101,9 +97,8 @@ public abstract class Page implements Cloneable {
      * @param map the map
      * @return the new page
      */
-    public static Page createEmpty(MVMap<?, ?> map) {
-        int capacity = 0;
-//        int capacity = map.getStore().getKeysPerPage();
+    static Page createEmptyLeaf(MVMap<?, ?> map, boolean capable) {
+        int capacity = capable ? map.getStore().getKeysPerPage() : 0;
         Object keys = map.getKeyType() != map.getExtendedKeyType() ? new Object[capacity] : //EMPTY_OBJECT_ARRAY :
                                                                      map.getExtendedKeyType().createStorage(capacity);
         Object values = map.getValueType() != map.getExtendedValueType() ? new Object[capacity] : //EMPTY_OBJECT_ARRAY :
@@ -112,8 +107,11 @@ public abstract class Page implements Cloneable {
     }
 
     public static Page createEmptyNode(MVMap<?, ?> map) {
-        int capacity = 0;
-//        int capacity = map.getStore().getKeysPerPage();
+        return createEmptyNode(map, false);
+    }
+
+    public static Page createEmptyNode(MVMap<?, ?> map, boolean capable) {
+        int capacity = capable ? map.getStore().getKeysPerPage() : 0;
         Object keys = map.getKeyType() != map.getExtendedKeyType() ? new Object[capacity] : //EMPTY_OBJECT_ARRAY :
                                                                      map.getExtendedKeyType().createStorage(capacity);
         return create(map, 0, keys, null, PageReference.SINGLE_EMPTY, 0, DataUtils.PAGE_LEAF_EMPTY_MEMORY);
@@ -515,13 +513,36 @@ public abstract class Page implements Cloneable {
      */
     public abstract void insertNode(int index, Object key, Page childPage);
 
+    public boolean hasCapacity() {
+        ExtendedDataType keyType = map.getExtendedKeyType();
+        int capacity = keyType.getCapacity(keys);
+        return getKeyCount() < capacity;
+    }
+
+    public boolean canInsert() {
+        return getKeyCount() < map.store.getKeysPerPage();
+    }
+
+    @SuppressWarnings("SuspiciousSystemArraycopy")
+    public void extendCapacity() {
+        Object newKeys = createKeyStorage(map.store.getKeysPerPage());
+        System.arraycopy(keys, 0, newKeys, 0, keyCount);
+        keys = newKeys;
+    }
+
+    @SuppressWarnings("SuspiciousSystemArraycopy")
     protected final void insertKey(int index, Object key) {
         assert index <= keyCount : index + " > " + keyCount;
         ExtendedDataType keyType = map.getExtendedKeyType();
-        Object newKeys = createKeyStorage(keyCount + 1);
-        DataUtils.copyWithGap(keys, newKeys, keyCount, index);
+        int capacity = keyType.getCapacity(keys);
+        assert capacity == Array.getLength(keys);
+        if (index != keyCount || index == capacity || !map.isSingleWriter() || keyType.getValue(keys, index) != null) {
+            Object newKeys = createKeyStorage(keyCount + 1);
+            DataUtils.copyWithGap(keys, newKeys, keyCount, index);
+            keys = newKeys;
+        }
+
         ++keyCount;
-        keys = newKeys;
         keyType.setValue(keys, index, key);
 
         if (isPersistent()) {
@@ -536,17 +557,20 @@ public abstract class Page implements Cloneable {
      */
     public void remove(int index) {
         ExtendedDataType keyType = map.getExtendedKeyType();
-        if(index == keyCount) {
-            --index;
+        int indx = index;
+        if (indx == keyCount) {
+            --indx;
         }
         if(isPersistent()) {
-            Object old = getKey(index);
+            Object old = getKey(indx);
             addMemory(-keyType.getMemory(old));
         }
-        Object newKeys = createKeyStorage(keyCount - 1);
-        DataUtils.copyExcept(keys, newKeys, keyCount, index);
+        if (index != keyCount || !map.isSingleWriter()) {
+            Object newKeys = createKeyStorage(keyCount - 1);
+            DataUtils.copyExcept(keys, newKeys, keyCount, indx);
+            keys = newKeys;
+        }
         --keyCount;
-        keys = newKeys;
     }
 
     /**
@@ -781,6 +805,8 @@ public abstract class Page implements Cloneable {
 
     public abstract void removeAllRecursive();
 
+    public abstract CursorPos getAppendCursorPos(CursorPos cursorPos);
+
     private Object createKeyStorage(int size)
     {
         return map.getExtendedKeyType().createStorage(size);
@@ -937,24 +963,40 @@ public abstract class Page implements Cloneable {
         }
 
         @Override
+        @SuppressWarnings("SuspiciousSystemArraycopy")
         public void insertLeaf(int index, Object key, Object value) {
             int keyCount = getKeyCount();
             insertKey(index, key);
 
             if(values != null) {
-                Object newValues = createValueStorage(keyCount + 1);
-                DataUtils.copyWithGap(values, newValues, keyCount, index);
-                values = newValues;
+                ExtendedDataType valueType = map.getExtendedValueType();
+                int capacity = valueType.getCapacity(values);
+                assert capacity == Array.getLength(values);
+                if (index != keyCount || index == capacity || !map.isSingleWriter() || valueType.getValue(values, index) != null) {
+                    Object newValues = createValueStorage(keyCount + 1);
+                    DataUtils.copyWithGap(values, newValues, keyCount, index);
+                    values = newValues;
+                }
                 setValueInternal(index, value);
-            }
-            if (isPersistent()) {
-                addMemory(map.getValueType().getMemory(value));
+                if (isPersistent()) {
+                    addMemory(map.getValueType().getMemory(value));
+                }
             }
         }
 
         @Override
         public void insertNode(int index, Object key, Page childPage) {
             throw new UnsupportedOperationException();
+        }
+
+        @SuppressWarnings("SuspiciousSystemArraycopy")
+        public void extendCapacity() {
+            super.extendCapacity();
+            if (values != null) {
+                Object newValues = createValueStorage(map.store.getKeysPerPage());
+                System.arraycopy(values, 0, newValues, 0, getKeyCount());
+                values = newValues;
+            }
         }
 
         @Override
@@ -966,15 +1008,23 @@ public abstract class Page implements Cloneable {
                     Object old = getValue(index);
                     addMemory(-map.getValueType().getMemory(old));
                 }
-                Object newValues = createValueStorage(keyCount - 1);
-                DataUtils.copyExcept(values, newValues, keyCount, index);
-                values = newValues;
+                if (index != keyCount || !map.isSingleWriter()) {
+                    Object newValues = createValueStorage(keyCount - 1);
+                    DataUtils.copyExcept(values, newValues, keyCount, index);
+                    values = newValues;
+                }
             }
         }
 
         @Override
         public void removeAllRecursive() {
             removePage();
+        }
+
+        @Override
+        public CursorPos getAppendCursorPos(CursorPos cursorPos) {
+            int keyCount = getKeyCount();
+            return new CursorPos(this, -keyCount - 1, cursorPos);
         }
 
         @Override
@@ -1171,15 +1221,27 @@ public abstract class Page implements Cloneable {
         public void insertNode(int index, Object key, Page childPage) {
             int childCount = getRawChildPageCount();
             insertKey(index, key);
-            PageReference[] newChildren = new PageReference[childCount + 1];
-            DataUtils.copyWithGap(children, newChildren, childCount, index);
-            newChildren[index] = new PageReference(childPage);
-            children = newChildren;
+
+            int capacity = children.length;
+            if (index != childCount || index == capacity || !map.isSingleWriter() || children[index] != null) {
+                PageReference[] newChildren = new PageReference[childCount + 1];
+                DataUtils.copyWithGap(children, newChildren, childCount, index);
+                children = newChildren;
+            }
+            children[index] = new PageReference(childPage);
 
             totalCount += childPage.getTotalCount();
             if (isPersistent()) {
                 addMemory(Constants.MEMORY_POINTER + DataUtils.PAGE_MEMORY_CHILD);
             }
+        }
+
+        @SuppressWarnings("SuspiciousSystemArraycopy")
+        public void extendCapacity() {
+            super.extendCapacity();
+            PageReference[] newChildren = new PageReference[map.store.getKeysPerPage() + 1];
+            System.arraycopy(children, 0, newChildren, 0, getRawChildPageCount());
+            children = newChildren;
         }
 
         @Override
@@ -1189,13 +1251,12 @@ public abstract class Page implements Cloneable {
             if(isPersistent()) {
                 addMemory(-(Constants.MEMORY_POINTER + DataUtils.PAGE_MEMORY_CHILD));
             }
-            long countOffset = children[index].count;
-
-            PageReference[] newChildren = new PageReference[childCount - 1];
-            DataUtils.copyExcept(children, newChildren, childCount, index);
-            children = newChildren;
-
-            totalCount -= countOffset;
+            totalCount -= children[index].count;
+            if (index != childCount || !map.isSingleWriter()) {
+                PageReference[] newChildren = new PageReference[childCount - 1];
+                DataUtils.copyExcept(children, newChildren, childCount, index);
+                children = newChildren;
+            }
         }
 
         @Override
@@ -1218,6 +1279,13 @@ public abstract class Page implements Cloneable {
                 }
             }
             removePage();
+        }
+
+        @Override
+        public CursorPos getAppendCursorPos(CursorPos cursorPos) {
+            int keyCount = getKeyCount();
+            Page childPage = getChildPage(keyCount);
+            return childPage.getAppendCursorPos(new CursorPos(this, keyCount, cursorPos));
         }
 
         @Override
@@ -1294,7 +1362,7 @@ public abstract class Page implements Cloneable {
 
         @Override
         public int getRawChildPageCount() {
-            assert children.length == getKeyCount() + 1;
+//            assert children.length == getKeyCount() + 1;
             return getKeyCount() + 1;
         }
 
