@@ -1756,6 +1756,25 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
                 Row oldRow = getRowFromVersionedValue(table, recKey, existingValue);
                 Row newRow = getRowFromVersionedValue(table, recKey, restoredValue);
                 table.fireAfterRow(this, oldRow, newRow, true);
+
+                if (table.getContainsLargeObject()) {
+                    if (oldRow != null) {
+                        for (int i = 0, len = oldRow.getColumnCount(); i < len; i++) {
+                            Value v = oldRow.getValue(i);
+                            if (v.isLinkedToTable()) {
+                                removeAtCommit(v);
+                            }
+                        }
+                    }
+                    if (newRow != null) {
+                        for (int i = 0, len = newRow.getColumnCount(); i < len; i++) {
+                            Value v = newRow.getValue(i);
+                            if (v.isLinkedToTable()) {
+                                removeAtCommitStop(v);
+                            }
+                        }
+                    }
+                }
             }
         }
     }
