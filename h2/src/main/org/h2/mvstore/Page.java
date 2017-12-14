@@ -83,6 +83,7 @@ public abstract class Page implements Cloneable {
 
     private Page(MVMap<?, ?> map, Page source) {
         this(map, source.keyCount, source.keys);
+        memory = source.memory;
     }
 
     private Page(MVMap<?, ?> map, int keyCount, Object keys) {
