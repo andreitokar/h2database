@@ -342,6 +342,8 @@ public final class TransactionStore {
         // since undoLog is Tx-specific now and therefore has a single writer.
         int transactionId = getTransactionId(undoKey);
         return undoLogs[transactionId].putIfAbsent(undoKey, record) == null;
+//        undoLogs[transactionId].append(undoKey, record, undoLogs[transactionId].getAppendCursorPos());
+//        return true;
     }
 
     /**

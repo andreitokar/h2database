@@ -841,7 +841,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
     private void appendLeafPage(Page split, CursorPos pos) {
         assert split.map == this;
-//        assert singleWriter;
         assert pos != null;
         assert split.getKeyCount() > 0;
         Object key = split.getKey(0);
@@ -1562,13 +1561,14 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         Page page = cursorPos.page;
         assert page.isLeaf();
         int keyCount = page.getKeyCount();
-        assert keyCount == cursorPos.index;
-        assert page.map.getKeyType().compare(page.getKey(keyCount - 1), key) < 0;
-        if (keyCount < store.getKeysPerPage()) {
-            page.insertLeaf(keyCount, key, value);
+        assert keyCount == -cursorPos.index - 1;
+        assert keyCount == 0 || page.map.getKeyType().compare(page.getKey(keyCount - 1), key) < 0;
+        if (page.canInsert() && page.hasCapacity()) {
+            page.appendLeaf(key, value);
+            cursorPos.index--;
         } else {
             Page extraPage = Page.createEmptyLeaf(this, true);
-            extraPage.insertLeaf(0, key, value);
+            extraPage.appendLeaf(key, value);
             appendLeafPage(extraPage, cursorPos);
         }
         return null;

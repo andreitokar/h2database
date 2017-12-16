@@ -504,6 +504,7 @@ public abstract class Page implements Cloneable {
      * @param value the value
      */
     public abstract void insertLeaf(int index, Object key, Object value);
+    public abstract void appendLeaf(Object key, Object value);
 
     /**
      * Insert a child page into this node.
@@ -517,7 +518,7 @@ public abstract class Page implements Cloneable {
     public boolean hasCapacity() {
         ExtendedDataType keyType = map.getExtendedKeyType();
         int capacity = keyType.getCapacity(keys);
-        return getKeyCount() < capacity;
+        return getKeyCount() < capacity && keyType.getValue(keys, getKeyCount()) == null;
     }
 
     public boolean canInsert() {
@@ -545,6 +546,17 @@ public abstract class Page implements Cloneable {
 
         ++keyCount;
         keyType.setValue(keys, index, key);
+
+        if (isPersistent()) {
+            addMemory(keyType.getMemory(key));
+        }
+    }
+
+    protected final void appendKey(Object key) {
+        ExtendedDataType keyType = map.getExtendedKeyType();
+
+        keyType.setValue(keys, keyCount, key);
+        ++keyCount;
 
         if (isPersistent()) {
             addMemory(keyType.getMemory(key));
@@ -986,6 +998,22 @@ public abstract class Page implements Cloneable {
         }
 
         @Override
+        public void appendLeaf(Object key, Object value) {
+            int keyCount = getKeyCount();
+            appendKey(key);
+
+            if(values != null) {
+                ExtendedDataType valueType = map.getExtendedValueType();
+                int capacity = valueType.getCapacity(values);
+                assert capacity == Array.getLength(values);
+                setValueInternal(keyCount, value);
+                if (isPersistent()) {
+                    addMemory(map.getValueType().getMemory(value));
+                }
+            }
+        }
+
+        @Override
         public void insertNode(int index, Object key, Page childPage) {
             throw new UnsupportedOperationException();
         }
@@ -1025,6 +1053,7 @@ public abstract class Page implements Cloneable {
         @Override
         public CursorPos getAppendCursorPos(CursorPos cursorPos) {
             int keyCount = getKeyCount();
+//            return new CursorPos(this, keyCount, cursorPos);
             return new CursorPos(this, -keyCount - 1, cursorPos);
         }
 
@@ -1215,6 +1244,11 @@ public abstract class Page implements Cloneable {
 
         @Override
         public void insertLeaf(int index, Object key, Object value) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void appendLeaf(Object key, Object value) {
             throw new UnsupportedOperationException();
         }
 
