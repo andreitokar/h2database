@@ -12,6 +12,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceArray;
@@ -697,7 +698,7 @@ public final class TransactionStore {
         }
 
         private static String getDataTypeRegistrationKey(DataType dataType) {
-            return Integer.toHexString(Utils.hashCode(dataType));
+            return Integer.toHexString(Objects.hashCode(dataType));
         }
 
         @Override

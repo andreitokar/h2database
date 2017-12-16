@@ -12,6 +12,7 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.util.Arrays;
+import java.util.Objects;
 import org.h2.api.ErrorCode;
 import org.h2.bytecode.RowStorage;
 import org.h2.message.DbException;
@@ -712,7 +713,7 @@ public class ValueDataType extends BasicDataType<Value> {
 
     @Override
     public int hashCode() {
-        return Utils.hashCode(compareMode) ^ Arrays.hashCode(sortTypes);
+        return Objects.hashCode(compareMode) ^ Arrays.hashCode(sortTypes);
     }
 
     @Override
