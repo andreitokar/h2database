@@ -230,7 +230,7 @@ public class MVPrimaryIndex extends BaseIndex {
         Long min = extractPKFromRow(first, Long.MIN_VALUE);
         Long max = extractPKFromRow(last, Long.MAX_VALUE);
         TransactionMap<Long,Row> map = getMap(session);
-        return new MVStoreCursor(map.entryIterator(min, max));
+        return new MVStoreCursor(map.entryIterator(min, max, false));
     }
 
     private Long extractPKFromRow(SearchRow row, long defaultValue) {
@@ -403,7 +403,7 @@ public class MVPrimaryIndex extends BaseIndex {
     Cursor find(Session session, ValueLong first, ValueLong last) {
         TransactionMap<Long,Row> map = getMap(session);
         return new MVStoreCursor(map.entryIterator(first == null ? null : first.getLong(),
-                                                   last == null ? null : last.getLong()));
+                                                   last == null ? null : last.getLong(), false));
     }
 
     @Override

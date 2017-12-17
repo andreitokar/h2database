@@ -147,7 +147,7 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
                 SearchRow row = s.next();
 
                 if (indexType.isUnique()) {
-                    checkUnique(dataMap, row, row.getKey());
+                    checkUnique(dataMap, row, Long.MIN_VALUE);
                 }
 
                 agent.put(row, ValueNull.INSTANCE);
@@ -210,10 +210,8 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
                 // this is allowed
                 continue;
             }
-            if (map.isSameTransaction(k)) {
-                if (newKey == k.getKey()) {
-                    continue;
-                }
+            if (newKey == k.getKey()) {
+                continue;
             }
             if (map.get(k) != null) {
                 // committed
