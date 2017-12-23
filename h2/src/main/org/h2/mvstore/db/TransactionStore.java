@@ -32,7 +32,6 @@ import org.h2.mvstore.type.LongDataType;
 import org.h2.mvstore.type.ObjectDataType;
 import org.h2.mvstore.type.StringDataType;
 import org.h2.util.New;
-import org.h2.util.Utils;
 
 /**
  * A store that supports concurrent MVCC read-committed transactions.
@@ -41,6 +40,7 @@ public final class TransactionStore {
 
     private static final int MAX_OPEN_TRANSACTIONS = 0x100;
     private static final String TYPE_REGISTRY_NAME = "_";
+    private static final String UNDO_LOG_NAME_PEFIX = "undoLog-";
 
     /**
      * The store.
@@ -120,12 +120,6 @@ public final class TransactionStore {
                         .singleWriter()
                         .keyType(LongDataType.INSTANCE)
                         .valueType(undoLogValueType);
-        for (int i = 0; i < undoLogs.length; i++) {
-            String undoName = "undoLog-" + i;
-            if (store.hasData(undoName)) {
-                undoLogs[i] = store.openMap(undoName, builder);
-            }
-        }
     }
 
     /**
@@ -139,6 +133,49 @@ public final class TransactionStore {
 
     public synchronized void init(RollbackListener listener) {
         if(!init) {
+            for (String mapName : store.getMapNames()) {
+                if (mapName.startsWith(UNDO_LOG_NAME_PEFIX)) {
+                    int transactionId = Integer.parseInt(mapName.substring(UNDO_LOG_NAME_PEFIX.length()));
+                    if (store.hasData(mapName)) {
+                        MVMap<Long,Record> undoLog = store.openMap(mapName, builder);
+                        undoLogs[transactionId] = undoLog;
+                        Object[] data = preparedTransactions.get(transactionId);
+                        int status;
+                        String name;
+                        if (data == null) {
+                            if (getLogId(undoLog.firstKey()) == 0) {
+                                status = Transaction.STATUS_OPEN;
+                            } else {
+                                status = Transaction.STATUS_COMMITTING;
+                            }
+                            name = null;
+                        } else {
+                            status = (Integer) data[0];
+                            name = (String) data[1];
+                        }
+                        long logId = getLogId(undoLog.lastKey()) + 1;
+                        boolean success;
+                        do {
+                            BitSet original = openTransactions.get();
+                            BitSet clone = (BitSet) original.clone();
+                            assert !clone.get(transactionId);
+                            clone.set(transactionId);
+                            success = openTransactions.compareAndSet(original, clone);
+                        } while (!success);
+                        registerTransaction(transactionId, status, name, logId, timeoutMillis, listener);
+                    }
+                }
+            }
+//            for (int i = 0; i < MAX_OPEN_TRANSACTIONS; i++) {
+//                String undoName = "undoLog-" + i;
+//                if (store.hasMap(undoName)) {
+//                    if (store.hasData(undoName)) {
+//                        undoLogs[i] = store.openMap(undoName, builder);
+//                    }
+//                }
+//            }
+
+/*
             for (MVMap<Long, Record> undoLog : undoLogs) {
                 if (undoLog != null) {
                     Long key = undoLog.firstKey();
@@ -174,6 +211,7 @@ public final class TransactionStore {
                     }
                 }
             }
+*/
             init = true;
         }
     }
@@ -311,7 +349,7 @@ public final class TransactionStore {
         Transaction transaction = new Transaction(this, transactionId, status, name, logId, timeoutMillis, listener);
         transactions.set(transactionId, transaction);
         if (undoLogs[transactionId] == null) {
-            String undoName = "undoLog-" + transactionId;
+            String undoName = UNDO_LOG_NAME_PEFIX + transactionId;
             undoLogs[transactionId] = store.openMap(undoName, builder);
         }
         return transaction;
@@ -356,6 +394,8 @@ public final class TransactionStore {
     boolean removeUndoLogRecord(Long undoKey) {
         int transactionId = getTransactionId(undoKey);
         return undoLogs[transactionId].remove(undoKey) != null;
+//        undoLogs[transactionId].trimLast(undoLogs[transactionId].getAppendCursorPos());
+//        return true;
     }
 
     /**
@@ -388,11 +428,10 @@ public final class TransactionStore {
             try {
                 long state = t.setStatus(Transaction.STATUS_COMMITTED);
                 final long maxLogId = Transaction.getTxLogId(state);
-//*
                 final TransactionStore transactionStore = this;
                 MVMap<Long, Record> undoLog = undoLogs[transactionId];
                 Page rootPage = undoLog.getRootPage();
-                Cursor.process(rootPage, null /*getOperationId(transactionId, 0)*/,
+                Cursor.process(rootPage, null,
                         new Cursor.Processor<Long, Record>() {
                             private final TransactionStore store = transactionStore;
                             private final FinalCommitDecisionMaker finalCommitDecisionMaker = new FinalCommitDecisionMaker();
@@ -419,23 +458,6 @@ public final class TransactionStore {
                             }
                         });
                 undoLog.clear();
-/*/
-                CommitDecisionMaker decisionMaker = new CommitDecisionMaker(this);
-                for (long logId = 0; logId < maxLogId; logId++) {
-                    long undoKey = getOperationId(t.getId(), logId);
-                    decisionMaker.setOperationId(undoKey);
-                    undoLogs[transactionId].operate(undoKey, null, decisionMaker);
-                    if (decisionMaker.decision == MVMap.Decision.ABORT) // entry was not there
-                    {
-                        // partially committed: load next
-                        Long nextKey = undoLogs[transactionId].ceilingKey(undoKey);
-                        if (nextKey == null || getTransactionId(nextKey) != transactionId) {
-                            break;
-                        }
-                        logId = getLogId(nextKey) - 1;
-                    }
-                }
-//*/
             } finally {
                 do {
                     BitSet original = committingTransactions.get();
@@ -475,8 +497,8 @@ public final class TransactionStore {
     private MVMap<Object, VersionedValue> openMap(int mapId) {
         MVMap<Object, VersionedValue> map = store.getMap(mapId);
         if (map == null) {
-            MVMap.Builder<Object, VersionedValue> builder = new TxMapBuilder<Object,VersionedValue>(typeRegistry, dataType);
-            map = store.openMap(mapId, builder);
+            MVMap.Builder<Object, VersionedValue> txMapBuilder = new TxMapBuilder<>(typeRegistry, dataType);
+            map = store.openMap(mapId, txMapBuilder);
         }
         return map;
     }
@@ -491,32 +513,32 @@ public final class TransactionStore {
         return map;
     }
 
-    /**
-     * Create a temporary map. Such maps are removed when opening the store.
-     *
-     * @return the map
-     */
-    synchronized <K,V> MVMap<K,V> createTempMap(DataType keyType, DataType valueType) {
-        String mapName = "temp." + nextTempMapId++;
-        MVMap.Builder<K, V> builder = new MVMap.Builder<K,V>()
-                .keyType(keyType)
-                .valueType(valueType);
-
-        return store.openMap(mapName, builder);
-    }
-
-    /**
-     * Open a temporary map.
-     *
-     * @param mapName the map name
-     * @return the map
-     */
-    private MVMap<Object, Integer> openTempMap(String mapName) {
-        MVMap.Builder<Object, Integer> mapBuilder =
-                new MVMap.Builder<Object, Integer>().
-                keyType(dataType);
-        return store.openMap(mapName, mapBuilder);
-    }
+//    /**
+//     * Create a temporary map. Such maps are removed when opening the store.
+//     *
+//     * @return the map
+//     */
+//    synchronized <K,V> MVMap<K,V> createTempMap(DataType keyType, DataType valueType) {
+//        String mapName = "temp." + nextTempMapId++;
+//        MVMap.Builder<K, V> builder = new MVMap.Builder<K,V>()
+//                .keyType(keyType)
+//                .valueType(valueType);
+//
+//        return store.openMap(mapName, builder);
+//    }
+//
+//    /**
+//     * Open a temporary map.
+//     *
+//     * @param mapName the map name
+//     * @return the map
+//     */
+//    private MVMap<Object, Integer> openTempMap(String mapName) {
+//        MVMap.Builder<Object, Integer> mapBuilder =
+//                new MVMap.Builder<Object, Integer>().
+//                keyType(dataType);
+//        return store.openMap(mapName, mapBuilder);
+//    }
 
     /**
      * End this transaction
@@ -528,9 +550,6 @@ public final class TransactionStore {
 
         t.closeIt();
         store.deregisterVersionUsage(t.txCounter);
-
-        assert verifyUndoIsEmptyForTx(txId);
-
         transactions.set(t.transactionId, null);
 
         boolean success;
@@ -541,8 +560,6 @@ public final class TransactionStore {
             clone.clear(t.transactionId);
             success = openTransactions.compareAndSet(original, clone);
         } while(!success);
-
-        assert verifyUndoIsEmptyWhenIdle();
 
         if (t.wasStored && !preparedTransactions.isClosed()) {
             preparedTransactions.remove(txId);
@@ -571,24 +588,6 @@ public final class TransactionStore {
                 }
             }
         }
-    }
-
-    private boolean verifyUndoIsEmptyForTx(int txId) {
-//        Long ceilingKey = undoLog.ceilingKey(getOperationId(txId, 0));
-//        assert ceilingKey == null || getTransactionId(ceilingKey) != txId :
-//                "undoLog has leftovers for " + txId + " : " + getTransactionId(ceilingKey) +
-//                        "/" + getLogId(ceilingKey) + " -> " + undoLog.get(ceilingKey);
-        return true;
-    }
-
-    private boolean verifyUndoIsEmptyWhenIdle() {
-        // if there is no open transaction, undo log suppose to be empty
-//        Page undLogRootPage = undoLog.getRootPage();
-//        long count = undLogRootPage.getTotalCount();
-//        assert count == 0
-//            || openTransactions.get().cardinality() > 0
-//            || undLogRootPage != undoLog.getRootPage() : count + " orphan undoLog entries";
-        return true;
     }
 
     private Transaction getTransaction(int transactionId) {
@@ -906,6 +905,8 @@ public final class TransactionStore {
 
         private MVStore.TxCounter txCounter;
 
+        private MVMap<Long,Record> undoLog;
+
         private boolean wasStored;
         private boolean hasWaiters;
 
@@ -935,23 +936,23 @@ public final class TransactionStore {
             return transactionId;
         }
 
-        public static int getStatus(long state) {
+        private static int getStatus(long state) {
             return (int)(state >>> 40) & 15;
         }
 
-        public static long getTxLogId(long state) {
+        private static long getTxLogId(long state) {
             return state & ((1L << 40) - 1);
         }
 
-        public static boolean hasRollback(long state) {
+        private static boolean hasRollback(long state) {
             return (state & (1L << 44)) != 0;
         }
 
-        public static boolean hasChanges(long state) {
+        private static boolean hasChanges(long state) {
             return getTxLogId(state) != 0;
         }
 
-        public static long composeState(int status, long logId, boolean hasRollback) {
+        private static long composeState(int status, long logId, boolean hasRollback) {
             if (hasRollback) {
                 status |= 16;
             }
@@ -1019,7 +1020,7 @@ public final class TransactionStore {
             }
         }
 
-        public long getLogId() {
+        private long getLogId() {
             return getTxLogId(statusAndLogId.get());
         }
 
@@ -1124,7 +1125,6 @@ public final class TransactionStore {
                         "Transaction {0} was concurrently rolled back",
                         transactionId);
             }
-            assert logId > 0 || store.verifyUndoIsEmptyForTx(transactionId);
         }
 
         /**
@@ -1219,7 +1219,6 @@ public final class TransactionStore {
             Throwable ex = null;
             try {
                 store.rollbackTo(this, logId, savepointId);
-                assert savepointId > 0 || store.verifyUndoIsEmptyForTx(transactionId);
             } catch (Throwable e) {
                 ex = e;
             } finally {
@@ -1274,7 +1273,7 @@ public final class TransactionStore {
         /**
          * Check whether this transaction is open or prepared.
          */
-        void checkNotClosed(int status) {
+        private void checkNotClosed(int status) {
             if (status == STATUS_CLOSED) {
                 throw DataUtils.newIllegalStateException(
                         DataUtils.ERROR_CLOSED, "Transaction {0} is closed", transactionId);
@@ -1429,18 +1428,7 @@ public final class TransactionStore {
                     || committingTransactions != store.committingTransactions.get()
                     || opentransactions != store.openTransactions.get());
 
-/*
-            BitSet committingTransactions;
-            MVMap.RootReference mapRootReference;
-            MVMap.RootReference undoLogRootReference;
-            do {
-                committingTransactions = transaction.store.committingTransactions.get();
-                mapRootReference = map.getRoot();
-                undoLogRootReference = transaction.store.undoLog.getRoot();
-            } while(mapRootReference != map.getRoot() || committingTransactions != transaction.store.committingTransactions.get());
-*/
             long size = mapRootReference.root.getTotalCount();
-//            undoLogRootReference.root.getTotalCount();
             if (undoLogSize == 0) {
                 return size;
             }
@@ -1448,10 +1436,11 @@ public final class TransactionStore {
                 // the undo log is larger than the map -
                 // count the entries of the map
                 size = 0;
+                Page undoLogRootPage = undoLogRootPages[transaction.transactionId];
                 Cursor<K, VersionedValue> cursor = new Cursor<>(map, mapRootReference.root, null);
                 while (cursor.hasNext()) {
                     K key = cursor.next();
-                    VersionedValue data = getValue(key, readLogId, undoLogRootPages, committingTransactions, cursor.getValue());
+                    VersionedValue data = getValue(key, undoLogRootPage, committingTransactions, cursor.getValue());
                     if (data != null && data.value != null) {
                         size++;
                     }
@@ -1471,34 +1460,6 @@ public final class TransactionStore {
                 }
             }
             size += processor.getAdjustment();
-/*
-            long altSize = size + processor.getAdjustment();
-
-            int count = 0;
-            Cursor<Long, Record> cursor = new Cursor<>(transaction.store.undoLog, undoLogRootReference.root, null);
-            while (cursor.hasNext()) {
-                Long undoKey = cursor.next();
-                Record op = cursor.getValue();
-                int mapId = op.mapId;
-                if (mapId == map.getId()) {
-                    assert undoKey != null;
-                    int transactionId = getTransactionId(undoKey);
-                    boolean isVisible = committingTransactions.get(transactionId) || transactionId == transaction.transactionId;
-                    if (isVisible ? op.oldValue != null && op.oldValue.operationId == 0 && op.oldValue.value != null
-                                  : op.oldValue == null) {
-                        ++count;
-                        VersionedValue currentValue = (VersionedValue)Page.get(mapRootReference.root, op.key);
-                        if (isVisible ? (currentValue == null || currentValue.value == null)
-                                      : currentValue != null) {
-                            --size;
-                        }
-
-                    }
-                }
-            }
-            assert count == processor.count : count + " != " + processor.count;
-            assert size == altSize : size + " != " + altSize;
-*/
             return size;
         }
 
@@ -1666,24 +1627,19 @@ public final class TransactionStore {
 
             if (onlyIfUnchanged) {
                 TransactionStore store = transaction.store;
+                Page undoLogRootPage = store.undoLogs[transaction.transactionId].getRootPage();
                 BitSet opentransactions;
                 BitSet committingTransactions;
                 MVMap.RootReference mapRootReference;
-                Page undoLogRootPages[];
                 do {
                     opentransactions = store.openTransactions.get();
                     committingTransactions = store.committingTransactions.get();
                     mapRootReference = map.getRoot();
-                    undoLogRootPages = new Page[opentransactions.length()];
-                    for (int i = opentransactions.nextSetBit(0); i >= 0; i = opentransactions.nextSetBit(i+1)) {
-                        undoLogRootPages[i] = store.undoLogs[i].getRootPage();
-                    }
-                } while(mapRootReference != map.getRoot()
-                        || committingTransactions != store.committingTransactions.get()
+                } while(committingTransactions != store.committingTransactions.get()
                         || opentransactions != store.openTransactions.get());
 
                 VersionedValue current = (VersionedValue) Page.get(mapRootReference.root, key);
-                VersionedValue old = getValue(key, readLogId, undoLogRootPages, committingTransactions, current);
+                VersionedValue old = getValue(key, undoLogRootPage, committingTransactions, current);
                 if (!map.areValuesEqual(old, current)) {
                     assert current != null;
                     long tx = getTransactionId(current.operationId);
@@ -1713,16 +1669,6 @@ public final class TransactionStore {
         }
 
         /**
-         * Get the value for the given key at the time when this map was opened.
-         *
-         * @param key the key
-         * @return the value or null
-         */
-        public V get(K key) {
-            return get(key, readLogId);
-        }
-
-        /**
          * Whether the map contains the key.
          *
          * @param key the key
@@ -1730,20 +1676,6 @@ public final class TransactionStore {
          */
         public boolean containsKey(K key) {
             return get(key) != null;
-        }
-
-        /**
-         * Get the value for the given key.
-         *
-         * @param key the key
-         * @param maxLogId the maximum log id
-         * @return the value or null
-         */
-        @SuppressWarnings("unchecked")
-        public V get(K key, long maxLogId) {
-            return getValue(key, maxLogId);
-//            VersionedValue data = getValue(key, maxLogId);
-//            return data == null ? null : (V) data.value;
         }
 
         /**
@@ -1763,8 +1695,14 @@ public final class TransactionStore {
             return tx == transaction.transactionId;
         }
 
+        /**
+         * Get the effective value for the given key.
+         *
+         * @param key the key
+         * @return the value or null
+         */
         @SuppressWarnings("unchecked")
-        private V getValue(K key, long maxLog) {
+        public V get(K key) {
             VersionedValue data = (VersionedValue) Page.get(map.getRootPage(), key);
             if (data == null) {
                 // doesn't exist or deleted by a committed transaction
@@ -1779,13 +1717,16 @@ public final class TransactionStore {
             if (tx == transaction.transactionId) {
                 // added by this transaction
                 Page undoLogRootPage = transaction.store.undoLogs[tx].getRootPage();
-                while (getLogId(id) >= maxLog) {
+                while (getLogId(id) >= readLogId) {
                     // get the value before the uncommitted transaction
                     Record d = (Record) Page.get(undoLogRootPage, id);
                     assert d != null : getTransactionId(id) + "/" + getLogId(id);
                     assert d.mapId == map.getId() : d.mapId + " != " + map.getId();
                     assert MVMap.areValuesEqual(map.getKeyType(), d.key, key) : d.key + " <> " + key;
                     data = d.oldValue;
+                    if (data == null) {
+                        return null;
+                    }
                     id = data.operationId;
                 }
                 return (V)data.value;
@@ -1800,15 +1741,38 @@ public final class TransactionStore {
          * Get the versioned value for the given key.
          *
          * @param key the key
-         * @param maxLog the maximum log id of the entry
-         * @param undoLogRootPages undoLog snapshot
+         * @param undoLogRootPage undoLog snapshot
          * @param committingTransactions set of transactions being committed
          *                              at the time of undoLog snapshot
          * @param data the value stored in the main map
          * @return the value
          */
-        private VersionedValue getValue(K key, long maxLog, Page[] undoLogRootPages,
+        private VersionedValue getValue(K key, Page undoLogRootPage,
                                         BitSet committingTransactions, VersionedValue data) {
+            long id;
+            if (data != null && // entry doesn't exist or it was deleted by a committed transaction
+                    (id = data.operationId) != 0) { // it is committed
+                int tx = getTransactionId(id);
+                if (tx == transaction.transactionId) {
+                    // added by this transaction
+                    while (getLogId(id) >= readLogId) {
+                        // get the value before the uncommitted transaction
+                        Record d = (Record) Page.get(undoLogRootPage, id);
+                        assert d != null : getTransactionId(id) + "/" + getLogId(id);
+                        assert d.mapId == map.getId() : d.mapId + " != " + map.getId();
+                        assert MVMap.areValuesEqual(map.getKeyType(), d.key, key) : d.key + " <> " + key;
+                        data = d.oldValue;
+                        id = data.operationId;
+                    }
+                } else if(!committingTransactions.get(tx)) {
+                    // current value comes from uncommitted transaction
+                    // take committed value instead
+                    data = new VersionedValue(data.committedValue);
+                }
+            }
+            return data;
+
+/*
             if (data == null) {
                 // doesn't exist or deleted by a committed transaction
                 return null;
@@ -1821,8 +1785,7 @@ public final class TransactionStore {
             int tx = getTransactionId(id);
             if (tx == transaction.transactionId) {
                 // added by this transaction
-                Page undoLogRootPage = undoLogRootPages[tx];
-                while (getLogId(id) >= maxLog) {
+                while (getLogId(id) >= readLogId) {
                     // get the value before the uncommitted transaction
                     Record d = (Record) Page.get(undoLogRootPage, id);
                     assert d != null : getTransactionId(id) + "/" + getLogId(id);
@@ -1837,6 +1800,7 @@ public final class TransactionStore {
             } else {
                 return new VersionedValue(data.committedValue);
             }
+*/
         }
 
         /**
@@ -1901,22 +1865,22 @@ public final class TransactionStore {
             }
         }
 
-        /**
-         * Get one of the previous or next keys. There might be no value
-         * available for the returned key.
-         *
-         * @param key the key (may not be null)
-         * @param offset how many keys to skip (-1 for previous, 1 for next)
-         * @return the key
-         */
-        public K relativeKey(K key, long offset) {
-            K k = offset > 0 ? map.ceilingKey(key) : map.floorKey(key);
-            if (k == null) {
-                return null;
-            }
-            long index = map.getKeyIndex(k);
-            return map.getKey(index + offset);
-        }
+//        /**
+//         * Get one of the previous or next keys. There might be no value
+//         * available for the returned key.
+//         *
+//         * @param key the key (may not be null)
+//         * @param offset how many keys to skip (-1 for previous, 1 for next)
+//         * @return the key
+//         */
+//        public K relativeKey(K key, long offset) {
+//            K k = offset > 0 ? map.ceilingKey(key) : map.floorKey(key);
+//            if (k == null) {
+//                return null;
+//            }
+//            long index = map.getKeyIndex(k);
+//            return map.getKey(index + offset);
+//        }
 
         /**
          * Get the largest key that is smaller than the given key, or null if no
@@ -2316,6 +2280,7 @@ public final class TransactionStore {
 
     }
 
+/*
     private static final class CommitDecisionMaker extends MVMap.DecisionMaker<Record> {
         private final TransactionStore store;
         private final FinalCommitDecisionMaker finalCommitDecisionMaker;
@@ -2361,9 +2326,10 @@ public final class TransactionStore {
             return "commit " + getTransactionId(finalCommitDecisionMaker.undoKey);
         }
     }
+*/
 
     private static final class FinalCommitDecisionMaker extends MVMap.DecisionMaker<VersionedValue> {
-        private long undoKey;
+        private long           undoKey;
         private MVMap.Decision decision;
         private VersionedValue value;
 
@@ -2504,11 +2470,9 @@ public final class TransactionStore {
 
     private abstract static class TMIterator<K,X> implements Iterator<X> {
         private final TransactionMap<K,?>      transactionMap;
-//        private final BitSet                   openTransactions;
         private final BitSet                   committingTransactions;
-        private final Page                     undoLogRootPages[];
+        private final Page                     undoLogRootPage;
         private final Cursor<K,VersionedValue> cursor;
-//        private final K                        to;
         private final boolean                  includeUncommitted;
         private       X                        current;
 
@@ -2516,46 +2480,22 @@ public final class TransactionStore {
         {
             this.transactionMap = transactionMap;
             TransactionStore store = transactionMap.transaction.store;
+            MVMap<Long, Record> undoLog = store.undoLogs[transactionMap.transaction.transactionId];
+            Page undoLogRootPage = undoLog == null ? null : undoLog.getRootPage();
             MVMap<K, VersionedValue> map = transactionMap.map;
             BitSet openTransactions;
             BitSet committingTransactions;
             MVMap.RootReference mapRootReference;
-            Page undoLogRootPages[];
             do {
                 openTransactions = store.openTransactions.get();
                 committingTransactions = store.committingTransactions.get();
                 mapRootReference = map.getRoot();
-                undoLogRootPages = new Page[openTransactions.length()];
-                for (int i = openTransactions.nextSetBit(0); i >= 0; i = openTransactions.nextSetBit(i+1)) {
-                    if (!committingTransactions.get(i) || i == transactionMap.transaction.transactionId) {
-                        if (store.undoLogs[i] != null) {
-                            Page rootPage = store.undoLogs[i].getRootPage();
-                            if (rootPage.getKeyCount() != 0) {
-                                undoLogRootPages[i] = rootPage;
-                            }
-                        }
-                    }
-                }
-            } while(mapRootReference != map.getRoot()
-                    || committingTransactions != store.committingTransactions.get()
+            } while(committingTransactions != store.committingTransactions.get()
                     || openTransactions != store.openTransactions.get());
 
-/*
-            BitSet committingTransactions;
-            MVMap.RootReference mapRootReference;
-            MVMap.RootReference undoLogRootReference;
-            do {
-                committingTransactions = store.committingTransactions.get();
-                mapRootReference = map.getRoot();
-                undoLogRootReference = store.undoLog.getRoot();
-            } while(mapRootReference != map.getRoot() || committingTransactions != store.committingTransactions.get());
-*/
-
-//            this.openTransactions = openTransactions;
             this.committingTransactions = committingTransactions;
-            this.undoLogRootPages = undoLogRootPages;
+            this.undoLogRootPage = undoLogRootPage;
             this.cursor = new Cursor<>(map, mapRootReference.root, from, to);
-//            this.to = to;
             this.includeUncommitted = includeUncommitted;
         }
 
@@ -2564,13 +2504,9 @@ public final class TransactionStore {
         private void fetchNext() {
             while (cursor.hasNext()) {
                 K key = cursor.next();
-//                if (to != null && transactionMap.getKeyType().compare(key, to) > 0) {
-//                    break;
-//                }
                 VersionedValue data = cursor.getValue();
                 if (!includeUncommitted) {
-                    data = transactionMap.getValue(key, transactionMap.readLogId,
-                                                   undoLogRootPages, committingTransactions, data);
+                    data = transactionMap.getValue(key, undoLogRootPage, committingTransactions, data);
                 }
                 if (data != null && data.value != null) {
                     current = registerCurrent(key, data);

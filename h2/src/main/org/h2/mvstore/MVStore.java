@@ -531,7 +531,7 @@ public final class MVStore {
      *
      * @return the set of names
      */
-    public synchronized Set<String> getMapNames() {
+    public Set<String> getMapNames() {
         HashSet<String> set = New.hashSet();
         checkOpen();
         for (Iterator<String> it = meta.keyIterator("name."); it.hasNext();) {
@@ -2860,17 +2860,15 @@ public final class MVStore {
 
         @Override
         public void run() {
-            while (true) {
-                Thread t = store.backgroundWriterThread;
-                if (t == null) {
-                    break;
-                }
+            while (store.backgroundWriterThread != null) {
                 synchronized (sync) {
                     try {
                         sync.wait(sleep);
-                    } catch (InterruptedException e) {
-                        continue;
+                    } catch (InterruptedException ignore) {
                     }
+                }
+                if (store.backgroundWriterThread == null) {
+                    break;
                 }
                 store.writeInBackground();
             }

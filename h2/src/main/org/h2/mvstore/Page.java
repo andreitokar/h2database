@@ -8,6 +8,7 @@ package org.h2.mvstore;
 import java.lang.reflect.Array;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicReference;
 import org.h2.compress.Compressor;
 import org.h2.engine.Constants;
 import org.h2.mvstore.type.ExtendedDataType;
@@ -100,22 +101,33 @@ public abstract class Page implements Cloneable {
      */
     static Page createEmptyLeaf(MVMap<?, ?> map, boolean capable) {
         int capacity = capable ? map.getStore().getKeysPerPage() : 0;
-        Object keys = map.getKeyType() != map.getExtendedKeyType() ? new Object[capacity] : //EMPTY_OBJECT_ARRAY :
-                                                                     map.getExtendedKeyType().createStorage(capacity);
-        Object values = map.getValueType() != map.getExtendedValueType() ? new Object[capacity] : //EMPTY_OBJECT_ARRAY :
-                                                                     map.getExtendedValueType().createStorage(capacity);
-        return create(map, 0, keys, values, null, 0, DataUtils.PAGE_LEAF_EMPTY_MEMORY);
+        Object keys = map.getExtendedKeyType().createStorage(capacity);
+        Object values = map.getExtendedValueType().createStorage(capacity);
+        Page page = new Leaf(map, 0, keys, values);
+        page.initMemoryAccount(DataUtils.PAGE_LEAF_EMPTY_MEMORY);
+        return page;
     }
 
-    public static Page createEmptyNode(MVMap<?, ?> map) {
-        return createEmptyNode(map, false);
+    static Page createEmptyAppendLeaf(MVMap<?, ?> map) {
+        int capacity = map.getStore().getKeysPerPage();
+        Object keys = map.getExtendedKeyType().createStorage(capacity);
+        Object values = map.getExtendedValueType().createStorage(capacity);
+        Page page = new AppendPage(map, capacity, keys, values);
+        page.initMemoryAccount(DataUtils.PAGE_LEAF_EMPTY_MEMORY);
+        return page;
     }
 
     public static Page createEmptyNode(MVMap<?, ?> map, boolean capable) {
         int capacity = capable ? map.getStore().getKeysPerPage() : 0;
-        Object keys = map.getKeyType() != map.getExtendedKeyType() ? new Object[capacity] : //EMPTY_OBJECT_ARRAY :
-                                                                     map.getExtendedKeyType().createStorage(capacity);
-        return create(map, 0, keys, null, PageReference.SINGLE_EMPTY, 0, DataUtils.PAGE_LEAF_EMPTY_MEMORY);
+        Object keys = map.getExtendedKeyType().createStorage(capacity);
+        PageReference children[] = PageReference.SINGLE_EMPTY;
+        if (capacity > 0 ) {
+            children = new PageReference[capacity + 1];
+            children[0] = PageReference.EMPTY;
+        }
+        Page page = new NonLeaf(map, 0, keys, children, 0);
+        page.initMemoryAccount(DataUtils.PAGE_NODE_EMPTY_MEMORY);
+        return page;
     }
 
     /**
@@ -136,17 +148,19 @@ public abstract class Page implements Cloneable {
         assert keys != null;
         Page p = children == null ? new Leaf(map, keyCount, keys, values) :
                                     new NonLeaf(map, keyCount, keys, children, totalCount);
-        // the position is 0
-        MVStore store = map.store;
-        if(store.getFileStore() == null) {
-            p.memory = IN_MEMORY;
-        } else if (memory == 0) {
-            p.recalculateMemory();
-        } else {
-            p.addMemory(memory);
-            assert memory == p.getMemory();
-        }
+        p.initMemoryAccount(memory);
         return p;
+    }
+
+    private void initMemoryAccount(int memoryCount) {
+        if(map.store.getFileStore() == null) {
+            memory = IN_MEMORY;
+        } else if (memoryCount == 0) {
+            recalculateMemory();
+        } else {
+            addMemory(memoryCount);
+            assert memoryCount == getMemory();
+        }
     }
 
     /**
@@ -505,6 +519,7 @@ public abstract class Page implements Cloneable {
      */
     public abstract void insertLeaf(int index, Object key, Object value);
     public abstract void appendLeaf(Object key, Object value);
+    public abstract void trimLeaf();
 
     /**
      * Insert a child page into this node.
@@ -518,7 +533,7 @@ public abstract class Page implements Cloneable {
     public boolean hasCapacity() {
         ExtendedDataType keyType = map.getExtendedKeyType();
         int capacity = keyType.getCapacity(keys);
-        return getKeyCount() < capacity && keyType.getValue(keys, getKeyCount()) == null;
+        return getKeyCount() < capacity/* && keyType.getValue(keys, getKeyCount()) == null*/;
     }
 
     public boolean canInsert() {
@@ -561,6 +576,14 @@ public abstract class Page implements Cloneable {
         if (isPersistent()) {
             addMemory(keyType.getMemory(key));
         }
+    }
+
+    protected final void trimKey() {
+        ExtendedDataType keyType = map.getExtendedKeyType();
+        if (isPersistent()) {
+            addMemory(-keyType.getMemory(keyType.getValue(keys, keyCount)));
+        }
+        --keyCount;
     }
 
     /**
@@ -876,244 +899,6 @@ public abstract class Page implements Cloneable {
     }
 
 
-    private static final class Leaf extends Page
-    {
-        /**
-         * The storage for values.
-         */
-        private Object values;
-
-        private Leaf(MVMap<?, ?> map) {
-            super(map);
-        }
-
-        private Leaf(MVMap<?, ?> map, Leaf source) {
-            super(map, source);
-            this.values = source.values;
-        }
-
-        private Leaf(MVMap<?, ?> map, int keyCount, Object keys, Object values) {
-            super(map, keyCount, keys);
-            this.values = values;
-        }
-
-        @Override
-        public int getNodeType() {
-            return PAGE_TYPE_LEAF;
-        }
-
-        @Override
-        public Page copy(MVMap<?, ?> map) {
-            return new Leaf(map, this);
-        }
-
-        @Override
-        public Page getChildPage(int index) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public long getChildPagePos(int index) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public Object getValue(int index) {
-            return map.getExtendedValueType().getValue(values, index);
-        }
-
-        @Override
-        @SuppressWarnings("SuspiciousSystemArraycopy")
-        public Page split(int at) {
-            assert !isSaved();
-            int b = getKeyCount() - at;
-            Object bKeys = splitKeys(at, b);
-            Object bValues = createValueStorage(b);
-            if(values != null) {
-                Object aValues = createValueStorage(at);
-                System.arraycopy(values, 0, aValues, 0, at);
-                System.arraycopy(values, at, bValues, 0, b);
-                values = aValues;
-            }
-            Page newPage = create(map, b, bKeys, bValues, null, b, 0);
-            if(isPersistent()) {
-                recalculateMemory();
-            }
-            return newPage;
-        }
-
-        @Override
-        public long getTotalCount() {
-            return getKeyCount();
-        }
-
-        @Override
-        long getCounts(int index) {
-            throw new UnsupportedOperationException();
-        }
-        @Override
-        public void setChild(int index, Page c) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public Object setValue(int index, Object value) {
-            ExtendedDataType valueType = map.getExtendedValueType();
-            values = valueType.clone(values);
-            Object old = setValueInternal(index, value);
-            if(isPersistent()) {
-                addMemory(valueType.getMemory(value) -
-                          valueType.getMemory(old));
-            }
-            return old;
-        }
-
-        private Object setValueInternal(int index, Object value) {
-            ExtendedDataType valueType = map.getExtendedValueType();
-            Object old = valueType.getValue(values, index);
-            valueType.setValue(values, index, value);
-            return old;
-        }
-
-        @Override
-        @SuppressWarnings("SuspiciousSystemArraycopy")
-        public void insertLeaf(int index, Object key, Object value) {
-            int keyCount = getKeyCount();
-            insertKey(index, key);
-
-            if(values != null) {
-                ExtendedDataType valueType = map.getExtendedValueType();
-                int capacity = valueType.getCapacity(values);
-                assert capacity == Array.getLength(values);
-                if (index != keyCount || index == capacity || !map.isSingleWriter() || valueType.getValue(values, index) != null) {
-                    Object newValues = createValueStorage(keyCount + 1);
-                    DataUtils.copyWithGap(values, newValues, keyCount, index);
-                    values = newValues;
-                }
-                setValueInternal(index, value);
-                if (isPersistent()) {
-                    addMemory(map.getValueType().getMemory(value));
-                }
-            }
-        }
-
-        @Override
-        public void appendLeaf(Object key, Object value) {
-            int keyCount = getKeyCount();
-            appendKey(key);
-
-            if(values != null) {
-                ExtendedDataType valueType = map.getExtendedValueType();
-                int capacity = valueType.getCapacity(values);
-                assert capacity == Array.getLength(values);
-                setValueInternal(keyCount, value);
-                if (isPersistent()) {
-                    addMemory(map.getValueType().getMemory(value));
-                }
-            }
-        }
-
-        @Override
-        public void insertNode(int index, Object key, Page childPage) {
-            throw new UnsupportedOperationException();
-        }
-
-        @SuppressWarnings("SuspiciousSystemArraycopy")
-        public void extendCapacity() {
-            super.extendCapacity();
-            if (values != null) {
-                Object newValues = createValueStorage(map.store.getKeysPerPage());
-                System.arraycopy(values, 0, newValues, 0, getKeyCount());
-                values = newValues;
-            }
-        }
-
-        @Override
-        public void remove(int index) {
-            int keyCount = getKeyCount();
-            super.remove(index);
-            if (values != null) {
-                if(isPersistent()) {
-                    Object old = getValue(index);
-                    addMemory(-map.getValueType().getMemory(old));
-                }
-                if (index != keyCount || !map.isSingleWriter()) {
-                    Object newValues = createValueStorage(keyCount - 1);
-                    DataUtils.copyExcept(values, newValues, keyCount, index);
-                    values = newValues;
-                }
-            }
-        }
-
-        @Override
-        public void removeAllRecursive() {
-            removePage();
-        }
-
-        @Override
-        public CursorPos getAppendCursorPos(CursorPos cursorPos) {
-            int keyCount = getKeyCount();
-//            return new CursorPos(this, keyCount, cursorPos);
-            return new CursorPos(this, -keyCount - 1, cursorPos);
-        }
-
-        @Override
-        protected void readPayLoad(ByteBuffer buff) {
-            int keyCount = getKeyCount();
-            values = createValueStorage(keyCount);
-            map.getExtendedValueType().read(buff, values, getKeyCount());
-        }
-
-        @Override
-        protected void writeValues(WriteBuffer buff) {
-            map.getExtendedValueType().writeStorage(buff, values, getKeyCount());
-        }
-
-        @Override
-        protected void writeChildren(WriteBuffer buff, boolean withCounts) {}
-
-        @Override
-        void writeUnsavedRecursive(Chunk chunk, WriteBuffer buff) {
-            if (!isSaved()) {
-                write(chunk, buff);
-            }
-        }
-
-        @Override
-        void writeEnd() {}
-
-        @Override
-        public int getRawChildPageCount() {
-            return 0;
-        }
-
-        @Override
-        protected void recalculateMemory() {
-            if(isPersistent()) {
-                super.recalculateMemory();
-                int mem = DataUtils.PAGE_LEAF_MEMORY + Constants.MEMORY_ARRAY +
-                            map.getExtendedValueType().getMemorySize(values, getKeyCount());
-                addMemory(mem);
-            }
-        }
-
-        @Override
-        public void dump(StringBuilder buff) {
-            super.dump(buff);
-            int keyCount = getKeyCount();
-            for (int i = 0; i < keyCount; i++) {
-                if (i > 0) {
-                    buff.append(" ");
-                }
-                buff.append(getKey(i));
-                if (values != null) {
-                    buff.append(':');
-                    buff.append(getValue(i));
-                }
-            }
-        }
-    }
-
     private static final class NonLeaf extends Page
     {
         /**
@@ -1249,6 +1034,11 @@ public abstract class Page implements Cloneable {
 
         @Override
         public void appendLeaf(Object key, Object value) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void trimLeaf() {
             throw new UnsupportedOperationException();
         }
 
@@ -1425,5 +1215,266 @@ public abstract class Page implements Cloneable {
                 }
             }
         }
+    }
+
+
+    private static class Leaf extends Page
+    {
+        /**
+         * The storage for values.
+         */
+        private Object values;
+
+        private Leaf(MVMap<?, ?> map) {
+            super(map);
+        }
+
+        private Leaf(MVMap<?, ?> map, Leaf source) {
+            super(map, source);
+            this.values = source.values;
+        }
+
+        private Leaf(MVMap<?, ?> map, int keyCount, Object keys, Object values) {
+            super(map, keyCount, keys);
+            this.values = values;
+        }
+
+        @Override
+        public int getNodeType() {
+            return PAGE_TYPE_LEAF;
+        }
+
+        @Override
+        public Page copy(MVMap<?, ?> map) {
+            return new Leaf(map, this);
+        }
+
+        @Override
+        public Page getChildPage(int index) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public long getChildPagePos(int index) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Object getValue(int index) {
+            return map.getExtendedValueType().getValue(values, index);
+        }
+
+        @Override
+        @SuppressWarnings("SuspiciousSystemArraycopy")
+        public Page split(int at) {
+            assert !isSaved();
+            int b = getKeyCount() - at;
+            Object bKeys = splitKeys(at, b);
+            Object bValues = createValueStorage(b);
+            if(values != null) {
+                Object aValues = createValueStorage(at);
+                System.arraycopy(values, 0, aValues, 0, at);
+                System.arraycopy(values, at, bValues, 0, b);
+                values = aValues;
+            }
+            Page newPage = create(map, b, bKeys, bValues, null, b, 0);
+            if(isPersistent()) {
+                recalculateMemory();
+            }
+            return newPage;
+        }
+
+        @Override
+        public long getTotalCount() {
+            return getKeyCount();
+        }
+
+        @Override
+        long getCounts(int index) {
+            throw new UnsupportedOperationException();
+        }
+        @Override
+        public void setChild(int index, Page c) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Object setValue(int index, Object value) {
+            ExtendedDataType valueType = map.getExtendedValueType();
+            values = valueType.clone(values);
+            Object old = setValueInternal(index, value);
+            if(isPersistent()) {
+                addMemory(valueType.getMemory(value) -
+                          valueType.getMemory(old));
+            }
+            return old;
+        }
+
+        private Object setValueInternal(int index, Object value) {
+            ExtendedDataType valueType = map.getExtendedValueType();
+            Object old = valueType.getValue(values, index);
+            valueType.setValue(values, index, value);
+            return old;
+        }
+
+        @Override
+        @SuppressWarnings("SuspiciousSystemArraycopy")
+        public void insertLeaf(int index, Object key, Object value) {
+            int keyCount = getKeyCount();
+            insertKey(index, key);
+
+            if(values != null) {
+                ExtendedDataType valueType = map.getExtendedValueType();
+                int capacity = valueType.getCapacity(values);
+                assert capacity == Array.getLength(values);
+                if (index != keyCount || index == capacity || !map.isSingleWriter() || valueType.getValue(values, index) != null) {
+                    Object newValues = createValueStorage(keyCount + 1);
+                    DataUtils.copyWithGap(values, newValues, keyCount, index);
+                    values = newValues;
+                }
+                setValueInternal(index, value);
+                if (isPersistent()) {
+                    addMemory(map.getValueType().getMemory(value));
+                }
+            }
+        }
+
+        @Override
+        public void appendLeaf(Object key, Object value) {
+            int keyCount = getKeyCount();
+            appendKey(key);
+
+            if(values != null) {
+                ExtendedDataType valueType = map.getExtendedValueType();
+                int capacity = valueType.getCapacity(values);
+                assert capacity == Array.getLength(values);
+                setValueInternal(keyCount, value);
+                if (isPersistent()) {
+                    addMemory(map.getValueType().getMemory(value));
+                }
+            }
+        }
+
+        @Override
+        public void trimLeaf() {
+            trimKey();
+
+            if(values != null) {
+                ExtendedDataType valueType = map.getExtendedValueType();
+                if (isPersistent()) {
+                    addMemory(-valueType.getMemory(valueType.getValue(values, getKeyCount())));
+                }
+            }
+        }
+
+        @Override
+        public void insertNode(int index, Object key, Page childPage) {
+            throw new UnsupportedOperationException();
+        }
+
+        @SuppressWarnings("SuspiciousSystemArraycopy")
+        public void extendCapacity() {
+            super.extendCapacity();
+            if (values != null) {
+                Object newValues = createValueStorage(map.store.getKeysPerPage());
+                System.arraycopy(values, 0, newValues, 0, getKeyCount());
+                values = newValues;
+            }
+        }
+
+        @Override
+        public void remove(int index) {
+            int keyCount = getKeyCount();
+            super.remove(index);
+            if (values != null) {
+                if(isPersistent()) {
+                    Object old = getValue(index);
+                    addMemory(-map.getValueType().getMemory(old));
+                }
+                if (index != keyCount || !map.isSingleWriter()) {
+                    Object newValues = createValueStorage(keyCount - 1);
+                    DataUtils.copyExcept(values, newValues, keyCount, index);
+                    values = newValues;
+                }
+            }
+        }
+
+        @Override
+        public void removeAllRecursive() {
+            removePage();
+        }
+
+        @Override
+        public CursorPos getAppendCursorPos(CursorPos cursorPos) {
+            int keyCount = getKeyCount();
+//            return new CursorPos(this, keyCount, cursorPos);
+            return new CursorPos(this, -keyCount - 1, cursorPos);
+        }
+
+        @Override
+        protected void readPayLoad(ByteBuffer buff) {
+            int keyCount = getKeyCount();
+            values = createValueStorage(keyCount);
+            map.getExtendedValueType().read(buff, values, getKeyCount());
+        }
+
+        @Override
+        protected void writeValues(WriteBuffer buff) {
+            map.getExtendedValueType().writeStorage(buff, values, getKeyCount());
+        }
+
+        @Override
+        protected void writeChildren(WriteBuffer buff, boolean withCounts) {}
+
+        @Override
+        void writeUnsavedRecursive(Chunk chunk, WriteBuffer buff) {
+            if (!isSaved()) {
+                write(chunk, buff);
+            }
+        }
+
+        @Override
+        void writeEnd() {}
+
+        @Override
+        public int getRawChildPageCount() {
+            return 0;
+        }
+
+        @Override
+        protected void recalculateMemory() {
+            if(isPersistent()) {
+                super.recalculateMemory();
+                int mem = DataUtils.PAGE_LEAF_MEMORY + Constants.MEMORY_ARRAY +
+                            map.getExtendedValueType().getMemorySize(values, getKeyCount());
+                addMemory(mem);
+            }
+        }
+
+        @Override
+        public void dump(StringBuilder buff) {
+            super.dump(buff);
+            int keyCount = getKeyCount();
+            for (int i = 0; i < keyCount; i++) {
+                if (i > 0) {
+                    buff.append(" ");
+                }
+                buff.append(getKey(i));
+                if (values != null) {
+                    buff.append(':');
+                    buff.append(getValue(i));
+                }
+            }
+        }
+    }
+
+
+    public static final class AppendPage extends Leaf {
+        private final AtomicReference<AppendPage> next = new AtomicReference<>();
+
+        public AppendPage(MVMap<?, ?> map, int keyCount, Object keys, Object values) {
+            super(map, keyCount, keys, values);
+        }
+
     }
 }

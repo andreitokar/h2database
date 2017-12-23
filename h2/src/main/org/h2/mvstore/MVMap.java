@@ -108,6 +108,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     }
 
     protected MVMap<K,V> cloneIt() {
+        assert !isSingleWriter();
         return new MVMap<>(this);
     }
 
@@ -145,6 +146,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      */
     @Override
     public V put(K key, V value) {
+        assert !isSingleWriter();
         return put(key, value, DecisionMaker.PUT);
     }
 
@@ -501,6 +503,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      */
     @SuppressWarnings("unchecked")
     public final K getKey(long index) {
+        assert !isSingleWriter();
         if (index < 0 || index >= sizeAsLong()) {
             return null;
         }
@@ -537,6 +540,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @return the key list
      */
     public final List<K> keyList() {
+        assert !isSingleWriter();
         return new AbstractList<K>() {
 
             @Override
@@ -603,7 +607,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     @SuppressWarnings("unchecked")
     private K getFirstLast(boolean first) {
         Page p = getRootPage();
-        if (p.getTotalCount() == 0) {
+        if (p.getKeyCount() == 0) {
             return null;
         }
         while (true) {
@@ -776,6 +780,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      */
     @Override
     public boolean remove(Object key, Object value) {
+        assert !isSingleWriter();
         EqualsDecisionMaker<V> decisionMaker = new EqualsDecisionMaker<>(valueType, (V)value);
         operate((K)key, null, decisionMaker);
         return decisionMaker.decision != Decision.ABORT;
@@ -831,6 +836,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      */
     @Override
     public final V replace(K key, V value) {
+        assert !isSingleWriter();
         return put(key, value, DecisionMaker.IF_PRESENT);
     }
 
@@ -877,6 +883,50 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             split = p.split(at);
             unsavedMemory += p.getMemory() + split.getMemory();
         }
+        unsavedMemory += p.getMemory();
+        while (pos != null) {
+            Page c = p;
+            p = pos.page;
+            p = p.copy();
+            p.setChild(pos.index, c);
+            unsavedMemory += p.getMemory();
+            pos = pos.parent;
+        }
+        // we assume that this thread is the only mutator of the map
+        // so it should be zero contention changing root
+        setRoot(p);
+        while (tip != null) {
+            tip.page.removePage();
+            tip = tip.parent;
+        }
+        if (store.getFileStore() != null) {
+            store.registerUnsavedPage(unsavedMemory);
+        }
+    }
+
+    private void removeLastLeaf(CursorPos pos) {
+        assert pos != null;
+        Page p = pos.page;
+        assert p.getKeyCount() == 0;
+        assert pos.index == -1 : pos.index;
+        int index = -pos.index - 1;
+        pos = pos.parent;
+        CursorPos tip = pos;
+        int unsavedMemory = 0;
+        if (pos != null) {
+            p = pos.page;
+            index = pos.index;
+            pos = pos.parent;
+            if (p.getKeyCount() == 1) {
+                assert index <= 1;
+                p = p.getChildPage(1 - index);
+            } else {
+                assert p.getKeyCount() > 1;
+            }
+        }
+        p = p.copy();
+        p.remove(index);
+
         unsavedMemory += p.getMemory();
         while (pos != null) {
             Page c = p;
@@ -1383,6 +1433,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @return the map
      */
     public final MVMap<K, V> openVersion(long version) {
+        assert !isSingleWriter();
         if (readOnly) {
             throw DataUtils.newUnsupportedOperationException(
                     "This map is read-only; need to call " +
@@ -1415,11 +1466,13 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @return the opened map
      */
     final MVMap<K, V> openReadOnly(long rootPos, long version) {
+        assert !isSingleWriter();
         Page root = readOrCreateRootPage(rootPos);
         return openReadOnly(root, version);
     }
 
     private MVMap<K, V> openReadOnly(Page root, long version) {
+        assert !isSingleWriter();
         MVMap<K, V> m = cloneIt();
         m.readOnly = true;
         m.setInitialRoot(root, version);
@@ -1557,7 +1610,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         return rootPage.getAppendCursorPos(null);
     }
 
-    public CursorPos append(K key, V value, CursorPos cursorPos) {
+    public void append(K key, V value, CursorPos cursorPos) {
         Page page = cursorPos.page;
         assert page.isLeaf();
         int keyCount = page.getKeyCount();
@@ -1567,11 +1620,23 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             page.appendLeaf(key, value);
             cursorPos.index--;
         } else {
-            Page extraPage = Page.createEmptyLeaf(this, true);
+            Page extraPage = createEmptyLeaf();
             extraPage.appendLeaf(key, value);
             appendLeafPage(extraPage, cursorPos);
         }
-        return null;
+    }
+
+    public void trimLast(CursorPos cursorPos) {
+        Page page = cursorPos.page;
+        assert page.isLeaf();
+        int keyCount = page.getKeyCount();
+        assert keyCount == -cursorPos.index - 1;
+        assert keyCount > 0;
+        page.trimKey();
+        cursorPos.index++;
+        if(keyCount == 1) {
+            removeLastLeaf(cursorPos);
+        }
     }
 
     @Override
@@ -1823,6 +1888,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         }
     }
     private static final class DataTypeExtentionWrapper implements ExtendedDataType {
+        private static final Object[] EMPTY_OBJ_ARRAY = new Object[0];
 
         private final DataType dataType;
 
@@ -1832,7 +1898,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
         @Override
         public Object createStorage(int capacity) {
-            return new Object[capacity];
+            return capacity == 0 ? EMPTY_OBJ_ARRAY : new Object[capacity];
         }
 
         @Override
