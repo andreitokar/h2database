@@ -53,6 +53,8 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     private final ExtendedDataType extendedValueType;
     private final int keysPerPage;
     private final boolean singleWriter;
+    private final K          keysBuffer[];
+    private final V          valuesBuffer[];
 
 
     /**
@@ -104,7 +106,47 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         this.extendedValueType = valueType instanceof ExtendedDataType ? (ExtendedDataType) valueType : new DataTypeExtentionWrapper(valueType);
         this.root = root;
         this.keysPerPage = keysPerPage;
+        this.keysBuffer = singleWriter ? (K[]) new Object[keysPerPage] : null;
+        this.valuesBuffer = singleWriter ? (V[]) new Object[keysPerPage] : null;
         this.singleWriter = singleWriter;
+    }
+
+    public static <K,V> void process(Page root, K from, Processor<K,V> processor) {
+        CursorPos cursorPos = Cursor.traverseDown(root, from);
+        CursorPos keeper = null;
+        while (true) {
+            Page page = cursorPos.page;
+            int index = cursorPos.index;
+            if (index >= (page.isLeaf() ? page.getKeyCount() : root.map.getChildPageCount(page))) {
+                CursorPos tmp = cursorPos;
+                cursorPos = cursorPos.parent;
+                tmp.parent = keeper;
+                keeper = tmp;
+                if(cursorPos == null) {
+                    return;
+                }
+            } else {
+                while (!page.isLeaf()) {
+                    page = page.getChildPage(index);
+//                    cursorPos = new CursorPos(page, 0, cursorPos);
+                    assert keeper != null;
+                    CursorPos tmp = keeper;
+                    keeper = keeper.parent;
+                    tmp.parent = cursorPos;
+                    tmp.page = page;
+                    tmp.index = 0;
+                    cursorPos = tmp;
+                    index = 0;
+                }
+                K key = (K) page.getKey(index);
+                V value = (V) page.getValue(index);
+                if(processor.process(key, value)) {
+                    return;
+                }
+            }
+            ++cursorPos.index;
+        }
+
     }
 
     protected MVMap<K,V> cloneIt() {
@@ -146,8 +188,11 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      */
     @Override
     public V put(K key, V value) {
-        assert !isSingleWriter();
         return put(key, value, DecisionMaker.PUT);
+    }
+
+    public interface Processor<K,V> {
+        boolean process(K key, V value);
     }
 
     public abstract static class DecisionMaker<V> {
@@ -840,12 +885,9 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         return put(key, value, DecisionMaker.IF_PRESENT);
     }
 
-    private void appendLeafPage(Page split) {
-        assert split.getKeyCount() > 0;
-        appendLeafPage(split, traverseDown(getRootPage(), split.getKey(0)));
-    }
-
-    private void appendLeafPage(Page split, CursorPos pos) {
+    private RootReference appendLeafPage(Page split, int attempt) {
+        RootReference rootReference = getRoot();
+        CursorPos pos = rootReference.root.getAppendCursorPos(null);
         assert split.map == this;
         assert pos != null;
         assert split.getKeyCount() > 0;
@@ -859,12 +901,16 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         int unsavedMemory = 0;
         while (true) {
             if (pos == null) {
-                Object keys = getExtendedKeyType().createStorage(store.getKeysPerPage());
-                getExtendedKeyType().setValue(keys, 0, key);
-                Page.PageReference children[] = new Page.PageReference[store.getKeysPerPage() + 1];
-                children[0] = new Page.PageReference(p);
-                children[1] = new Page.PageReference(split);
-                p = Page.create(this, 1, keys, null, children, p.getTotalCount() + split.getTotalCount(), 0);
+                if (p.getKeyCount() == 0) {
+                    p = split;
+                } else {
+                    Object keys = getExtendedKeyType().createStorage(store.getKeysPerPage());
+                    getExtendedKeyType().setValue(keys, 0, key);
+                    Page.PageReference children[] = new Page.PageReference[store.getKeysPerPage() + 1];
+                    children[0] = new Page.PageReference(p);
+                    children[1] = new Page.PageReference(split);
+                    p = Page.create(this, 1, keys, null, children, p.getTotalCount() + split.getTotalCount(), 0);
+                }
                 break;
             }
             Page c = p;
@@ -892,16 +938,18 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             unsavedMemory += p.getMemory();
             pos = pos.parent;
         }
-        // we assume that this thread is the only mutator of the map
-        // so it should be zero contention changing root
-        setRoot(p);
-        while (tip != null) {
-            tip.page.removePage();
-            tip = tip.parent;
+        RootReference updatedRootReference = new RootReference(rootReference, p, ++attempt);
+        if(root.compareAndSet(rootReference, updatedRootReference)) {
+            while (tip != null) {
+                tip.page.removePage();
+                tip = tip.parent;
+            }
+            if (store.getFileStore() != null) {
+                store.registerUnsavedPage(unsavedMemory);
+            }
+            return updatedRootReference;
         }
-        if (store.getFileStore() != null) {
-            store.registerUnsavedPage(unsavedMemory);
-        }
+        return null;
     }
 
     private void removeLastLeaf(CursorPos pos) {
@@ -1091,7 +1139,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @return the iterator
      */
     public final Iterator<K> keyIterator(K from) {
-        return new Cursor<K, V>(this, getRootPage(), from);
+        return new Cursor<K, V>(getRootPage(), from);
     }
 
     /**
@@ -1175,7 +1223,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @return the cursor
      */
     public final Cursor<K, V> cursor(K from) {
-        return new Cursor<>(this, getRootPage(), from);
+        return new Cursor<>(getRootPage(), from);
     }
 
     @Override
@@ -1186,7 +1234,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
             @Override
             public Iterator<Entry<K, V>> iterator() {
-                final Cursor<K, V> cursor = new Cursor<>(map, root, null);
+                final Cursor<K, V> cursor = new Cursor<>(root, null);
                 return new Iterator<Entry<K, V>>() {
 
                     @Override
@@ -1231,7 +1279,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
             @Override
             public Iterator<K> iterator() {
-                return new Cursor<K, V>(map, root, null);
+                return new Cursor<K, V>(root, null);
             }
 
             @Override
@@ -1482,9 +1530,11 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     public final long getVersion() {
         RootReference rootReference = getRoot();
         RootReference previous = rootReference.previous;
-        return previous == null || previous.root != rootReference.root ?
-                rootReference.version :
-                previous.version == INITIAL_VERSION ? store.getLastStoredVersion() : previous.version;
+        return previous == null ||
+               previous.root != rootReference.root ||
+               previous.appendCounter != rootReference.appendCounter ?
+                    rootReference.version :
+                    previous.version == INITIAL_VERSION ? store.getLastStoredVersion() : previous.version;
     }
 
     final boolean hasChangesSince(long version) {
@@ -1549,6 +1599,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                 }
                 return rootReference;
             }
+            rootReference = flushAppendBuffer(rootReference);
             RootReference updatedRootReference = new RootReference(rootReference, writeVersion, ++attempt);
             if(root.compareAndSet(rootReference, updatedRootReference)) {
                 removeUnusedOldVersions(updatedRootReference);
@@ -1605,38 +1656,69 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         return target;
     }
 
-    public CursorPos getAppendCursorPos() {
-        Page rootPage = getRootPage();
-        return rootPage.getAppendCursorPos(null);
-    }
+    public void append(K key, V value) {
+        int attempt = 0;
+        boolean success = false;
+        while(!success) {
+            RootReference rootReference = getRoot();
+            if (rootReference.appendCounter >= keysPerPage) {
+                rootReference = flushAppendBuffer(rootReference);
+            }
+            assert rootReference.appendCounter < keysPerPage;
+            keysBuffer[rootReference.appendCounter] = key;
+            valuesBuffer[rootReference.appendCounter] = value;
 
-    public void append(K key, V value, CursorPos cursorPos) {
-        Page page = cursorPos.page;
-        assert page.isLeaf();
-        int keyCount = page.getKeyCount();
-        assert keyCount == -cursorPos.index - 1;
-        assert keyCount == 0 || page.map.getKeyType().compare(page.getKey(keyCount - 1), key) < 0;
-        if (page.canInsert() && page.hasCapacity()) {
-            page.appendLeaf(key, value);
-            cursorPos.index--;
-        } else {
-            Page extraPage = createEmptyLeaf();
-            extraPage.appendLeaf(key, value);
-            appendLeafPage(extraPage, cursorPos);
+            RootReference updatedRootReference = new RootReference(rootReference, (byte) (rootReference.appendCounter + 1), ++attempt);
+            success = root.compareAndSet(rootReference, updatedRootReference);
         }
     }
 
-    public void trimLast(CursorPos cursorPos) {
-        Page page = cursorPos.page;
-        assert page.isLeaf();
-        int keyCount = page.getKeyCount();
-        assert keyCount == -cursorPos.index - 1;
-        assert keyCount > 0;
-        page.trimKey();
-        cursorPos.index++;
-        if(keyCount == 1) {
-            removeLastLeaf(cursorPos);
+    public RootReference flushAppendBuffer() {
+        return flushAppendBuffer(null);
+    }
+
+    private RootReference flushAppendBuffer(RootReference rootReference) {
+        int attempt = 0;
+        while(true) {
+            if (rootReference == null) {
+                rootReference = getRoot();
+            }
+            byte keyCount = rootReference.appendCounter;
+            if (keyCount == 0) {
+                break;
+            }
+            Page page = Page.create(this, keyCount,
+                    createAndFillStorage(getExtendedKeyType(), keyCount, keysBuffer),
+                    createAndFillStorage(getExtendedValueType(), keyCount, valuesBuffer),
+                    null, keyCount, 0);
+            RootReference updatedRootReference = appendLeafPage(page, ++attempt);
+            if (updatedRootReference != null) {
+                rootReference = updatedRootReference;
+                break;
+            }
         }
+//        assert rootReference.appendCounter == 0;
+        return rootReference;
+    }
+
+    public void trimLast() {
+        int attempt = 0;
+        boolean success;
+        do {
+            RootReference rootReference = getRoot();
+            if (rootReference.appendCounter > 0) {
+                RootReference updatedRootReference = new RootReference(rootReference, (byte) (rootReference.appendCounter - 1), ++attempt);
+                success = root.compareAndSet(rootReference, updatedRootReference);
+            } else {
+                assert rootReference.root.getKeyCount() > 0;
+                Page lastLeaf = rootReference.root.getAppendCursorPos(null).page;
+                assert lastLeaf.isLeaf();
+                assert lastLeaf.getKeyCount() > 0;
+                Object key = lastLeaf.getKey(lastLeaf.getKeyCount() - 1);
+                success = remove(key) != null;
+                assert success;
+            }
+        } while(!success);
     }
 
     @Override
@@ -1823,8 +1905,9 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         public  final    long          version;
         public  final    boolean       semaphore;
         public  volatile RootReference previous;
-        public           long          updateCounter;
-        public           long          updateAttemptCounter;
+        public  final    long          updateCounter;
+        public  final    long          updateAttemptCounter;
+        public  final    byte          appendCounter;
 
         private RootReference(Page root, long version, RootReference previous,
                               long updateCounter, long updateAttemptCounter,
@@ -1835,6 +1918,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             this.updateCounter = updateCounter;
             this.updateAttemptCounter = updateAttemptCounter;
             this.semaphore = semaphore;
+            this.appendCounter = 0;
         }
 
         // This one is used for locking
@@ -1845,6 +1929,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             this.updateCounter = r.updateCounter;
             this.updateAttemptCounter = r.updateAttemptCounter;
             this.semaphore = true;
+            this.appendCounter = 0;
         }
 
         // This one is used for unlocking
@@ -1855,6 +1940,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             this.updateCounter = r.updateCounter + 1;
             this.updateAttemptCounter = r.updateAttemptCounter + attempt;
             this.semaphore = false;
+            this.appendCounter = 0;
         }
 
         // This one is used for version change
@@ -1870,6 +1956,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             this.updateCounter = r.updateCounter + 1;
             this.updateAttemptCounter = r.updateAttemptCounter + attempt;
             this.semaphore = r.semaphore;
+            this.appendCounter = r.appendCounter;
         }
 
         // This one is used for r/o snapshots
@@ -1880,6 +1967,18 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             this.updateCounter = 1;
             this.updateAttemptCounter = 1;
             this.semaphore = false;
+            this.appendCounter = 0;
+        }
+
+        // This one is used for append buffer maintance
+        private RootReference(RootReference r, byte appendCounter, int attempt) {
+            this.root = r.root;
+            this.version = r.version;
+            this.previous = r.previous;
+            this.updateCounter = r.updateCounter + 1;
+            this.updateAttemptCounter = r.updateAttemptCounter + attempt;
+            this.semaphore = r.semaphore;
+            this.appendCounter = appendCounter;
         }
 
         @Override
@@ -2044,17 +2143,19 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                                         createAndFillStorage(map.getExtendedKeyType(), keyCount, keysBuffer),
                                         createAndFillStorage(map.getExtendedValueType(), keyCount, valuesBuffer),
                                         null, keyCount, 0);
-                map.appendLeafPage(page);
+                int attempt = 0;
+                while(map.appendLeafPage(page, ++attempt) == null) {/**/}
                 keyCount = 0;
             }
         }
 
-        private Object createAndFillStorage(ExtendedDataType dataType, int count, Object dataBuffer[]) {
-            Object storage = dataType.createStorage(count);
-            for (int i = 0; i < count; i++) {
-                dataType.setValue(storage, i, dataBuffer[i]);
-            }
-            return storage;
+    }
+
+    private static Object createAndFillStorage(ExtendedDataType dataType, int count, Object dataBuffer[]) {
+        Object storage = dataType.createStorage(count);
+        for (int i = 0; i < count; i++) {
+            dataType.setValue(storage, i, dataBuffer[i]);
         }
+        return storage;
     }
 }

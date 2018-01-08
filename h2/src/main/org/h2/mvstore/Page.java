@@ -108,15 +108,6 @@ public abstract class Page implements Cloneable {
         return page;
     }
 
-    static Page createEmptyAppendLeaf(MVMap<?, ?> map) {
-        int capacity = map.getStore().getKeysPerPage();
-        Object keys = map.getExtendedKeyType().createStorage(capacity);
-        Object values = map.getExtendedValueType().createStorage(capacity);
-        Page page = new AppendPage(map, capacity, keys, values);
-        page.initMemoryAccount(DataUtils.PAGE_LEAF_EMPTY_MEMORY);
-        return page;
-    }
-
     public static Page createEmptyNode(MVMap<?, ?> map, boolean capable) {
         int capacity = capable ? map.getStore().getKeysPerPage() : 0;
         Object keys = map.getExtendedKeyType().createStorage(capacity);
@@ -1466,15 +1457,5 @@ public abstract class Page implements Cloneable {
                 }
             }
         }
-    }
-
-
-    public static final class AppendPage extends Leaf {
-        private final AtomicReference<AppendPage> next = new AtomicReference<>();
-
-        public AppendPage(MVMap<?, ?> map, int keyCount, Object keys, Object values) {
-            super(map, keyCount, keys, values);
-        }
-
     }
 }

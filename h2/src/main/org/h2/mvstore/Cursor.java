@@ -14,8 +14,6 @@ import java.util.Iterator;
  * @param <V> the value type
  */
 public final class Cursor<K, V> implements Iterator<K> {
-
-    private final MVMap<K, ?> map;
     private final K           to;
     private       CursorPos   cursorPos;
     private       K           current;
@@ -23,12 +21,11 @@ public final class Cursor<K, V> implements Iterator<K> {
     private       V           lastValue;
     private       Page        lastPage;
 
-    public Cursor(MVMap<K, ?> map, Page root, K from) {
-        this(map, root, from, null);
+    public Cursor(Page root, K from) {
+        this(root, from, null);
     }
     
-    public Cursor(MVMap<K, ?> map, Page root, K from, K to) {
-        this.map = map;
+    public Cursor(Page root, K from, K to) {
         this.cursorPos = traverseDown(root, from);
         this.to = to;
     }
@@ -42,7 +39,7 @@ public final class Cursor<K, V> implements Iterator<K> {
         while (cursorPos != null) {
             Page page = cursorPos.page;
             int index = cursorPos.index;
-            if (index >= (page.isLeaf() ? page.getKeyCount() : map.getChildPageCount(page))) {
+            if (index >= (page.isLeaf() ? page.getKeyCount() : page.map.getChildPageCount(page))) {
                 cursorPos = cursorPos.parent;
                 if(cursorPos == null)
                 {
@@ -56,7 +53,7 @@ public final class Cursor<K, V> implements Iterator<K> {
                     index = 0;
                 }
                 K key = (K) page.getKey(index);
-                if (to != null && map.getKeyType().compare(key, to) > 0) {
+                if (to != null && page.map.getKeyType().compare(key, to) > 0) {
                     return false;
                 }
                 current = last = key;
@@ -117,9 +114,15 @@ public final class Cursor<K, V> implements Iterator<K> {
                 next();
             }
         } else if(hasNext()) {
+            assert cursorPos != null;
+            CursorPos curPos = cursorPos;
+            CursorPos parent;
+            while ((parent = curPos.parent) != null) curPos = parent;
+            Page root = curPos.page;
+            MVMap<K, ?> map = (MVMap<K, ?>) root.map;
             long index = map.getKeyIndex(next());
             last = map.getKey(index + n);
-            cursorPos = traverseDown(map.getRootPage(), last);
+            this.cursorPos = traverseDown(root, last);
         }
     }
 
@@ -136,7 +139,7 @@ public final class Cursor<K, V> implements Iterator<K> {
      * @param p the page to start
      * @param key the key to search
      */
-    private static CursorPos traverseDown(Page p, Object key) {
+    public static CursorPos traverseDown(Page p, Object key) {
         CursorPos cursorPos = null;
         while (!p.isLeaf()) {
             assert p.getKeyCount() > 0;
@@ -158,46 +161,5 @@ public final class Cursor<K, V> implements Iterator<K> {
             }
         }
         return new CursorPos(p, index, cursorPos);
-    }
-
-    public interface Processor<K,V> {
-        boolean process(K key, V value);
-    }
-
-    public static <K,V> void process(Page root, K from, Processor<K,V> processor) {
-        CursorPos cursorPos = traverseDown(root, from);
-        CursorPos keeper = null;
-        while (true) {
-            Page page = cursorPos.page;
-            int index = cursorPos.index;
-            if (index >= (page.isLeaf() ? page.getKeyCount() : root.map.getChildPageCount(page))) {
-                CursorPos tmp = cursorPos;
-                cursorPos = cursorPos.parent;
-                tmp.parent = keeper;
-                keeper = tmp;
-                if(cursorPos == null) {
-                    return;
-                }
-            } else {
-                while (!page.isLeaf()) {
-                    page = page.getChildPage(index);
-//                    cursorPos = new CursorPos(page, 0, cursorPos);
-                    assert keeper != null;
-                    CursorPos tmp = keeper;
-                    keeper = keeper.parent;
-                    tmp.parent = cursorPos;
-                    tmp.page = page;
-                    tmp.index = 0;
-                    cursorPos = tmp;
-                    index = 0;
-                }
-                K key = (K) page.getKey(index);
-                V value = (V) page.getValue(index);
-                if(processor.process(key, value)) {
-                    return;
-                }
-            }
-            ++cursorPos.index;
-        }
     }
 }
