@@ -31,8 +31,9 @@ import org.h2.mvstore.MVMap;
 import org.h2.mvstore.db.MVPrimaryIndex;
 import org.h2.mvstore.db.MVTable;
 import org.h2.mvstore.db.MVTableEngine;
-import org.h2.mvstore.db.TransactionStore;
-import org.h2.mvstore.db.TransactionStore.Transaction;
+import org.h2.mvstore.tx.TransactionStore;
+import org.h2.mvstore.tx.TransactionStore.Transaction;
+import org.h2.mvstore.tx.VersionedValue;
 import org.h2.result.ResultInterface;
 import org.h2.result.Row;
 import org.h2.result.SortOrder;
@@ -1741,9 +1742,9 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
     }
 
     @Override
-    public void onRollback(MVMap<Object, TransactionStore.VersionedValue> map, Object key,
-                           TransactionStore.VersionedValue existingValue,
-                           TransactionStore.VersionedValue restoredValue) {
+    public void onRollback(MVMap<Object, VersionedValue> map, Object key,
+                           VersionedValue existingValue,
+                           VersionedValue restoredValue) {
         // Here we are relying on the fact that map which backs table's primary index
         // has the same name as the table itself
         MVTableEngine.Store mvStore = database.getMvStore();
@@ -1778,7 +1779,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
     }
 
     private static Row getRowFromVersionedValue(MVTable table, long recKey,
-                                                TransactionStore.VersionedValue versionedValue) {
+                                                VersionedValue versionedValue) {
 
         Object value = versionedValue == null ? null : versionedValue.value;
         return value == null ? null : MVPrimaryIndex.convertValueToRow(recKey, value, table);

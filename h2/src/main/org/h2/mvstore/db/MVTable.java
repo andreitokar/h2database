@@ -29,7 +29,8 @@ import org.h2.message.DbException;
 import org.h2.message.Trace;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.db.MVTableEngine.Store;
-import org.h2.mvstore.db.TransactionStore.Transaction;
+import org.h2.mvstore.tx.TransactionStore;
+import org.h2.mvstore.tx.TransactionStore.Transaction;
 import org.h2.result.Row;
 import org.h2.result.SearchRow;
 import org.h2.result.SortOrder;
@@ -488,7 +489,7 @@ public class MVTable extends TableBase {
         int mainIndexColumn;
         mainIndexColumn = getMainIndexColumn(indexType, cols);
         if (database.isStarting()) {
-            if (transactionStore.store.hasMap("index." + indexId)) {
+            if (transactionStore.hasMap("index." + indexId)) {
                 mainIndexColumn = -1;
             }
         } else if (primaryIndex.getRowCountMax() != 0) {

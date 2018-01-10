@@ -404,10 +404,9 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                             continue;
                         }
                         value = decisionMaker.selectValue(result, value);
+                        p = p.copy();
                         if (index < 0) {
-                            index = -index - 1;
-                            p = p.copy();
-                            p.insertLeaf(index, key, value);
+                            p.insertLeaf(-index - 1, key, value);
                             int keyCount;
                             while ((keyCount = p.getKeyCount()) > store.getKeysPerPage() || p.getMemory() > store.getMaxPageSize()
                                     && keyCount > (p.isLeaf() ? 1 : 2)) {
@@ -436,7 +435,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                                 p.insertNode(index, k, c);
                             }
                         } else {
-                            p = p.copy();
                             p.setValue(index, value);
                         }
                         break;
@@ -949,50 +947,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             return updatedRootReference;
         }
         return null;
-    }
-
-    private void removeLastLeaf(CursorPos pos) {
-        assert pos != null;
-        Page p = pos.page;
-        assert p.getKeyCount() == 0;
-        assert pos.index == -1 : pos.index;
-        int index = -pos.index - 1;
-        pos = pos.parent;
-        CursorPos tip = pos;
-        int unsavedMemory = 0;
-        if (pos != null) {
-            p = pos.page;
-            index = pos.index;
-            pos = pos.parent;
-            if (p.getKeyCount() == 1) {
-                assert index <= 1;
-                p = p.getChildPage(1 - index);
-            } else {
-                assert p.getKeyCount() > 1;
-            }
-        }
-        p = p.copy();
-        p.remove(index);
-
-        unsavedMemory += p.getMemory();
-        while (pos != null) {
-            Page c = p;
-            p = pos.page;
-            p = p.copy();
-            p.setChild(pos.index, c);
-            unsavedMemory += p.getMemory();
-            pos = pos.parent;
-        }
-        // we assume that this thread is the only mutator of the map
-        // so it should be zero contention changing root
-        setRoot(p);
-        while (tip != null) {
-            tip.page.removePage();
-            tip = tip.parent;
-        }
-        if (store.getFileStore() != null) {
-            store.registerUnsavedPage(unsavedMemory);
-        }
     }
 
     void rollbackRoot(long version)
