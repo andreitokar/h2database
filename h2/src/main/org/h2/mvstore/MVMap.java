@@ -885,8 +885,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         return put(key, value, DecisionMaker.IF_PRESENT);
     }
 
-    private RootReference appendLeafPage(Page split, int attempt) {
-        RootReference rootReference = getRoot();
+    private RootReference appendLeafPage(RootReference rootReference, Page split, int attempt) {
         CursorPos pos = rootReference.root.getAppendCursorPos(null);
         assert split.map == this;
         assert pos != null;
@@ -1663,8 +1662,8 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             RootReference rootReference = getRoot();
             if (rootReference.appendCounter >= keysPerPage) {
                 rootReference = flushAppendBuffer(rootReference);
+                assert rootReference.appendCounter < keysPerPage;
             }
-            assert rootReference.appendCounter < keysPerPage;
             keysBuffer[rootReference.appendCounter] = key;
             valuesBuffer[rootReference.appendCounter] = value;
 
@@ -1691,13 +1690,12 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                     createAndFillStorage(getExtendedKeyType(), keyCount, keysBuffer),
                     createAndFillStorage(getExtendedValueType(), keyCount, valuesBuffer),
                     null, keyCount, 0);
-            RootReference updatedRootReference = appendLeafPage(page, ++attempt);
-            if (updatedRootReference != null) {
-                rootReference = updatedRootReference;
+            rootReference = appendLeafPage(rootReference, page, ++attempt);
+            if (rootReference != null) {
                 break;
             }
         }
-//        assert rootReference.appendCounter == 0;
+        assert rootReference.appendCounter == 0;
         return rootReference;
     }
 
@@ -2144,7 +2142,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                                         createAndFillStorage(map.getExtendedValueType(), keyCount, valuesBuffer),
                                         null, keyCount, 0);
                 int attempt = 0;
-                while(map.appendLeafPage(page, ++attempt) == null) {/**/}
+                while(map.appendLeafPage(map.getRoot(), page, ++attempt) == null) {/**/}
                 keyCount = 0;
             }
         }

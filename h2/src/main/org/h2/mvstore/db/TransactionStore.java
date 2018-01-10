@@ -380,9 +380,9 @@ public final class TransactionStore {
         //TODO: re-implement using "append" (no search, use extra capacity, appendLeaf())
         // since undoLog is Tx-specific now and therefore has a single writer.
         int transactionId = getTransactionId(undoKey);
-        return undoLogs[transactionId].putIfAbsent(undoKey, record) == null;
-//        undoLogs[transactionId].append(undoKey, record);
-//        return true;
+//        return undoLogs[transactionId].putIfAbsent(undoKey, record) == null;
+        undoLogs[transactionId].append(undoKey, record);
+        return true;
     }
 
     /**
@@ -393,9 +393,9 @@ public final class TransactionStore {
      */
     boolean removeUndoLogRecord(Long undoKey) {
         int transactionId = getTransactionId(undoKey);
-        return undoLogs[transactionId].remove(undoKey) != null;
-//        undoLogs[transactionId].trimLast();
-//        return true;
+//        return undoLogs[transactionId].remove(undoKey) != null;
+        undoLogs[transactionId].trimLast();
+        return true;
     }
 
     /**
@@ -431,33 +431,9 @@ public final class TransactionStore {
                 final TransactionStore transactionStore = this;
                 MVMap<Long, Record> undoLog = undoLogs[transactionId];
                 MVMap.RootReference rootReference = undoLog.flushAppendBuffer();
-                Page rootPage = rootReference.root;
-                MVMap.process(rootPage, null,
-                        new MVMap.Processor<Long, Record>() {
-                            private final TransactionStore store = transactionStore;
-                            private final FinalCommitDecisionMaker finalCommitDecisionMaker = new FinalCommitDecisionMaker();
-
-                            @Override
-                            public boolean process(Long undoKey, Record existingValue) {
-                                if (getTransactionId(undoKey) != transactionId || getLogId(undoKey) > maxLogId) {
-                                    return true;
-                                }
-                                finalCommitDecisionMaker.reset();
-                                finalCommitDecisionMaker.setOperationId(undoKey);
-
-                                int mapId = existingValue.mapId;
-                                MVMap<Object, VersionedValue> map = store.openMap(mapId);
-                                if (map != null && !map.isClosed()) { // could be null if map was later removed
-                                    Object key = existingValue.key;
-                                    VersionedValue prev = existingValue.oldValue;
-                                    assert prev == null || prev.operationId == 0 || getTransactionId(prev.operationId) == getTransactionId(finalCommitDecisionMaker.undoKey) ;
-                                    // TODO: let DecisionMaker have access to the whole LeafNode, make coomit changes in bulk
-                                    map.operate(key, null, finalCommitDecisionMaker);
-                                }
-
-                                return false;
-                            }
-                        });
+                CommitProcessor committProcessor = new CommitProcessor(transactionStore, transactionId, maxLogId);
+                MVMap.process(rootReference.root, null, committProcessor);
+                assert committProcessor.counter == maxLogId : committProcessor.counter + " != " + maxLogId;
                 undoLog.clear();
             } finally {
                 do {
@@ -468,6 +444,45 @@ public final class TransactionStore {
                     success = committingTransactions.compareAndSet(original, clone);
                 } while(!success);
             }
+        }
+    }
+
+    private static final class CommitProcessor implements MVMap.Processor<Long, Record> {
+        private final FinalCommitDecisionMaker finalCommitDecisionMaker;
+        private final TransactionStore transactionStore;
+        private final int transactionId;
+        private final long maxLogId;
+        public int counter;
+
+        private CommitProcessor(TransactionStore transactionStore, int transactionId, long maxLogId) {
+            this.transactionStore = transactionStore;
+            this.transactionId = transactionId;
+            this.maxLogId = maxLogId;
+            finalCommitDecisionMaker = new FinalCommitDecisionMaker();
+        }
+
+        @Override
+        public boolean process(Long undoKey, Record existingValue) {
+            assert getTransactionId(undoKey) == transactionId;
+            assert getLogId(undoKey) <= maxLogId;
+            if (getTransactionId(undoKey) != transactionId || getLogId(undoKey) > maxLogId) {
+                return true;
+            }
+            ++counter;
+            finalCommitDecisionMaker.reset();
+            finalCommitDecisionMaker.setOperationId(undoKey);
+
+            int mapId = existingValue.mapId;
+            MVMap<Object, VersionedValue> map = transactionStore.openMap(mapId);
+            if (map != null && !map.isClosed()) { // could be null if map was later removed
+                Object key = existingValue.key;
+                VersionedValue prev = existingValue.oldValue;
+                assert prev == null || prev.operationId == 0 || getTransactionId(prev.operationId) == getTransactionId(finalCommitDecisionMaker.undoKey);
+                // TODO: let DecisionMaker have access to the whole LeafNode, make coomit changes in bulk
+                map.operate(key, null, finalCommitDecisionMaker);
+            }
+
+            return false;
         }
     }
 
