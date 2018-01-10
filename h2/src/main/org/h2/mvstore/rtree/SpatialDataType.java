@@ -43,7 +43,7 @@ public class SpatialDataType implements DataType {
         }
         long la = ((SpatialKey) a).getId();
         long lb = ((SpatialKey) b).getId();
-        return la < lb ? -1 : la > lb ? 1 : 0;
+        return Long.compare(la, lb);
     }
 
     /**

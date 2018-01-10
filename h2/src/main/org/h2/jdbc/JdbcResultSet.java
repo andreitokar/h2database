@@ -3810,10 +3810,10 @@ public class JdbcResultSet extends TraceObject implements ResultSet, JdbcResultS
             int id = getNextId(TraceObject.ARRAY);
             return type.cast(value == ValueNull.INSTANCE ? null : new JdbcArray(conn, value, id));
         } else if (type == Blob.class) {
-            int id = getNextId(TraceObject.ARRAY);
+            int id = getNextId(TraceObject.BLOB);
             return type.cast(value == ValueNull.INSTANCE ? null : new JdbcBlob(conn, value, id));
         } else if (type == Clob.class) {
-            int id = getNextId(TraceObject.ARRAY);
+            int id = getNextId(TraceObject.CLOB);
             return type.cast(value == ValueNull.INSTANCE ? null : new JdbcClob(conn, value, id));
         } else if (type == TimestampWithTimeZone.class) {
             return type.cast(value.getObject());
@@ -3826,6 +3826,8 @@ public class JdbcResultSet extends TraceObject implements ResultSet, JdbcResultS
         } else if (LocalDateTimeUtils.isLocalDateTime(type)) {
             return type.cast(LocalDateTimeUtils.valueToLocalDateTime(
                             (ValueTimestamp) value));
+        } else if (LocalDateTimeUtils.isInstant(type)) {
+            return type.cast(LocalDateTimeUtils.valueToInstant(value));
         } else if (LocalDateTimeUtils.isOffsetDateTime(type) &&
                 value instanceof ValueTimestampTimeZone) {
             return type.cast(LocalDateTimeUtils.valueToOffsetDateTime(

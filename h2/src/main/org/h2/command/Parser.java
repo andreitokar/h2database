@@ -1201,7 +1201,7 @@ public class Parser {
 
         // build and prepare the targetMatchQuery ready to test each rows
         // existence in the target table (using source row to match)
-        StringBuffer targetMatchQuerySQL = new StringBuffer(
+        StringBuilder targetMatchQuerySQL = new StringBuilder(
                 "SELECT _ROWID_ FROM " + command.getTargetTable().getName());
         if (command.getTargetTableFilter().getTableAlias() != null) {
             targetMatchQuerySQL.append(
@@ -6849,6 +6849,30 @@ public class Parser {
             return StringUtils.quoteIdentifier(s);
         }
         return s;
+    }
+
+    /**
+     * @param s
+     *            identifier to check
+     * @return is specified identifier may be used without quotes
+     */
+    public static boolean isSimpleIdentifier(String s) {
+        if (s == null || s.length() == 0) {
+            return false;
+        }
+        char c = s.charAt(0);
+        // lowercase a-z is quoted as well
+        if ((!Character.isLetter(c) && c != '_') || Character.isLowerCase(c)) {
+            return false;
+        }
+        for (int i = 1, length = s.length(); i < length; i++) {
+            c = s.charAt(i);
+            if ((!Character.isLetterOrDigit(c) && c != '_') ||
+                    Character.isLowerCase(c)) {
+                return false;
+            }
+        }
+        return !isKeyword(s, true);
     }
 
     public void setLiteralsChecked(boolean literalsChecked) {
