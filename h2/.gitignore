@@ -16,3 +16,4 @@ target/
 src/main/org/h2/res/help.csv
 !/src/main/org/h2/server/web/res/error.jsp
 /generated/
+_tmp*
