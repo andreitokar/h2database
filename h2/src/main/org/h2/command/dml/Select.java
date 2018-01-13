@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2014 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (http://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -1062,10 +1062,11 @@ public class Select extends Query {
             Table t = f.getTable();
             TableView tableView = t.isView() ? (TableView) t : null;
             if (tableView != null && tableView.isRecursive() && tableView.isTableExpression()) {
-                
+
                 if (tableView.isPersistent()) {
-                    // skip the generation of plan SQL for this already recursive persistent ctes, since using a with 
-                    // statement will re-create the common table expression views.
+                    // skip the generation of plan SQL for this already recursive persistent CTEs,
+                    // since using a with statement will re-create the common table expression
+                    // views.
                     continue;
                 } else {
                     buff.append("WITH RECURSIVE ").append(t.getName()).append('(');
@@ -1074,7 +1075,7 @@ public class Select extends Query {
                         buff.appendExceptFirst(",");
                         buff.append(c.getName());
                     }
-                    buff.append(") AS ").append(t.getSQL()).append("\n");                    
+                    buff.append(") AS ").append(t.getSQL()).append("\n");
                 }
             }
         }

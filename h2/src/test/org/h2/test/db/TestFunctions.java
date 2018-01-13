@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2014 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (http://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -2061,7 +2061,8 @@ public class TestFunctions extends TestBase implements AggregateFunction {
 
         assertThrows(ErrorCode.INVALID_VALUE_2, stat).execute("select signal('00145', 'success class is invalid')");
         assertThrows(ErrorCode.INVALID_VALUE_2, stat).execute("select signal('foo', 'SQLSTATE has 5 chars')");
-        assertThrows(ErrorCode.INVALID_VALUE_2, stat).execute("select signal('Ab123', 'SQLSTATE has only digits or upper-case letters')");
+        assertThrows(ErrorCode.INVALID_VALUE_2, stat)
+                .execute("select signal('Ab123', 'SQLSTATE has only digits or upper-case letters')");
         try {
             stat.execute("select signal('AB123', 'some custom error')");
             fail("Should have thrown");

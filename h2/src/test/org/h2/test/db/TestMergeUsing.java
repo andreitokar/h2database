@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2014 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (http://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -19,7 +19,9 @@ import org.h2.test.TestBase;
 public class TestMergeUsing extends TestBase implements Trigger {
 
     private static final String GATHER_ORDERED_RESULTS_SQL = "SELECT ID, NAME FROM PARENT ORDER BY ID ASC";
-    private static int triggerTestingUpdateCount = 0;
+    private static int triggerTestingUpdateCount;
+
+    private String triggerName;
 
     /**
      * Run just this test.
@@ -29,8 +31,6 @@ public class TestMergeUsing extends TestBase implements Trigger {
     public static void main(String... a) throws Exception {
         TestBase.createCaller().init().test();
     }
-
-    private String triggerName;
 
     @Override
     public void test() throws Exception {

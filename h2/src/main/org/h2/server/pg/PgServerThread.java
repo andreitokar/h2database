@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2014 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (http://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -17,6 +17,8 @@ import java.io.OutputStream;
 import java.io.Reader;
 import java.io.StringReader;
 import java.net.Socket;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.ParameterMetaData;
 import java.sql.PreparedStatement;
@@ -572,11 +574,11 @@ public class PgServerThread implements Runnable {
         }
     }
 
-    private String getEncoding() {
+    private Charset getEncoding() {
         if ("UNICODE".equals(clientEncoding)) {
-            return "UTF-8";
+            return StandardCharsets.UTF_8;
         }
-        return clientEncoding;
+        return Charset.forName(clientEncoding);
     }
 
     private void setParameter(PreparedStatement prep,

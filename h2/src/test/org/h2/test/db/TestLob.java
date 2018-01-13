@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2014 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (http://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -13,6 +13,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.Reader;
 import java.io.StringReader;
+import java.nio.charset.StandardCharsets;
 import java.sql.Blob;
 import java.sql.Clob;
 import java.sql.Connection;
@@ -1358,7 +1359,7 @@ public class TestLob extends TestBase {
         PreparedStatement prep;
         prep = conn.prepareStatement("INSERT INTO TEST VALUES(1, ?)");
         String s = new String(getRandomChars(10000, 1));
-        byte[] data = s.getBytes("UTF-8");
+        byte[] data = s.getBytes(StandardCharsets.UTF_8);
         // if we keep the string, debugging with Eclipse is not possible
         // because Eclipse wants to display the large string and fails
         s = "";

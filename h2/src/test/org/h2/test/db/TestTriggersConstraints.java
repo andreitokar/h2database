@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2014 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (http://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -506,7 +506,8 @@ public class TestTriggersConstraints extends TestBase implements Trigger {
         } else if ("javascript".equals(sourceLang)) {
             String triggerClassName = this.getClass().getName() + "."
                     + TestTriggerAlterTable.class.getSimpleName();
-            final String body = "//javascript\nnew Packages." + triggerClassName + "();";
+            final String body = "//javascript\n"
+                    + "new Packages." + triggerClassName + "();";
             stat.execute("create trigger test_upd before insert on test as $$"
                     + body + " $$");
         } else {

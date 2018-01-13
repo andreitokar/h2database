@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2014 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (http://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -68,13 +68,13 @@ public class DropView extends SchemaCommand {
                     }
                 }
             }
-            
-             // TODO: Where is the ConstraintReferential.CASCADE style drop processing ? It's
-            // supported from imported keys - but not for dependent db objects            
+
+            // TODO: Where is the ConstraintReferential.CASCADE style drop processing ? It's
+            // supported from imported keys - but not for dependent db objects
 
             TableView tableView = (TableView) view;
             ArrayList<Table> copyOfDependencies = new ArrayList<Table>(tableView.getTables());
-            
+
             view.lock(session, true, true);
             session.getDatabase().removeSchemaObject(session, view);
 

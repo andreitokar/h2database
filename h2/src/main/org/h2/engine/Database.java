@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2014 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (http://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
 import java.util.StringTokenizer;
@@ -592,7 +593,7 @@ public class Database implements DataHandler {
      * @return true if the cipher algorithm and the password match
      */
     boolean validateFilePasswordHash(String testCipher, byte[] testHash) {
-        if (!StringUtils.equals(testCipher, this.cipher)) {
+        if (!Objects.equals(testCipher, this.cipher)) {
             return false;
         }
         return Utils.compareSecure(testHash, filePasswordHash);
@@ -732,9 +733,6 @@ public class Database implements DataHandler {
             if (dbSettings.mvStore) {
                 getPageStore();
             }
-//            if (mvStore != null) {
-//                setWriteDelay(writeDelay);
-//            }
         }
         systemUser = new User(this, 0, SYSTEM_USER_NAME, true);
         mainSchema = new Schema(this, 0, Constants.SCHEMA_MAIN, systemUser, true);
@@ -920,7 +918,7 @@ public class Database implements DataHandler {
         }
     }
 
-  /**
+    /**
      * Lock the metadata table for updates.
      *
      * @param session the session

@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2014 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (http://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -127,7 +127,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
     private long modificationMetaID = -1;
     private SubQueryInfo subQueryInfo;
     private int parsingView;
-    private Deque<String> viewNameStack = new ArrayDeque<String>();    
+    private Deque<String> viewNameStack = new ArrayDeque<String>();
     private int preparingQueryExpression;
     private volatile SmallLRUCache<Object, ViewIndex> viewIndexCache;
     private HashMap<Object, ViewIndex> subQueryIndexCache;
@@ -231,6 +231,16 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
         return subQueryInfo;
     }
 
+    /**
+     * Stores name of currently parsed view in a stack so it can be determined
+     * during {@code prepare()}.
+     *
+     * @param parsingView
+     *            {@code true} to store one more name, {@code false} to remove it
+     *            from stack
+     * @param viewName
+     *            name of the view
+     */
     public void setParsingCreateView(boolean parsingView, String viewName) {
         // It can be recursive, thus implemented as counter.
         this.parsingView += parsingView ? 1 : -1;
@@ -240,7 +250,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
         } else {
             assert viewName.equals(viewNameStack.peek());
             viewNameStack.pop();
-        }        
+        }
     }
     public String getParsingCreateViewName() {
         if (viewNameStack.size() == 0) {
@@ -700,7 +710,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
                 Analyze.analyzeTable(this, table, rows, false);
             }
             // analyze can lock the meta
-            database.unlockMeta(this); 
+            database.unlockMeta(this);
         }
         tablesToAnalyze = null;
     }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2014 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (http://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -302,7 +302,8 @@ public class TestCases extends TestBase {
             throws SQLException {
         assertThrows(expectedDropSuccess ? 0 : ErrorCode.CANNOT_DROP_2, stat)
                 .execute("drop table test " + (restrict ? "restrict" : "cascade"));
-        assertThrows(expectedDropSuccess ? ErrorCode.TABLE_OR_VIEW_NOT_FOUND_1 : 0, stat).execute("select * from test");
+        assertThrows(expectedDropSuccess ? ErrorCode.TABLE_OR_VIEW_NOT_FOUND_1 : 0, stat)
+                .execute("select * from test");
     }
 
     private void testDropTableNoReference(final boolean stdDropTableRestrict, final boolean restrict)

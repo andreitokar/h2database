@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2014 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (http://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -7,6 +7,7 @@ package org.h2.mvstore;
 
 import java.lang.Thread.UncaughtExceptionHandler;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
@@ -625,7 +626,7 @@ public final class MVStore {
             // the following can fail for various reasons
             try {
                 String s = new String(buff, 0, BLOCK_SIZE,
-                        DataUtils.LATIN).trim();
+                        StandardCharsets.ISO_8859_1).trim();
                 HashMap<String, String> m = DataUtils.parseMap(s);
                 int blockSize = DataUtils.readHexInt(
                         m, "blockSize", BLOCK_SIZE);
@@ -638,7 +639,7 @@ public final class MVStore {
                 int check = DataUtils.readHexInt(m, "fletcher", 0);
                 m.remove("fletcher");
                 s = s.substring(0, s.lastIndexOf("fletcher") - 1);
-                byte[] bytes = s.getBytes(DataUtils.LATIN);
+                byte[] bytes = s.getBytes(StandardCharsets.ISO_8859_1);
                 int checksum = DataUtils.getFletcher32(bytes,
                         bytes.length);
                 if (check != checksum) {
@@ -891,12 +892,12 @@ public final class MVStore {
             ByteBuffer lastBlock = fileStore.readFully(pos, Chunk.FOOTER_LENGTH);
             byte[] buff = new byte[Chunk.FOOTER_LENGTH];
             lastBlock.get(buff);
-            String s = new String(buff, DataUtils.LATIN).trim();
+            String s = new String(buff, StandardCharsets.ISO_8859_1).trim();
             HashMap<String, String> m = DataUtils.parseMap(s);
             int check = DataUtils.readHexInt(m, "fletcher", 0);
             m.remove("fletcher");
             s = s.substring(0, s.lastIndexOf("fletcher") - 1);
-            byte[] bytes = s.getBytes(DataUtils.LATIN);
+            byte[] bytes = s.getBytes(StandardCharsets.ISO_8859_1);
             int checksum = DataUtils.getFletcher32(bytes, bytes.length);
             if (check == checksum) {
                 int chunk = DataUtils.readHexInt(m, "chunk", 0);
@@ -919,11 +920,11 @@ public final class MVStore {
             storeHeader.put("version", lastChunk.version);
         }
         DataUtils.appendMap(buff, storeHeader);
-        byte[] bytes = buff.toString().getBytes(DataUtils.LATIN);
+        byte[] bytes = buff.toString().getBytes(StandardCharsets.ISO_8859_1);
         int checksum = DataUtils.getFletcher32(bytes, bytes.length);
         DataUtils.appendMap(buff, "fletcher", checksum);
         buff.append("\n");
-        bytes = buff.toString().getBytes(DataUtils.LATIN);
+        bytes = buff.toString().getBytes(StandardCharsets.ISO_8859_1);
         ByteBuffer header = ByteBuffer.allocate(2 * BLOCK_SIZE);
         header.put(bytes);
         header.position(BLOCK_SIZE);

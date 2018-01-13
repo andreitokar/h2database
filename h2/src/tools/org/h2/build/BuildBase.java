@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2014 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (http://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -28,6 +28,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -495,7 +496,7 @@ public class BuildBase {
                 buff.write(b);
                 if (b == '\n') {
                     byte[] data = buff.toByteArray();
-                    String line = new String(data, "UTF-8");
+                    String line = new String(data, StandardCharsets.UTF_8);
                     boolean print = true;
                     for (String l : exclude) {
                         if (line.startsWith(l)) {
