@@ -937,7 +937,7 @@ public class Database implements DataHandler {
         if (SysProperties.CHECK2) {
             final Session prev = META_LOCK_DEBUGGING.get();
             if (prev != null && prev != session) {
-                metaLockDebuggingStack.get().printStackTrace();
+                META_LOCK_DEBUGGING_STACK.get().printStackTrace();
                 throw new IllegalStateException("meta currently locked by "
                         + prev
                         + " and trying to be locked by different session, "
@@ -946,7 +946,7 @@ public class Database implements DataHandler {
         }
         boolean wasLocked = meta.lock(session, true, true);
         if (SysProperties.CHECK2 && !wasLocked && meta.isLockedExclusively() /* && false*/) {
-            final Session prev = metaLockDebugging.get();
+            final Session prev = META_LOCK_DEBUGGING.get();
             if (prev == null) {
                 META_LOCK_DEBUGGING.set(session);
                 META_LOCK_DEBUGGING_STACK.set(new Throwable("Last meta lock granted in this stack trace, "+

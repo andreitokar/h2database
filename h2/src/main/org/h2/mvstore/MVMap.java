@@ -342,6 +342,192 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
     }
 */
+    public interface LeafProcessor {
+        Page[] process(Page leaf, int index);
+    }
+
+    public static final class SingleDecisionMaker<K,V> implements LeafProcessor
+    {
+        private final DecisionMaker<? super V> decisionMaker;
+        private final K key;
+        private final V value;
+
+        public SingleDecisionMaker(K key, V value, DecisionMaker<? super V> decisionMaker) {
+            this.decisionMaker = decisionMaker;
+            this.key = key;
+            this.value = value;
+        }
+
+        @Override
+        public Page[] process(Page leaf, int index) {
+            final V result = index < 0 ? null : (V)leaf.getValue(index);
+            Decision decision = decisionMaker.decide(result, value);
+            switch (decision) {
+                case ABORT:
+                    return null;
+                case REMOVE: {
+                    if (index < 0) {
+                        return null;
+                    }
+                    if (leaf.getTotalCount() == 1) {
+                        return new Page[0];
+                    }
+                    leaf = leaf.copy();
+                    leaf.remove(index);
+                    return new Page[] { leaf };
+                }
+                case PUT: {
+                    V v = decisionMaker.selectValue(result, value);
+                    leaf = leaf.copy();
+                    if (index < 0) {
+                        leaf.insertLeaf(-index - 1, key, v);
+                    } else {
+                        leaf.setValue(index, v);
+                    }
+                    return new Page[] { leaf };
+                }
+                default:
+                return null;
+            }
+        }
+    }
+
+/*
+    public void operate_(K key, V value, LeafProcessor processor) {
+        beforeWrite();
+        int attempt = 0;
+        RootReference oldRootReference = null;
+        while(true) {
+            RootReference rootReference = getRoot();
+            int contention = 0;
+            if (oldRootReference != null) {
+                long updateAttemptCounter = rootReference.updateAttemptCounter - oldRootReference.updateAttemptCounter;
+                assert updateAttemptCounter >= 0 : updateAttemptCounter;
+                long updateCounter = rootReference.updateCounter - oldRootReference.updateCounter;
+                assert updateCounter >= 0 : updateCounter;
+                assert updateAttemptCounter >= updateCounter : updateAttemptCounter + " >= " + updateCounter;
+                contention = (int)((updateAttemptCounter+1) / (updateCounter+1));
+            }
+            oldRootReference = rootReference;
+            ++attempt;
+            CursorPos pos = traverseDown(rootReference.root, key);
+            CursorPos tip = pos;
+            Page p = pos.page;
+            int index = pos.index;
+            Page replacement[] = processor.process(p, index);
+            if (replacement == null) {
+                return;
+            }
+            pos = pos.parent;
+            final V result = index < 0 ? null : (V)p.getValue(index);
+            Decision decision = decisionMaker.decide(result, value);
+
+            int unsavedMemory = 0;
+            boolean needUnlock = false;
+            try {
+                switch (decision) {
+                    case ABORT:
+                        if(rootReference != getRoot()) {
+                            decisionMaker.reset();
+                            continue;
+                        }
+                        return result;
+                    case REMOVE: {
+                        if (index < 0) {
+                            return null;
+                        }
+                        if (attempt > 2 && !(needUnlock = lockRoot(decisionMaker, rootReference, attempt, contention))) {
+                            continue;
+                        }
+                        if (p.getTotalCount() == 1 && pos != null) {
+                            p = pos.page;
+                            index = pos.index;
+                            pos = pos.parent;
+                            if (p.getKeyCount() == 1) {
+                                assert index <= 1;
+                                p = p.getChildPage(1 - index);
+                                break;
+                            }
+                            assert p.getKeyCount() > 1;
+                        }
+                        p = p.copy();
+                        p.remove(index);
+                        break;
+                    }
+                    case PUT: {
+                        if (attempt > 2 && !(needUnlock = lockRoot(decisionMaker, rootReference, attempt, contention))) {
+                            continue;
+                        }
+                        value = decisionMaker.selectValue(result, value);
+                        p = p.copy();
+                        if (index < 0) {
+                            p.insertLeaf(-index - 1, key, value);
+                            int keyCount;
+                            while ((keyCount = p.getKeyCount()) > store.getKeysPerPage() || p.getMemory() > store.getMaxPageSize()
+                                    && keyCount > (p.isLeaf() ? 1 : 2)) {
+                                long totalCount = p.getTotalCount();
+                                int at = keyCount >> 1;
+                                Object k = p.getKey(at);
+                                Page split = p.split(at);
+                                unsavedMemory += p.getMemory();
+                                unsavedMemory += split.getMemory();
+                                if (pos == null) {
+                                    Object keys = getExtendedKeyType().createStorage(1);
+                                    getExtendedKeyType().setValue(keys, 0, k);
+                                    Page.PageReference children[] = {
+                                            new Page.PageReference(p),
+                                            new Page.PageReference(split)
+                                    };
+                                    p = Page.create(this, 1, keys, null, children, totalCount, 0);
+                                    break;
+                                }
+                                Page c = p;
+                                p = pos.page;
+                                index = pos.index;
+                                pos = pos.parent;
+                                p = p.copy();
+                                p.setChild(index, split);
+                                p.insertNode(index, k, c);
+                            }
+                        } else {
+                            p.setValue(index, value);
+                        }
+                        break;
+                    }
+                }
+                unsavedMemory += p.getMemory();
+                while (pos != null) {
+                    Page c = p;
+                    p = pos.page;
+                    p = p.copy();
+                    p.setChild(pos.index, c);
+                    unsavedMemory += p.getMemory();
+                    pos = pos.parent;
+                }
+                if(needUnlock) {
+                    unlockRoot(p, attempt);
+                    needUnlock = false;
+                } else if(!updateRoot(rootReference, p, attempt)) {
+                    decisionMaker.reset();
+                    continue;
+                }
+                while (tip != null) {
+                    tip.page.removePage();
+                    tip = tip.parent;
+                }
+                if (store.getFileStore() != null) {
+                    store.registerUnsavedPage(unsavedMemory);
+                }
+                return result;
+            } finally {
+                if(needUnlock) {
+                    unlockRoot(rootReference.root, attempt);
+                }
+            }
+        }
+    }
+*/
+
     public V operate(K key, V value, DecisionMaker<? super V> decisionMaker) {
         beforeWrite();
         int attempt = 0;
