@@ -165,10 +165,10 @@ public class MVPrimaryIndex extends BaseIndex {
         TransactionMap<Long,Row> map = getMap(session);
         try {
             Row result = map.remove(row.getKey());
-            if (result == null) {
-                throw DbException.get(ErrorCode.ROW_NOT_FOUND_WHEN_DELETING_1,
-                        getSQL() + ": " + row.getKey());
-            }
+//            if (result == null) {
+//                throw DbException.get(ErrorCode.ROW_NOT_FOUND_WHEN_DELETING_1,
+//                        getSQL() + ": " + row.getKey());
+//            }
             return result;
         } catch (IllegalStateException e) {
             throw mvTable.convertException(e);

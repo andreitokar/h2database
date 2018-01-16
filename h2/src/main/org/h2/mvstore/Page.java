@@ -873,6 +873,7 @@ public abstract class Page implements Cloneable {
 
         private PageReference(long pos, long count) {
             this(null, pos, count);
+            assert pos != 0;
         }
 
         private PageReference(Page page, long pos, long count) {

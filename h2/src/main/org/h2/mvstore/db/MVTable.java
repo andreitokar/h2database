@@ -953,12 +953,15 @@ public class MVTable extends TableBase {
      * @return the database exception
      */
     DbException convertException(IllegalStateException e) {
-        if (DataUtils.getErrorCode(e.getMessage()) ==
-                DataUtils.ERROR_TRANSACTION_LOCKED) {
+        int errorCode = DataUtils.getErrorCode(e.getMessage());
+        if (errorCode == DataUtils.ERROR_TRANSACTION_LOCKED) {
             throw DbException.get(ErrorCode.CONCURRENT_UPDATE_1,
+                    e, getName());
+        }
+        if (errorCode == DataUtils.ERROR_TRANSACTIONS_DEADLOCK) {
+            throw DbException.get(ErrorCode.DEADLOCK_1,
                     e, getName());
         }
         return store.convertIllegalStateException(e);
     }
-
 }

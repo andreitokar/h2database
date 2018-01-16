@@ -13,6 +13,7 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import org.h2.api.ErrorCode;
 import org.h2.api.Trigger;
 import org.h2.test.TestBase;
 import org.h2.util.Task;
@@ -69,12 +70,18 @@ public class TestSequence extends TestBase {
                             PreparedStatement prep2 = conn.prepareStatement(
                                     "delete from test");
                             while (!stop) {
-                                prep.execute();
-                                if (Math.random() < 0.01) {
-                                    prep2.execute();
-                                }
-                                if (Math.random() < 0.01) {
-                                    createDropTrigger(conn);
+                                try {
+                                    prep.execute();
+                                    if (Math.random() < 0.01) {
+                                        prep2.execute();
+                                    }
+                                    if (Math.random() < 0.01) {
+                                        createDropTrigger(conn);
+                                    }
+                                } catch (SQLException ex) {
+                                    if (ex.getErrorCode() != ErrorCode.DEADLOCK_1) {
+                                        throw ex;
+                                    }
                                 }
                             }
                         }

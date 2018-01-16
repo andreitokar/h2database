@@ -65,7 +65,7 @@ public class Delete extends Prepared {
         session.getUser().checkRight(table, Right.DELETE);
         table.fire(session, Trigger.DELETE, true);
         table.lock(session, true, false);
-        RowList rows = new RowList(session);
+        RowList rows = table.isMVStore() ? null : new RowList(session);
         int limitRows = -1;
         if (limitExpr != null) {
             Value v = limitExpr.getValue(session);
@@ -76,17 +76,29 @@ public class Delete extends Prepared {
         try {
             setCurrentRowNumber(0);
             int count = 0;
+            boolean fireRowTriggers = table.fireRow();
             while (limitRows != 0 && targetTableFilter.next()) {
-                setCurrentRowNumber(rows.size() + 1);
+                setCurrentRowNumber(count + 1);
                 if (condition == null || Boolean.TRUE.equals(
                         condition.getBooleanValue(session))) {
                     Row row = targetTableFilter.get();
                     boolean done = false;
-                    if (table.fireRow()) {
+                    if (fireRowTriggers) {
                         done = table.fireBeforeRow(session, row, null);
                     }
                     if (!done) {
-                        rows.add(row);
+                        if (rows == null) {
+                            table.removeRow(session, row);
+                            session.log(table, UndoLogRecord.DELETE, row);
+                            if (fireRowTriggers) {
+                                table.fireAfterRow(session, row, null, false);
+                            }
+                            if ((count & 127) == 0) {
+                                checkCanceled();
+                            }
+                        } else {
+                            rows.add(row);
+                        }
                     }
                     count++;
                     if (limitRows >= 0 && count >= limitRows) {
@@ -94,25 +106,29 @@ public class Delete extends Prepared {
                     }
                 }
             }
-            int rowScanCount = 0;
-            for (rows.reset(); rows.hasNext();) {
-                if ((++rowScanCount & 127) == 0) {
-                    checkCanceled();
-                }
-                Row row = rows.next();
-                table.removeRow(session, row);
-                session.log(table, UndoLogRecord.DELETE, row);
-            }
-            if (table.fireRow()) {
-                for (rows.reset(); rows.hasNext();) {
+            if (rows != null) {
+                int rowScanCount = 0;
+                for (rows.reset(); rows.hasNext(); ) {
+                    if ((++rowScanCount & 127) == 0) {
+                        checkCanceled();
+                    }
                     Row row = rows.next();
-                    table.fireAfterRow(session, row, null, false);
+                    table.removeRow(session, row);
+                    session.log(table, UndoLogRecord.DELETE, row);
+                }
+                if (fireRowTriggers) {
+                    for (rows.reset(); rows.hasNext(); ) {
+                        Row row = rows.next();
+                        table.fireAfterRow(session, row, null, false);
+                    }
                 }
             }
             table.fire(session, Trigger.DELETE, false);
             return count;
         } finally {
-            rows.close();
+            if (rows != null) {
+                rows.close();
+            }
         }
     }
 

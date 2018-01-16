@@ -13,7 +13,7 @@ import java.nio.ByteBuffer;
  *
  * @author <a href='mailto:andrei.tokar@gmail.com'>Andrei Tokar</a>
  */
-public class LongDataType implements ExtendedDataType {
+public final class LongDataType implements ExtendedDataType {
 
     public static final LongDataType INSTANCE = new LongDataType();
 

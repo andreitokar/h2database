@@ -6,13 +6,14 @@
 package org.h2.mvstore.type;
 
 import java.nio.ByteBuffer;
+import java.util.Comparator;
 
 import org.h2.mvstore.WriteBuffer;
 
 /**
  * A data type.
  */
-public interface DataType {
+public interface DataType extends Comparator {
 
     /**
      * Compare two keys.

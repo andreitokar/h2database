@@ -45,16 +45,16 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
     private final AtomicReference<RootReference> root;
 
-    private final int id;
-    private final long createVersion;
-    private final DataType keyType;
+    private final int              id;
+    private final long             createVersion;
+    private final DataType         keyType;
     private final ExtendedDataType extendedKeyType;
-    private final DataType valueType;
+    private final DataType         valueType;
     private final ExtendedDataType extendedValueType;
-    private final int keysPerPage;
-    private final boolean singleWriter;
-    private final K          keysBuffer[];
-    private final V          valuesBuffer[];
+    private final int              keysPerPage;
+    private final boolean          singleWriter;
+    private final K                keysBuffer[];
+    private final V                valuesBuffer[];
 
 
     /**
@@ -62,8 +62,8 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * closed map in multithreaded mode.
      */
     private volatile boolean closed;
-    private boolean readOnly;
-    private boolean isVolatile;
+    private          boolean readOnly;
+    private          boolean isVolatile;
 
     private   static final long KEEP_CURRENT = -2;
     public    static final long INITIAL_VERSION = -1;
@@ -76,7 +76,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
              DataUtils.readHexLong(config, "createVersion", 0),
              new AtomicReference<RootReference>(),
                 ((MVStore)config.get("store")).getKeysPerPage(),
-//                (Integer)config.get("keysPerPage"),
                 config.containsKey("singleWriter") && (Boolean)config.get("singleWriter")
                 );
         setInitialRoot(createEmptyLeaf(), store.getCurrentVersion());
@@ -128,7 +127,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             } else {
                 while (!page.isLeaf()) {
                     page = page.getChildPage(index);
-//                    cursorPos = new CursorPos(page, 0, cursorPos);
                     assert keeper != null;
                     CursorPos tmp = keeper;
                     keeper = keeper.parent;
@@ -277,6 +275,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         DataUtils.checkArgument(value != null, "The value may not be null");
         return operate(key, value, decisionMaker);
     }
+
 /*
     public void delete(K from, K to) {
         beforeWrite();
@@ -342,8 +341,13 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
     }
 */
-    public interface LeafProcessor {
-        Page[] process(Page leaf, int index);
+    public interface LeafProcessor
+    {
+        CursorPos locate(Page rootPage);
+        CursorPos locateNext(Page rootPage);
+//        CursorPos locateAgain(Page rootPage);
+        Page[] process(CursorPos pos);
+        void stepBack();
     }
 
     public static final class SingleDecisionMaker<K,V> implements LeafProcessor
@@ -351,6 +355,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         private final DecisionMaker<? super V> decisionMaker;
         private final K key;
         private final V value;
+        private       V result;
 
         public SingleDecisionMaker(K key, V value, DecisionMaker<? super V> decisionMaker) {
             this.decisionMaker = decisionMaker;
@@ -359,8 +364,25 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         }
 
         @Override
-        public Page[] process(Page leaf, int index) {
-            final V result = index < 0 ? null : (V)leaf.getValue(index);
+        public CursorPos locate(Page rootPage) {
+            return traverseDown(rootPage, key);
+        }
+
+        @Override
+        public CursorPos locateNext(Page rootPage) {
+            return null;
+        }
+
+        @Override
+        public void stepBack() {
+            decisionMaker.reset();
+        }
+
+        @Override
+        public Page[] process(CursorPos pos) {
+            Page leaf = pos.page;
+            int index = pos.index;
+            result = index < 0 ? null : (V)leaf.getValue(index);
             Decision decision = decisionMaker.decide(result, value);
             switch (decision) {
                 case ABORT:
@@ -390,110 +412,109 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                 return null;
             }
         }
+
+        public V getResult() {
+            return result;
+        }
     }
 
-/*
-    public void operate_(K key, V value, LeafProcessor processor) {
+    public void operateBatch(LeafProcessor processor) {
         beforeWrite();
         int attempt = 0;
+        RootReference rootReference = null;
         RootReference oldRootReference = null;
+        CursorPos pos = null;
         while(true) {
-            RootReference rootReference = getRoot();
-            int contention = 0;
-            if (oldRootReference != null) {
-                long updateAttemptCounter = rootReference.updateAttemptCounter - oldRootReference.updateAttemptCounter;
-                assert updateAttemptCounter >= 0 : updateAttemptCounter;
-                long updateCounter = rootReference.updateCounter - oldRootReference.updateCounter;
-                assert updateCounter >= 0 : updateCounter;
-                assert updateAttemptCounter >= updateCounter : updateAttemptCounter + " >= " + updateCounter;
-                contention = (int)((updateAttemptCounter+1) / (updateCounter+1));
+            if (rootReference == null) {
+                rootReference = getRoot();
+                pos = processor.locate(rootReference.root);
             }
-            oldRootReference = rootReference;
-            ++attempt;
-            CursorPos pos = traverseDown(rootReference.root, key);
-            CursorPos tip = pos;
-            Page p = pos.page;
-            int index = pos.index;
-            Page replacement[] = processor.process(p, index);
-            if (replacement == null) {
+
+            if (pos == null) {
                 return;
             }
+            Page replacement[] = processor.process(pos);
+            if (replacement == null) {
+                if(rootReference != getRoot()) {
+                    processor.stepBack();
+                    rootReference = null;
+                    continue;
+                }
+                return;
+            }
+            int contention = 0;
+            if (oldRootReference != null) {
+                long updateAttemptCounter = rootReference.updateAttemptCounter - oldRootReference.updateAttemptCounter;
+                assert updateAttemptCounter >= 0 : updateAttemptCounter;
+                long updateCounter = rootReference.updateCounter - oldRootReference.updateCounter;
+                assert updateCounter >= 0 : updateCounter;
+                assert updateAttemptCounter >= updateCounter : updateAttemptCounter + " >= " + updateCounter;
+                contention = (int)((updateAttemptCounter+1) / (updateCounter+1));
+            }
+            oldRootReference = rootReference;
+            ++attempt;
+            CursorPos tip = pos;
+            Page p = pos.page;
             pos = pos.parent;
-            final V result = index < 0 ? null : (V)p.getValue(index);
-            Decision decision = decisionMaker.decide(result, value);
 
             int unsavedMemory = 0;
             boolean needUnlock = false;
             try {
-                switch (decision) {
-                    case ABORT:
-                        if(rootReference != getRoot()) {
-                            decisionMaker.reset();
-                            continue;
+                if (attempt > 2 && !(needUnlock = lockRoot(processor, rootReference, attempt, contention))) {
+                    rootReference = null;
+                    continue;
+                }
+                int index;
+                switch (replacement.length) {
+                case 0:
+                    if (pos != null) {
+                        p = pos.page;
+                        index = pos.index;
+                        pos = pos.parent;
+                        assert p.getKeyCount() > 0;
+                        if (p.getKeyCount() == 1) {
+                            assert index <= 1;
+                            p = p.getChildPage(1 - index);
+                            break;
                         }
-                        return result;
-                    case REMOVE: {
-                        if (index < 0) {
-                            return null;
-                        }
-                        if (attempt > 2 && !(needUnlock = lockRoot(decisionMaker, rootReference, attempt, contention))) {
-                            continue;
-                        }
-                        if (p.getTotalCount() == 1 && pos != null) {
-                            p = pos.page;
-                            index = pos.index;
-                            pos = pos.parent;
-                            if (p.getKeyCount() == 1) {
-                                assert index <= 1;
-                                p = p.getChildPage(1 - index);
-                                break;
-                            }
-                            assert p.getKeyCount() > 1;
-                        }
+                        assert p.getKeyCount() > 1;
                         p = p.copy();
                         p.remove(index);
-                        break;
+                    } else {
+                        p = createEmptyLeaf();
                     }
-                    case PUT: {
-                        if (attempt > 2 && !(needUnlock = lockRoot(decisionMaker, rootReference, attempt, contention))) {
-                            continue;
+                    break;
+                case 1:
+                    p = replacement[0];
+                    int keyCount;
+                    while ((keyCount = p.getKeyCount()) > store.getKeysPerPage() || p.getMemory() > store.getMaxPageSize()
+                            && keyCount > (p.isLeaf() ? 1 : 2)) {
+                        long totalCount = p.getTotalCount();
+                        int at = keyCount >> 1;
+                        Object k = p.getKey(at);
+                        Page split = p.split(at);
+                        unsavedMemory += p.getMemory();
+                        unsavedMemory += split.getMemory();
+                        if (pos == null) {
+                            Object keys = getExtendedKeyType().createStorage(1);
+                            getExtendedKeyType().setValue(keys, 0, k);
+                            Page.PageReference children[] = {
+                                    new Page.PageReference(p),
+                                    new Page.PageReference(split)
+                            };
+                            p = Page.create(this, 1, keys, null, children, totalCount, 0);
+                            break;
                         }
-                        value = decisionMaker.selectValue(result, value);
+                        Page c = p;
+                        p = pos.page;
+                        index = pos.index;
+                        pos = pos.parent;
                         p = p.copy();
-                        if (index < 0) {
-                            p.insertLeaf(-index - 1, key, value);
-                            int keyCount;
-                            while ((keyCount = p.getKeyCount()) > store.getKeysPerPage() || p.getMemory() > store.getMaxPageSize()
-                                    && keyCount > (p.isLeaf() ? 1 : 2)) {
-                                long totalCount = p.getTotalCount();
-                                int at = keyCount >> 1;
-                                Object k = p.getKey(at);
-                                Page split = p.split(at);
-                                unsavedMemory += p.getMemory();
-                                unsavedMemory += split.getMemory();
-                                if (pos == null) {
-                                    Object keys = getExtendedKeyType().createStorage(1);
-                                    getExtendedKeyType().setValue(keys, 0, k);
-                                    Page.PageReference children[] = {
-                                            new Page.PageReference(p),
-                                            new Page.PageReference(split)
-                                    };
-                                    p = Page.create(this, 1, keys, null, children, totalCount, 0);
-                                    break;
-                                }
-                                Page c = p;
-                                p = pos.page;
-                                index = pos.index;
-                                pos = pos.parent;
-                                p = p.copy();
-                                p.setChild(index, split);
-                                p.insertNode(index, k, c);
-                            }
-                        } else {
-                            p.setValue(index, value);
-                        }
-                        break;
+                        p.setChild(index, split);
+                        p.insertNode(index, k, c);
                     }
+                default:
+                    break;
                 }
                 unsavedMemory += p.getMemory();
                 while (pos != null) {
@@ -504,11 +525,15 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                     unsavedMemory += p.getMemory();
                     pos = pos.parent;
                 }
+                if ((pos = processor.locateNext(rootReference.root)) != null) {
+                    throw new IllegalStateException("Multi-node batch operation is not supported yet");
+                }
                 if(needUnlock) {
                     unlockRoot(p, attempt);
                     needUnlock = false;
                 } else if(!updateRoot(rootReference, p, attempt)) {
-                    decisionMaker.reset();
+                    processor.stepBack();
+                    rootReference = null;
                     continue;
                 }
                 while (tip != null) {
@@ -518,7 +543,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                 if (store.getFileStore() != null) {
                     store.registerUnsavedPage(unsavedMemory);
                 }
-                return result;
+                break;
             } finally {
                 if(needUnlock) {
                     unlockRoot(rootReference.root, attempt);
@@ -526,9 +551,13 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             }
         }
     }
-*/
 
     public V operate(K key, V value, DecisionMaker<? super V> decisionMaker) {
+//*
+        SingleDecisionMaker<K, V> processor = new SingleDecisionMaker<>(key, value, decisionMaker);
+        operateBatch(processor);
+        return processor.getResult();
+/*/
         beforeWrite();
         int attempt = 0;
         RootReference oldRootReference = null;
@@ -656,6 +685,25 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                 }
             }
         }
+//*/
+    }
+
+    private boolean lockRoot(LeafProcessor processor, RootReference rootReference,
+                             int attempt, int contention) {
+        boolean success = lockRoot(rootReference);
+        if (!success) {
+            processor.stepBack();
+            if(attempt > 4) {
+                if (attempt <= 24) {
+                    Thread.yield();
+                } else {
+                    try {
+                        Thread.sleep(0, 100 / contention + 50);
+                    } catch (InterruptedException ignore) {/**/}
+                }
+            }
+        }
+        return success;
     }
 
     private boolean lockRoot(DecisionMaker<? super V> decisionMaker, RootReference rootReference,
@@ -690,7 +738,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         } while(!success);
     }
 
-    private static CursorPos traverseDown(Page p, Object key) {
+    public static CursorPos traverseDown(Page p, Object key) {
         CursorPos pos = null;
         while (!p.isLeaf()) {
             assert p.getKeyCount() > 0;
@@ -1222,7 +1270,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      *
      * @return the key type
      */
-    protected final ExtendedDataType getExtendedKeyType() {
+    public final ExtendedDataType getExtendedKeyType() {
         return extendedKeyType;
     }
 
@@ -1242,6 +1290,10 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      */
     public final ExtendedDataType getExtendedValueType() {
         return extendedValueType;
+    }
+
+    public int getKeysPerPage() {
+        return keysPerPage;
     }
 
     /**
