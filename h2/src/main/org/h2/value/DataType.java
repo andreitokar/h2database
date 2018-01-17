@@ -261,23 +261,13 @@ public class DataType {
                 new String[]{"IDENTITY", "BIGSERIAL"},
                 24
         );
-        add(Value.DECIMAL, Types.DECIMAL, "BigDecimal",
-                createDecimal(Integer.MAX_VALUE,
-                        ValueDecimal.DEFAULT_PRECISION,
-                        ValueDecimal.DEFAULT_SCALE,
-                        ValueDecimal.DEFAULT_DISPLAY_SIZE, true, false),
-                new String[]{"DECIMAL", "DEC"},
-                // 40 for ValueDecimal,
-                64
-        );
-        add(Value.DECIMAL, Types.NUMERIC, "BigDecimal",
-                createDecimal(Integer.MAX_VALUE,
-                        ValueDecimal.DEFAULT_PRECISION,
-                        ValueDecimal.DEFAULT_SCALE,
-                        ValueDecimal.DEFAULT_DISPLAY_SIZE, true, false),
-                new String[]{"NUMERIC", "NUMBER"},
-                64
-        );
+        if (SysProperties.BIG_DECIMAL_IS_DECIMAL) {
+            addDecimal();
+            addNumeric();
+        } else {
+            addNumeric();
+            addDecimal();
+        }
         add(Value.FLOAT, Types.REAL, "Float",
                 createDecimal(ValueFloat.PRECISION, ValueFloat.PRECISION,
                         0, ValueFloat.DISPLAY_SIZE, false, false),
@@ -398,6 +388,29 @@ public class DataType {
         }
     }
 
+    static void addDecimal() {
+        add(Value.DECIMAL, Types.DECIMAL, "BigDecimal",
+                createDecimal(Integer.MAX_VALUE,
+                        ValueDecimal.DEFAULT_PRECISION,
+                        ValueDecimal.DEFAULT_SCALE,
+                        ValueDecimal.DEFAULT_DISPLAY_SIZE, true, false),
+                new String[]{"DECIMAL", "DEC"},
+                // 40 for ValueDecimal,
+                64
+        );
+    }
+
+    static void addNumeric() {
+        add(Value.DECIMAL, Types.NUMERIC, "BigDecimal",
+                createDecimal(Integer.MAX_VALUE,
+                        ValueDecimal.DEFAULT_PRECISION,
+                        ValueDecimal.DEFAULT_SCALE,
+                        ValueDecimal.DEFAULT_DISPLAY_SIZE, true, false),
+                new String[]{"NUMERIC", "NUMBER"},
+                64
+        );
+    }
+
     private static void add(int type, int sqlType, String jdbc,
             DataType dataType, String[] names, int memory) {
         for (int i = 0; i < names.length; i++) {
@@ -514,15 +527,27 @@ public class DataType {
                 return ValueNull.INSTANCE;
             }
             case Value.BYTES: {
-                byte[] buff = rs.getBytes(columnIndex);
-                v = buff == null ? (Value) ValueNull.INSTANCE :
-                    ValueBytes.getNoCopy(buff);
+                /*
+                 * Both BINARY and UUID may be mapped to Value.BYTES. getObject() returns byte[]
+                 * for SQL BINARY, UUID for SQL UUID and null for SQL NULL.
+                 */
+                Object o = rs.getObject(columnIndex);
+                if (o instanceof byte[]) {
+                    v = ValueBytes.getNoCopy((byte[]) o);
+                } else if (o != null) {
+                    v = ValueUuid.get((UUID) o);
+                } else
+                    v = ValueNull.INSTANCE;
                 break;
             }
             case Value.UUID: {
-                byte[] buff = rs.getBytes(columnIndex);
-                v = buff == null ? (Value) ValueNull.INSTANCE :
-                    ValueUuid.get(buff);
+                Object o = rs.getObject(columnIndex);
+                if (o instanceof UUID) {
+                    v = ValueUuid.get((UUID) o);
+                } else if (o != null)
+                    v = ValueUuid.get((byte[]) o);
+                else
+                    v = ValueNull.INSTANCE;
                 break;
             }
             case Value.BOOLEAN: {
@@ -1100,8 +1125,7 @@ public class DataType {
             }
             return ValueResultSet.getCopy((ResultSet) x, Integer.MAX_VALUE);
         } else if (x instanceof UUID) {
-            UUID u = (UUID) x;
-            return ValueUuid.get(u.getMostSignificantBits(), u.getLeastSignificantBits());
+            return ValueUuid.get((UUID) x);
         } else if (x instanceof Object[]) {
             // (a.getClass().isArray());
             // (a.getClass().getComponentType().isPrimitive());

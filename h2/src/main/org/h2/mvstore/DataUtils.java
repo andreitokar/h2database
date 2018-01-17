@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
 import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -639,6 +640,40 @@ public final class DataUtils {
     }
 
     /**
+     * @param buff output buffer, should be empty
+     * @param s parsed string
+     * @param i offset to parse from
+     * @param size stop offset (exclusive)
+     * @return new offset
+     */
+    private static int parseMapValue(StringBuilder buff, String s, int i, int size) {
+        while (i < size) {
+            char c = s.charAt(i++);
+            if (c == ',') {
+                break;
+            } else if (c == '\"') {
+                while (i < size) {
+                    c = s.charAt(i++);
+                    if (c == '\\') {
+                        if (i == size) {
+                            throw DataUtils.newIllegalStateException(
+                                    DataUtils.ERROR_FILE_CORRUPT,
+                                    "Not a map: {0}", s);
+                        }
+                        c = s.charAt(i++);
+                    } else if (c == '\"') {
+                        break;
+                    }
+                    buff.append(c);
+                }
+            } else {
+                buff.append(c);
+            }
+        }
+        return i;
+    }
+
+    /**
      * Parse a key-value pair list.
      *
      * @param s the list
@@ -647,6 +682,7 @@ public final class DataUtils {
      */
     public static HashMap<String, String> parseMap(String s) {
         HashMap<String, String> map = New.hashMap();
+        StringBuilder buff = new StringBuilder();
         for (int i = 0, size = s.length(); i < size;) {
             int startKey = i;
             i = s.indexOf(':', i);
@@ -655,55 +691,122 @@ public final class DataUtils {
                         DataUtils.ERROR_FILE_CORRUPT, "Not a map: {0}", s);
             }
             String key = s.substring(startKey, i++);
-            StringBuilder buff = new StringBuilder();
-            while (i < size) {
-                char c = s.charAt(i++);
-                if (c == ',') {
-                    break;
-                } else if (c == '\"') {
-                    while (i < size) {
-                        c = s.charAt(i++);
-                        if (c == '\\') {
-                            if (i == size) {
-                                throw DataUtils.newIllegalStateException(
-                                        DataUtils.ERROR_FILE_CORRUPT,
-                                        "Not a map: {0}", s);
-                            }
-                            c = s.charAt(i++);
-                        } else if (c == '\"') {
-                            break;
-                        }
-                        buff.append(c);
-                    }
-                } else {
-                    buff.append(c);
-                }
-            }
+            i = parseMapValue(buff, s, i, size);
             map.put(key, buff.toString());
+            buff.setLength(0);
         }
         return map;
+    }
+
+    /**
+     * Parse a key-value pair list and checks its checksum.
+     *
+     * @param bytes encoded map
+     * @return the map without mapping for {@code "fletcher"}, or {@code null} if checksum is wrong
+     * @throws IllegalStateException if parsing failed
+     */
+    public static HashMap<String, String> parseChecksummedMap(byte[] bytes) {
+        int start = 0, end = bytes.length;
+        while (start < end && bytes[start] <= ' ') {
+            start++;
+        }
+        while (start < end && bytes[end - 1] <= ' ') {
+            end--;
+        }
+        String s = new String(bytes, start, end - start, StandardCharsets.ISO_8859_1);
+        HashMap<String, String> map = New.hashMap();
+        StringBuilder buff = new StringBuilder();
+        for (int i = 0, size = s.length(); i < size;) {
+            int startKey = i;
+            i = s.indexOf(':', i);
+            if (i < 0) {
+                throw DataUtils.newIllegalStateException(
+                        DataUtils.ERROR_FILE_CORRUPT, "Not a map: {0}", s);
+            }
+            if (i - startKey == 8 && s.regionMatches(startKey, "fletcher", 0, 8)) {
+                DataUtils.parseMapValue(buff, s, i + 1, size);
+                int check = (int) Long.parseLong(buff.toString(), 16);
+                if (check == DataUtils.getFletcher32(bytes, start, startKey - 1)) {
+                    return map;
+                }
+                // Corrupted map
+                return null;
+            }
+            String key = s.substring(startKey, i++);
+            i = DataUtils.parseMapValue(buff, s, i, size);
+            map.put(key, buff.toString());
+            buff.setLength(0);
+        }
+        // Corrupted map
+        return null;
+    }
+
+    /**
+     * Parse a name from key-value pair list.
+     *
+     * @param s the list
+     * @return value of name item, or {@code null}
+     * @throws IllegalStateException if parsing failed
+     */
+    public static String getMapName(String s) {
+        for (int i = 0, size = s.length(); i < size;) {
+            int startKey = i;
+            i = s.indexOf(':', i);
+            if (i < 0) {
+                throw DataUtils.newIllegalStateException(
+                        DataUtils.ERROR_FILE_CORRUPT, "Not a map: {0}", s);
+            }
+            if (i++ - startKey == 4 && s.regionMatches(startKey, "name", 0, 4)) {
+                StringBuilder buff = new StringBuilder();
+                i = parseMapValue(buff, s, i, size);
+                return buff.toString();
+            } else {
+                while (i < size) {
+                    char c = s.charAt(i++);
+                    if (c == ',') {
+                        break;
+                    } else if (c == '\"') {
+                        while (i < size) {
+                            c = s.charAt(i++);
+                            if (c == '\\') {
+                                if (i == size) {
+                                    throw DataUtils.newIllegalStateException(
+                                            DataUtils.ERROR_FILE_CORRUPT,
+                                            "Not a map: {0}", s);
+                                }
+                                c = s.charAt(i++);
+                            } else if (c == '\"') {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     /**
      * Calculate the Fletcher32 checksum.
      *
      * @param bytes the bytes
+     * @param offset initial offset
      * @param length the message length (if odd, 0 is appended)
      * @return the checksum
      */
-    public static int getFletcher32(byte[] bytes, int length) {
+    public static int getFletcher32(byte[] bytes, int offset, int length) {
         int s1 = 0xffff, s2 = 0xffff;
-        int i = 0, evenLength = length / 2 * 2;
-        while (i < evenLength) {
+        int i = offset, len = offset + (length & ~1);
+        while (i < len) {
             // reduce after 360 words (each word is two bytes)
-            for (int end = Math.min(i + 720, evenLength); i < end;) {
+            for (int end = Math.min(i + 720, len); i < end;) {
                 int x = ((bytes[i++] & 0xff) << 8) | (bytes[i++] & 0xff);
                 s2 += s1 += x;
             }
             s1 = (s1 & 0xffff) + (s1 >>> 16);
             s2 = (s2 & 0xffff) + (s2 >>> 16);
         }
-        if (i < length) {
+        if ((length & 1) != 0) {
             // odd length: append 0
             int x = (bytes[i] & 0xff) << 8;
             s2 += s1 += x;

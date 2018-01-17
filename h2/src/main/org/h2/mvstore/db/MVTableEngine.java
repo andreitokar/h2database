@@ -258,7 +258,7 @@ public class MVTableEngine implements TableEngine {
                 if (mapName.startsWith("temp.")) {
                     store.removeMap(mapName);
                 } else if (mapName.startsWith("table.") || mapName.startsWith("index.")) {
-                    int id = Integer.parseInt(mapName.substring(1 + mapName.indexOf(".")));
+                    int id = Integer.parseInt(mapName.substring(1 + mapName.indexOf('.')));
                     if (!objectIds.get(id)) {
                         store.removeMap(mapName);
                     }

@@ -375,7 +375,7 @@ public abstract class Page implements Cloneable {
         buff.append("pos: ").append(Long.toHexString(pos)).append("\n");
         if (isSaved()) {
             int chunkId = DataUtils.getPageChunkId(pos);
-            buff.append("chunk: ").append(Long.toHexString(chunkId)).append("\n");
+            buff.append("chunk: ").append(Long.toHexString(chunkId)).append('\n');
         }
     }
 

@@ -472,6 +472,7 @@ public final class MVStore {
      * @param builder the map builder
      * @return the map
      */
+    @SuppressWarnings({ "unchecked", "rawtypes" })
     public synchronized <M extends MVMap<K, V>, K, V> M openMap(
             String name, MVMap.MapBuilder<M, K, V> builder) {
         int id = getMapId(name);
@@ -625,9 +626,9 @@ public final class MVStore {
             fileHeaderBlocks.get(buff);
             // the following can fail for various reasons
             try {
-                String s = new String(buff, 0, BLOCK_SIZE,
-                        StandardCharsets.ISO_8859_1).trim();
-                HashMap<String, String> m = DataUtils.parseMap(s);
+                HashMap<String, String> m = DataUtils.parseChecksummedMap(buff);
+                if (m == null)
+                    continue;
                 int blockSize = DataUtils.readHexInt(
                         m, "blockSize", BLOCK_SIZE);
                 if (blockSize != BLOCK_SIZE) {
@@ -635,15 +636,6 @@ public final class MVStore {
                             DataUtils.ERROR_UNSUPPORTED_FORMAT,
                             "Block size {0} is currently not supported",
                             blockSize);
-                }
-                int check = DataUtils.readHexInt(m, "fletcher", 0);
-                m.remove("fletcher");
-                s = s.substring(0, s.lastIndexOf("fletcher") - 1);
-                byte[] bytes = s.getBytes(StandardCharsets.ISO_8859_1);
-                int checksum = DataUtils.getFletcher32(bytes,
-                        bytes.length);
-                if (check != checksum) {
-                    continue;
                 }
                 long version = DataUtils.readHexLong(m, "version", 0);
                 if (newest == null || version > newest.version) {
@@ -892,14 +884,8 @@ public final class MVStore {
             ByteBuffer lastBlock = fileStore.readFully(pos, Chunk.FOOTER_LENGTH);
             byte[] buff = new byte[Chunk.FOOTER_LENGTH];
             lastBlock.get(buff);
-            String s = new String(buff, StandardCharsets.ISO_8859_1).trim();
-            HashMap<String, String> m = DataUtils.parseMap(s);
-            int check = DataUtils.readHexInt(m, "fletcher", 0);
-            m.remove("fletcher");
-            s = s.substring(0, s.lastIndexOf("fletcher") - 1);
-            byte[] bytes = s.getBytes(StandardCharsets.ISO_8859_1);
-            int checksum = DataUtils.getFletcher32(bytes, bytes.length);
-            if (check == checksum) {
+            HashMap<String, String> m = DataUtils.parseChecksummedMap(buff);
+            if (m != null) {
                 int chunk = DataUtils.readHexInt(m, "chunk", 0);
                 Chunk c = new Chunk(chunk);
                 c.version = DataUtils.readHexLong(m, "version", 0);
@@ -921,7 +907,7 @@ public final class MVStore {
         }
         DataUtils.appendMap(buff, storeHeader);
         byte[] bytes = buff.toString().getBytes(StandardCharsets.ISO_8859_1);
-        int checksum = DataUtils.getFletcher32(bytes, bytes.length);
+        int checksum = DataUtils.getFletcher32(bytes, 0, bytes.length);
         DataUtils.appendMap(buff, "fletcher", checksum);
         buff.append("\n");
         bytes = buff.toString().getBytes(StandardCharsets.ISO_8859_1);
@@ -2541,7 +2527,7 @@ public final class MVStore {
     public String getMapName(int id) {
         checkOpen();
         String m = meta.get(MVMap.getMapKey(id));
-        return m == null ? null : DataUtils.parseMap(m).get("name");
+        return m == null ? null : DataUtils.getMapName(m);
     }
 
     private int getMapId(String name) {
@@ -2882,7 +2868,18 @@ public final class MVStore {
      */
     public static final class Builder {
 
-        private final HashMap<String, Object> config = New.hashMap();
+        private final HashMap<String, Object> config;
+
+        private Builder(HashMap<String, Object> config) {
+            this.config = config;
+        }
+
+        /**
+         * Creates new instance of MVStore.Builder.
+         */
+        public Builder() {
+            config = New.hashMap();
+        }
 
         private Builder set(String key, Object value) {
             config.put(key, value);
@@ -3095,11 +3092,10 @@ public final class MVStore {
          * @param s the string representation
          * @return the builder
          */
+        @SuppressWarnings({ "unchecked", "rawtypes" })
         public static Builder fromString(String s) {
-            HashMap<String, String> config = DataUtils.parseMap(s);
-            Builder builder = new Builder();
-            builder.config.putAll(config);
-            return builder;
+            // Cast from HashMap<String, String> to HashMap<String, Object> is safe
+            return new Builder((HashMap) DataUtils.parseMap(s));
         }
 
     }

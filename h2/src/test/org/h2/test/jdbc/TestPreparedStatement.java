@@ -26,6 +26,7 @@ import java.sql.Types;
 import java.util.UUID;
 import org.h2.api.ErrorCode;
 import org.h2.api.Trigger;
+import org.h2.engine.SysProperties;
 import org.h2.test.TestBase;
 import org.h2.util.LocalDateTimeUtils;
 import org.h2.util.Task;
@@ -768,6 +769,15 @@ public class TestPreparedStatement extends TestBase {
     }
 
     private void testParameterMetaData(Connection conn) throws SQLException {
+        int numericType;
+        String numericName;
+        if (SysProperties.BIG_DECIMAL_IS_DECIMAL) {
+            numericType = Types.DECIMAL;
+            numericName = "DECIMAL";
+        } else {
+            numericType = Types.NUMERIC;
+            numericName = "NUMERIC";
+        }
         PreparedStatement prep = conn.prepareStatement("SELECT ?, ?, ? FROM DUAL");
         ParameterMetaData pm = prep.getParameterMetaData();
         assertEquals("java.lang.String", pm.getParameterClassName(1));
@@ -793,15 +803,15 @@ public class TestPreparedStatement extends TestBase {
                 "INSERT INTO TEST3 VALUES(?, ?, ?)");
         checkParameter(prep1, 1, "java.lang.Integer", 4, "INTEGER", 10, 0);
         checkParameter(prep1, 2, "java.lang.String", 12, "VARCHAR", 255, 0);
-        checkParameter(prep1, 3, "java.math.BigDecimal", 3, "DECIMAL", 10, 2);
+        checkParameter(prep1, 3, "java.math.BigDecimal", numericType, numericName, 10, 2);
         checkParameter(prep2, 1, "java.lang.Integer", 4, "INTEGER", 10, 0);
         checkParameter(prep2, 2, "java.lang.String", 12, "VARCHAR", 255, 0);
-        checkParameter(prep2, 3, "java.math.BigDecimal", 3, "DECIMAL", 10, 2);
+        checkParameter(prep2, 3, "java.math.BigDecimal", numericType, numericName, 10, 2);
         PreparedStatement prep3 = conn.prepareStatement(
                 "SELECT * FROM TEST3 WHERE ID=? AND NAME LIKE ? AND ?>DATA");
         checkParameter(prep3, 1, "java.lang.Integer", 4, "INTEGER", 10, 0);
         checkParameter(prep3, 2, "java.lang.String", 12, "VARCHAR", 0, 0);
-        checkParameter(prep3, 3, "java.math.BigDecimal", 3, "DECIMAL", 10, 2);
+        checkParameter(prep3, 3, "java.math.BigDecimal", numericType, numericName, 10, 2);
         stat.execute("DROP TABLE TEST3");
     }
 
@@ -1118,7 +1128,7 @@ public class TestPreparedStatement extends TestBase {
         stat.execute("CREATE TABLE TEST(ID INT PRIMARY KEY, NAME VARCHAR(255))");
         stat.execute("INSERT INTO TEST VALUES(1, 'Hello')");
         PreparedStatement prep = conn.prepareStatement(
-                "SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM TEST");
+                "SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM TEST");
         prep.setObject(1, Boolean.TRUE);
         prep.setObject(2, "Abc");
         prep.setObject(3, new BigDecimal("10.2"));
@@ -1142,14 +1152,17 @@ public class TestPreparedStatement extends TestBase {
         prep.setObject(18, "3.725", Types.DOUBLE);
         prep.setObject(19, "23:22:21", Types.TIME);
         prep.setObject(20, new java.math.BigInteger("12345"), Types.OTHER);
+        prep.setArray(21, conn.createArrayOf("TINYINT", new Object[] {(byte) 1}));
+        prep.setArray(22, conn.createArrayOf("SMALLINT", new Object[] {(short) -2}));
         rs = prep.executeQuery();
         rs.next();
         assertTrue(rs.getObject(1).equals(Boolean.TRUE));
         assertTrue(rs.getObject(2).equals("Abc"));
         assertTrue(rs.getObject(3).equals(new BigDecimal("10.2")));
-        assertTrue(rs.getObject(4).equals((byte) 0xff));
-        assertTrue(rs.getObject(5).equals(
-                new Short(Short.MAX_VALUE)));
+        assertTrue(rs.getObject(4).equals(SysProperties.OLD_RESULT_SET_GET_OBJECT ?
+                (Object) Byte.valueOf((byte) 0xff) : (Object) Integer.valueOf(-1)));
+        assertTrue(rs.getObject(5).equals(SysProperties.OLD_RESULT_SET_GET_OBJECT ?
+                (Object) Short.valueOf(Short.MAX_VALUE) : (Object) Integer.valueOf(Short.MAX_VALUE)));
         assertTrue(rs.getObject(6).equals(
                 new Integer(Integer.MIN_VALUE)));
         assertTrue(rs.getObject(7).equals(
@@ -1178,6 +1191,12 @@ public class TestPreparedStatement extends TestBase {
                 java.sql.Time.valueOf("23:22:21")));
         assertTrue(rs.getObject(20).equals(
                 new java.math.BigInteger("12345")));
+        Object[] a = (Object[]) rs.getObject(21);
+        assertEquals(a[0], SysProperties.OLD_RESULT_SET_GET_OBJECT ?
+                (Object) Byte.valueOf((byte) 1) : (Object) Integer.valueOf(1));
+        a = (Object[]) rs.getObject(22);
+        assertEquals(a[0], SysProperties.OLD_RESULT_SET_GET_OBJECT ?
+                (Object) Short.valueOf((short) -2) : (Object) Integer.valueOf(-2));
 
         // } else if(x instanceof java.io.Reader) {
         // return session.createLob(Value.CLOB,
