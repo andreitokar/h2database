@@ -193,7 +193,7 @@ public abstract class Value {
     private static final BigDecimal MIN_LONG_DECIMAL =
             BigDecimal.valueOf(Long.MIN_VALUE);
 
-    private static void rangeCheck(long zeroBasedOffset, long length, long dataSize) {
+    static void rangeCheck(long zeroBasedOffset, long length, long dataSize) {
         if ((zeroBasedOffset | length) < 0 || length > dataSize - zeroBasedOffset) {
             if (zeroBasedOffset < 0 || zeroBasedOffset > dataSize) {
                 throw DbException.getInvalidValueException("offset", zeroBasedOffset + 1);
@@ -990,6 +990,7 @@ public abstract class Value {
                     if (DataType.isGeometry(object)) {
                         return ValueGeometry.getFromGeometry(object);
                     }
+                    //$FALL-THROUGH$
                 case TIMESTAMP_TZ:
                     throw DbException.get(
                             ErrorCode.DATA_CONVERSION_ERROR_1, getString());

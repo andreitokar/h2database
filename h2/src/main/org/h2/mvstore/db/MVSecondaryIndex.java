@@ -44,7 +44,7 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
      * The multi-value table.
      */
     private final MVTable                         mvTable;
-    private final RowFactory rowFactory;
+    private final RowFactory                      rowFactory;
     private final TransactionMap<SearchRow,Value> dataMap;
 
     public MVSecondaryIndex(Database db, MVTable table, int id, String indexName,

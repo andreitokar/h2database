@@ -554,19 +554,19 @@ public class TestGeneralCommonTableQueries extends AbstractBaseForCommonTableExp
             config = backupConfig;
         }
     }
-    
-   private void testSimple3RowRecursiveQueryDropAllObjects() throws Exception {
-        
+
+    private void testSimple3RowRecursiveQueryDropAllObjects() throws Exception {
+
         String[] expectedRowData = new String[]{"|6"};
         String[] expectedColumnTypes = new String[]{"BIGINT"};
         String[] expectedColumnNames = new String[]{"SUM(N)"};
-        
+
         String setupSQL = "DROP ALL OBJECTS;";
         String withQuery = "select sum(n) from ("
             +"    with recursive r(n) as ("
             +"        (select 1) union all (select n+1 from r where n < 3)"
             +"    ),"
-            +"   dummyUnsedCte(n) as ("
+            +"   dummyUnusedCte(n) as ("
             +"   select 1 "
             +"   )"
             +"    select n from r"
@@ -574,8 +574,8 @@ public class TestGeneralCommonTableQueries extends AbstractBaseForCommonTableExp
 
         int maxRetries = 10;
         int expectedNumberOfRows = expectedRowData.length;
-        
+
         testRepeatedQueryWithSetup(maxRetries, expectedRowData, expectedColumnNames, expectedNumberOfRows, setupSQL,
-                withQuery, maxRetries - 1, expectedColumnTypes);      
-    }     
+                withQuery, maxRetries - 1, expectedColumnTypes);
+    }
 }

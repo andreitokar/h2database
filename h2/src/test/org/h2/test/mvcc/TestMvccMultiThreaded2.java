@@ -110,6 +110,9 @@ public class TestMvccMultiThreaded2 extends TestBase {
 
         public int iterationsProcessed;
 
+        SelectForUpdate() {
+        }
+
         @Override
         public void run() {
             final long start = System.currentTimeMillis();

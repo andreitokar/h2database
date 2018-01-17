@@ -955,7 +955,7 @@ public class FullText {
             }
         }
 
-        private static boolean isMultiThread(Connection conn)
+        static boolean isMultiThread(Connection conn)
                 throws SQLException {
             return true;
 /*
