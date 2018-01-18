@@ -438,6 +438,7 @@ public class MVTable extends TableBase {
             boolean wasLocked = lockExclusiveSession == s;
             traceLock(s, wasLocked, TraceLockEvent.TRACE_LOCK_UNLOCK, NO_EXTRA_INFO);
             if (wasLocked) {
+                lockSharedSessions.remove(s);
                 lockExclusiveSession = null;
                 if (SysProperties.THREAD_DEADLOCK_DETECTOR) {
                     if (EXCLUSIVE_LOCKS.get() != null) {
