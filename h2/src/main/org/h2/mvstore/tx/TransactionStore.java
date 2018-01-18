@@ -1024,7 +1024,7 @@ public final class TransactionStore {
 
         private final long timeoutMillis;
 
-        private volatile int blockingTransactionId;
+        private volatile Transaction blockingTransaction;
 
         private int ownerId;
 
@@ -1050,7 +1050,7 @@ public final class TransactionStore {
             this.statusAndLogId = new AtomicLong(tx.statusAndLogId.get());
             this.name = tx.name;
             this.timeoutMillis = tx.timeoutMillis;
-            this.blockingTransactionId = tx.blockingTransactionId;
+            this.blockingTransaction = tx.blockingTransaction;
             this.ownerId = tx.ownerId;
             this.txCounter = tx.txCounter;
             this.listener = RollbackListener.NONE;
@@ -1172,13 +1172,7 @@ public final class TransactionStore {
         }
 
         public int getBlockerId() {
-            if(blockingTransactionId != 0) {
-                Transaction tx = store.getTransaction(blockingTransactionId);
-                if(tx != null) {
-                    return tx.getOwnerId();
-                }
-            }
-            return 0;
+            return blockingTransaction == null ? 0 : blockingTransaction.ownerId;
         }
 
         /**
@@ -1420,14 +1414,20 @@ public final class TransactionStore {
         }
 
         public boolean waitFor(Transaction toWaitFor) {
-//            synchronized (this) {
-                blockingTransactionId = toWaitFor.transactionId;
-//            }
+            for(Transaction tx = toWaitFor, nextTx; (nextTx = tx.blockingTransaction) != null; tx = nextTx) {
+                if (tx == this) {
+                    throw DataUtils.newIllegalStateException(DataUtils.ERROR_TRANSACTIONS_DEADLOCK,
+                            "Transaction {0} has been chosen as a deadlock victim. Map entry <{1}> with key <{2}>",
+                            transactionId, blockingMap.getName(), blockingKey);
+                }
+            }
+
+            blockingTransaction = toWaitFor;
             boolean outcome = toWaitFor.waitForThisToEnd(timeoutMillis);
             if (outcome) {
                 blockingMap = null;
                 blockingKey = null;
-                blockingTransactionId = 0;
+                blockingTransaction = null;
             }
             return outcome;
         }
@@ -1700,7 +1700,7 @@ public final class TransactionStore {
             TransactionStore store = transaction.store;
             Transaction blockingTransaction;
             do {
-                transaction.blockingTransactionId = 0;
+                assert transaction.blockingTransaction == null;
                 VersionedValue result = map.put(key, VersionedValue.DUMMY, decisionMaker);
                 assert decisionMaker.decision != null;
                 if (decisionMaker.decision != MVMap.Decision.ABORT) {
@@ -1717,21 +1717,6 @@ public final class TransactionStore {
                 transaction.blockingMap = map;
                 transaction.blockingKey = key;
             } while (transaction.waitFor(blockingTransaction));
-
-//            List<Integer> chain = new ArrayList<>();
-//            chain.add(transaction.blockingTransactionId);
-            Transaction tx = transaction;
-            int txId;
-            while((txId = tx.blockingTransactionId) != 0
-                    && !store.committingTransactions.get().get(txId)
-                    && (tx = store.getTransaction(txId)) != null) {
-//                chain.add(txId);
-                if (tx == transaction) {
-                    throw DataUtils.newIllegalStateException(DataUtils.ERROR_TRANSACTIONS_DEADLOCK,
-                            "Transaction {0} has been chosen as a deadlock victim. Map entry <{1}> with key <{2}>",
-                            transaction.transactionId, map.getName(), key);
-                }
-            }
 
             throw DataUtils.newIllegalStateException(DataUtils.ERROR_TRANSACTION_LOCKED,
                     "Map entry <{0}> with key <{1}> is locked by tx {2} and can not be updated by tx {3} within allocated time interval {4} ms.",

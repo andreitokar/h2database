@@ -70,18 +70,12 @@ public class TestSequence extends TestBase {
                             PreparedStatement prep2 = conn.prepareStatement(
                                     "delete from test");
                             while (!stop) {
-                                try {
-                                    prep.execute();
-                                    if (Math.random() < 0.01) {
-                                        prep2.execute();
-                                    }
-                                    if (Math.random() < 0.01) {
-                                        createDropTrigger(conn);
-                                    }
-                                } catch (SQLException ex) {
-                                    if (ex.getErrorCode() != ErrorCode.DEADLOCK_1) {
-                                        throw ex;
-                                    }
+                                prep.execute();
+                                if (Math.random() < 0.01) {
+                                    prep2.execute();
+                                }
+                                if (Math.random() < 0.01) {
+                                    createDropTrigger(conn);
                                 }
                             }
                         }

@@ -171,7 +171,7 @@ public class BenchB implements Bench, Runnable {
             updateAccount.setInt(1, delta);
             updateAccount.setInt(2, account);
             master.database.update(updateAccount, "UpdateAccounts");
-            updateAccount.executeUpdate();
+//            updateAccount.executeUpdate();
 
             // SELECT ABALANCE FROM ACCOUNTS WHERE AID=?
             selectAccount.setInt(1, account);

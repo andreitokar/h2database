@@ -351,7 +351,7 @@ public class MVTable extends TableBase {
                 }
                 buff.append(t.toString());
                 if (t instanceof MVTable) {
-                    if (((MVTable) t).lockExclusiveSession == s) {
+                    if (t.isLockedExclusivelyBy(s)) {
                         buff.append(" (exclusive)");
                     } else {
                         buff.append(" (shared)");
