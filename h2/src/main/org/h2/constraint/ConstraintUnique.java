@@ -14,7 +14,6 @@ import org.h2.schema.Schema;
 import org.h2.table.Column;
 import org.h2.table.IndexColumn;
 import org.h2.table.Table;
-import org.h2.util.New;
 import org.h2.util.StatementBuilder;
 import org.h2.util.StringUtils;
 
@@ -134,7 +133,7 @@ public class ConstraintUnique extends Constraint {
 
     @Override
     public HashSet<Column> getReferencedColumns(Table table) {
-        HashSet<Column> result = New.hashSet();
+        HashSet<Column> result = new HashSet<>();
         for (IndexColumn c : columns) {
             result.add(c.column);
         }

@@ -32,7 +32,6 @@ import javax.servlet.descriptor.JspConfigDescriptor;
 import org.h2.api.ErrorCode;
 import org.h2.server.web.DbStarter;
 import org.h2.test.TestBase;
-import org.h2.util.New;
 
 /**
  * Tests the DbStarter servlet.
@@ -56,7 +55,7 @@ public class TestServlet extends TestBase {
     static class TestServletContext implements ServletContext {
 
         private final Properties initParams = new Properties();
-        private final HashMap<String, Object> attributes = New.hashMap();
+        private final HashMap<String, Object> attributes = new HashMap<>();
 
         @Override
         public void setAttribute(String key, Object value) {

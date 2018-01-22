@@ -95,6 +95,7 @@ import org.h2.engine.Constants;
 import org.h2.engine.Database;
 import org.h2.engine.DbObject;
 import org.h2.engine.FunctionAlias;
+import org.h2.engine.Mode;
 import org.h2.engine.Mode.ModeEnum;
 import org.h2.engine.Procedure;
 import org.h2.engine.Right;
@@ -925,7 +926,7 @@ public class Parser {
 
     private Column[] parseColumnList(Table table) {
         ArrayList<Column> columns = New.arrayList();
-        HashSet<Column> set = New.hashSet();
+        HashSet<Column> set = new HashSet<>();
         if (!readIf(")")) {
             do {
                 Column column = parseColumn(table);
@@ -1357,7 +1358,7 @@ public class Parser {
             if (isSelect()) {
                 Query query = parseSelectUnion();
                 read(")");
-                query.setParameterList(New.arrayList(parameters));
+                query.setParameterList(new ArrayList<>(parameters));
                 query.init();
                 Session s;
                 if (createView != null) {
@@ -1553,15 +1554,13 @@ public class Parser {
             } while (readIf("."));
             schemaName = session.getCurrentSchemaName();
             if (list.size() == 4) {
-                if (!equalsToken(database.getShortName(), list.get(0))) {
+                if (!equalsToken(database.getShortName(), list.remove(0))) {
                     throw DbException.getSyntaxError(sqlCommand, parseIndex,
                             "database name");
                 }
-                list.remove(0);
             }
             if (list.size() == 3) {
-                schemaName = list.get(0);
-                list.remove(0);
+                schemaName = list.remove(0);
             }
             if (list.size() != 2) {
                 throw DbException.getSyntaxError(sqlCommand, parseIndex,
@@ -3144,7 +3143,7 @@ public class Parser {
                         String timestamp = currentValue.getString();
                         read();
                         r = ValueExpression
-                                .get(ValueTimestamp.parse(timestamp, session.getDatabase().getMode()));
+                                .get(ValueTimestamp.parse(timestamp, database.getMode()));
                     } else if (equalsToken("X", name)) {
                         read();
                         byte[] buffer = StringUtils
@@ -3186,7 +3185,7 @@ public class Parser {
                                 .compareTo(ValueLong.MIN_BD) == 0) {
                     // convert Long.MIN_VALUE to type 'long'
                     // (Long.MAX_VALUE+1 is of type 'decimal')
-                    r = ValueExpression.get(ValueLong.get(Long.MIN_VALUE));
+                    r = ValueExpression.get(ValueLong.MIN);
                 }
                 read();
             } else {
@@ -3389,7 +3388,7 @@ public class Parser {
 
     private boolean readBooleanSetting() {
         if (currentTokenType == VALUE) {
-            boolean result = currentValue.getBoolean().booleanValue();
+            boolean result = currentValue.getBoolean();
             read();
             return result;
         }
@@ -3813,7 +3812,7 @@ public class Parser {
         checkLiterals(false);
         if (!containsE && sub.indexOf('.') < 0) {
             BigInteger bi = new BigInteger(sub);
-            if (bi.compareTo(ValueLong.MAX) <= 0) {
+            if (bi.compareTo(ValueLong.MAX_BI) <= 0) {
                 // parse constants like "10000000L"
                 if (chars[i] == 'L') {
                     parseIndex++;
@@ -4145,7 +4144,7 @@ public class Parser {
             // if not yet converted to uppercase, do it now
             s = StringUtils.toUpperEnglish(s);
         }
-        return getSaveTokenType(s, database.getMode().supportOffsetFetch);
+        return getSaveTokenType(s, database.getMode().supportOffsetFetch, false);
     }
 
     private boolean isKeyword(String s) {
@@ -4167,20 +4166,27 @@ public class Parser {
         if (s == null || s.length() == 0) {
             return false;
         }
-        return getSaveTokenType(s, supportOffsetFetch) != IDENTIFIER;
+        return getSaveTokenType(s, supportOffsetFetch, false) != IDENTIFIER;
     }
 
-    private static int getSaveTokenType(String s, boolean supportOffsetFetch) {
+    private static int getSaveTokenType(String s, boolean supportOffsetFetch, boolean functionsAsKeywords) {
         switch (s.charAt(0)) {
         case 'A':
             return getKeywordOrIdentifier(s, "ALL", KEYWORD);
         case 'C':
-            if (s.equals("CHECK")) {
+            if ("CHECK".equals(s)) {
                 return KEYWORD;
             } else if ("CONSTRAINT".equals(s)) {
                 return KEYWORD;
+            } else if ("CROSS".equals(s)) {
+                return KEYWORD;
             }
-            return getKeywordOrIdentifier(s, "CROSS", KEYWORD);
+            if (functionsAsKeywords) {
+                if ("CURRENT_DATE".equals(s) || "CURRENT_TIME".equals(s) || "CURRENT_TIMESTAMP".equals(s)) {
+                    return KEYWORD;
+                }
+            }
+            return IDENTIFIER;
         case 'D':
             return getKeywordOrIdentifier(s, "DISTINCT", KEYWORD);
         case 'E':
@@ -4240,9 +4246,25 @@ public class Parser {
         case 'R':
             return getKeywordOrIdentifier(s, "ROWNUM", ROWNUM);
         case 'S':
-            return getKeywordOrIdentifier(s, "SELECT", KEYWORD);
+            if ("SELECT".equals(s)) {
+                return KEYWORD;
+            }
+            if (functionsAsKeywords) {
+                if ("SYSDATE".equals(s) || "SYSTIME".equals(s) || "SYSTIMESTAMP".equals(s)) {
+                    return KEYWORD;
+                }
+            }
+            return IDENTIFIER;
         case 'T':
-            return getKeywordOrIdentifier(s, "TRUE", TRUE);
+            if ("TRUE".equals(s)) {
+                return TRUE;
+            }
+            if (functionsAsKeywords) {
+                if ("TODAY".equals(s)) {
+                    return KEYWORD;
+                }
+            }
+            return IDENTIFIER;
         case 'U':
             if ("UNIQUE".equals(s)) {
                 return KEYWORD;
@@ -4272,7 +4294,7 @@ public class Parser {
         boolean isIdentity = readIf("IDENTITY");
         if (isIdentity || readIf("BIGSERIAL")) {
             // Check if any of them are disallowed in the current Mode
-            if (isIdentity && session.getDatabase().getMode().
+            if (isIdentity && database.getMode().
                     disallowedTypes.contains("IDENTITY")) {
                 throw DbException.get(ErrorCode.UNKNOWN_DATA_TYPE_1,
                         currentToken);
@@ -4448,8 +4470,9 @@ public class Parser {
             scale = templateColumn.getScale();
             enumerators = templateColumn.getEnumerators();
         } else {
-            dataType = DataType.getTypeByName(original);
-            if (dataType == null || session.getDatabase().getMode().disallowedTypes.contains(original)) {
+            Mode mode = database.getMode();
+            dataType = DataType.getTypeByName(original, mode);
+            if (dataType == null || mode.disallowedTypes.contains(original)) {
                 throw DbException.get(ErrorCode.UNKNOWN_DATA_TYPE_1,
                         currentToken);
             }
@@ -4457,7 +4480,7 @@ public class Parser {
         if (database.getIgnoreCase() && dataType.type == Value.STRING &&
                 !equalsToken("VARCHAR_CASESENSITIVE", original)) {
             original = "VARCHAR_IGNORECASE";
-            dataType = DataType.getTypeByName(original);
+            dataType = DataType.getTypeByName(original, database.getMode());
         }
         if (regular) {
             read();
@@ -4536,7 +4559,7 @@ public class Parser {
             read("BIT");
             read("DATA");
             if (dataType.type == Value.STRING) {
-                dataType = DataType.getTypeByName("BINARY");
+                dataType = DataType.getTypeByName("BINARY", database.getMode());
             }
         }
         // MySQL compatibility
@@ -5220,7 +5243,7 @@ public class Parser {
         Table recursiveTable = null;
         ArrayList<Column> columns = New.arrayList();
         String[] cols = null;
-        Database db = session.getDatabase();
+        Database db = database;
 
         // column names are now optional - they can be inferred from the named
         // query, if not supplied by user
@@ -5252,22 +5275,21 @@ public class Parser {
             }
             if (isPersistent) {
                 oldViewFound.lock(session, true, true);
-                session.getDatabase().removeSchemaObject(session, oldViewFound);
+                database.removeSchemaObject(session, oldViewFound);
 
             } else {
                 session.removeLocalTempTable(oldViewFound);
             }
             oldViewFound = null;
         }
-        // this table is created as a work around because recursive
-        // table expressions need to reference something that look like
-        // themselves
-        // to work (its removed after creation in this method)
-        // only create table data and table if we don't have a working CTE already
-        if (oldViewFound == null) {
-            recursiveTable = TableView.createShadowTableForRecursiveTableExpression(isPersistent, session, cteViewName,
-                    schema, columns, db);
-        }
+        /*
+         * This table is created as a workaround because recursive table
+         * expressions need to reference something that look like themselves to
+         * work (its removed after creation in this method). Only create table
+         * data and table if we don't have a working CTE already.
+         */
+        recursiveTable = TableView.createShadowTableForRecursiveTableExpression(
+                isPersistent, session, cteViewName, schema, columns, db);
         List<Column> columnTemplateList;
         String[] querySQLOutput = new String[]{null};
         try {
@@ -5902,7 +5924,7 @@ public class Parser {
             }
         }
         if (readIf("SCHEMA")) {
-            HashSet<String> schemaNames = New.hashSet();
+            HashSet<String> schemaNames = new HashSet<>();
             do {
                 schemaNames.add(readUniqueIdentifier());
             } while (readIf(","));
@@ -6418,7 +6440,7 @@ public class Parser {
             // need to read ahead, as it could be a column name
             int start = lastParseIndex;
             read();
-            if (DataType.getTypeByName(currentToken) != null) {
+            if (DataType.getTypeByName(currentToken, database.getMode()) != null) {
                 // known data type
                 parseIndex = start;
                 read();
@@ -6850,7 +6872,7 @@ public class Parser {
         if (s == null) {
             return "\"\"";
         }
-        if (isSimpleIdentifier(s))
+        if (isSimpleIdentifier(s, false))
             return s;
         return StringUtils.quoteIdentifier(s);
     }
@@ -6858,10 +6880,12 @@ public class Parser {
     /**
      * @param s
      *            identifier to check
+     * @param functionsAsKeywords
+     *            treat system functions as keywords
      * @return is specified identifier may be used without quotes
      * @throws NullPointerException if s is {@code null}
      */
-    public static boolean isSimpleIdentifier(String s) {
+    public static boolean isSimpleIdentifier(String s, boolean functionsAsKeywords) {
         if (s.length() == 0) {
             return false;
         }
@@ -6877,7 +6901,7 @@ public class Parser {
                 return false;
             }
         }
-        return !isKeyword(s, true);
+        return getSaveTokenType(s, true, functionsAsKeywords) == IDENTIFIER;
     }
 
     public void setLiteralsChecked(boolean literalsChecked) {

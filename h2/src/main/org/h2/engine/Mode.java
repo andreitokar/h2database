@@ -9,8 +9,9 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Set;
 import java.util.regex.Pattern;
-import org.h2.util.New;
 import org.h2.util.StringUtils;
+import org.h2.value.DataType;
+import org.h2.value.Value;
 
 /**
  * The compatibility modes. There is a fixed set of modes (for example
@@ -22,7 +23,31 @@ public class Mode {
         REGULAR, DB2, Derby, MSSQLServer, HSQLDB, MySQL, Oracle, PostgreSQL, Ignite,
     }
 
-    private static final HashMap<String, Mode> MODES = New.hashMap();
+    /**
+     * Determines how rows with {@code NULL} values in indexed columns are handled
+     * in unique indexes.
+     */
+    public enum UniqueIndexNullsHandling {
+        /**
+         * Multiple rows with identical values in indexed columns with at least one
+         * indexed {@code NULL} value are allowed in unique index.
+         */
+        ALLOW_DUPLICATES_WITH_ANY_NULL,
+
+        /**
+         * Multiple rows with identical values in indexed columns with all indexed
+         * {@code NULL} values are allowed in unique index.
+         */
+        ALLOW_DUPLICATES_WITH_ALL_NULLS,
+
+        /**
+         * Multiple rows with identical values in indexed columns are not allowed in
+         * unique index.
+         */
+        FORBID_ANY_DUPLICATES;
+    }
+
+    private static final HashMap<String, Mode> MODES = new HashMap<>();
 
     // Modes are also documented in the features section
 
@@ -87,17 +112,10 @@ public class Mode {
     public boolean systemColumns;
 
     /**
-     * For unique indexes, NULL is distinct. That means only one row with NULL
-     * in one of the columns is allowed.
+     * Determines how rows with {@code NULL} values in indexed columns are handled
+     * in unique indexes.
      */
-    public boolean uniqueIndexSingleNull;
-
-    /**
-     * When using unique indexes, multiple rows with NULL in all columns
-     * are allowed, however it is not allowed to have multiple rows with the
-     * same values otherwise.
-     */
-    public boolean uniqueIndexSingleNullExceptAllColumnsAreNull;
+    public UniqueIndexNullsHandling uniqueIndexNullsHandling = UniqueIndexNullsHandling.ALLOW_DUPLICATES_WITH_ANY_NULL;
 
     /**
      * Empty strings are treated like NULL values. Useful for Oracle emulation.
@@ -182,6 +200,11 @@ public class Mode {
      */
     public Set<String> disallowedTypes = Collections.emptySet();
 
+    /**
+     * Custom mappings from type names to data types.
+     */
+    public HashMap<String, DataType> typeByNameMap = new HashMap<>();
+
     private final String name;
 
     private ModeEnum modeEnum;
@@ -208,7 +231,7 @@ public class Mode {
 
         mode = new Mode(ModeEnum.Derby.name());
         mode.aliasColumnName = true;
-        mode.uniqueIndexSingleNull = true;
+        mode.uniqueIndexNullsHandling = UniqueIndexNullsHandling.FORBID_ANY_DUPLICATES;
         mode.supportOffsetFetch = true;
         mode.sysDummy1 = true;
         mode.isolationLevelInSelectOrInsertStatement = true;
@@ -220,7 +243,7 @@ public class Mode {
         mode.aliasColumnName = true;
         mode.convertOnlyToSmallerScale = true;
         mode.nullConcatIsNull = true;
-        mode.uniqueIndexSingleNull = true;
+        mode.uniqueIndexNullsHandling = UniqueIndexNullsHandling.FORBID_ANY_DUPLICATES;
         mode.allowPlusForStringConcat = true;
         // HSQLDB does not support client info properties. See
         // http://hsqldb.org/doc/apidocs/
@@ -232,7 +255,7 @@ public class Mode {
         mode = new Mode(ModeEnum.MSSQLServer.name());
         mode.aliasColumnName = true;
         mode.squareBracketQuotedNames = true;
-        mode.uniqueIndexSingleNull = true;
+        mode.uniqueIndexNullsHandling = UniqueIndexNullsHandling.FORBID_ANY_DUPLICATES;
         mode.allowPlusForStringConcat = true;
         mode.swapConvertFunctionParameters = true;
         mode.supportPoundSymbolForColumnNames = true;
@@ -260,7 +283,7 @@ public class Mode {
         mode = new Mode(ModeEnum.Oracle.name());
         mode.aliasColumnName = true;
         mode.convertOnlyToSmallerScale = true;
-        mode.uniqueIndexSingleNullExceptAllColumnsAreNull = true;
+        mode.uniqueIndexNullsHandling = UniqueIndexNullsHandling.ALLOW_DUPLICATES_WITH_ALL_NULLS;
         mode.treatEmptyStringsAsNull = true;
         mode.regexpReplaceBackslashReferences = true;
         mode.supportPoundSymbolForColumnNames = true;
@@ -269,6 +292,7 @@ public class Mode {
         mode.supportedClientInfoPropertiesRegEx =
                 Pattern.compile(".*\\..*");
         mode.prohibitEmptyInPredicate = true;
+        mode.typeByNameMap.put("DATE", DataType.getDataType(Value.TIMESTAMP));
         add(mode);
 
         mode = new Mode(ModeEnum.PostgreSQL.name());

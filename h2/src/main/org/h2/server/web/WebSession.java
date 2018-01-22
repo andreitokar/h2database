@@ -19,7 +19,6 @@ import org.h2.bnf.Bnf;
 import org.h2.bnf.context.DbContents;
 import org.h2.bnf.context.DbContextRule;
 import org.h2.message.DbException;
-import org.h2.util.New;
 
 /**
  * The web session keeps all data of a user session.
@@ -37,7 +36,7 @@ class WebSession {
     /**
      * The session attribute map.
      */
-    final HashMap<String, Object> map = New.hashMap();
+    final HashMap<String, Object> map = new HashMap<>();
 
     /**
      * The current locale.
@@ -199,7 +198,7 @@ class WebSession {
      * @return a map containing the session meta data
      */
     HashMap<String, Object> getInfo() {
-        HashMap<String, Object> m = New.hashMap();
+        HashMap<String, Object> m = new HashMap<>();
         m.putAll(map);
         m.put("lastAccess", new Timestamp(lastAccess).toString());
         try {

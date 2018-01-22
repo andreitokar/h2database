@@ -19,7 +19,6 @@ import org.h2.message.DbException;
 import org.h2.message.Trace;
 import org.h2.store.FileLock;
 import org.h2.util.MathUtils;
-import org.h2.util.New;
 import org.h2.util.ThreadDeadlockDetector;
 import org.h2.util.Utils;
 
@@ -31,8 +30,7 @@ import org.h2.util.Utils;
 public class Engine implements SessionFactory {
 
     private static final Engine INSTANCE = new Engine();
-    private static final Map<String, Database> DATABASES =
-                        Collections.synchronizedMap(New.<String, Database>hashMap());
+    private static final HashMap<String, Database> DATABASES = new HashMap<>();
 
     private volatile long wrongPasswordDelay =
             SysProperties.DELAY_WRONG_PASSWORD_MIN;

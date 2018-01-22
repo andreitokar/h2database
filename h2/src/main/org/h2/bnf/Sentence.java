@@ -12,7 +12,6 @@ import java.util.concurrent.TimeUnit;
 
 import org.h2.bnf.context.DbSchema;
 import org.h2.bnf.context.DbTableOrView;
-import org.h2.util.New;
 import org.h2.util.StringUtils;
 
 /**
@@ -43,7 +42,7 @@ public class Sentence {
     /**
      * The map of next tokens in the form type#tokenName token.
      */
-    private final HashMap<String, String> next = New.hashMap();
+    private final HashMap<String, String> next = new HashMap<>();
 
     /**
      * The complete query string.
@@ -99,7 +98,7 @@ public class Sentence {
      */
     public void addAlias(String alias, DbTableOrView table) {
         if (aliases == null) {
-            aliases = New.hashMap();
+            aliases = new HashMap<>();
         }
         aliases.put(alias, table);
     }
@@ -112,7 +111,7 @@ public class Sentence {
     public void addTable(DbTableOrView table) {
         lastTable = table;
         if (tables == null) {
-            tables = New.hashSet();
+            tables = new HashSet<>();
         }
         tables.add(table);
     }

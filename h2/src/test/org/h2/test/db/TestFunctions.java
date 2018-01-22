@@ -39,7 +39,6 @@ import java.util.Locale;
 import java.util.Properties;
 import java.util.TimeZone;
 import java.util.UUID;
-
 import org.h2.api.Aggregate;
 import org.h2.api.AggregateFunction;
 import org.h2.api.ErrorCode;
@@ -941,7 +940,7 @@ public class TestFunctions extends TestBase implements AggregateFunction {
         assertEquals(0, ((Object[]) a.getArray(2, 0)).length);
         assertThrows(ErrorCode.INVALID_VALUE_2, a).getArray(0, 0);
         assertThrows(ErrorCode.INVALID_VALUE_2, a).getArray(3, 0);
-        HashMap<String, Class<?>> map = New.hashMap();
+        HashMap<String, Class<?>> map = new HashMap<>();
         assertEquals(0, ((Object[]) a.getArray(1, 0, map)).length);
         assertEquals(2, ((Object[]) a.getArray(map)).length);
         assertEquals(2, ((Object[]) a.getArray(null)).length);
@@ -2152,8 +2151,7 @@ public class TestFunctions extends TestBase implements AggregateFunction {
         conn.close();
     }
 
-    private void testOverrideAlias()
-            throws SQLException, InterruptedException {
+    private void testOverrideAlias() throws SQLException {
         deleteDb("functions");
         Connection conn = getConnection("functions");
         conn.setAutoCommit(true);

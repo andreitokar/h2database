@@ -303,11 +303,6 @@ java org.h2.test.TestAll timer
     public boolean memory;
 
     /**
-     * Whether the test is running with code coverage.
-     */
-    public boolean coverage;
-
-    /**
      * If code coverage is enabled.
      */
     public boolean codeCoverage;
@@ -547,7 +542,7 @@ kill -9 `jps -l | grep "org.h2.test." | cut -d " " -f 1`
                 test.testEverything();
             } else if ("codeCoverage".equals(args[0])) {
                 test.codeCoverage = true;
-                test.runTests();
+                test.runCoverage();
             } else if ("multiThread".equals(args[0])) {
                 new TestMulti().runTest(test);
             } else if ("halt".equals(args[0])) {
@@ -622,8 +617,6 @@ kill -9 `jps -l | grep "org.h2.test." | cut -d " " -f 1`
         if (Boolean.getBoolean("abba")) {
             abbaLockingDetector = new AbbaLockingDetector().startCollecting();
         }
-
-        coverage = isCoverage();
 
         smallLog = big = networked = memory = ssl = false;
         diskResult = traceSystemOut = diskUndo = false;
@@ -709,18 +702,24 @@ kill -9 `jps -l | grep "org.h2.test." | cut -d " " -f 1`
         }
     }
 
-    /**
-     * Check whether this method is running with "Emma" code coverage turned on.
-     *
-     * @return true if the stack trace contains ".emma."
-     */
-    private static boolean isCoverage() {
-        for (StackTraceElement e : Thread.currentThread().getStackTrace()) {
-            if (e.toString().contains(".emma.")) {
-                return true;
-            }
-        }
-        return false;
+    private void runCoverage() throws SQLException {
+        smallLog = big = networked = memory = ssl = false;
+        diskResult = traceSystemOut = diskUndo = false;
+        traceTest = stopOnError = false;
+        defrag = false;
+        traceLevelFile = throttle = 0;
+        cipher = null;
+
+        memory = true;
+        multiThreaded = true;
+        test();
+        testUnit();
+
+        multiThreaded = false;
+        mvStore = false;
+        mvcc = false;
+        test();
+        // testUnit();
     }
 
     /**
@@ -1067,8 +1066,7 @@ kill -9 `jps -l | grep "org.h2.test." | cut -d " " -f 1`
         DeleteDbFiles.execute(TestBase.BASE_TEST_DIR, null, true);
         FileUtils.deleteRecursive("trace.db", false);
         if (networked) {
-            String[] args = ssl ? new String[] { "-tcpSSL", "-tcpPort", "9192" }
-                    : new String[] { "-tcpPort", "9192" };
+            String[] args = ssl ? new String[] { "-tcpSSL" } : new String[0];
             server = Server.createTcpServer(args);
             try {
                 server.start();
@@ -1088,6 +1086,10 @@ kill -9 `jps -l | grep "org.h2.test." | cut -d " " -f 1`
         }
         FileUtils.deleteRecursive("trace.db", true);
         FileUtils.deleteRecursive(TestBase.BASE_TEST_DIR, true);
+    }
+
+    public int getPort() {
+        return server == null ? 9192 : server.getPort();
     }
 
     /**

@@ -11,7 +11,6 @@ import org.h2.table.Column;
 import org.h2.table.ColumnResolver;
 import org.h2.table.Table;
 import org.h2.table.TableFilter;
-import org.h2.util.New;
 
 /**
  * The visitor pattern is used to iterate through all expressions of a query
@@ -294,7 +293,7 @@ public class ExpressionVisitor {
      * @return the set of columns
      */
     public static HashSet<Column> allColumnsForTableFilters(TableFilter[] filters) {
-        HashSet<Column> allColumnsSet = New.hashSet();
+        HashSet<Column> allColumnsSet = new HashSet<>();
         for (int i = 0; i < filters.length; i++) {
             if (filters[i].getSelect() != null) {
                 filters[i].getSelect().isEverything(

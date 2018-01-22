@@ -41,7 +41,6 @@ import org.h2.result.UpdatableRow;
 import org.h2.util.DateTimeUtils;
 import org.h2.util.IOUtils;
 import org.h2.util.LocalDateTimeUtils;
-import org.h2.util.New;
 import org.h2.util.StringUtils;
 import org.h2.value.CompareMode;
 import org.h2.value.DataType;
@@ -549,8 +548,7 @@ public class JdbcResultSet extends TraceObject implements ResultSet, JdbcResultS
     public boolean getBoolean(int columnIndex) throws SQLException {
         try {
             debugCodeCall("getBoolean", columnIndex);
-            Boolean v = get(columnIndex).getBoolean();
-            return v == null ? false : v.booleanValue();
+            return get(columnIndex).getBoolean();
         } catch (Exception e) {
             throw logAndConvert(e);
         }
@@ -568,8 +566,7 @@ public class JdbcResultSet extends TraceObject implements ResultSet, JdbcResultS
     public boolean getBoolean(String columnLabel) throws SQLException {
         try {
             debugCodeCall("getBoolean", columnLabel);
-            Boolean v = get(columnLabel).getBoolean();
-            return v == null ? false : v.booleanValue();
+            return get(columnLabel).getBoolean();
         } catch (Exception e) {
             throw logAndConvert(e);
         }
@@ -3125,7 +3122,7 @@ public class JdbcResultSet extends TraceObject implements ResultSet, JdbcResultS
         if (columnCount >= 3) {
             // use a hash table if more than 2 columns
             if (columnLabelMap == null) {
-                HashMap<String, Integer> map = New.hashMap(columnCount);
+                HashMap<String, Integer> map = new HashMap<>(columnCount);
                 // column labels have higher priority
                 for (int i = 0; i < columnCount; i++) {
                     String c = StringUtils.toUpperEnglish(result.getAlias(i));
@@ -3852,7 +3849,7 @@ public class JdbcResultSet extends TraceObject implements ResultSet, JdbcResultS
             }
         }
         if (patchedRows == null) {
-            patchedRows = New.hashMap();
+            patchedRows = new HashMap<>();
         }
         Integer rowId = result.getRowId();
         if (!changed) {

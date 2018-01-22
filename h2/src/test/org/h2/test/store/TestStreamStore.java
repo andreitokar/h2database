@@ -22,7 +22,6 @@ import org.h2.mvstore.StreamStore;
 import org.h2.store.fs.FileUtils;
 import org.h2.test.TestBase;
 import org.h2.util.IOUtils;
-import org.h2.util.New;
 import org.h2.util.StringUtils;
 
 /**
@@ -73,7 +72,7 @@ public class TestStreamStore extends TestBase {
     }
 
     private void testIOException() throws IOException {
-        HashMap<Long, byte[]> map = New.hashMap();
+        HashMap<Long, byte[]> map = new HashMap<>();
         StreamStore s = new StreamStore(map);
         byte[] id = s.put(new ByteArrayInputStream(new byte[1024 * 1024]));
         InputStream in = s.get(id);
@@ -112,7 +111,7 @@ public class TestStreamStore extends TestBase {
     private void testExceptionDuringStore() throws IOException {
         // test that if there is an IOException while storing
         // the data, the entries in the map are "rolled back"
-        HashMap<Long, byte[]> map = New.hashMap();
+        HashMap<Long, byte[]> map = new HashMap<>();
         StreamStore s = new StreamStore(map);
         s.setMaxBlockSize(1024);
         assertThrows(IOException.class, s).
@@ -236,7 +235,7 @@ public class TestStreamStore extends TestBase {
     }
 
     private void testDetectIllegalId() throws IOException {
-        Map<Long, byte[]> map = New.hashMap();
+        Map<Long, byte[]> map = new HashMap<>();
         StreamStore store = new StreamStore(map);
         try {
             store.length(new byte[]{3, 0, 0});
@@ -286,7 +285,7 @@ public class TestStreamStore extends TestBase {
     }
 
     private void testFormat() throws IOException {
-        Map<Long, byte[]> map = New.hashMap();
+        Map<Long, byte[]> map = new HashMap<>();
         StreamStore store = new StreamStore(map);
         store.setMinBlockSize(10);
         store.setMaxBlockSize(20);
@@ -389,7 +388,7 @@ public class TestStreamStore extends TestBase {
     }
 
     private void testLoop() throws IOException {
-        Map<Long, byte[]> map = New.hashMap();
+        Map<Long, byte[]> map = new HashMap<>();
         StreamStore store = new StreamStore(map);
         assertEquals(256 * 1024, store.getMaxBlockSize());
         assertEquals(256, store.getMinBlockSize());

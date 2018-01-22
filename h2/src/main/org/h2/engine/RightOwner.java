@@ -8,7 +8,6 @@ package org.h2.engine;
 import java.util.HashMap;
 
 import org.h2.table.Table;
-import org.h2.util.New;
 
 /**
  * A right owner (sometimes called principal).
@@ -100,7 +99,7 @@ public abstract class RightOwner extends DbObjectBase {
      */
     public void grantRight(DbObject object, Right right) {
         if (grantedRights == null) {
-            grantedRights = New.hashMap();
+            grantedRights = new HashMap<>();
         }
         grantedRights.put(object, right);
     }
@@ -128,7 +127,7 @@ public abstract class RightOwner extends DbObjectBase {
      */
     public void grantRole(Role role, Right right) {
         if (grantedRoles == null) {
-            grantedRoles = New.hashMap();
+            grantedRoles = new HashMap<>();
         }
         grantedRoles.put(role, right);
     }

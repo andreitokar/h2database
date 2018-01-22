@@ -195,13 +195,7 @@ public class Select extends Query {
 
     private boolean isHavingNullOrFalse(Value[] row) {
         if (havingIndex >= 0) {
-            Value v = row[havingIndex];
-            if (v == ValueNull.INSTANCE) {
-                return true;
-            }
-            if (!Boolean.TRUE.equals(v.getBoolean())) {
-                return true;
-            }
+            return !row[havingIndex].getBoolean();
         }
         return false;
     }
@@ -281,8 +275,7 @@ public class Select extends Query {
     }
 
     boolean isConditionMet() {
-        return condition == null ||
-                Boolean.TRUE.equals(condition.getBooleanValue(session));
+        return condition == null || condition.getBooleanValue(session);
     }
 
     private void queryGroup(int columnCount, LocalResult result) {
@@ -965,7 +958,7 @@ public class Select extends Query {
 
     @Override
     public HashSet<Table> getTables() {
-        HashSet<Table> set = New.hashSet();
+        HashSet<Table> set = new HashSet<>();
         for (TableFilter filter : filters) {
             set.add(filter.getTable());
         }
@@ -1497,11 +1490,11 @@ public class Select extends Query {
                     Value[] row = null;
                     if (previousKeyValues == null) {
                         previousKeyValues = keyValues;
-                        currentGroup = New.hashMap();
+                        currentGroup = new HashMap<>();
                     } else if (!Arrays.equals(previousKeyValues, keyValues)) {
                         row = createGroupSortedRow(previousKeyValues, columnCount);
                         previousKeyValues = keyValues;
-                        currentGroup = New.hashMap();
+                        currentGroup = new HashMap<>();
                     }
                     currentGroupRowId++;
 

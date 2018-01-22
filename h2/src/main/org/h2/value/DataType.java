@@ -26,6 +26,7 @@ import java.util.HashMap;
 import java.util.UUID;
 import org.h2.api.ErrorCode;
 import org.h2.api.TimestampWithTimeZone;
+import org.h2.engine.Mode;
 import org.h2.engine.SessionInterface;
 import org.h2.engine.SysProperties;
 import org.h2.jdbc.JdbcArray;
@@ -66,8 +67,8 @@ public class DataType {
      * when clearing references.
      */
     private static final ArrayList<DataType> TYPES = New.arrayList();
-    private static final HashMap<String, DataType> TYPES_BY_NAME = New.hashMap();
-    private static final HashMap<Integer, DataType> TYPES_BY_VALUE_TYPE = New.hashMap();
+    private static final HashMap<String, DataType> TYPES_BY_NAME = new HashMap<>();
+    private static final HashMap<Integer, DataType> TYPES_BY_VALUE_TYPE = new HashMap<>();
 
     /**
      * The value type of this data type.
@@ -1192,12 +1193,16 @@ public class DataType {
      * Get a data type object from a type name.
      *
      * @param s the type name
+     * @param mode database mode
      * @return the data type object
      */
-    public static DataType getTypeByName(String s) {
-        DataType result = TYPES_BY_NAME.get(s);
-        if (result == null && JdbcUtils.customDataTypesHandler != null) {
-            result = JdbcUtils.customDataTypesHandler.getDataTypeByName(s);
+    public static DataType getTypeByName(String s, Mode mode) {
+        DataType result = mode.typeByNameMap.get(s);
+        if (result == null) {
+            result = TYPES_BY_NAME.get(s);
+            if (result == null && JdbcUtils.customDataTypesHandler != null) {
+                result = JdbcUtils.customDataTypesHandler.getDataTypeByName(s);
+            }
         }
         return result;
     }

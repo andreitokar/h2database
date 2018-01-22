@@ -21,7 +21,6 @@ import org.h2.jdbc.JdbcStatement;
 import org.h2.jdbc.JdbcStatementBackwardsCompat;
 import org.h2.store.fs.FileUtils;
 import org.h2.test.TestBase;
-import org.h2.util.New;
 
 /**
  * Tests for the Statement implementation.
@@ -71,7 +70,7 @@ public class TestStatement extends TestBase {
 
     private void testUnsupportedOperations() throws Exception {
         conn.setTypeMap(null);
-        HashMap<String, Class<?>> map = New.hashMap();
+        HashMap<String, Class<?>> map = new HashMap<>();
         conn.setTypeMap(map);
         map.put("x", Object.class);
         assertThrows(ErrorCode.FEATURE_NOT_SUPPORTED_1, conn).
@@ -335,11 +334,13 @@ public class TestStatement extends TestBase {
         assertEquals("\"SOME_ID\"", statBC.enquoteIdentifier("SOME_ID", true));
         assertEquals("\"FROM\"", statBC.enquoteIdentifier("FROM", false));
         assertEquals("\"Test\"", statBC.enquoteIdentifier("Test", false));
+        assertEquals("\"TODAY\"", statBC.enquoteIdentifier("TODAY", false));
 
         assertTrue(statBC.isSimpleIdentifier("SOME_ID"));
         assertFalse(statBC.isSimpleIdentifier("SOME ID"));
         assertFalse(statBC.isSimpleIdentifier("FROM"));
         assertFalse(statBC.isSimpleIdentifier("Test"));
+        assertFalse(statBC.isSimpleIdentifier("TODAY"));
 
         stat.close();
     }

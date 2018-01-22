@@ -376,7 +376,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
         if (localTempTables == null) {
             return New.arrayList();
         }
-        return New.arrayList(localTempTables.values());
+        return new ArrayList<>(localTempTables.values());
     }
 
     /**
@@ -429,7 +429,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
 
     public HashMap<String, Index> getLocalTempTableIndexes() {
         if (localTempTableIndexes == null) {
-            return New.hashMap();
+            return new HashMap<>();
         }
         return localTempTableIndexes;
     }
@@ -487,7 +487,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
      */
     public HashMap<String, Constraint> getLocalTempTableConstraints() {
         if (localTempTableConstraints == null) {
-            return New.hashMap();
+            return new HashMap<>();
         }
         return localTempTableConstraints;
     }
@@ -1337,7 +1337,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
             DbException.throwInternalError(v.toString());
         }
         if (removeLobMap == null) {
-            removeLobMap = New.hashMap();
+            removeLobMap = new HashMap<>();
         }
         removeLobMap.put(v.toString(), v);
     }
@@ -1510,7 +1510,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
             // not grow too large for a single query (we drop the whole cache in
             // the end of prepareLocal)
             if (subQueryIndexCache == null) {
-                subQueryIndexCache = New.hashMap();
+                subQueryIndexCache = new HashMap<>();
             }
             return subQueryIndexCache;
         }
@@ -1533,7 +1533,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
             return;
         }
         if (temporaryResults == null) {
-            temporaryResults = New.hashSet();
+            temporaryResults = new HashSet<>();
         }
         if (temporaryResults.size() < 100) {
             // reference at most 100 result sets to avoid memory problems
@@ -1751,7 +1751,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
      */
     public void markTableForAnalyze(Table table) {
         if (tablesToAnalyze == null) {
-            tablesToAnalyze = New.hashSet();
+            tablesToAnalyze = new HashSet<>();
         }
         tablesToAnalyze.add(table);
     }

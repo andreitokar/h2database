@@ -23,7 +23,6 @@ import java.util.Stack;
 import org.h2.build.doc.XMLParser;
 import org.h2.server.web.PageParser;
 import org.h2.util.IOUtils;
-import org.h2.util.New;
 import org.h2.util.SortedProperties;
 import org.h2.util.StringUtils;
 
@@ -129,7 +128,7 @@ public class PrepareTranslation {
             name = name.substring(0, name.length() - 4);
             String template = IOUtils.readStringAndClose(new FileReader(
                     templateDir + "/" + name + ".jsp"), -1);
-            HashMap<String, Object> map = New.hashMap();
+            HashMap<String, Object> map = new HashMap<>();
             for (Object k : prop.keySet()) {
                 map.put(k.toString(), prop.get(k));
             }

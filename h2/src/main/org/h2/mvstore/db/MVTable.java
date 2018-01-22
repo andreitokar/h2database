@@ -9,6 +9,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -371,7 +372,7 @@ public class MVTable extends TableBase {
             if (clash == null) {
                 // verification is started
                 clash = session;
-                visited = New.hashSet();
+                visited = new HashSet<>();
             } else if (clash == session) {
                 // we found a circle where this session is involved
                 return New.arrayList();
@@ -416,9 +417,9 @@ public class MVTable extends TableBase {
 
     private void traceLock(Session session, boolean exclusive, TraceLockEvent eventEnum, String extraInfo) {
         if (traceLock.isDebugEnabled()) {
-            traceLock.debug("{0} {1} {2} {3}", session.getId(),
+            traceLock.debug("{0} {1} {2} {3} {4}", session.getId(),
                     exclusive ? "exclusive write lock" : "shared read lock", eventEnum.getEventText(),
-                    getName());
+                    getName(), extraInfo);
         }
     }
 
@@ -593,7 +594,7 @@ public class MVTable extends TableBase {
         Store store = session.getDatabase().getMvStore();
 
         int bufferSize = database.getMaxMemoryRows() / 2;
-        ArrayList<Row> buffer = New.arrayList(bufferSize);
+        ArrayList<Row> buffer = new ArrayList<>(bufferSize);
         String n = getName() + ":" + index.getName();
         int t = MathUtils.convertLongToInt(total);
         ArrayList<String> bufferNames = New.arrayList();
@@ -634,7 +635,7 @@ public class MVTable extends TableBase {
         Cursor cursor = scan.find(session, null, null);
         long i = 0;
         int bufferSize = (int) Math.min(total, database.getMaxMemoryRows());
-        ArrayList<Row> buffer = New.arrayList(bufferSize);
+        ArrayList<Row> buffer = new ArrayList<>(bufferSize);
         String n = getName() + ":" + index.getName();
         int t = MathUtils.convertLongToInt(total);
         while (cursor.next()) {

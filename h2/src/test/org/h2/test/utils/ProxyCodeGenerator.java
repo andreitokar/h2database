@@ -14,7 +14,6 @@ import java.lang.reflect.Modifier;
 import java.util.HashMap;
 import java.util.TreeMap;
 import java.util.TreeSet;
-import org.h2.util.New;
 import org.h2.util.SourceCompiler;
 
 /**
@@ -23,7 +22,7 @@ import org.h2.util.SourceCompiler;
 public class ProxyCodeGenerator {
 
     private static SourceCompiler compiler = new SourceCompiler();
-    private static HashMap<Class<?>, Class<?>> proxyMap = New.hashMap();
+    private static HashMap<Class<?>, Class<?>> proxyMap = new HashMap<>();
 
     private final TreeSet<String> imports = new TreeSet<>();
     private final TreeMap<String, Method> methods = new TreeMap<>();

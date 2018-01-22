@@ -12,7 +12,6 @@ import java.util.Map.Entry;
 import java.util.Random;
 import org.h2.dev.cache.CacheLIRS;
 import org.h2.test.TestBase;
-import org.h2.util.New;
 
 /**
  * Tests the cache algorithm.
@@ -485,7 +484,7 @@ public class TestCacheLIRS extends TestBase {
         Random r = new Random(1);
         for (int j = 0; j < 100; j++) {
             CacheLIRS<Integer, Integer> test = createCache(size / 2);
-            HashMap<Integer, Integer> good = New.hashMap();
+            HashMap<Integer, Integer> good = new HashMap<>();
             for (int i = 0; i < 10000; i++) {
                 int key = r.nextInt(size);
                 int value = r.nextInt();

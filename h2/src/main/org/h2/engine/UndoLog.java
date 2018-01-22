@@ -79,8 +79,7 @@ public class UndoLog {
         if (largeTransactions) {
             if (i < 0 && storedEntries > 0) {
                 int last = storedEntriesPos.size() - 1;
-                long pos = storedEntriesPos.get(last);
-                storedEntriesPos.remove(last);
+                long pos = storedEntriesPos.remove(last);
                 long end = file.length();
                 int bufferLength = (int) (end - pos);
                 Data buff = Data.create(database, bufferLength);
@@ -223,7 +222,7 @@ public class UndoLog {
     int getTableId(Table table) {
         int id = table.getId();
         if (tables == null) {
-            tables = New.hashMap();
+            tables = new HashMap<>();
         }
         // need to overwrite the old entry, because the old object
         // might be deleted in the meantime

@@ -6,7 +6,6 @@
 package org.h2.test;
 
 import java.io.ByteArrayInputStream;
-import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
@@ -117,15 +116,6 @@ public abstract class TestBase {
         System.setProperty("java.io.tmpdir", TEMP_DIR);
         this.config = conf;
         return this;
-    }
-
-    /**
-     * Run a test case using the given seed value.
-     *
-     * @param seed the random seed value
-     */
-    public void testCase(int seed) throws Exception {
-        // do nothing
     }
 
     /**
@@ -265,9 +255,9 @@ public abstract class TestBase {
         }
         if (config.networked) {
             if (config.ssl) {
-                url = "ssl://localhost:9192/" + name;
+                url = "ssl://localhost:"+config.getPort()+"/" + name;
             } else {
-                url = "tcp://localhost:9192/" + name;
+                url = "tcp://localhost:"+config.getPort()+"/" + name;
             }
         } else if (config.googleAppEngine) {
             url = "gae://" + name +
@@ -1424,7 +1414,7 @@ public abstract class TestBase {
      * @return the classpath list
      */
     protected String getClassPath() {
-        return "bin" + File.pathSeparator + "temp" + File.pathSeparator + ".";
+        return System.getProperty("java.class.path");
     }
 
     /**

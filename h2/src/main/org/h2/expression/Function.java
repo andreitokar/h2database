@@ -143,8 +143,8 @@ public class Function extends Expression implements FunctionCall {
     private static final int VAR_ARGS = -1;
     private static final long PRECISION_UNKNOWN = -1;
 
-    private static final HashMap<String, FunctionInfo> FUNCTIONS = New.hashMap();
-    private static final HashMap<String, Integer> DATE_PART = New.hashMap();
+    private static final HashMap<String, FunctionInfo> FUNCTIONS = new HashMap<>();
+    private static final HashMap<String, Integer> DATE_PART = new HashMap<>();
     private static final char[] SOUNDEX_INDEX = new char[128];
 
     protected Expression[] args;
@@ -989,8 +989,7 @@ public class Function extends Expression implements FunctionCall {
         }
         case CASEWHEN: {
             Value v;
-            if (v0 == ValueNull.INSTANCE ||
-                    !v0.getBoolean().booleanValue()) {
+            if (!v0.getBoolean()) {
                 v = getNullOrValue(session, args, values, 2);
             } else {
                 v = getNullOrValue(session, args, values, 1);
@@ -1067,8 +1066,7 @@ public class Function extends Expression implements FunctionCall {
                 // (null, when, then, when, then, else)
                 for (int i = 1, len = args.length - 1; i < len; i += 2) {
                     Value when = args[i].getValue(session);
-                    if (!(when == ValueNull.INSTANCE) &&
-                            when.getBoolean().booleanValue()) {
+                    if (when.getBoolean()) {
                         then = args[i + 1];
                         break;
                     }

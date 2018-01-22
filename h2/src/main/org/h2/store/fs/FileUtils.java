@@ -11,8 +11,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.util.ArrayList;
 import java.util.List;
-import org.h2.util.New;
 
 /**
  * This utility class contains utility functions that use the file system
@@ -149,7 +149,7 @@ public class FileUtils {
     public static List<String> newDirectoryStream(String path) {
         List<FilePath> list = FilePath.get(path).newDirectoryStream();
         int len = list.size();
-        List<String> result = New.arrayList(len);
+        List<String> result = new ArrayList<>(len);
         for (int i = 0; i < len; i++) {
             result.add(list.get(i).toString());
         }
