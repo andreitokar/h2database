@@ -131,7 +131,7 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
     @Override
     public void addBufferedRows(List<String> bufferNames) {
         MVMap.BufferingAgent<SearchRow,Value> agent = dataMap.getBufferingAgent();
-        ArrayList<String> mapNames = New.arrayList(bufferNames);
+        ArrayList<String> mapNames = new ArrayList<>(bufferNames);
         int buffersCount = bufferNames.size();
         Queue<Source> queue = new PriorityQueue<>(buffersCount,
                                 new Source.Comparator(rowFactory.getDataType()));

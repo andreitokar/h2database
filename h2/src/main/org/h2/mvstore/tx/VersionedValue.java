@@ -44,10 +44,10 @@ public class VersionedValue
     }
 
     /**
-     * Initial (committed) value for operationId > 0, null otherwise.
+     * Initial (committed) value for operationId > 0, committed value otherwise.
      */
     public Object getCommittedValue() {
-        return null;
+        return value;
     }
 
     @Override
@@ -135,13 +135,14 @@ public class VersionedValue
             if (operationId == 0) {
                 valueType.write(buff, v.value);
             } else {
-                int flags = (v.value == null ? 0 : 1) | (v.getCommittedValue() == null ? 0 : 2);
+                Object committedValue = v.getCommittedValue();
+                int flags = (v.value == null ? 0 : 1) | (committedValue == null ? 0 : 2);
                 buff.put((byte) flags);
                 if (v.value != null) {
                     valueType.write(buff, v.value);
                 }
-                if (v.getCommittedValue() != null) {
-                    valueType.write(buff, v.getCommittedValue());
+                if (committedValue != null) {
+                    valueType.write(buff, committedValue);
                 }
             }
         }

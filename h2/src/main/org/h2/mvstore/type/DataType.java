@@ -13,7 +13,7 @@ import org.h2.mvstore.WriteBuffer;
 /**
  * A data type.
  */
-public interface DataType extends Comparator {
+public interface DataType extends Comparator<Object> {
 
     /**
      * Compare two keys.

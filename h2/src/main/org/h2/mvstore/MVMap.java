@@ -127,13 +127,16 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             } else {
                 while (!page.isLeaf()) {
                     page = page.getChildPage(index);
-                    assert keeper != null;
-                    CursorPos tmp = keeper;
-                    keeper = keeper.parent;
-                    tmp.parent = cursorPos;
-                    tmp.page = page;
-                    tmp.index = 0;
-                    cursorPos = tmp;
+                    if (keeper == null) {
+                        cursorPos = new CursorPos(page, 0, cursorPos);
+                    } else {
+                        CursorPos tmp = keeper;
+                        keeper = keeper.parent;
+                        tmp.parent = cursorPos;
+                        tmp.page = page;
+                        tmp.index = 0;
+                        cursorPos = tmp;
+                    }
                     index = 0;
                 }
                 K key = (K) page.getKey(index);
@@ -276,78 +279,13 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         return operate(key, value, decisionMaker);
     }
 
-/*
-    public void delete(K from, K to) {
-        beforeWrite();
-        RootReference rootReference;
-        while(!lockRoot(rootReference = getRoot())) {}
-        Page root = rootReference.root;
-        int index = root.binarySearch(from) + 1;
-        if (index < 0) {
-            index = -index;
-            Page childPage = root.getChildPage(index - 1);
-            int i = childPage.binarySearch(from);
-            assert i != 0;
-            assert i != -1;
-            if (i < 0) {
-                i = -i - 1;
-                if (i >= childPage.getKeyCount()) {
-                    childPage = null; // totally left of the deletion interval
-                }
-            }
-            if (childPage != null) {
-                childPage = childPage.copy();
-                childPage.deleteFrom(i);
-                root.setChild(index - 1, childPage);
-            }
-        }
-
-
-        CursorPos cursorPos = traverseDown(root, from);
-
-        CursorPos keeper = null;
-        while (true) {
-            Page page = cursorPos.page;
-            int index = cursorPos.index;
-            if (index >= (page.isLeaf() ? page.getKeyCount() : map.getChildPageCount(page))) {
-                CursorPos tmp = cursorPos;
-                cursorPos = cursorPos.parent;
-                tmp.parent = keeper;
-                keeper = tmp;
-                if(cursorPos == null) {
-                    return;
-                }
-            } else {
-                while (!page.isLeaf()) {
-                    page = page.getChildPage(index);
-                    cursorPos = new CursorPos(page, 0, cursorPos);
-                    assert keeper != null;
-                    CursorPos tmp = keeper;
-                    keeper = keeper.parent;
-                    tmp.parent = cursorPos;
-                    tmp.page = page;
-                    tmp.index = 0;
-                    cursorPos = tmp;
-                    index = 0;
-                }
-                K key = (K) page.getKey(index);
-                V value = (V) page.getValue(index);
-                if(processor.process(key, value)) {
-                    return;
-                }
-            }
-            ++cursorPos.index;
-        }
-
-    }
-*/
     public interface LeafProcessor
     {
         CursorPos locate(Page rootPage);
-        CursorPos locateNext(Page rootPage);
-//        CursorPos locateAgain(Page rootPage);
         Page[] process(CursorPos pos);
+        CursorPos locateNext(Page rootPage);
         void stepBack();
+        void confirmSuccess();
     }
 
     public static final class SingleDecisionMaker<K,V> implements LeafProcessor
@@ -377,6 +315,9 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         public void stepBack() {
             decisionMaker.reset();
         }
+
+        @Override
+        public void confirmSuccess() {}
 
         @Override
         public Page[] process(CursorPos pos) {
@@ -525,8 +466,8 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                     unsavedMemory += p.getMemory();
                     pos = pos.parent;
                 }
-                if ((pos = processor.locateNext(rootReference.root)) != null) {
-                    throw new IllegalStateException("Multi-node batch operation is not supported yet");
+                if ((pos = processor.locateNext(p)) != null) {
+                    continue; // Multi-node batch operation
                 }
                 if(needUnlock) {
                     unlockRoot(p, attempt);
@@ -543,6 +484,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                 if (store.getFileStore() != null) {
                     store.registerUnsavedPage(unsavedMemory);
                 }
+                processor.confirmSuccess();
                 break;
             } finally {
                 if(needUnlock) {

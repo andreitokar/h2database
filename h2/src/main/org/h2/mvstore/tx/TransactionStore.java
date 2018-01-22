@@ -409,10 +409,9 @@ public final class TransactionStore {
 
         private       long             undoKey;
         private       MVMap.Decision   decision;
-//        private       VersionedValue   value;
 
         private       BatchInfo        batchInfo;
-        private       CursorPos        pos;
+        private       Object           lastKeyOnPage;
 
 
         private CommitProcessor(TransactionStore transactionStore, int transactionId, long maxLogId, boolean batchMode) {
@@ -490,7 +489,6 @@ public final class TransactionStore {
                     } else {
                         // put the value only if it comes from the same transaction
                         decision = MVMap.Decision.PUT;
-//                        value = new VersionedValue(existingValue.value);
                     }
                 } else {
                     decision = MVMap.Decision.ABORT;
@@ -502,10 +500,7 @@ public final class TransactionStore {
         @Override
         public VersionedValue selectValue(VersionedValue existingValue, VersionedValue providedValue) {
             assert decision == MVMap.Decision.PUT;
-//            assert value != null;
-//            assert value.getOperationId() == 0;
             assert existingValue != null;
-//            assert value.value == existingValue.value;
             return new VersionedValue(existingValue.value);
         }
 
@@ -527,8 +522,9 @@ public final class TransactionStore {
             while ((key = heap.peek()) != null) {
                 CursorPos pos = MVMap.traverseDown(rootPage, key);
                 int index = pos.index;
-                if (index >= 0 && getTransactionId(((VersionedValue) pos.page.getValue(index)).getOperationId()) == transactionId) {
-                    this.pos = pos;
+                Page leaf = pos.page;
+                if (index >= 0 && getTransactionId(((VersionedValue) leaf.getValue(index)).getOperationId()) == transactionId) {
+                    lastKeyOnPage = leaf.getKey(leaf.getKeyCount() - 1);
                     return pos;
                 }
                 batchInfo.dedup.remove(heap.remove());
@@ -538,14 +534,6 @@ public final class TransactionStore {
 
         @Override
         public CursorPos locateNext(Page rootPage) {
-            Page leaf = pos.page;
-            Object lastKeyOnPage = leaf.getKey(leaf.getKeyCount() - 1);
-            Comparator<Object> comparator = batchInfo.map.getKeyType();
-            Queue<Object> heap = batchInfo.heap;
-            Object key;
-            while ((key = heap.peek()) != null && comparator.compare(key, lastKeyOnPage) <= 0) {
-                batchInfo.dedup.remove(heap.remove());
-            }
             return null;
         }
 
@@ -572,35 +560,49 @@ public final class TransactionStore {
         @Override
         public void stepBack() {}
 
+        @Override
+        public void confirmSuccess() {
+            Comparator<Object> comparator = batchInfo.map.getKeyType();
+            Queue<Object> heap = batchInfo.heap;
+            Object key;
+            while ((key = heap.peek()) != null && comparator.compare(key, lastKeyOnPage) <= 0) {
+                batchInfo.dedup.remove(heap.remove());
+            }
+        }
+
         public void flush() {
             for (BatchInfo batchInfo : batches.values()) {
                 if (batchInfo != BatchInfo.NOOP) {
                     Queue<Object> heap = batchInfo.heap;
                     if (heap != null) {
                         this.batchInfo = batchInfo;
+                        MVMap<Object, VersionedValue> map = batchInfo.map;
                         while(!heap.isEmpty()) {
-                            batchInfo.map.operateBatch(this);
+                            map.operateBatch(this);
                         }
-/*
-                        MVMap.process(batchInfo.map.getRootPage(), null, new MVMap.Processor<Object,VersionedValue>(){
-                            @Override
-                            public boolean process(Object key, VersionedValue value) {
-                                assert getTransactionId(value.getOperationId()) != transactionId;
-                                return false;
-                            }
-                        });
-*/
+                        assert verifyCleanCommit(map);
                     }
                 }
             }
+        }
+
+        private boolean verifyCleanCommit(MVMap<Object, VersionedValue> map) {
+            MVMap.process(map.getRootPage(), null, new MVMap.Processor<Object,VersionedValue>(){
+                @Override
+                public boolean process(Object key, VersionedValue value) {
+                    assert getTransactionId(value.getOperationId()) != transactionId;
+                    return false;
+                }
+            });
+            return true;
         }
     }
 
     private static final class BatchInfo
     {
-        private final MVMap<Object, VersionedValue> map;
-        private final Queue<Object> heap;
-        private final Set<Object> dedup;
+        final MVMap<Object, VersionedValue> map;
+        final Queue<Object>                 heap;
+        final Set<Object>                   dedup;
 
         public static final BatchInfo NOOP = new BatchInfo(null);
 
@@ -612,7 +614,7 @@ public final class TransactionStore {
 
         public BatchInfo(MVMap<Object, VersionedValue> map, int capacity) {
             this.map = map;
-            heap = new PriorityQueue<>(capacity, map.getKeyType());
+            this.heap = new PriorityQueue<>(capacity, map.getKeyType());
             dedup = new HashSet<>(capacity);
         }
     }
@@ -1340,6 +1342,7 @@ public final class TransactionStore {
             } catch (Throwable e) {
                 ex = e;
             } finally {
+                notifyAllWaitingTransactions();
                 long expectedState = composeState(STATUS_ROLLING_BACK, logId, hasRollback(lastState));
                 long newState = composeState(STATUS_OPEN, savepointId, true);
                 if (!statusAndLogId.compareAndSet(expectedState, newState)) {
@@ -1405,36 +1408,51 @@ public final class TransactionStore {
         private void closeIt() {
             long lastState = setStatus(STATUS_CLOSED);
             if(hasChanges(lastState) || hasRollback(lastState)) {
-                _closeIt();
+                notifyAllWaitingTransactions();
             }
         }
 
-        private synchronized void _closeIt() {
+        private synchronized void notifyAllWaitingTransactions() {
             notifyAll();
         }
 
         public boolean waitFor(Transaction toWaitFor) {
-            for(Transaction tx = toWaitFor, nextTx; (nextTx = tx.blockingTransaction) != null; tx = nextTx) {
-                if (tx == this) {
-                    throw DataUtils.newIllegalStateException(DataUtils.ERROR_TRANSACTIONS_DEADLOCK,
-                            "Transaction {0} has been chosen as a deadlock victim. Map entry <{1}> with key <{2}>",
-                            transactionId, blockingMap.getName(), blockingKey);
+            if (isDeadlocked(toWaitFor)) {
+                StringBuilder details = new StringBuilder("Transaction has been chosen as a deadlock victim. Details:\n");
+                for(Transaction tx = toWaitFor, nextTx; (nextTx = tx.blockingTransaction) != null; tx = nextTx) {
+                    details.append(String.format("Transaction %s attempts to update map <%s> entry with key <%s> modified by transaction %s\n",
+                            tx.transactionId, tx.blockingMap.getName(), tx.blockingKey, tx.blockingTransaction));
+                    if (nextTx == this) {
+                        details.append(String.format("Transaction %s attempts to update map <%s> entry with key <%s> modified by transaction %s\n",
+                                transactionId, blockingMap.getName(), blockingKey, toWaitFor));
+                        throw DataUtils.newIllegalStateException(DataUtils.ERROR_TRANSACTIONS_DEADLOCK, details.toString());
+                    }
                 }
             }
 
             blockingTransaction = toWaitFor;
-            boolean outcome = toWaitFor.waitForThisToEnd(timeoutMillis);
-            if (outcome) {
+            try {
+                return toWaitFor.waitForThisToEnd(timeoutMillis);
+            } finally {
                 blockingMap = null;
                 blockingKey = null;
                 blockingTransaction = null;
             }
-            return outcome;
+        }
+
+        private boolean isDeadlocked(Transaction toWaitFor) {
+            for(Transaction tx = toWaitFor, nextTx; (nextTx = tx.blockingTransaction) != null; tx = nextTx) {
+                if (nextTx == this) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private synchronized boolean waitForThisToEnd(long millis) {
             long until = System.currentTimeMillis() + millis;
-            while(getStatus() != STATUS_CLOSED) {
+            int status;
+            while((status = getStatus()) != STATUS_CLOSED && status != STATUS_ROLLING_BACK) {
                 long dur = until - System.currentTimeMillis();
                 if(dur <= 0) {
                     return false;
@@ -1699,6 +1717,8 @@ public final class TransactionStore {
             TxDecisionMaker decisionMaker = new TxDecisionMaker(map.getId(), key, value, transaction);
             TransactionStore store = transaction.store;
             Transaction blockingTransaction;
+//            Transaction lastBlockingTransaction = null;
+//            boolean unstable;
             do {
                 assert transaction.blockingTransaction == null;
                 VersionedValue result = map.put(key, VersionedValue.DUMMY, decisionMaker);
@@ -1716,7 +1736,9 @@ public final class TransactionStore {
                 decisionMaker.reset();
                 transaction.blockingMap = map;
                 transaction.blockingKey = key;
-            } while (transaction.waitFor(blockingTransaction));
+//                unstable = blockingTransaction != lastBlockingTransaction;
+//                lastBlockingTransaction = blockingTransaction;
+            } while (/*unstable && */transaction.waitFor(blockingTransaction));
 
             throw DataUtils.newIllegalStateException(DataUtils.ERROR_TRANSACTION_LOCKED,
                     "Map entry <{0}> with key <{1}> is locked by tx {2} and can not be updated by tx {3} within allocated time interval {4} ms.",
@@ -1989,8 +2011,8 @@ public final class TransactionStore {
          * @param from the first key to return
          * @return the iterator
          */
-        public Iterator<Entry<K, V>> entryIterator(final K from, final K to, boolean includeUncommitted) {
-            return new EntryIterator<K,V>(this, from, to, includeUncommitted);
+        public Iterator<Entry<K, V>> entryIterator(final K from, final K to) {
+            return new EntryIterator<K,V>(this, from, to);
         }
 
         /**
@@ -2095,7 +2117,7 @@ public final class TransactionStore {
                     // condition above means that entry belongs to a committing transaction
                     // and therefore will be committed soon
                     || (blockingTransaction = transaction.store.getTransaction(blockingId)) == null) {
-                    // condition above means transaction has been closed by now
+                    // condition above means transaction has been committed and closed by now
 
                     // In both cases, we assume that we are looking at final value for this transaction
                     // and if it's not the case, then it will fail later
@@ -2103,8 +2125,8 @@ public final class TransactionStore {
                     decision = MVMap.Decision.PUT;
                     undoKey = transaction.log(mapId, key, existingValue.value == null ? null : new VersionedValue(existingValue.value));
                 } else {
-                    // this entry comes from a different transaction and it's not committed yet
-                    // should wait on blockingTransaction that was tetermined earlier
+                    // this entry comes from a different transaction, and this transaction is not committed yet
+                    // should wait on blockingTransaction that was determined earlier
                     decision = MVMap.Decision.ABORT;
                 }
                 return decision;
@@ -2207,32 +2229,28 @@ public final class TransactionStore {
 
     private static final class EntryIterator<K,V> extends TMIterator<K,Entry<K,V>> {
 
-        public EntryIterator(TransactionMap<K, ?> transactionMap, K from, K to, boolean includeUncommitted) {
-            super(transactionMap, from, to, includeUncommitted);
+        public EntryIterator(TransactionMap<K, ?> transactionMap, K from, K to) {
+            super(transactionMap, from, to, false);
         }
 
         @Override
+        @SuppressWarnings("unchecked")
         protected Entry<K, V> registerCurrent(K key, VersionedValue data) {
-            @SuppressWarnings("unchecked")
-            V value = (V) data.value;
-            return new DataUtils.MapEntry<K, V>(key, value);
+            return new DataUtils.MapEntry<>(key, (V) data.value);
         }
     }
 
     private abstract static class TMIterator<K,X> implements Iterator<X> {
         private final TransactionMap<K,?>      transactionMap;
         private final BitSet                   committingTransactions;
-        private final Page                     undoLogRootPage;
         private final Cursor<K,VersionedValue> cursor;
-        private final boolean                  includeUncommitted;
+        private final boolean                  includeAllUncommitted;
         private       X                        current;
 
-        protected TMIterator(TransactionMap<K,?> transactionMap, K from, K to, boolean includeUncommitted)
+        protected TMIterator(TransactionMap<K,?> transactionMap, K from, K to, boolean includeAllUncommitted)
         {
             this.transactionMap = transactionMap;
             TransactionStore store = transactionMap.transaction.store;
-            MVMap<Long, Record> undoLog = store.undoLogs[transactionMap.transaction.transactionId];
-            Page undoLogRootPage = undoLog == null ? null : undoLog.getRootPage();
             MVMap<K, VersionedValue> map = transactionMap.map;
             BitSet committingTransactions;
             MVMap.RootReference mapRootReference;
@@ -2241,9 +2259,8 @@ public final class TransactionStore {
                 mapRootReference = map.getRoot();
             } while(committingTransactions != store.committingTransactions.get());
 
-            this.undoLogRootPage = undoLogRootPage;
             this.cursor = new Cursor<>(mapRootReference.root, from, to);
-            this.includeUncommitted = includeUncommitted;
+            this.includeAllUncommitted = includeAllUncommitted;
             this.committingTransactions = committingTransactions;
         }
 
@@ -2253,10 +2270,12 @@ public final class TransactionStore {
             while (cursor.hasNext()) {
                 K key = cursor.next();
                 VersionedValue data = cursor.getValue();
-                if (!includeUncommitted) {
+                if (!includeAllUncommitted) {
                     data = transactionMap.getValue(data, committingTransactions);
                 }
-                if (data != null && data.value != null) {
+                if (data != null && (data.value != null ||
+                        includeAllUncommitted && transactionMap.transaction.transactionId !=
+                                                    getTransactionId(data.getOperationId()))) {
                     current = registerCurrent(key, data);
                     return;
                 }

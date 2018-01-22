@@ -537,6 +537,37 @@ public abstract class Table extends SchemaObjectBase {
         }
     }
 
+    /**
+     * Delete a list of rows in this table.
+     *
+     * @param prepared the prepared statement
+     * @param session the session
+     * @param rows a list of rows to delete
+     */
+    public void deleteRows(Prepared prepared, Session session, RowList rows) {
+        // in case we need to undo the update
+        Session.Savepoint rollback = session.setSavepoint();
+        // remove the old rows
+        int rowScanCount = 0;
+        for (rows.reset(); rows.hasNext();) {
+            if ((++rowScanCount & 127) == 0) {
+                prepared.checkCanceled();
+            }
+            Row row = rows.next();
+            try {
+                removeRow(session, row);
+            } catch (DbException e) {
+                if (e.getErrorCode() == ErrorCode.CONCURRENT_UPDATE_1) {
+                    session.rollbackTo(rollback, false);
+                    session.startStatementWithinTransaction();
+                    rollback = session.setSavepoint();
+                }
+                throw e;
+            }
+            session.log(this, UndoLogRecord.DELETE, row);
+        }
+    }
+
     public CopyOnWriteArrayList<TableView> getDependentViews() {
         return dependentViews;
     }
