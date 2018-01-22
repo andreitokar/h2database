@@ -20,6 +20,7 @@ import java.net.Socket;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
+import java.sql.Date;
 import java.sql.ParameterMetaData;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -53,6 +54,8 @@ import org.h2.value.CaseInsensitiveMap;
  * One server thread is opened for each client.
  */
 public class PgServerThread implements Runnable {
+    private static final boolean INTEGER_DATE_TYPES = false;
+
     private final PgServer server;
     private Socket socket;
     private Connection conn;
@@ -534,10 +537,16 @@ public class PgServerThread implements Runnable {
         if (text) {
             // plain text
             switch (pgType) {
-            case PgServer.PG_TYPE_BOOL:
-                writeInt(1);
-                dataOut.writeByte(rs.getBoolean(column) ? 't' : 'f');
+            case PgServer.PG_TYPE_BOOL: {
+                boolean b = rs.getBoolean(column);
+                if (rs.wasNull()) {
+                    writeInt(-1);
+                } else {
+                    writeInt(1);
+                    dataOut.writeByte(b ? 't' : 'f');
+                }
                 break;
+            }
             default:
                 String s = rs.getString(column);
                 if (s == null) {
@@ -551,26 +560,56 @@ public class PgServerThread implements Runnable {
         } else {
             // binary
             switch (pgType) {
-            case PgServer.PG_TYPE_INT2:
-                writeInt(2);
-                writeShort(rs.getShort(column));
+            case PgServer.PG_TYPE_INT2: {
+                short s = rs.getShort(column);
+                if (rs.wasNull()) {
+                    writeInt(-1);
+                } else {
+                    writeInt(2);
+                    writeShort(s);
+                }
                 break;
-            case PgServer.PG_TYPE_INT4:
-                writeInt(4);
-                writeInt(rs.getInt(column));
+            }
+            case PgServer.PG_TYPE_INT4: {
+                int i = rs.getInt(column);
+                if (rs.wasNull()) {
+                    writeInt(-1);
+                } else {
+                    writeInt(4);
+                    writeInt(i);
+                }
                 break;
-            case PgServer.PG_TYPE_INT8:
-                writeInt(8);
-                dataOut.writeLong(rs.getLong(column));
+            }
+            case PgServer.PG_TYPE_INT8: {
+                long l = rs.getLong(column);
+                if (rs.wasNull()) {
+                    writeInt(-1);
+                } else {
+                    writeInt(8);
+                    dataOut.writeLong(l);
+                }
                 break;
-            case PgServer.PG_TYPE_FLOAT4:
-                writeInt(4);
-                dataOut.writeFloat(rs.getFloat(column));
+            }
+            case PgServer.PG_TYPE_FLOAT4: {
+                float f = rs.getFloat(column);
+                if (rs.wasNull()) {
+                    writeInt(-1);
+                } else {
+                    writeInt(4);
+                    dataOut.writeFloat(f);
+                }
                 break;
-            case PgServer.PG_TYPE_FLOAT8:
-                writeInt(8);
-                dataOut.writeDouble(rs.getDouble(column));
+            }
+            case PgServer.PG_TYPE_FLOAT8: {
+                double d = rs.getDouble(column);
+                if (rs.wasNull()) {
+                    writeInt(-1);
+                } else {
+                    writeInt(8);
+                    dataOut.writeDouble(d);
+                }
                 break;
+            }
             case PgServer.PG_TYPE_BYTEA: {
                 byte[] data = rs.getBytes(column);
                 if (data == null) {
@@ -582,36 +621,59 @@ public class PgServerThread implements Runnable {
                 break;
             }
             case PgServer.PG_TYPE_DATE: {
-                writeInt(4);
-                long millis = rs.getDate(column).getTime();
-                millis += TimeZone.getDefault().getOffset(millis);
-                writeInt((int) (toPostgreSeconds(millis) / 86400));
+                Date d = rs.getDate(column);
+                if (d == null) {
+                    writeInt(-1);
+                } else {
+                    writeInt(4);
+                    long millis = d.getTime();
+                    millis += TimeZone.getDefault().getOffset(millis);
+                    writeInt((int) (toPostgreSeconds(millis) / 86400));
+                }
                 break;
             }
             case PgServer.PG_TYPE_TIME: {
-                writeInt(8);
                 Time t = rs.getTime(column);
-                long m = t.getTime();
-                m += TimeZone.getDefault().getOffset(m);
-                // double format
-                m /= 1000;
-                m = Double.doubleToLongBits(m);
-                // long format
-                // m *= 1000;
-                writeInt((int) (m >>> 32));
-                writeInt((int) m);
+                if (t == null) {
+                    writeInt(-1);
+                } else {
+                    writeInt(8);
+                    long m = t.getTime();
+                    m += TimeZone.getDefault().getOffset(m);
+                    if (INTEGER_DATE_TYPES) {
+                        // long format
+                        m *= 1000;
+                    } else {
+                        // double format
+                        m /= 1000;
+                        m = Double.doubleToLongBits(m);
+                    }
+                    dataOut.writeLong(m);
+                }
                 break;
             }
             case PgServer.PG_TYPE_TIMESTAMP_NO_TMZONE: {
-                writeInt(8);
                 Timestamp t = rs.getTimestamp(column);
-                long m = t.getTime();
-                m += TimeZone.getDefault().getOffset(m);
-                // double format
-                m = toPostgreSeconds(m);
-                m = Double.doubleToLongBits(m + t.getNanos() * 0.000000001);
-                writeInt((int) (m >>> 32));
-                writeInt((int) m);
+                if (t == null) {
+                    writeInt(-1);
+                } else {
+                    writeInt(8);
+                    long m = t.getTime();
+                    m += TimeZone.getDefault().getOffset(m);
+                    m = toPostgreSeconds(m);
+                    int nanos = t.getNanos();
+                    if (m < 0 && nanos != 0) {
+                        m--;
+                    }
+                    if (INTEGER_DATE_TYPES) {
+                        // long format
+                        m = m * 1000000 + nanos / 1000;
+                    } else {
+                        // double format
+                        m = Double.doubleToLongBits(m + nanos * 0.000000001);
+                    }
+                    dataOut.writeLong(m);
+                }
                 break;
             }
             default: throw new IllegalStateException("output binary format is undefined");
@@ -949,6 +1011,7 @@ public class PgServerThread implements Runnable {
         sendParameterStatus("standard_conforming_strings", "off");
         // TODO PostgreSQL TimeZone
         sendParameterStatus("TimeZone", "CET");
+        sendParameterStatus("integer_datetimes", INTEGER_DATE_TYPES ? "on" : "off");
         sendBackendKeyData();
         sendReadyForQuery();
     }
