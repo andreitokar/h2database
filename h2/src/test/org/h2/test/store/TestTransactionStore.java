@@ -18,10 +18,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.MVMap;
 import org.h2.mvstore.MVStore;
-import org.h2.mvstore.db.TransactionStore;
-import org.h2.mvstore.db.TransactionStore.Change;
-import org.h2.mvstore.db.TransactionStore.Transaction;
-import org.h2.mvstore.db.TransactionStore.TransactionMap;
+import org.h2.mvstore.tx.TransactionStore;
+import org.h2.mvstore.tx.TransactionStore.Change;
+import org.h2.mvstore.tx.TransactionStore.Transaction;
+import org.h2.mvstore.tx.TransactionStore.TransactionMap;
 import org.h2.mvstore.type.ObjectDataType;
 import org.h2.store.fs.FileUtils;
 import org.h2.test.TestBase;
@@ -45,6 +45,7 @@ public class TestTransactionStore extends TestBase {
     @Override
     public void test() throws Exception {
         FileUtils.createDirectories(getBaseDir());
+        testHCLFKey();
         testConcurrentAddRemove();
         testConcurrentAdd();
         testCountWithOpenTransactions();
@@ -61,6 +62,52 @@ public class TestTransactionStore extends TestBase {
         testSingleConnection();
         testCompareWithPostgreSQL();
         testStoreMultiThreadedReads();
+    }
+
+    private void testHCLFKey() {
+        MVStore s = MVStore.open(null);
+        final TransactionStore ts = new TransactionStore(s);
+        ts.init();
+        Transaction t = ts.begin();
+        ObjectDataType keyType = new ObjectDataType();
+        TransactionMap<Long, Long> map = t.openMap("test", keyType, keyType);
+        // firstKey()
+        assertNull(map.firstKey());
+        // lastKey()
+        assertNull(map.lastKey());
+        map.put(10L, 100L);
+        map.put(20L, 200L);
+        map.put(30L, 300L);
+        map.put(40L, 400L);
+        t.commit();
+        t = ts.begin();
+        map = t.openMap("test", keyType, keyType);
+        map.put(15L, 150L);
+        // The same transaction
+        assertEquals((Object) 15L, map.higherKey(10L));
+        t = ts.begin();
+        map = t.openMap("test", keyType, keyType);
+        // Another transaction
+        // higherKey()
+        assertEquals((Object) 20L, map.higherKey(10L));
+        assertEquals((Object) 20L, map.higherKey(15L));
+        assertNull(map.higherKey(40L));
+        // ceilingKey()
+        assertEquals((Object) 10L, map.ceilingKey(10L));
+        assertEquals((Object) 20L, map.ceilingKey(15L));
+        assertEquals((Object) 40L, map.ceilingKey(40L));
+        assertNull(map.higherKey(45L));
+        // lowerKey()
+        assertNull(map.lowerKey(10L));
+        assertEquals((Object) 10L, map.lowerKey(15L));
+        assertEquals((Object) 10L, map.lowerKey(20L));
+        assertEquals((Object) 20L, map.lowerKey(25L));
+        // floorKey()
+        assertNull(map.floorKey(5L));
+        assertEquals((Object) 10L, map.floorKey(10L));
+        assertEquals((Object) 10L, map.floorKey(15L));
+        assertEquals((Object) 30L, map.floorKey(35L));
+        s.close();
     }
 
     private static void testConcurrentAddRemove() throws InterruptedException {
@@ -88,6 +135,7 @@ public class TestTransactionStore extends TestBase {
                             map.put(k, r.nextInt());
                         } catch (IllegalStateException e) {
                             // ignore and retry
+                            assert tx.getStatus() == Transaction.STATUS_OPEN;
                         }
                         tx.commit();
                     }
@@ -343,7 +391,7 @@ public class TestTransactionStore extends TestBase {
             while (state.get() < 1) {
                 Thread.yield();
             }
-            assertTrue(s.hasData("undoLog"));
+            assertTrue(hasDataUndoLog(s));
             long v = s.getCurrentVersion();
 
             // commit while writing in the task
@@ -355,11 +403,11 @@ public class TestTransactionStore extends TestBase {
             store.close();
             s = MVStore.open(fileName);
             // roll back a bit, until we have some undo log entries
-            assertTrue(s.hasMap("undoLog"));
+            assertTrue(s.hasMap("undoLog-1"));
             for (int back = 0; back < 100; back++) {
                 int minus = r.nextInt(10);
                 s.rollbackTo(Math.max(0, s.getCurrentVersion() - minus));
-                if (s.hasData("undoLog")) {
+                if (hasDataUndoLog(s)) {
                     break;
                 }
             }
@@ -379,6 +427,15 @@ public class TestTransactionStore extends TestBase {
             FileUtils.delete(fileName);
             assertFalse(FileUtils.exists(fileName));
         }
+    }
+
+    private boolean hasDataUndoLog(MVStore s) {
+        for (int i = 0; i < 255; i++) {
+            if(s.hasData("undoLog-"+i)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void testGetModifiedMaps() {

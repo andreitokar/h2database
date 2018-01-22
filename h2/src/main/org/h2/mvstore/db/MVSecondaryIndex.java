@@ -31,7 +31,6 @@ import org.h2.result.SortOrder;
 import org.h2.table.Column;
 import org.h2.table.IndexColumn;
 import org.h2.table.TableFilter;
-import org.h2.util.New;
 import org.h2.value.Value;
 import org.h2.value.ValueNull;
 
@@ -146,7 +145,7 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
                 Source s = queue.remove();
                 SearchRow row = s.next();
 
-                if (indexType.isUnique()) {
+                if (indexType.isUnique() && !mayHaveNullDuplicates(row)) {
                     checkUnique(dataMap, row, Long.MIN_VALUE);
                 }
 
@@ -188,15 +187,18 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
     public void add(Session session, Row row) {
         TransactionMap<SearchRow,Value> map = getMap(session);
         SearchRow key = convertToKey(row, null);
-        if (indexType.isUnique()) {
+        boolean checkRequired = indexType.isUnique() && !mayHaveNullDuplicates(row);
+        if (checkRequired) {
             checkUnique(map, row, Long.MIN_VALUE);
         }
+
         try {
             map.put(key, ValueNull.INSTANCE);
         } catch (IllegalStateException e) {
             throw mvTable.convertException(e);
         }
-        if (indexType.isUnique()) {
+
+        if (checkRequired) {
             checkUnique(map, row, row.getKey());
         }
     }
@@ -205,19 +207,13 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
         Iterator<SearchRow> it = map.keyIterator(convertToKey(row, Boolean.FALSE), convertToKey(row, Boolean.TRUE), true);
         while (it.hasNext()) {
             SearchRow k = it.next();
-
-            if (containsNullAndAllowMultipleNull(k)) {
-                // this is allowed
-                continue;
+            if (newKey != k.getKey()) {
+                if (map.get(k) != null) {
+                    // committed
+                    throw getDuplicateKeyException(k.toString());
+                }
+                throw DbException.get(ErrorCode.CONCURRENT_UPDATE_1, table.getName());
             }
-            if (newKey == k.getKey()) {
-                continue;
-            }
-            if (map.get(k) != null) {
-                // committed
-                throw getDuplicateKeyException(k.toString());
-            }
-            throw DbException.get(ErrorCode.CONCURRENT_UPDATE_1, table.getName());
         }
     }
 

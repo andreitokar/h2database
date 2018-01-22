@@ -32,7 +32,6 @@ import org.h2.compress.Compressor;
 import org.h2.engine.Constants;
 import org.h2.mvstore.cache.CacheLongKeyLIRS;
 import org.h2.util.MathUtils;
-import org.h2.util.New;
 import org.h2.util.Utils;
 import static org.h2.mvstore.MVMap.INITIAL_VERSION;
 
@@ -199,7 +198,7 @@ public final class MVStore {
      * The map of temporarily freed storage space caused by freed pages.
      * It contains the number of freed entries per chunk.
      */
-    private final Map<Integer,Chunk> freedPageSpace = New.hashMap();
+    private final Map<Integer,Chunk> freedPageSpace = new HashMap<>();
 
     /**
      * The metadata map. Write access to this map needs to be synchronized on
@@ -210,7 +209,7 @@ public final class MVStore {
     private final ConcurrentHashMap<Integer, MVMap<?, ?>> maps =
             new ConcurrentHashMap<>();
 
-    private final HashMap<String, Object> storeHeader = New.hashMap();
+    private final HashMap<String, Object> storeHeader = new HashMap<>();
 
     private WriteBuffer writeBuffer;
 
@@ -430,7 +429,7 @@ public final class MVStore {
      * @return the store
      */
     public static MVStore open(String fileName) {
-        HashMap<String, Object> config = New.hashMap();
+        HashMap<String, Object> config = new HashMap<>();
         config.put("fileName", fileName);
         return new MVStore(config);
     }
@@ -480,7 +479,7 @@ public final class MVStore {
         if (id >= 0) {
             map = openMap(id, builder);
         } else {
-            HashMap<String, Object> c = New.hashMap();
+            HashMap<String, Object> c = new HashMap<>();
             id = ++lastMapId;
             c.put("id", id);
             c.put("createVersion", currentVersion);
@@ -507,7 +506,7 @@ public final class MVStore {
         if (map == null) {
             String configAsString = meta.get(MVMap.getMapKey(id));
             if(configAsString != null) {
-                HashMap<String, Object> config = New.hashMap();
+                HashMap<String, Object> config = new HashMap<>();
                 HashMap<String, String> cfg = DataUtils.parseMap(configAsString);
                 config.putAll(cfg);
                 config.put("id", id);
@@ -534,7 +533,7 @@ public final class MVStore {
      * @return the set of names
      */
     public Set<String> getMapNames() {
-        HashSet<String> set = New.hashSet();
+        HashSet<String> set = new HashSet<>();
         checkOpen();
         for (Iterator<String> it = meta.keyIterator("name."); it.hasNext();) {
             String x = it.next();
@@ -984,7 +983,7 @@ public final class MVStore {
             if (cacheChunkRef != null) {
                 cacheChunkRef.clear();
             }
-            for (MVMap<?, ?> m : New.arrayList(maps.values())) {
+            for (MVMap<?, ?> m : new ArrayList<>(maps.values())) {
                 m.close();
             }
             chunks.clear();
@@ -1164,7 +1163,7 @@ public final class MVStore {
         meta.put(Chunk.getMetaKey(c.id), c.asString());
         meta.remove(Chunk.getMetaKey(c.id));
         markMetaChanged();
-        ArrayList<Page> changed = New.arrayList();
+        ArrayList<Page> changed = new ArrayList<>();
         for (Iterator<MVMap<?, ?>> iter = maps.values().iterator(); iter.hasNext(); ) {
             MVMap<?, ?> map = iter.next();
             MVMap.RootReference rootReference = map.setWriteVersion(version);
@@ -1333,7 +1332,7 @@ public final class MVStore {
 
     private Set<Integer> collectReferencedChunks() {
         ChunkIdsCollector collector = new ChunkIdsCollector(meta.getId());
-        Set<Long> inspectedRoots = New.hashSet();
+        Set<Long> inspectedRoots = new HashSet<>();
         long pos = lastChunk.metaRootPos;
         inspectedRoots.add(pos);
         collector.visit(pos);
@@ -1370,7 +1369,7 @@ public final class MVStore {
 
     public final class ChunkIdsCollector {
 
-        private final Set<Integer>      referenced = New.hashSet();
+        private final Set<Integer>      referenced = new HashSet<>();
         private final ChunkIdsCollector parent;
         private       ChunkIdsCollector child;
         private       int               mapId;
@@ -1530,7 +1529,7 @@ public final class MVStore {
      */
     private void applyFreedSpace() {
         while (true) {
-            ArrayList<Chunk> modified = New.arrayList();
+            ArrayList<Chunk> modified = new ArrayList<>();
             synchronized (freedPageSpace) {
                 for (Chunk f : freedPageSpace.values()) {
                     Chunk c = chunks.get(f.id);
@@ -1712,7 +1711,7 @@ public final class MVStore {
     }
 
     private ArrayList<Chunk> findChunksToMove(long startBlock, long moveSize) {
-        ArrayList<Chunk> move = New.arrayList();
+        ArrayList<Chunk> move = new ArrayList<>();
         for (Chunk c : chunks.values()) {
             if (c.block > startBlock) {
                 move.add(c);
@@ -1897,7 +1896,7 @@ public final class MVStore {
         }
 
         // the 'old' list contains the chunks we want to free up
-        ArrayList<Chunk> old = New.arrayList();
+        ArrayList<Chunk> old = new ArrayList<>();
         Chunk last = chunks.get(lastChunk.id);
         for (Chunk c : chunks.values()) {
             // only look at chunk older than the retention time
@@ -1957,7 +1956,7 @@ public final class MVStore {
     }
 
     private void compactRewrite(Iterable<Chunk> old) {
-        HashSet<Integer> set = New.hashSet();
+        HashSet<Integer> set = new HashSet<>();
         for (Chunk c : old) {
             set.add(c.id);
         }
@@ -2380,7 +2379,7 @@ public final class MVStore {
             writeStoreHeader();
             readStoreHeader();
         }
-        for (MVMap<?, ?> m : New.arrayList(maps.values())) {
+        for (MVMap<?, ?> m : new ArrayList<>(maps.values())) {
             int id = m.getId();
             if (m.getCreateVersion() >= version) {
                 m.close();
@@ -2878,7 +2877,7 @@ public final class MVStore {
          * Creates new instance of MVStore.Builder.
          */
         public Builder() {
-            config = New.hashMap();
+            config = new HashMap<>();
         }
 
         private Builder set(String key, Object value) {
