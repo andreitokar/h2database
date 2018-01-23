@@ -92,7 +92,7 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
     private static final class Source {
 
         private final Iterator<SearchRow> iterator;
-        private       SearchRow           currentRowData;
+                      SearchRow           currentRowData;
 
         public Source(Iterator<SearchRow> iterator) {
             assert iterator.hasNext();
@@ -112,7 +112,7 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
             return currentRowData;
         }
 
-        public static final class Comparator implements java.util.Comparator<Source> {
+        static final class Comparator implements java.util.Comparator<Source> {
 
             private final DataType type;
 
@@ -240,7 +240,7 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
         SearchRow min = convertToKey(first, bigger);
         SearchRow max = convertToKey(last, Boolean.TRUE);
         TransactionMap<SearchRow,Value> map = getMap(session);
-        return new MVStoreCursor(session, map.keyIterator(min, max, false));
+        return new MVStoreCursor(session, map.keyIterator(min, max, false), mvTable);
     }
 
     private SearchRow convertToKey(SearchRow r, Boolean minmax) {
@@ -300,7 +300,7 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
         while (true) {
             if (key == null) {
                 return new MVStoreCursor(session,
-                        Collections.<SearchRow>emptyList().iterator());
+                        Collections.<SearchRow>emptyList().iterator(), mvTable);
             }
             if (key.getValue(columnIds[0]) != ValueNull.INSTANCE) {
                 break;
@@ -308,7 +308,7 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
             key = first ? map.higherKey(key) : map.lowerKey(key);
         }
         List<SearchRow> list = Collections.singletonList(key);
-        MVStoreCursor cursor = new MVStoreCursor(session, list.iterator());
+        MVStoreCursor cursor = new MVStoreCursor(session, list.iterator(), mvTable);
         cursor.next();
         return cursor;
     }
@@ -375,16 +375,18 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
     /**
      * A cursor.
      */
-    final class MVStoreCursor implements Cursor {
-
+    static final class MVStoreCursor implements Cursor
+    {
         private final Session             session;
         private final Iterator<SearchRow> it;
+        private final MVTable             mvTable;
         private       SearchRow           current;
         private       Row                 row;
 
-        private MVStoreCursor(Session session, Iterator<SearchRow> it) {
+        MVStoreCursor(Session session, Iterator<SearchRow> it, MVTable mvTable) {
             this.session = session;
             this.it = it;
+            this.mvTable = mvTable;
         }
 
         @Override

@@ -27,12 +27,12 @@ public class VersionedValue
      */
     public final Object value;
 
-    public VersionedValue(Object value) {
+    VersionedValue(Object value) {
         assert value != null;
         this.value = value;
     }
 
-    protected VersionedValue(Object value, boolean dummy) {
+    VersionedValue(Object value, @SuppressWarnings("unused") boolean dummy) {
         this.value = value;
     }
 
@@ -56,12 +56,12 @@ public class VersionedValue
     }
 
 
-    public static final class Uncommitted extends VersionedValue
+    static final class Uncommitted extends VersionedValue
     {
         private final long   operationId;
         private final Object committedValue;
 
-        public Uncommitted(long operationId, Object value, Object committedValue) {
+        Uncommitted(long operationId, Object value, Object committedValue) {
             super(value, false);
             assert operationId != 0;
             this.operationId = operationId;

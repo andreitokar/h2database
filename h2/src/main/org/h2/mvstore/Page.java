@@ -8,7 +8,6 @@ package org.h2.mvstore;
 import java.lang.reflect.Array;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
-import java.util.concurrent.atomic.AtomicReference;
 import org.h2.compress.Compressor;
 import org.h2.engine.Constants;
 import org.h2.mvstore.type.ExtendedDataType;
@@ -31,18 +30,12 @@ import static org.h2.mvstore.DataUtils.PAGE_TYPE_LEAF;
  * leaf: values (one for each key)
  * node: children (1 more than keys)
  */
-public abstract class Page implements Cloneable {
-
-    /**
-     * Marker value for memory field, meaning that memory accounting is replaced by key count.
-     */
-    private static final int IN_MEMORY = Integer.MIN_VALUE;
-
-
+public abstract class Page implements Cloneable
+{
     /**
      * Map this page belongs to
      */
-    protected final MVMap<?, ?> map;
+    public final MVMap<?, ?> map;
 
     /**
      * Position of this page's saved image within a Chunk or 0 if this page has not been saved yet.
@@ -76,6 +69,13 @@ public abstract class Page implements Cloneable {
      * needs to be aware of such cases.
      */
     private volatile boolean removedInMemory;
+
+    /**
+     * Marker value for memory field, meaning that memory accounting is replaced by key count.
+     */
+    private static final int IN_MEMORY = Integer.MIN_VALUE;
+
+    private static final PageReference[] SINGLE_EMPTY = { PageReference.EMPTY };
 
 
     private Page(MVMap<?, ?> map) {
@@ -111,7 +111,7 @@ public abstract class Page implements Cloneable {
     public static Page createEmptyNode(MVMap<?, ?> map, boolean capable) {
         int capacity = capable ? map.getStore().getKeysPerPage() : 0;
         Object keys = map.getExtendedKeyType().createStorage(capacity);
-        PageReference children[] = PageReference.SINGLE_EMPTY;
+        PageReference children[] = SINGLE_EMPTY;
         if (capacity > 0 ) {
             children = new PageReference[capacity + 1];
             children[0] = PageReference.EMPTY;
@@ -850,7 +850,6 @@ public abstract class Page implements Cloneable {
     public static final class PageReference {
 
         public static final PageReference EMPTY = new PageReference(null, 0, 0);
-        private static final PageReference SINGLE_EMPTY[] = { EMPTY };
 
         /**
          * The position, if known, or 0.
@@ -860,15 +859,15 @@ public abstract class Page implements Cloneable {
         /**
          * The page, if in memory, or null.
          */
-        private final Page page;
+        final Page page;
 
         /**
          * The descendant count for this child page.
          */
-        private final long count;
+        final long count;
 
         public PageReference(Page page) {
-            this(page, page.pos, page.getTotalCount());
+            this(page, page.getPos(), page.getTotalCount());
         }
 
         private PageReference(long pos, long count) {
@@ -938,7 +937,7 @@ public abstract class Page implements Cloneable {
             Page page = ref.page;
             if(page == null) {
                 page = map.readPage(ref.pos);
-                assert ref.pos == page.pos;
+                assert ref.pos == page.getPos();
                 assert ref.count == page.getTotalCount();
             }
             return page;
@@ -1007,7 +1006,7 @@ public abstract class Page implements Cloneable {
         public void setChild(int index, Page c) {
             assert c != null;
             PageReference child = children[index];
-            if (c != child.page || c.pos != child.pos) {
+            if (c != child.page || c.getPos() != child.pos) {
                 totalCount += c.getTotalCount() - child.count;
                 children = children.clone();
                 children[index] = new PageReference(c);

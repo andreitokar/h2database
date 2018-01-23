@@ -9,7 +9,6 @@ import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -17,7 +16,6 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.PriorityQueue;
 import java.util.Queue;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceArray;
@@ -31,6 +29,7 @@ import org.h2.mvstore.Page;
 import org.h2.mvstore.db.DBMetaType;
 import org.h2.mvstore.rtree.MVRTreeMap;
 import org.h2.mvstore.type.DataType;
+import org.h2.mvstore.type.ExtendedDataType;
 import org.h2.mvstore.type.LongDataType;
 import org.h2.mvstore.type.ObjectDataType;
 import org.h2.mvstore.type.StringDataType;
@@ -47,7 +46,7 @@ public final class TransactionStore {
     /**
      * The store.
      */
-    private final MVStore store;
+    final MVStore store;
 
     private final long timeoutMillis;
 
@@ -60,7 +59,7 @@ public final class TransactionStore {
     private final DataType dataType;
     private boolean init;
     private int maxTransactionId = MAX_OPEN_TRANSACTIONS;
-    private final AtomicReferenceArray<Transaction> transactions = new AtomicReferenceArray<>(MAX_OPEN_TRANSACTIONS);
+    final AtomicReferenceArray<Transaction> transactions = new AtomicReferenceArray<>(MAX_OPEN_TRANSACTIONS);
     /**
      * The undo logs.
      * <p>
@@ -71,9 +70,10 @@ public final class TransactionStore {
      * <p>
      * Key: opId, value: [ mapId, key, oldValue ].
      */
-    private final MVMap<Long,Record> undoLogs[] = (MVMap<Long,Record>[])new MVMap[MAX_OPEN_TRANSACTIONS];
-    private final AtomicReference<BitSet> openTransactions = new AtomicReference<>(new BitSet());
-    private final AtomicReference<BitSet> committingTransactions = new AtomicReference<>(new BitSet());
+    @SuppressWarnings("unchecked")
+    final MVMap<Long,Record> undoLogs[] = (MVMap<Long,Record>[])new MVMap[MAX_OPEN_TRANSACTIONS];
+    final AtomicReference<BitSet> openTransactions = new AtomicReference<>(new BitSet());
+    final AtomicReference<BitSet> committingTransactions = new AtomicReference<>(new BitSet());
     private final MVMap.Builder<Long, Record> builder;
 
     /**
@@ -236,7 +236,7 @@ public final class TransactionStore {
      * @return the list of transactions (sorted by id)
      */
     public List<Transaction> getOpenTransactions() {
-        ArrayList<Transaction> list = new ArrayList();
+        ArrayList<Transaction> list = new ArrayList<>();
         if(!init) {
             init();
         }
@@ -448,7 +448,7 @@ public final class TransactionStore {
                     reset();
                     this.undoKey = undoKey;
                     map.operate(key, null, this);
-                } else if (batchInfo.dedup.add(key)) {
+                } else if (existingValue.oldValue == null || existingValue.oldValue.getOperationId() == 0) {
                     batchInfo.heap.offer(key);
                     if (batchInfo.heap.size() >= 1023) {
                         this.batchInfo = batchInfo;
@@ -505,7 +505,6 @@ public final class TransactionStore {
 
         @Override
         public void reset() {
-//            value = null;
             decision = null;
         }
 
@@ -517,6 +516,7 @@ public final class TransactionStore {
         @Override
         public CursorPos locate(Page rootPage) {
             Queue<Object> heap = batchInfo.heap;
+            assert heap != null;
             Object key;
             while ((key = heap.peek()) != null) {
                 CursorPos pos = MVMap.traverseDown(rootPage, key);
@@ -526,7 +526,7 @@ public final class TransactionStore {
                     lastKeyOnPage = leaf.getKey(leaf.getKeyCount() - 1);
                     return pos;
                 }
-                batchInfo.dedup.remove(heap.remove());
+                heap.remove();
             }
             return null;
         }
@@ -540,6 +540,58 @@ public final class TransactionStore {
         public Page[] process(CursorPos pos) {
             assert pos.index >= 0 : pos.index;
             Page page = pos.page;
+//*
+            int keyCount = page.getKeyCount();
+            int count = 0;
+            for (int i = pos.index; i < keyCount; ++i) {
+                VersionedValue existingValue = (VersionedValue) page.getValue(i);
+                if (getTransactionId(existingValue.getOperationId()) == transactionId) {
+                    if (existingValue.value == null) {
+                        ++count;
+                    }
+                }
+            }
+            if (count == 0) {
+                for (int i = keyCount - 1; i >= pos.index; --i) {
+                    VersionedValue existingValue = (VersionedValue) page.getValue(i);
+                    if (getTransactionId(existingValue.getOperationId()) == transactionId) {
+                        if (page == pos.page) {
+                            page = page.copy();
+                        }
+                        page.setValue(i, new VersionedValue(existingValue.value));
+                    }
+                }
+            } else {
+                count = keyCount - count;
+                if (count == 0) {
+                    return new Page[0];
+                }
+                int newCount = count;
+
+                ExtendedDataType keyType = page.map.getExtendedKeyType();
+                ExtendedDataType valueType = page.map.getExtendedValueType();
+                Object keys = keyType.createStorage(newCount);
+                Object values = valueType.createStorage(newCount);
+
+                for (int i = keyCount-1; i >= 0; --i) {
+                    VersionedValue existingValue = (VersionedValue) page.getValue(i);
+                    if (i >= pos.index && getTransactionId(existingValue.getOperationId()) == transactionId) {
+                        if (page == pos.page) {
+                            page = page.copy();
+                        }
+                        if (existingValue.value != null) {
+                            --count;
+                            keyType.setValue(keys, count, page.getKey(i));
+                            valueType.setValue(values, count, new VersionedValue(existingValue.value));
+                        }
+                    } else {
+                        --count;
+                        keyType.setValue(keys, count, page.getKey(i));
+                        valueType.setValue(values, count, existingValue);
+                    }
+                }
+            }
+/*/
             for (int i = page.getKeyCount()-1; i >= pos.index; --i) {
                 VersionedValue existingValue = (VersionedValue) page.getValue(i);
                 if (getTransactionId(existingValue.getOperationId()) == transactionId) {
@@ -553,6 +605,7 @@ public final class TransactionStore {
                     }
                 }
             }
+//*/
             return page == pos.page ? null : page.getKeyCount() == 0 ? new Page[0] : new Page[]{page};
         }
 
@@ -563,9 +616,10 @@ public final class TransactionStore {
         public void confirmSuccess() {
             Comparator<Object> comparator = batchInfo.map.getKeyType();
             Queue<Object> heap = batchInfo.heap;
+            assert heap != null;
             Object key;
             while ((key = heap.peek()) != null && comparator.compare(key, lastKeyOnPage) <= 0) {
-                batchInfo.dedup.remove(heap.remove());
+                heap.remove();
             }
         }
 
@@ -579,7 +633,7 @@ public final class TransactionStore {
                         while(!heap.isEmpty()) {
                             map.operateBatch(this);
                         }
-                        assert verifyCleanCommit(map);
+//                        assert verifyCleanCommit(map);
                     }
                 }
             }
@@ -601,20 +655,17 @@ public final class TransactionStore {
     {
         final MVMap<Object, VersionedValue> map;
         final Queue<Object>                 heap;
-        final Set<Object>                   dedup;
 
-        public static final BatchInfo NOOP = new BatchInfo(null);
+        static final BatchInfo NOOP = new BatchInfo(null);
 
-        public BatchInfo(MVMap<Object, VersionedValue> map) {
+        BatchInfo(MVMap<Object, VersionedValue> map) {
             this.map = map;
             heap = null;
-            dedup = null;
         }
 
-        public BatchInfo(MVMap<Object, VersionedValue> map, int capacity) {
+        BatchInfo(MVMap<Object, VersionedValue> map, int capacity) {
             this.map = map;
             this.heap = new PriorityQueue<>(capacity, map.getKeyType());
-            dedup = new HashSet<>(capacity);
         }
     }
 
@@ -803,12 +854,12 @@ public final class TransactionStore {
         };
     }
 
-    public static final class TxMapBuilder<K,V> extends MVMap.Builder<K,V> {
+    private static final class TxMapBuilder<K,V> extends MVMap.Builder<K,V> {
 
         private final MVMap<String, DataType> typeRegistry;
         private final DataType defaultDataType;
 
-        public TxMapBuilder(MVMap<String, DataType> typeRegistry, DataType defaultDataType) {
+        private TxMapBuilder(MVMap<String, DataType> typeRegistry, DataType defaultDataType) {
             this.typeRegistry = typeRegistry;
             this.defaultDataType = defaultDataType;
         }
@@ -875,6 +926,7 @@ public final class TransactionStore {
 
 
         @Override
+        @SuppressWarnings("unchecked")
         protected MVMap<K,V> create(Map<String,Object> config) {
             if("rtree".equals(config.get("type"))) {
                 MVMap<K, V> map = (MVMap<K, V>) new MVRTreeMap<V>(config);
@@ -1017,7 +1069,7 @@ public final class TransactionStore {
          * Transation state is an atomic composite field:
          * bit 44       : flag whether transaction had rollback(s)
          * bits 42-40   : status
-         * bits 39-0    : log id
+         * bits 39-0    : log id of the last entry in the undo log map
          */
         private final AtomicLong statusAndLogId;
 
@@ -1029,7 +1081,7 @@ public final class TransactionStore {
 
         private int ownerId;
 
-        private MVStore.TxCounter txCounter;
+        MVStore.TxCounter txCounter;
 
         private boolean wasStored;
         private MVMap blockingMap;
@@ -1496,7 +1548,7 @@ public final class TransactionStore {
          */
         public final MVMap<K, VersionedValue> map;
 
-        private final Transaction transaction;
+        final Transaction transaction;
 
         TransactionMap(Transaction transaction, MVMap<K, VersionedValue> map) {
             this.transaction = transaction;
@@ -1719,7 +1771,7 @@ public final class TransactionStore {
 //            Transaction lastBlockingTransaction = null;
 //            boolean unstable;
             do {
-                assert transaction.blockingTransaction == null;
+                assert transaction.getBlockerId() == 0;
                 VersionedValue result = map.put(key, VersionedValue.DUMMY, decisionMaker);
                 assert decisionMaker.decision != null;
                 if (decisionMaker.decision != MVMap.Decision.ABORT) {

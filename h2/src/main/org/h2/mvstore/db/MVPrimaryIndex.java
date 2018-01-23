@@ -37,18 +37,8 @@ import org.h2.value.ValueNull;
 /**
  * A table stored in a MVStore.
  */
-public class MVPrimaryIndex extends BaseIndex {
-
-    /**
-     * The minimum long value.
-     */
-    static final ValueLong MIN = ValueLong.get(Long.MIN_VALUE);
-
-    /**
-     * The maximum long value.
-     */
-    static final ValueLong MAX = ValueLong.get(Long.MAX_VALUE);
-
+public class MVPrimaryIndex extends BaseIndex
+{
     private final MVTable                  mvTable;
     private final String                   mapName;
     private final TransactionMap<Long,Row> dataMap;
