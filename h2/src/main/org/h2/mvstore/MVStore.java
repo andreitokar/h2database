@@ -345,7 +345,7 @@ public final class MVStore {
             pgSplitSize = (int)cache.getMaxItemSize();
         }
         pageSplitSize = pgSplitSize;
-        keysPerPage = Utils.getConfigParam(config, "keysPerPage", 48);
+        keysPerPage = DataUtils.getConfigParam(config, "keysPerPage", 48);
         backgroundExceptionHandler =
                 (UncaughtExceptionHandler)config.get("backgroundExceptionHandler");
         meta = new MVMap<>(this);
