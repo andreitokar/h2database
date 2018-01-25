@@ -5,6 +5,7 @@
  */
 package org.h2.engine;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
@@ -13,7 +14,6 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.Map;
 import java.util.Random;
-import java.util.ArrayDeque;
 import java.util.concurrent.TimeUnit;
 import org.h2.api.ErrorCode;
 import org.h2.command.Command;
