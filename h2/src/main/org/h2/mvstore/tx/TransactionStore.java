@@ -59,7 +59,7 @@ public final class TransactionStore {
     private final DataType dataType;
     private boolean init;
     private int maxTransactionId = MAX_OPEN_TRANSACTIONS;
-    final AtomicReferenceArray<Transaction> transactions = new AtomicReferenceArray<>(MAX_OPEN_TRANSACTIONS);
+    private final AtomicReferenceArray<Transaction> transactions = new AtomicReferenceArray<>(MAX_OPEN_TRANSACTIONS);
     /**
      * The undo logs.
      * <p>
@@ -72,7 +72,7 @@ public final class TransactionStore {
      */
     @SuppressWarnings("unchecked")
     final MVMap<Long,Record> undoLogs[] = (MVMap<Long,Record>[])new MVMap[MAX_OPEN_TRANSACTIONS];
-    final AtomicReference<BitSet> openTransactions = new AtomicReference<>(new BitSet());
+    final AtomicReference<VersionedBitSet> openTransactions = new AtomicReference<>(new VersionedBitSet());
     final AtomicReference<BitSet> committingTransactions = new AtomicReference<>(new BitSet());
     private final MVMap.Builder<Long, Record> builder;
 
@@ -141,15 +141,7 @@ public final class TransactionStore {
                             name = (String) data[1];
                         }
                         long logId = getLogId(undoLog.lastKey()) + 1;
-                        boolean success;
-                        do {
-                            BitSet original = openTransactions.get();
-                            BitSet clone = (BitSet) original.clone();
-                            assert !clone.get(transactionId);
-                            clone.set(transactionId);
-                            success = openTransactions.compareAndSet(original, clone);
-                        } while (!success);
-                        registerTransaction(transactionId, status, name, logId, timeoutMillis, listener);
+                        registerTransaction(status, name, logId, timeoutMillis, listener);
                     }
                 }
             }
@@ -271,10 +263,21 @@ public final class TransactionStore {
     }
 
     public Transaction begin(RollbackListener listener, long timeoutMillis) {
+
+        if(timeoutMillis <= 0) {
+            timeoutMillis = this.timeoutMillis;
+        }
+        Transaction transaction = registerTransaction(Transaction.STATUS_OPEN, null, 0, timeoutMillis, listener);
+        return transaction;
+    }
+
+    private Transaction registerTransaction(int status, String name,
+                                            long logId, long timeoutMillis, RollbackListener listener) {
         int transactionId;
+        long sequenceNo;
         boolean success;
         do {
-            BitSet original = openTransactions.get();
+            VersionedBitSet original = openTransactions.get();
             transactionId = original.nextClearBit(1);
             if (transactionId > maxTransactionId) {
                 throw DataUtils.newIllegalStateException(
@@ -282,23 +285,16 @@ public final class TransactionStore {
                         "There are {0} open transactions",
                         transactionId - 1);
             }
-            BitSet clone = (BitSet) original.clone();
+            VersionedBitSet clone = original.cloneIt();
             clone.set(transactionId);
+            sequenceNo = clone.getVersion() + 1;
+            clone.setVersion(sequenceNo);
             success = openTransactions.compareAndSet(original, clone);
         } while(!success);
 
-        if(timeoutMillis <= 0) {
-            timeoutMillis = this.timeoutMillis;
-        }
-        Transaction transaction = registerTransaction(transactionId, Transaction.STATUS_OPEN,
-                                                        null, 0, timeoutMillis, listener);
-        return transaction;
-    }
-
-    private Transaction registerTransaction(int transactionId, int status, String name,
-                                     long logId, long timeoutMillis, RollbackListener listener) {
-        Transaction transaction = new Transaction(this, transactionId, status, name, logId, timeoutMillis, listener);
-        transactions.set(transactionId, transaction);
+        Transaction transaction = new Transaction(this, transactionId, sequenceNo, status, name, logId, timeoutMillis, listener);
+        success = transactions.compareAndSet(transactionId, null, transaction);
+        assert success;
         if (undoLogs[transactionId] == null) {
             String undoName = UNDO_LOG_NAME_PEFIX + transactionId;
             undoLogs[transactionId] = store.openMap(undoName, builder);
@@ -381,7 +377,7 @@ public final class TransactionStore {
                 MVMap<Long, Record> undoLog = undoLogs[transactionId];
                 MVMap.RootReference rootReference = undoLog.flushAppendBuffer();
                 Page rootPage = rootReference.root;
-                CommitProcessor committProcessor = new CommitProcessor(this, transactionId, Transaction.getTxLogId(state), rootPage.getTotalCount() > 128);
+                CommitProcessor committProcessor = new CommitProcessor(this, transactionId, Transaction.getTxLogId(state), rootPage.getTotalCount() > 12800000);
                 MVMap.process(rootPage, null, committProcessor);
                 committProcessor.flush();
                 undoLog.clear();
@@ -633,7 +629,7 @@ public final class TransactionStore {
                         while(!heap.isEmpty()) {
                             map.operateBatch(this);
                         }
-//                        assert verifyCleanCommit(map);
+                        assert verifyCleanCommit(map);
                     }
                 }
             }
@@ -722,13 +718,14 @@ public final class TransactionStore {
 
         t.closeIt();
         store.deregisterVersionUsage(t.txCounter);
-        transactions.set(t.transactionId, null);
 
-        boolean success;
+
+        boolean success = transactions.compareAndSet(t.transactionId, t, null);
+        assert success;
         do {
-            BitSet original = openTransactions.get();
+            VersionedBitSet original = openTransactions.get();
             assert original.get(t.transactionId);
-            BitSet clone = (BitSet) original.clone();
+            VersionedBitSet clone = original.cloneIt();
             clone.clear(t.transactionId);
             success = openTransactions.compareAndSet(original, clone);
         } while(!success);
@@ -1065,6 +1062,8 @@ public final class TransactionStore {
          */
         public final int transactionId;
 
+        public final long sequenceNo;
+
         /*
          * Transation state is an atomic composite field:
          * bit 44       : flag whether transaction had rollback(s)
@@ -1087,10 +1086,11 @@ public final class TransactionStore {
         private MVMap blockingMap;
         private Object blockingKey;
 
-        private Transaction(TransactionStore store, int transactionId, int status,
+        private Transaction(TransactionStore store, int transactionId, long sequenceNo, int status,
                             String name, long logId, long timeoutMillis, RollbackListener listener) {
             this.store = store;
             this.transactionId = transactionId;
+            this.sequenceNo = sequenceNo;
             this.statusAndLogId = new AtomicLong(composeState(status, logId, false));
             this.name = name;
             this.timeoutMillis = timeoutMillis;
@@ -1100,6 +1100,7 @@ public final class TransactionStore {
         private Transaction(Transaction tx) {
             this.store = tx.store;
             this.transactionId = tx.transactionId;
+            this.sequenceNo = tx.sequenceNo;
             this.statusAndLogId = new AtomicLong(tx.statusAndLogId.get());
             this.name = tx.name;
             this.timeoutMillis = tx.timeoutMillis;
@@ -1469,12 +1470,12 @@ public final class TransactionStore {
 
         public boolean waitFor(Transaction toWaitFor) {
             if (isDeadlocked(toWaitFor)) {
-                StringBuilder details = new StringBuilder("Transaction has been chosen as a deadlock victim. Details:\n");
+                StringBuilder details = new StringBuilder(String.format("Transaction %d has been chosen as a deadlock victim. Details:%n", transactionId));
                 for(Transaction tx = toWaitFor, nextTx; (nextTx = tx.blockingTransaction) != null; tx = nextTx) {
-                    details.append(String.format("Transaction %s attempts to update map <%s> entry with key <%s> modified by transaction %s\n",
+                    details.append(String.format("Transaction %d attempts to update map <%s> entry with key <%s> modified by transaction %s%n",
                             tx.transactionId, tx.blockingMap.getName(), tx.blockingKey, tx.blockingTransaction));
                     if (nextTx == this) {
-                        details.append(String.format("Transaction %s attempts to update map <%s> entry with key <%s> modified by transaction %s\n",
+                        details.append(String.format("Transaction %d attempts to update map <%s> entry with key <%s> modified by transaction %s%n",
                                 transactionId, blockingMap.getName(), blockingKey, toWaitFor));
                         throw DataUtils.newIllegalStateException(DataUtils.ERROR_TRANSACTIONS_DEADLOCK, details.toString());
                     }
@@ -1492,7 +1493,9 @@ public final class TransactionStore {
         }
 
         private boolean isDeadlocked(Transaction toWaitFor) {
-            for(Transaction tx = toWaitFor, nextTx; (nextTx = tx.blockingTransaction) != null; tx = nextTx) {
+            for(Transaction tx = toWaitFor, nextTx;
+                    (nextTx = tx.blockingTransaction) != null && tx.getStatus() == Transaction.STATUS_OPEN;
+                    tx = nextTx) {
                 if (nextTx == this) {
                     return true;
                 }
@@ -1528,7 +1531,8 @@ public final class TransactionStore {
 
         @Override
         public String toString() {
-            return "" + transactionId;
+            long state = statusAndLogId.get();
+            return transactionId + "(" + sequenceNo + ") " + STATUS_NAMES[getStatus(state)] + " " + getTxLogId(state);
         }
 
     }
@@ -1770,7 +1774,9 @@ public final class TransactionStore {
             Transaction blockingTransaction;
 //            Transaction lastBlockingTransaction = null;
 //            boolean unstable;
+            long sequenceNoWhenStarted;
             do {
+                sequenceNoWhenStarted = store.openTransactions.get().getVersion();
                 assert transaction.getBlockerId() == 0;
                 VersionedValue result = map.put(key, VersionedValue.DUMMY, decisionMaker);
                 assert decisionMaker.decision != null;
@@ -1789,7 +1795,7 @@ public final class TransactionStore {
                 transaction.blockingKey = key;
 //                unstable = blockingTransaction != lastBlockingTransaction;
 //                lastBlockingTransaction = blockingTransaction;
-            } while (/*unstable && */transaction.waitFor(blockingTransaction));
+            } while (/*unstable && */blockingTransaction.sequenceNo > sequenceNoWhenStarted || transaction.waitFor(blockingTransaction));
 
             throw DataUtils.newIllegalStateException(DataUtils.ERROR_TRANSACTION_LOCKED,
                     "Map entry <{0}> with key <{1}> is locked by tx {2} and can not be updated by tx {3} within allocated time interval {4} ms.",
