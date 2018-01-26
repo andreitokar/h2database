@@ -19,7 +19,6 @@ import java.sql.SQLException;
 import java.sql.Time;
 import java.sql.Timestamp;
 import java.sql.Types;
-
 import org.h2.api.ErrorCode;
 import org.h2.engine.Mode;
 import org.h2.engine.SysProperties;
@@ -493,6 +492,7 @@ public abstract class Value {
 
     /**
      * Get the input stream
+     *
      * @param oneBasedOffset the offset (1 means no offset)
      * @param length the requested length
      * @return the new input stream
@@ -508,6 +508,13 @@ public abstract class Value {
         return new StringReader(getString());
     }
 
+    /**
+     * Get the reader
+     *
+     * @param oneBasedOffset the offset (1 means no offset)
+     * @param length the requested length
+     * @return the new reader
+     */
     public Reader getReader(long oneBasedOffset, long length) {
         String string = getString();
         long zeroBasedOffset = oneBasedOffset - 1;
@@ -612,8 +619,10 @@ public abstract class Value {
      * @param precision the precision of the column to convert this value to.
      *        The special constant <code>-1</code> is used to indicate that
      *        the precision plays no role when converting the value
+     * @param mode the conversion mode
      * @param column the column that contains the ENUM datatype enumerators,
      *        for dealing with ENUM conversions
+     * @param mode the database mode
      * @return the converted value
      */
     public Value convertTo(int targetType, int precision, Mode mode, Column column) {
