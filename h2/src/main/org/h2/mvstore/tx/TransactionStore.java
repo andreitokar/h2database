@@ -237,7 +237,7 @@ public final class TransactionStore {
         while((transactionId = bitSet.nextSetBit(transactionId + 1)) > 0) {
             Transaction transaction = getTransaction(transactionId);
             if(transaction != null) {
-                transaction = new Transaction(transaction);
+//                transaction = new Transaction(transaction);
                 if(transaction.getStatus() != Transaction.STATUS_CLOSED) {
                     list.add(transaction);
                 }
@@ -293,8 +293,9 @@ public final class TransactionStore {
         } while(!success);
 
         Transaction transaction = new Transaction(this, transactionId, sequenceNo, status, name, logId, timeoutMillis, listener);
-        success = transactions.compareAndSet(transactionId, null, transaction);
-        assert success;
+        assert transactions.get(transactionId) == null;
+        transactions.set(transactionId, transaction);
+
         if (undoLogs[transactionId] == null) {
             String undoName = UNDO_LOG_NAME_PEFIX + transactionId;
             undoLogs[transactionId] = store.openMap(undoName, builder);
@@ -377,7 +378,8 @@ public final class TransactionStore {
                 MVMap<Long, Record> undoLog = undoLogs[transactionId];
                 MVMap.RootReference rootReference = undoLog.flushAppendBuffer();
                 Page rootPage = rootReference.root;
-                CommitProcessor committProcessor = new CommitProcessor(this, transactionId, Transaction.getTxLogId(state), rootPage.getTotalCount() > 12800000);
+                CommitProcessor committProcessor = new CommitProcessor(this, transactionId,
+                                Transaction.getTxLogId(state), rootPage.getTotalCount() > 32);
                 MVMap.process(rootPage, null, committProcessor);
                 committProcessor.flush();
                 undoLog.clear();
@@ -522,7 +524,7 @@ public final class TransactionStore {
                     lastKeyOnPage = leaf.getKey(leaf.getKeyCount() - 1);
                     return pos;
                 }
-                heap.remove();
+                heap.poll();
             }
             return null;
         }
@@ -586,6 +588,7 @@ public final class TransactionStore {
                         valueType.setValue(values, count, existingValue);
                     }
                 }
+                page = Page.create(page.map, newCount, keys, values, null, newCount, 0);
             }
 /*/
             for (int i = page.getKeyCount()-1; i >= pos.index; --i) {
@@ -615,7 +618,7 @@ public final class TransactionStore {
             assert heap != null;
             Object key;
             while ((key = heap.peek()) != null && comparator.compare(key, lastKeyOnPage) <= 0) {
-                heap.remove();
+                heap.poll();
             }
         }
 
@@ -629,7 +632,7 @@ public final class TransactionStore {
                         while(!heap.isEmpty()) {
                             map.operateBatch(this);
                         }
-                        assert verifyCleanCommit(map);
+//                        assert verifyCleanCommit(map);
                     }
                 }
             }
@@ -719,9 +722,9 @@ public final class TransactionStore {
         t.closeIt();
         store.deregisterVersionUsage(t.txCounter);
 
+        transactions.set(t.transactionId, null);
 
-        boolean success = transactions.compareAndSet(t.transactionId, t, null);
-        assert success;
+        boolean success;
         do {
             VersionedBitSet original = openTransactions.get();
             assert original.get(t.transactionId);
