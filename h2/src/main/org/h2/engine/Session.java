@@ -1675,8 +1675,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
                     database.shutdownImmediately();
                     throw DbException.get(ErrorCode.DATABASE_IS_CLOSED, backgroundException);
                 }
-                transaction = mvStore.getTransactionStore().begin(this, this.lockTimeout);
-                transaction.setOwnerId(id);
+                transaction = mvStore.getTransactionStore().begin(this, this.lockTimeout, id);
             }
             startStatement = -1;
         }

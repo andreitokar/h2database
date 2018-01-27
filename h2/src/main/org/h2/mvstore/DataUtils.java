@@ -80,7 +80,7 @@ public final class DataUtils {
     /**
      * The transaction store is corrupt.
      */
-    public static final int ERROR_TRANSACTION_CORRUPT = 100;
+//    public static final int ERROR_TRANSACTION_CORRUPT = 100;
 
     /**
      * An entry is still locked by another transaction.

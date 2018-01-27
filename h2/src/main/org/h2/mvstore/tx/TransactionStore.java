@@ -141,7 +141,7 @@ public final class TransactionStore {
                             name = (String) data[1];
                         }
                         long logId = getLogId(undoLog.lastKey()) + 1;
-                        registerTransaction(status, name, logId, timeoutMillis, listener);
+                        registerTransaction(status, name, logId, timeoutMillis, 0, listener);
                     }
                 }
             }
@@ -237,7 +237,7 @@ public final class TransactionStore {
         while((transactionId = bitSet.nextSetBit(transactionId + 1)) > 0) {
             Transaction transaction = getTransaction(transactionId);
             if(transaction != null) {
-//                transaction = new Transaction(transaction);
+                transaction = new Transaction(transaction);
                 if(transaction.getStatus() != Transaction.STATUS_CLOSED) {
                     list.add(transaction);
                 }
@@ -259,20 +259,28 @@ public final class TransactionStore {
      * @return the transaction
      */
     public Transaction begin() {
-        return begin(RollbackListener.NONE, timeoutMillis);
+        return begin(RollbackListener.NONE, timeoutMillis, 0);
     }
 
-    public Transaction begin(RollbackListener listener, long timeoutMillis) {
+    /**
+     * Begin a new transaction.
+     * @param listener to be notified in case of a rollback
+     * @param timeoutMillis to wait for a blocking transaction
+     * @param ownerId of the owner (Session?) to be reported by getBlockerId
+     * @return the transaction
+     */
+    public Transaction begin(RollbackListener listener, long timeoutMillis, int ownerId) {
 
         if(timeoutMillis <= 0) {
             timeoutMillis = this.timeoutMillis;
         }
-        Transaction transaction = registerTransaction(Transaction.STATUS_OPEN, null, 0, timeoutMillis, listener);
+        Transaction transaction = registerTransaction(Transaction.STATUS_OPEN, null, 0,
+                                                      timeoutMillis, ownerId, listener);
         return transaction;
     }
 
-    private Transaction registerTransaction(int status, String name,
-                                            long logId, long timeoutMillis, RollbackListener listener) {
+    private Transaction registerTransaction(int status, String name, long logId,
+                                            long timeoutMillis, int ownerId, RollbackListener listener) {
         int transactionId;
         long sequenceNo;
         boolean success;
@@ -292,7 +300,8 @@ public final class TransactionStore {
             success = openTransactions.compareAndSet(original, clone);
         } while(!success);
 
-        Transaction transaction = new Transaction(this, transactionId, sequenceNo, status, name, logId, timeoutMillis, listener);
+        Transaction transaction = new Transaction(this, transactionId, sequenceNo, status, name, logId,
+                                                  timeoutMillis, ownerId, listener);
         assert transactions.get(transactionId) == null;
         transactions.set(transactionId, transaction);
 
@@ -318,32 +327,22 @@ public final class TransactionStore {
     }
 
     /**
-     * Log a log entry.
+     * Add an undoLog entry.
      * @param undoKey transactionId/LogId
      * @param record Record to add
-     *
-     * @return true if success, false otherwise
      */
-    boolean addUndoLogRecord(Long undoKey, Record record) {
-        //TODO: re-implement using "append" (no search, use extra capacity, appendLeaf())
-        // since undoLog is Tx-specific now and therefore has a single writer.
+    void addUndoLogRecord(Long undoKey, Record record) {
         int transactionId = getTransactionId(undoKey);
-//        return undoLogs[transactionId].putIfAbsent(undoKey, record) == null;
         undoLogs[transactionId].append(undoKey, record);
-        return true;
     }
 
     /**
-     * Remove a log entry.
+     * Remove an undoLog entry.
      * @param undoKey transactionId/LogId
-     *
-     * @return true if success, false otherwise
      */
-    boolean removeUndoLogRecord(Long undoKey) {
+    void removeUndoLogRecord(Long undoKey) {
         int transactionId = getTransactionId(undoKey);
-//        return undoLogs[transactionId].remove(undoKey) != null;
         undoLogs[transactionId].trimLast();
-        return true;
     }
 
     /**
@@ -454,22 +453,6 @@ public final class TransactionStore {
                     }
                 }
             }
-/*
-            MVMap<Object, VersionedValue> map = transactionStore.openMap(mapId);
-            if (map != null && !map.isClosed()) { // could be null if map was later removed
-                Object key = existingValue.key;
-                VersionedValue prev = existingValue.oldValue;
-                assert prev == null || prev.getOperationId() == 0 || getTransactionId(prev.getOperationId()) == transactionId;
-                if (!batchMode || map.getType() != null) { // MVRTreeMap is not eligible for batch mode
-                    reset();
-                    this.undoKey = undoKey;
-                    map.operate(key, null, this);
-                } else {
-                    this.key = key;
-                    map.operateBatch(this);
-                }
-            }
-*/
             return false;
         }
 
@@ -481,10 +464,8 @@ public final class TransactionStore {
             } else {
                 if (existingValue.getOperationId() == undoKey) {
                     if (existingValue.value == null) {
-                        // remove the value only if it comes from the same transaction
                         decision = MVMap.Decision.REMOVE;
                     } else {
-                        // put the value only if it comes from the same transaction
                         decision = MVMap.Decision.PUT;
                     }
                 } else {
@@ -538,18 +519,23 @@ public final class TransactionStore {
         public Page[] process(CursorPos pos) {
             assert pos.index >= 0 : pos.index;
             Page page = pos.page;
-//*
             int keyCount = page.getKeyCount();
             int count = 0;
             for (int i = pos.index; i < keyCount; ++i) {
                 VersionedValue existingValue = (VersionedValue) page.getValue(i);
                 if (getTransactionId(existingValue.getOperationId()) == transactionId) {
+                    if (page == pos.page) {
+                        page = page.copy();
+                    }
                     if (existingValue.value == null) {
                         ++count;
                     }
                 }
             }
-            if (count == 0) {
+
+            if (page == pos.page) {     // no changes
+                return null;
+            } else if (count == 0) {   // there are no removal, updates only
                 for (int i = keyCount - 1; i >= pos.index; --i) {
                     VersionedValue existingValue = (VersionedValue) page.getValue(i);
                     if (getTransactionId(existingValue.getOperationId()) == transactionId) {
@@ -560,52 +546,31 @@ public final class TransactionStore {
                     }
                 }
             } else {
-                count = keyCount - count;
-                if (count == 0) {
+                int newKeyCount = keyCount - count;
+                if (newKeyCount == 0) {   // all keys to be removed, remove the whole Leaf node
                     return new Page[0];
                 }
-                int newCount = count;
 
                 ExtendedDataType keyType = page.map.getExtendedKeyType();
                 ExtendedDataType valueType = page.map.getExtendedValueType();
-                Object keys = keyType.createStorage(newCount);
-                Object values = valueType.createStorage(newCount);
-
-                for (int i = keyCount-1; i >= 0; --i) {
-                    VersionedValue existingValue = (VersionedValue) page.getValue(i);
-                    if (i >= pos.index && getTransactionId(existingValue.getOperationId()) == transactionId) {
-                        if (page == pos.page) {
-                            page = page.copy();
+                Object keys = keyType.createStorage(newKeyCount);
+                Object values = valueType.createStorage(newKeyCount);
+                count = 0;
+                for (int i = 0; i < keyCount; ++i) {
+                    VersionedValue value = (VersionedValue) page.getValue(i);
+                    if (i >= pos.index && getTransactionId(value.getOperationId()) == transactionId) {
+                        if (value.value == null) {
+                            continue;
                         }
-                        if (existingValue.value != null) {
-                            --count;
-                            keyType.setValue(keys, count, page.getKey(i));
-                            valueType.setValue(values, count, new VersionedValue(existingValue.value));
-                        }
-                    } else {
-                        --count;
-                        keyType.setValue(keys, count, page.getKey(i));
-                        valueType.setValue(values, count, existingValue);
+                        value = new VersionedValue(value.value);
                     }
+                    keyType.setValue(keys, count, page.getKey(i));
+                    valueType.setValue(values, count, value);
+                    ++count;
                 }
-                page = Page.create(page.map, newCount, keys, values, null, newCount, 0);
+                page = Page.create(page.map, newKeyCount, keys, values, null, newKeyCount, 0);
             }
-/*/
-            for (int i = page.getKeyCount()-1; i >= pos.index; --i) {
-                VersionedValue existingValue = (VersionedValue) page.getValue(i);
-                if (getTransactionId(existingValue.getOperationId()) == transactionId) {
-                    if (page == pos.page) {
-                        page = page.copy();
-                    }
-                    if (existingValue.value == null) {
-                        page.remove(i);
-                    } else {
-                        page.setValue(i, new VersionedValue(existingValue.value));
-                    }
-                }
-            }
-//*/
-            return page == pos.page ? null : page.getKeyCount() == 0 ? new Page[0] : new Page[]{page};
+            return new Page[]{ page };
         }
 
         @Override
@@ -717,19 +682,16 @@ public final class TransactionStore {
      * @param t the transaction
      */
     void endTransaction(Transaction t) {
-        int txId = t.transactionId;
-
         t.closeIt();
-        store.deregisterVersionUsage(t.txCounter);
-
-        transactions.set(t.transactionId, null);
+        int txId = t.transactionId;
+        transactions.set(txId, null);
 
         boolean success;
         do {
             VersionedBitSet original = openTransactions.get();
-            assert original.get(t.transactionId);
+            assert original.get(txId);
             VersionedBitSet clone = original.cloneIt();
-            clone.clear(t.transactionId);
+            clone.clear(txId);
             success = openTransactions.compareAndSet(original, clone);
         } while(!success);
 
@@ -950,7 +912,7 @@ public final class TransactionStore {
 
             @Override
             protected MVMap<K, V> cloneIt() {
-                return new TMVMap<K, V>(this);
+                return new TMVMap<>(this);
             }
 
             @Override
@@ -1081,22 +1043,23 @@ public final class TransactionStore {
 
         private volatile Transaction blockingTransaction;
 
-        private int ownerId;
+        private final int ownerId;
 
-        MVStore.TxCounter txCounter;
+        private MVStore.TxCounter txCounter;
 
         private boolean wasStored;
         private MVMap blockingMap;
         private Object blockingKey;
 
         private Transaction(TransactionStore store, int transactionId, long sequenceNo, int status,
-                            String name, long logId, long timeoutMillis, RollbackListener listener) {
+                            String name, long logId, long timeoutMillis, int ownerId, RollbackListener listener) {
             this.store = store;
             this.transactionId = transactionId;
             this.sequenceNo = sequenceNo;
             this.statusAndLogId = new AtomicLong(composeState(status, logId, false));
             this.name = name;
             this.timeoutMillis = timeoutMillis;
+            this.ownerId = ownerId;
             this.listener = listener;
         }
 
@@ -1209,15 +1172,6 @@ public final class TransactionStore {
             return hasChanges(statusAndLogId.get());
         }
 
-        private int getOwnerId() {
-            return ownerId;
-        }
-
-        public void setOwnerId(int ownerId) {
-            assert this.ownerId == 0 : this.ownerId;
-            this.ownerId = ownerId;
-        }
-
         public void setName(String name) {
             checkNotClosed();
             this.name = name;
@@ -1269,19 +1223,7 @@ public final class TransactionStore {
             checkOpen(currentStatus);
             long undoKey = getOperationId(transactionId, logId);
             Record log = new Record(mapId, key, oldValue);
-            if(!store.addUndoLogRecord(undoKey, log)) {
-                if (logId == 0) {
-                    throw DataUtils.newIllegalStateException(
-                            DataUtils.ERROR_TOO_MANY_OPEN_TRANSACTIONS,
-                            "An old transaction with the same id " +
-                            "is still open: {0}",
-                            transactionId);
-                }
-                throw DataUtils.newIllegalStateException(
-                        DataUtils.ERROR_TRANSACTION_CORRUPT,
-                        "Duplicate keys in transaction log {0}/{1}",
-                        transactionId, logId);
-            }
+            store.addUndoLogRecord(undoKey, log);
             return undoKey;
         }
 
@@ -1294,12 +1236,7 @@ public final class TransactionStore {
             int currentStatus = getStatus(currentState);
             checkOpen(currentStatus);
             Long undoKey = getOperationId(transactionId, logId);
-            if (!store.removeUndoLogRecord(undoKey)) {
-                throw DataUtils.newIllegalStateException(
-                        DataUtils.ERROR_TRANSACTION_ILLEGAL_STATE,
-                        "Transaction {0} was concurrently rolled back",
-                        transactionId);
-            }
+            store.removeUndoLogRecord(undoKey);
         }
 
         /**
@@ -1391,13 +1328,8 @@ public final class TransactionStore {
         public void rollbackToSavepoint(long savepointId) {
             long lastState = setStatus(STATUS_ROLLING_BACK);
             long logId = getTxLogId(lastState);
-            Throwable ex = null;
             try {
                 store.rollbackTo(this, logId, savepointId);
-            } catch (Throwable e) {
-                ex = e;
-            } finally {
-                notifyAllWaitingTransactions();
                 long expectedState = composeState(STATUS_ROLLING_BACK, logId, hasRollback(lastState));
                 long newState = composeState(STATUS_OPEN, savepointId, true);
                 if (!statusAndLogId.compareAndSet(expectedState, newState)) {
@@ -1405,8 +1337,10 @@ public final class TransactionStore {
                             DataUtils.ERROR_TRANSACTION_ILLEGAL_STATE,
                             "Transaction {0} concurrently modified " +
                                     "while rollback to savepoint was in progress",
-                            transactionId, ex);
+                            transactionId);
                 }
+            } finally {
+                notifyAllWaitingTransactions();
             }
         }
 
@@ -1462,6 +1396,7 @@ public final class TransactionStore {
 
         private void closeIt() {
             long lastState = setStatus(STATUS_CLOSED);
+            store.store.deregisterVersionUsage(txCounter);
             if(hasChanges(lastState) || hasRollback(lastState)) {
                 notifyAllWaitingTransactions();
             }
@@ -1614,7 +1549,6 @@ public final class TransactionStore {
                     MVMap<Long, Record> undoLog = store.undoLogs[i];
                     if (undoLog != null) {
                         MVMap.RootReference rootReference = undoLog.flushAppendBuffer();
-//                        MVMap.RootReference rootReference = undoLog.getRoot();
                         undoLogRootReferences[i] = rootReference;
                         undoLogSize += rootReference.root.getTotalCount() + rootReference.appendCounter;
                     }
@@ -1775,8 +1709,6 @@ public final class TransactionStore {
             TxDecisionMaker decisionMaker = new TxDecisionMaker(map.getId(), key, value, transaction);
             TransactionStore store = transaction.store;
             Transaction blockingTransaction;
-//            Transaction lastBlockingTransaction = null;
-//            boolean unstable;
             long sequenceNoWhenStarted;
             do {
                 sequenceNoWhenStarted = store.openTransactions.get().getVersion();
@@ -1796,9 +1728,7 @@ public final class TransactionStore {
                 decisionMaker.reset();
                 transaction.blockingMap = map;
                 transaction.blockingKey = key;
-//                unstable = blockingTransaction != lastBlockingTransaction;
-//                lastBlockingTransaction = blockingTransaction;
-            } while (/*unstable && */blockingTransaction.sequenceNo > sequenceNoWhenStarted || transaction.waitFor(blockingTransaction));
+            } while (blockingTransaction.sequenceNo > sequenceNoWhenStarted || transaction.waitFor(blockingTransaction));
 
             throw DataUtils.newIllegalStateException(DataUtils.ERROR_TRANSACTION_LOCKED,
                     "Map entry <{0}> with key <{1}> is locked by tx {2} and can not be updated by tx {3} within allocated time interval {4} ms.",
@@ -2179,8 +2109,6 @@ public final class TransactionStore {
             public MVMap.Decision decide(VersionedValue existingValue, VersionedValue providedValue) {
                 assert decision == null;
                 assert providedValue != null;
-//                assert getTransactionId(providedValue.operationId) == transaction.transactionId;
-//                assert getLogId(providedValue.operationId) == transaction.getLogId();
                 long id;
                 // if map does not have that entry yet
                 if(existingValue == null ||
@@ -2244,7 +2172,7 @@ public final class TransactionStore {
                         VersionedValue existingValue, VersionedValue restoredValue);
     }
 
-    private static final class RollbackDecisionMaker extends MVMap.DecisionMaker<Record> {
+    static final class RollbackDecisionMaker extends MVMap.DecisionMaker<Record> {
         private final TransactionStore store;
         private final long             transactionId;
         private final long             toLogId;
