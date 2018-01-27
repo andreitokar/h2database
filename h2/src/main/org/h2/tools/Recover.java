@@ -42,7 +42,7 @@ import org.h2.mvstore.MVStore;
 import org.h2.mvstore.MVStoreTool;
 import org.h2.mvstore.StreamStore;
 import org.h2.mvstore.tx.TransactionStore;
-import org.h2.mvstore.tx.TransactionStore.TransactionMap;
+import org.h2.mvstore.tx.TransactionalMVMap;
 import org.h2.result.Row;
 import org.h2.result.RowFactory;
 import org.h2.result.SimpleRow;
@@ -623,7 +623,7 @@ public class Recover extends Tool implements DataHandler {
 //                        null, this, null);
 //                ValueDataType valueType = new ValueDataType(
 //                        null, this, null);
-                TransactionMap<Long, Row> dataMap = store.begin().openMap(
+                TransactionalMVMap<Long, Row> dataMap = store.begin().openMap(
                         mapName/*, keyType, valueType*/);
                 Iterator<Long> dataIt = dataMap.keyIterator(null);
                 boolean init = false;

@@ -31,7 +31,7 @@ import org.h2.message.Trace;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.db.MVTableEngine.Store;
 import org.h2.mvstore.tx.TransactionStore;
-import org.h2.mvstore.tx.TransactionStore.Transaction;
+import org.h2.mvstore.tx.Transaction;
 import org.h2.result.Row;
 import org.h2.result.SearchRow;
 import org.h2.result.SortOrder;
@@ -50,7 +50,7 @@ import org.h2.value.Value;
 /**
  * A table stored in a MVStore.
  */
-public class MVTable extends TableBase {
+public final class MVTable extends TableBase {
 
     /**
      * The table name this thread is waiting to lock.

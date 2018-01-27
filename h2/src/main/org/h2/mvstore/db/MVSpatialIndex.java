@@ -17,8 +17,8 @@ import org.h2.index.IndexType;
 import org.h2.index.SpatialIndex;
 import org.h2.index.SpatialTreeIndex;
 import org.h2.message.DbException;
-import org.h2.mvstore.tx.TransactionStore.Transaction;
-import org.h2.mvstore.tx.TransactionStore.TransactionMap;
+import org.h2.mvstore.tx.Transaction;
+import org.h2.mvstore.tx.TransactionalMVMap;
 import org.h2.mvstore.tx.VersionedValue;
 import org.h2.mvstore.rtree.MVRTreeMap;
 import org.h2.mvstore.rtree.MVRTreeMap.RTreeCursor;
@@ -44,7 +44,7 @@ import com.vividsolutions.jts.geom.Geometry;
  * @author Noel Grandin
  * @author Nicolas Fortin, Atelier SIG, IRSTV FR CNRS 24888
  */
-public class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVIndex {
+public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVIndex {
 
     /**
      * The multi-value table.
@@ -52,7 +52,7 @@ public class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVIndex {
     final MVTable mvTable;
 
     private final String mapName;
-    private final TransactionMap<SpatialKey, Value> dataMap;
+    private final TransactionalMVMap<SpatialKey, Value> dataMap;
     private final MVRTreeMap<VersionedValue> spatialMap;
 
     /**
@@ -124,7 +124,7 @@ public class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVIndex {
 
     @Override
     public void add(Session session, Row row) {
-        TransactionMap<SpatialKey, Value> map = getMap(session);
+        TransactionalMVMap<SpatialKey, Value> map = getMap(session);
         SpatialKey key = getKey(row);
 
         if (key.isNull()) {
@@ -176,7 +176,7 @@ public class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVIndex {
             return;
         }
 
-        TransactionMap<SpatialKey, Value> map = getMap(session);
+        TransactionalMVMap<SpatialKey, Value> map = getMap(session);
         try {
             Value old = map.remove(key);
             if (old == null) {
@@ -201,7 +201,7 @@ public class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVIndex {
 
     private Cursor find(Session session) {
         Iterator<SpatialKey> cursor = spatialMap.keyIterator(null);
-        TransactionMap<SpatialKey, Value> map = getMap(session);
+        TransactionalMVMap<SpatialKey, Value> map = getMap(session);
         Iterator<SpatialKey> it = map.wrapIterator(cursor, false);
         return new MVStoreCursor(session, it);
     }
@@ -215,7 +215,7 @@ public class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVIndex {
         }
         Iterator<SpatialKey> cursor =
                 spatialMap.findIntersectingKeys(getKey(intersection));
-        TransactionMap<SpatialKey, Value> map = getMap(session);
+        TransactionalMVMap<SpatialKey, Value> map = getMap(session);
         Iterator<SpatialKey> it = map.wrapIterator(cursor, false);
         return new MVStoreCursor(session, it);
     }
@@ -258,7 +258,7 @@ public class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVIndex {
 
     @Override
     public void remove(Session session) {
-        TransactionMap<SpatialKey, Value> map = getMap(session);
+        TransactionalMVMap<SpatialKey, Value> map = getMap(session);
         if (!map.isClosed()) {
             Transaction t = session.getTransaction();
             t.removeMap(map);
@@ -267,7 +267,7 @@ public class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVIndex {
 
     @Override
     public void truncate(Session session) {
-        TransactionMap<SpatialKey, Value> map = getMap(session);
+        TransactionalMVMap<SpatialKey, Value> map = getMap(session);
         map.clear();
     }
 
@@ -296,7 +296,7 @@ public class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVIndex {
 
     @Override
     public long getRowCount(Session session) {
-        TransactionMap<SpatialKey, Value> map = getMap(session);
+        TransactionalMVMap<SpatialKey, Value> map = getMap(session);
         return map.sizeAsLong();
     }
 
@@ -326,7 +326,7 @@ public class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVIndex {
      * @param session the session
      * @return the map
      */
-    TransactionMap<SpatialKey, Value> getMap(Session session) {
+    TransactionalMVMap<SpatialKey, Value> getMap(Session session) {
         if (session == null) {
             return dataMap;
         }

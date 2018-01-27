@@ -27,7 +27,7 @@ import org.h2.mvstore.FileStore;
 import org.h2.mvstore.MVStore;
 import org.h2.mvstore.MVStoreTool;
 import org.h2.mvstore.tx.TransactionStore;
-import org.h2.mvstore.tx.TransactionStore.Transaction;
+import org.h2.mvstore.tx.Transaction;
 import org.h2.store.InDoubtTransaction;
 import org.h2.store.fs.FileChannelInputStream;
 import org.h2.store.fs.FileUtils;
@@ -38,7 +38,7 @@ import org.h2.util.New;
 /**
  * A table engine that internally uses the MVStore.
  */
-public class MVTableEngine implements TableEngine {
+public final class MVTableEngine implements TableEngine {
 
     /**
      * Initialize the MVStore.
