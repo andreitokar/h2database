@@ -18,7 +18,7 @@ import org.h2.index.SpatialIndex;
 import org.h2.index.SpatialTreeIndex;
 import org.h2.message.DbException;
 import org.h2.mvstore.tx.Transaction;
-import org.h2.mvstore.tx.TransactionalMVMap;
+import org.h2.mvstore.tx.TransactionMap;
 import org.h2.mvstore.tx.VersionedValue;
 import org.h2.mvstore.rtree.MVRTreeMap;
 import org.h2.mvstore.rtree.MVRTreeMap.RTreeCursor;
@@ -52,7 +52,7 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
     final MVTable mvTable;
 
     private final String mapName;
-    private final TransactionalMVMap<SpatialKey, Value> dataMap;
+    private final TransactionMap<SpatialKey, Value> dataMap;
     private final MVRTreeMap<VersionedValue> spatialMap;
 
     /**
@@ -124,7 +124,7 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
 
     @Override
     public void add(Session session, Row row) {
-        TransactionalMVMap<SpatialKey, Value> map = getMap(session);
+        TransactionMap<SpatialKey, Value> map = getMap(session);
         SpatialKey key = getKey(row);
 
         if (key.isNull()) {
@@ -176,7 +176,7 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
             return;
         }
 
-        TransactionalMVMap<SpatialKey, Value> map = getMap(session);
+        TransactionMap<SpatialKey, Value> map = getMap(session);
         try {
             Value old = map.remove(key);
             if (old == null) {
@@ -201,7 +201,7 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
 
     private Cursor find(Session session) {
         Iterator<SpatialKey> cursor = spatialMap.keyIterator(null);
-        TransactionalMVMap<SpatialKey, Value> map = getMap(session);
+        TransactionMap<SpatialKey, Value> map = getMap(session);
         Iterator<SpatialKey> it = map.wrapIterator(cursor, false);
         return new MVStoreCursor(session, it);
     }
@@ -215,7 +215,7 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
         }
         Iterator<SpatialKey> cursor =
                 spatialMap.findIntersectingKeys(getKey(intersection));
-        TransactionalMVMap<SpatialKey, Value> map = getMap(session);
+        TransactionMap<SpatialKey, Value> map = getMap(session);
         Iterator<SpatialKey> it = map.wrapIterator(cursor, false);
         return new MVStoreCursor(session, it);
     }
@@ -258,7 +258,7 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
 
     @Override
     public void remove(Session session) {
-        TransactionalMVMap<SpatialKey, Value> map = getMap(session);
+        TransactionMap<SpatialKey, Value> map = getMap(session);
         if (!map.isClosed()) {
             Transaction t = session.getTransaction();
             t.removeMap(map);
@@ -267,7 +267,7 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
 
     @Override
     public void truncate(Session session) {
-        TransactionalMVMap<SpatialKey, Value> map = getMap(session);
+        TransactionMap<SpatialKey, Value> map = getMap(session);
         map.clear();
     }
 
@@ -296,7 +296,7 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
 
     @Override
     public long getRowCount(Session session) {
-        TransactionalMVMap<SpatialKey, Value> map = getMap(session);
+        TransactionMap<SpatialKey, Value> map = getMap(session);
         return map.sizeAsLong();
     }
 
@@ -326,7 +326,7 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
      * @param session the session
      * @return the map
      */
-    TransactionalMVMap<SpatialKey, Value> getMap(Session session) {
+    TransactionMap<SpatialKey, Value> getMap(Session session) {
         if (session == null) {
             return dataMap;
         }

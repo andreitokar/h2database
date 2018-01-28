@@ -343,7 +343,7 @@ public final class TransactionStore {
      * @param <V> the value type
      * @param map the map
      */
-    <K, V> void removeMap(TransactionalMVMap<K, V> map) {
+    <K, V> void removeMap(TransactionMap<K, V> map) {
         store.removeMap(map.map, true);
     }
 

@@ -21,7 +21,7 @@ import java.util.Map;
  * @param <K> the key type
  * @param <V> the value type
  */
-public final class TransactionalMVMap<K, V> {
+public final class TransactionMap<K, V> {
     /**
      * The map used for writing (the latest version).
      * <p>
@@ -32,7 +32,7 @@ public final class TransactionalMVMap<K, V> {
 
     final Transaction transaction;
 
-    TransactionalMVMap(Transaction transaction, MVMap<K, VersionedValue> map) {
+    TransactionMap(Transaction transaction, MVMap<K, VersionedValue> map) {
         this.transaction = transaction;
         this.map = map;
     }
@@ -53,8 +53,8 @@ public final class TransactionalMVMap<K, V> {
      * @param transaction the transaction
      * @return the map
      */
-    public TransactionalMVMap<K, V> getInstance(Transaction transaction) {
-        return new TransactionalMVMap<>(transaction, map);
+    public TransactionMap<K, V> getInstance(Transaction transaction) {
+        return new TransactionMap<>(transaction, map);
     }
 
     /**
@@ -631,7 +631,7 @@ public final class TransactionalMVMap<K, V> {
 
     private static final class KeyIterator<K> extends TMIterator<K,K> {
 
-        public KeyIterator(TransactionalMVMap<K, ?> transactionMap,
+        public KeyIterator(TransactionMap<K, ?> transactionMap,
                            K from, K to, boolean includeUncommitted) {
             super(transactionMap, from, to, includeUncommitted);
         }
@@ -644,7 +644,7 @@ public final class TransactionalMVMap<K, V> {
 
     private static final class EntryIterator<K,V> extends TMIterator<K,Map.Entry<K,V>> {
 
-        public EntryIterator(TransactionalMVMap<K, ?> transactionMap, K from, K to) {
+        public EntryIterator(TransactionMap<K, ?> transactionMap, K from, K to) {
             super(transactionMap, from, to, false);
         }
 
@@ -656,13 +656,13 @@ public final class TransactionalMVMap<K, V> {
     }
 
     private abstract static class TMIterator<K,X> implements Iterator<X> {
-        private final TransactionalMVMap<K,?>  transactionMap;
+        private final TransactionMap<K,?> transactionMap;
         private final BitSet                   committingTransactions;
         private final Cursor<K,VersionedValue> cursor;
         private final boolean                  includeAllUncommitted;
         private       X                        current;
 
-        protected TMIterator(TransactionalMVMap<K,?> transactionMap, K from, K to, boolean includeAllUncommitted)
+        protected TMIterator(TransactionMap<K,?> transactionMap, K from, K to, boolean includeAllUncommitted)
         {
             this.transactionMap = transactionMap;
             TransactionStore store = transactionMap.transaction.store;

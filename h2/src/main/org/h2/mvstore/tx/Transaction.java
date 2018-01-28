@@ -270,7 +270,7 @@ public final class Transaction {
      * @param name the name of the map
      * @return the transaction map
      */
-    public <K, V> TransactionalMVMap<K, V> openMap(String name) {
+    public <K, V> TransactionMap<K, V> openMap(String name) {
         return openMap(name, null, null);
     }
 
@@ -284,12 +284,12 @@ public final class Transaction {
      * @param valueType the value data type
      * @return the transaction map
      */
-    public <K, V> TransactionalMVMap<K, V> openMap(String name,
-                                                   DataType keyType, DataType valueType) {
+    public <K, V> TransactionMap<K, V> openMap(String name,
+                                               DataType keyType, DataType valueType) {
         checkNotClosed();
         MVMap<K, VersionedValue> map = store.openMap(name, keyType,
                 valueType);
-        return new TransactionalMVMap<>(this, map);
+        return new TransactionMap<>(this, map);
     }
 
     /**
@@ -300,10 +300,10 @@ public final class Transaction {
      * @param map the base map
      * @return the transactional map
      */
-    public <K, V> TransactionalMVMap<K, V> openMap(
+    public <K, V> TransactionMap<K, V> openMap(
             MVMap<K, VersionedValue> map) {
         checkNotClosed();
-        return new TransactionalMVMap<>(this, map);
+        return new TransactionMap<>(this, map);
     }
 
     /**
@@ -490,7 +490,7 @@ public final class Transaction {
      *
      * @param map the map
      */
-    public <K, V> void removeMap(TransactionalMVMap<K, V> map) {
+    public <K, V> void removeMap(TransactionMap<K, V> map) {
         store.removeMap(map);
     }
 
