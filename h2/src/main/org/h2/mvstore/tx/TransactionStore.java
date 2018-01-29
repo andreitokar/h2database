@@ -433,8 +433,9 @@ public final class TransactionStore {
      * End this transaction
      *
      * @param t the transaction
+     * @param hasChanges whether transaction has done any updated
      */
-    void endTransaction(Transaction t) {
+    void endTransaction(Transaction t, boolean hasChanges) {
         t.closeIt();
         int txId = t.transactionId;
         transactions.set(txId, null);
@@ -448,30 +449,32 @@ public final class TransactionStore {
             success = openTransactions.compareAndSet(original, clone);
         } while(!success);
 
-        if (t.wasStored && !preparedTransactions.isClosed()) {
-            preparedTransactions.remove(txId);
-        }
-
-        if (store.getAutoCommitDelay() == 0) {
-            store.commit();
-        } else {
-            boolean empty = true;
-            BitSet openTrans = openTransactions.get();
-            for (int i = openTrans.nextSetBit(0); empty && i >= 0; i = openTrans.nextSetBit(i+1)) {
-                MVMap<Long, Record> undoLog = undoLogs[i];
-                if (undoLog != null) {
-                    empty = undoLog.isEmpty();
-                }
+        if (hasChanges) {
+            if (t.wasStored && !preparedTransactions.isClosed()) {
+                preparedTransactions.remove(txId);
             }
-            if (empty) {
-                // to avoid having to store the transaction log,
-                // if there is no open transaction,
-                // and if there have been many changes, store them now
-                int unsaved = store.getUnsavedMemory();
-                int max = store.getAutoCommitMemory();
-                // save at 3/4 capacity
-                if (unsaved * 4 > max * 3) {
-                    store.commit();
+
+            if (store.getAutoCommitDelay() == 0) {
+                store.commit();
+            } else {
+                boolean empty = true;
+                BitSet openTrans = openTransactions.get();
+                for (int i = openTrans.nextSetBit(0); empty && i >= 0; i = openTrans.nextSetBit(i + 1)) {
+                    MVMap<Long, Record> undoLog = undoLogs[i];
+                    if (undoLog != null) {
+                        empty = undoLog.isEmpty();
+                    }
+                }
+                if (empty) {
+                    // to avoid having to store the transaction log,
+                    // if there is no open transaction,
+                    // and if there have been many changes, store them now
+                    int unsaved = store.getUnsavedMemory();
+                    int max = store.getAutoCommitMemory();
+                    // save at 3/4 capacity
+                    if (unsaved * 4 > max * 3) {
+                        store.commit();
+                    }
                 }
             }
         }

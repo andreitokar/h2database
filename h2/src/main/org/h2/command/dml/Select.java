@@ -526,13 +526,15 @@ public class Select extends Query {
         if (result == null) {
             return lazyResult;
         }
+        if (sort != null && !sortUsingIndex || limitRows <= 0) {
+            limitRows = Long.MAX_VALUE;
+        }
         while (lazyResult.next()) {
             if (isForUpdateMvcc) {
                 topTableFilter.lockRowAdd(forUpdateRows);
             }
             result.addRow(lazyResult.currentRow());
-            if ((sort == null || sortUsingIndex) && limitRows > 0 &&
-                    result.getRowCount() >= limitRows) {
+            if (result.getRowCount() >= limitRows) {
                 break;
             }
         }

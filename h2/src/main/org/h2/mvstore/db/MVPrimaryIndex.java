@@ -392,6 +392,11 @@ public final class MVPrimaryIndex extends BaseIndex
      */
     Cursor find(Session session, ValueLong first, ValueLong last) {
         TransactionMap<Long,Row> map = getMap(session);
+        if (first != null && last != null && first.getLong() == last.getLong()) {
+            long key = first.getLong();
+            Row row = map.get(key);
+            return new SingleRowCursor(row);
+        }
         return new MVStoreCursor(map.entryIterator(first == null ? null : first.getLong(),
                                                    last == null ? null : last.getLong()));
     }
@@ -470,5 +475,39 @@ public final class MVPrimaryIndex extends BaseIndex
             throw DbException.getUnsupportedException("previous");
         }
 
+    }
+
+    private static final class SingleRowCursor implements Cursor
+    {
+        private final Row row;
+        private boolean visited;
+
+        SingleRowCursor(Row row) {
+            this.row = row;
+        }
+
+        @Override
+        public Row get() {
+            return row;
+        }
+
+        @Override
+        public SearchRow getSearchRow() {
+            return row;
+        }
+
+        @Override
+        public boolean next() {
+            if (!visited) {
+                visited = true;
+                return row != null;
+            }
+            return false;
+        }
+
+        @Override
+        public boolean previous() {
+            throw DbException.getUnsupportedException("previous");
+        }
     }
 }

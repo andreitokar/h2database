@@ -321,9 +321,10 @@ public final class Transaction {
     public void commit() {
         assert store.openTransactions.get().get(transactionId);
         long state = setStatus(STATUS_COMMITTING);
+        boolean hasChanges = hasChanges(state);
         Throwable ex = null;
         try {
-            if (hasChanges(state)) {
+            if (hasChanges) {
                 store.commit(this);
             }
         } catch (Throwable e) {
@@ -331,7 +332,7 @@ public final class Transaction {
             throw e;
         } finally {
             try {
-                store.endTransaction(this);
+                store.endTransaction(this, hasChanges);
             } catch (Throwable e) {
                 if (ex == null) {
                     throw e;
@@ -376,7 +377,7 @@ public final class Transaction {
         if(logId > 0) {
             store.rollbackTo(this, logId, 0);
         }
-        store.endTransaction(this);
+        store.endTransaction(this, true);
     }
 
     /**

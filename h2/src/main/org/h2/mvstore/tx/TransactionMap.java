@@ -549,7 +549,7 @@ public final class TransactionMap<K, V> {
      * @return the iterator
      */
     public Iterator<K> keyIterator(K from, K to, boolean includeUncommitted) {
-        return new KeyIterator<K>(this, from, to, includeUncommitted);
+        return new KeyIterator<>(this, from, to, includeUncommitted);
     }
 
     /**
@@ -559,7 +559,7 @@ public final class TransactionMap<K, V> {
      * @return the iterator
      */
     public Iterator<Map.Entry<K, V>> entryIterator(final K from, final K to) {
-        return new EntryIterator<K,V>(this, from, to);
+        return new EntryIterator<>(this, from, to);
     }
 
     /**
