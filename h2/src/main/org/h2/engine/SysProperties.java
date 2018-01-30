@@ -58,10 +58,10 @@ public class SysProperties {
 
     /**
      * System property <code>java.specification.version</code>.<br />
-     * It is set by the system. Examples: 1.4, 1.5, 1.6.
+     * It is set by the system. Examples: 0.9 (on Android), 1.7, 1.8, 9, 10.
      */
     public static final String JAVA_SPECIFICATION_VERSION =
-            Utils.getProperty("java.specification.version", "1.4");
+            Utils.getProperty("java.specification.version", "1.7");
 
     /**
      * System property <code>line.separator</code> (default: \n).<br />
@@ -363,6 +363,39 @@ public class SysProperties {
      */
     public static final boolean BIG_DECIMAL_IS_DECIMAL =
             Utils.getProperty("h2.bigDecimalIsDecimal", true);
+
+
+    /**
+     * System property {@code h2.unlimitedTimeRange}, {@code false} by default.
+     *
+     * <p>
+     * Controls limits of TIME data type.
+     * </p>
+     *
+     * <table>
+     * <thead>
+     * <tr>
+     * <th>h2.unlimitedTimeRange</th>
+     * <th>Minimum TIME value</th>
+     * <th>Maximum TIME value</th>
+     * </tr>
+     * </thead>
+     * <tbody>
+     * <tr>
+     * <td>false</td>
+     * <td>00:00:00.000000000</td>
+     * <td>23:59:59.999999999</td>
+     * </tr>
+     * <tr>
+     * <td>true</td>
+     * <td>-2562047:47:16.854775808</td>
+     * <td>2562047:47:16.854775807</td>
+     * </tr>
+     * </tbody>
+     * </table>
+     */
+    public static final boolean UNLIMITED_TIME_RANGE =
+            Utils.getProperty("h2.unlimitedTimeRange", false);
 
     /**
      * System property <code>h2.pgClientEncoding</code> (default: UTF-8).<br />
