@@ -7,6 +7,7 @@ package org.h2.table;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.Iterator;
 import org.h2.api.ErrorCode;
 import org.h2.command.Parser;
 import org.h2.command.dml.Select;
@@ -1164,12 +1165,8 @@ public class TableFilter implements ColumnResolver {
      *
      * @param forUpdateRows the rows to lock
      */
-    public void lockRows(ArrayList<Row> forUpdateRows) {
-        for (Row row : forUpdateRows) {
-            table.updateRow(session, row, row);
-            session.log(table, UndoLogRecord.DELETE, row);
-            session.log(table, UndoLogRecord.INSERT, row);
-        }
+    public void lockRows(Iterator<Row> forUpdateRows) {
+        table.lockRows(session, forUpdateRows);
     }
 
     public TableFilter getNestedJoin() {

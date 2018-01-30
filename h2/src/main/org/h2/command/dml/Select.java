@@ -518,7 +518,7 @@ public class Select extends Query {
         }
         ArrayList<Row> forUpdateRows = null;
         if (isForUpdateMvcc) {
-            forUpdateRows = New.arrayList();
+            forUpdateRows = new ArrayList<>();
         }
         int sampleSize = getSampleSizeValue(session);
         LazyResultQueryFlat lazyResult = new LazyResultQueryFlat(expressionArray,
@@ -539,7 +539,8 @@ public class Select extends Query {
             }
         }
         if (isForUpdateMvcc) {
-            topTableFilter.lockRows(forUpdateRows);
+            assert forUpdateRows != null;
+            topTableFilter.lockRows(forUpdateRows.iterator());
         }
         return null;
     }

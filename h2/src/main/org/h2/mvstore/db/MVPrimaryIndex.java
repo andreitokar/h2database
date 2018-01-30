@@ -43,7 +43,7 @@ public final class MVPrimaryIndex extends BaseIndex
     private final String                   mapName;
     private final TransactionMap<Long,Row> dataMap;
     private final AtomicLong               lastKey = new AtomicLong(0);
-    private       int                      mainIndexColumn = -1;
+    private       int                      mainIndexColumn = SearchRow.ROWID_INDEX;
 
     public MVPrimaryIndex(Database db, MVTable table, int id,
             IndexColumn[] columns, IndexType indexType) {
@@ -91,7 +91,7 @@ public final class MVPrimaryIndex extends BaseIndex
 
     @Override
     public void add(Session session, Row row) {
-        if (mainIndexColumn == -1) {
+        if (mainIndexColumn == SearchRow.ROWID_INDEX) {
             if (row.getKey() == 0) {
                 row.setKey(lastKey.incrementAndGet());
             }
@@ -167,12 +167,12 @@ public final class MVPrimaryIndex extends BaseIndex
 
     @Override
     public void update(Session session, Row oldRow, Row newRow) {
-        long key = oldRow.getKey();
-        assert key != 0;
-        if (mainIndexColumn != -1) {
+        if (mainIndexColumn != SearchRow.ROWID_INDEX) {
             long c = newRow.getValue(mainIndexColumn).getLong();
             newRow.setKey(c);
         }
+        long key = oldRow.getKey();
+        assert mainIndexColumn != SearchRow.ROWID_INDEX || key != 0;
         if(newRow.getKey() != key) {
             super.update(session, oldRow, newRow);
         } else {
@@ -215,6 +215,19 @@ public final class MVPrimaryIndex extends BaseIndex
         }
     }
 
+    public void lockRows(Session session, Iterator<Row> rowsForUpdate) {
+        TransactionMap<Long, Row> map = getMap(session);
+        while (rowsForUpdate.hasNext()) {
+            Row row = rowsForUpdate.next();
+            long key = row.getKey();
+            try {
+                map.lock(key);
+            } catch (IllegalStateException ex) {
+                throw mvTable.convertException(ex);
+            }
+        }
+    }
+
     @Override
     public Cursor find(Session session, SearchRow first, SearchRow last) {
         Long min = extractPKFromRow(first, Long.MIN_VALUE);
@@ -227,7 +240,7 @@ public final class MVPrimaryIndex extends BaseIndex
         Long result;
         if (row == null) {
             result = defaultValue;
-        } else if (mainIndexColumn < 0) {
+        } else if (mainIndexColumn == SearchRow.ROWID_INDEX) {
             result = row.getKey();
         } else {
             Value v = row.getValue(mainIndexColumn);

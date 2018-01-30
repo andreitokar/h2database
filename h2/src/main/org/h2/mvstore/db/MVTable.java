@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -656,15 +657,15 @@ public final class MVTable extends TableBase {
     }
 
     private int getMainIndexColumn(IndexType indexType, IndexColumn[] cols) {
-        if (primaryIndex.getMainIndexColumn() != -1) {
-            return -1;
+        if (primaryIndex.getMainIndexColumn() != SearchRow.ROWID_INDEX) {
+            return SearchRow.ROWID_INDEX;
         }
         if (!indexType.isPrimaryKey() || cols.length != 1) {
-            return -1;
+            return SearchRow.ROWID_INDEX;
         }
         IndexColumn first = cols[0];
         if (first.sortType != SortOrder.ASCENDING) {
-            return -1;
+            return SearchRow.ROWID_INDEX;
         }
         switch (first.column.getType()) {
         case Value.BYTE:
@@ -673,7 +674,7 @@ public final class MVTable extends TableBase {
         case Value.LONG:
             break;
         default:
-            return -1;
+            return SearchRow.ROWID_INDEX;
         }
         return first.column.getColumnId();
     }
@@ -788,6 +789,11 @@ public final class MVTable extends TableBase {
             throw dbException;
         }
         analyzeIfRequired(session);
+    }
+
+    @Override
+    public void lockRows(Session session, Iterator<Row> rowsForUpdate) {
+        primaryIndex.lockRows(session, rowsForUpdate);
     }
 
     private void analyzeIfRequired(Session session) {

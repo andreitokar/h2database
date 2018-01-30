@@ -211,7 +211,7 @@ public final class TransactionMap<K, V> {
      * @throws IllegalStateException if a lock timeout occurs
      */
     public V remove(K key) {
-        return set(key, null);
+        return set(key, (V)null);
     }
 
     /**
@@ -230,6 +230,21 @@ public final class TransactionMap<K, V> {
         return set(key, value);
     }
 
+    /**
+     * Lock row for the given key.
+     * <p>
+     * If the row is locked, this method will retry until the row could be
+     * updated or until a lock timeout.
+     *
+     * @param key the key
+     * @return the locked value
+     * @throws IllegalStateException if a lock timeout occurs
+     */
+    public V lock(K key) {
+        TxDecisionMaker decisionMaker = new TxDecisionMaker.LockDecisionMaker(map.getId(), key, transaction);
+        return set(key, decisionMaker);
+    }
+
     public MVMap.BufferingAgent<K,V> getBufferingAgent() {
         final MVMap.BufferingAgent<K, VersionedValue> agent = map.getBufferingAgent();
         return new MVMap.BufferingAgent<K, V>() {
@@ -246,7 +261,11 @@ public final class TransactionMap<K, V> {
     }
 
     private V set(K key, V value) {
-        TxDecisionMaker decisionMaker = new TxDecisionMaker(map.getId(), key, value, transaction);
+        TxDecisionMaker decisionMaker = new TxDecisionMaker.PutDecisionMaker(map.getId(), key, value, transaction);
+        return set(key, decisionMaker);
+    }
+
+    private V set(K key, TxDecisionMaker decisionMaker) {
         TransactionStore store = transaction.store;
         Transaction blockingTransaction;
         long sequenceNoWhenStarted;

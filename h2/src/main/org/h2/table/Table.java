@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.h2.api.ErrorCode;
@@ -189,6 +190,21 @@ public abstract class Table extends SchemaObjectBase {
      * @param row the row
      */
     public abstract Row removeRow(Session session, Row row);
+
+    /**
+     * Locks rows, preventing any updated to them, except from the session specified.
+     *
+     * @param session the session
+     * @param rowsForUpdate rows to lock
+     */
+    public void lockRows(Session session, Iterator<Row> rowsForUpdate) {
+        while (rowsForUpdate.hasNext()) {
+            Row row = rowsForUpdate.next();
+            updateRow(session, row, row);
+            session.log(this, UndoLogRecord.DELETE, row);
+            session.log(this, UndoLogRecord.INSERT, row);
+        }
+    }
 
     /**
      * Remove all rows from the table and indexes.

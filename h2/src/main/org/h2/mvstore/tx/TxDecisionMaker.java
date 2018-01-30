@@ -13,25 +13,23 @@ import static org.h2.mvstore.tx.TransactionStore.getTransactionId;
  *
  * @author <a href='mailto:andrei.tokar@gmail.com'>Andrei Tokar</a>
  */
-public final class TxDecisionMaker extends MVMap.DecisionMaker<VersionedValue> {
+public class TxDecisionMaker extends MVMap.DecisionMaker<VersionedValue> {
     private final int            mapId;
     private final Object         key;
-    private final Object         value;
     private final Transaction    transaction;
-    private       long           undoKey;
+                  long           undoKey;
     private       int            blockingId;
     private       Transaction    blockingTransaction;
     private       MVMap.Decision decision;
 
-    TxDecisionMaker(int mapId, Object key, Object value, Transaction transaction) {
+    TxDecisionMaker(int mapId, Object key, Transaction transaction) {
         this.mapId = mapId;
         this.key = key;
-        this.value = value;
         this.transaction = transaction;
     }
 
     @Override
-    public MVMap.Decision decide(VersionedValue existingValue, VersionedValue providedValue) {
+    public final MVMap.Decision decide(VersionedValue existingValue, VersionedValue providedValue) {
         assert decision == null;
         assert providedValue != null;
         long id;
@@ -63,14 +61,7 @@ public final class TxDecisionMaker extends MVMap.DecisionMaker<VersionedValue> {
     }
 
     @Override
-    public VersionedValue selectValue(VersionedValue existingValue, VersionedValue providedValue) {
-        assert decision == MVMap.Decision.PUT;
-        return new VersionedValue.Uncommitted(undoKey, value,
-                existingValue == null ? null : existingValue.getOperationId() == 0 ? existingValue.value : existingValue.getCommittedValue());
-    }
-
-    @Override
-    public void reset() {
+    public final void reset() {
         if (decision != MVMap.Decision.ABORT) {
             // map was updated after our decision has been made
             transaction.logUndo();
@@ -79,11 +70,11 @@ public final class TxDecisionMaker extends MVMap.DecisionMaker<VersionedValue> {
         decision = null;
     }
 
-    public MVMap.Decision getDecision() {
+    public final MVMap.Decision getDecision() {
         return decision;
     }
 
-    Transaction getBlockingTransaction() {
+    final Transaction getBlockingTransaction() {
         assert blockingTransaction != null : "Tx " + blockingId +
                 " is missing, open: " + transaction.store.openTransactions.get().get(blockingId) +
                 ", committing: " + transaction.store.committingTransactions.get().get(blockingId);
@@ -91,7 +82,38 @@ public final class TxDecisionMaker extends MVMap.DecisionMaker<VersionedValue> {
     }
 
     @Override
-    public String toString() {
+    public final String toString() {
         return "tx " + transaction.transactionId;
+    }
+
+
+    public static final class PutDecisionMaker extends TxDecisionMaker
+    {
+        private final Object         value;
+
+        PutDecisionMaker(int mapId, Object key, Object value, Transaction transaction) {
+            super(mapId, key, transaction);
+            this.value = value;
+        }
+
+        @Override
+        public VersionedValue selectValue(VersionedValue existingValue, VersionedValue providedValue) {
+            return new VersionedValue.Uncommitted(undoKey, value,
+                    existingValue == null ? null : existingValue.getOperationId() == 0 ? existingValue.value : existingValue.getCommittedValue());
+        }
+    }
+
+
+    public static final class LockDecisionMaker extends TxDecisionMaker
+    {
+        LockDecisionMaker(int mapId, Object key, Transaction transaction) {
+            super(mapId, key, transaction);
+        }
+
+        @Override
+        public VersionedValue selectValue(VersionedValue existingValue, VersionedValue providedValue) {
+            return new VersionedValue.Uncommitted(undoKey, existingValue == null ? null : existingValue.value,
+                    existingValue == null ? null : existingValue.getOperationId() == 0 ? existingValue.value : existingValue.getCommittedValue());
+        }
     }
 }
