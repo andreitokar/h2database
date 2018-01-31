@@ -54,7 +54,7 @@ public final class MVPrimaryIndex extends BaseIndex
         Transaction t = mvTable.getTransactionBegin();
         dataMap = t.openMap(mapName, LongDataType.INSTANCE, valueType);
         t.commit();
-        if (!table.isPersistData()) {
+        if (!table.isPersistData() || !indexType.isPersistent()) {
             dataMap.map.setVolatile(true);
         }
         Long k = dataMap.map.lastKey(); // include uncommitted keys

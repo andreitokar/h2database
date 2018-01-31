@@ -677,11 +677,13 @@ public class TestMVTableEngine extends TestBase {
     }
 
     private void testShrinkDatabaseFile() throws Exception {
-        if (config.memory) {
+        if (config.memory || !config.mvStore) {
             return;
         }
         deleteDb(getTestName());
-        String dbName = getTestName() + ";MV_STORE=TRUE";
+        // disable background thread not to interfere with
+        // chunks allocation / release
+        String dbName = getTestName() + ";WRITE_DELAY=0";
         Connection conn;
         Statement stat;
         long maxSize = 0;
@@ -704,7 +706,7 @@ public class TestMVTableEngine extends TestBase {
             assertEquals(retentionTime, rs.getInt(1));
             stat.execute("create table test(id int primary key, data varchar)");
             stat.execute("insert into test select x, space(100) " +
-                    "from system_range(1, 100)");
+                    "from system_range(1, 1000)");
             // this table is kept
             if (i < 10) {
                 stat.execute("create table test" + i +
@@ -726,8 +728,8 @@ public class TestMVTableEngine extends TestBase {
                     + Constants.SUFFIX_MV_FILE;
             long size = FileUtils.size(fileName);
             if (i < 10) {
-                maxSize = Math.max(size, maxSize)/* * 1.2*/;
-            } else if (size > maxSize * 6 / 5) {
+                maxSize = Math.max(size, maxSize) * 6 / 5 /* * 1.2*/;
+            } else if (size > maxSize) {
                 fail(i + " size: " + size + " max: " + maxSize);
             }
         }

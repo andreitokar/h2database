@@ -1070,7 +1070,6 @@ public final class MVStore {
                 try {
                     currentStoreVersion = currentVersion;
                     if (!closed && hasUnsavedChangesInternal()) {
-                        long v;
                         if (fileStore == null) {
                             lastStoredVersion = currentVersion;
                             ++currentVersion;
@@ -2771,7 +2770,7 @@ public final class MVStore {
             // The only way for counter to be negative
             // if it was retrieved right before onVersionChange()
             // and now onVersionChange() is done.
-            // Thit version is available for reclamation now
+            // This version is eligible for reclamation now
             // and should not be used here, so restore count
             // not to upset accounting and try again with a new
             // version (currentTxCounter should have changed).
@@ -2808,7 +2807,7 @@ public final class MVStore {
         TxCounter txCounter;
         while ((txCounter = versions.peek()) != null
                 && txCounter.counter.get() < 0) {
-            versions.remove();
+            versions.poll();
         }
         setOldestVersionToKeep(txCounter != null ? txCounter.version : currentTxCounter.version);
     }

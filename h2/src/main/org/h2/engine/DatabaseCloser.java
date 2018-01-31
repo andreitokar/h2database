@@ -33,9 +33,7 @@ class DatabaseCloser extends Thread {
      * database has been closed, or after a session has been created.
      */
     void reset() {
-        synchronized (this) {
-            databaseRef = null;
-        }
+        databaseRef = null;
     }
 
     @Override
@@ -52,28 +50,26 @@ class DatabaseCloser extends Thread {
                 return;
             }
         }
-        Database database = null;
-        synchronized (this) {
-            if (databaseRef != null) {
-                database = databaseRef.get();
-            }
-        }
-        if (database != null) {
-            try {
-                database.close(shutdownHook);
-            } catch (RuntimeException e) {
-                // this can happen when stopping a web application,
-                // if loading classes is no longer allowed
-                // it would throw an IllegalStateException
+        WeakReference<Database> ref = databaseRef;
+        if (ref != null) {
+            Database database = ref.get();
+            if (database != null) {
                 try {
-                    trace.error(e, "could not close the database");
-                    // if this was successful, we ignore the exception
-                    // otherwise not
-                } catch (RuntimeException e2) {
-                    throw e;
+                    database.close(shutdownHook);
+                } catch (RuntimeException e) {
+                    // this can happen when stopping a web application,
+                    // if loading classes is no longer allowed
+                    // it would throw an IllegalStateException
+                    try {
+                        trace.error(e, "could not close the database");
+                        // if this was successful, we ignore the exception
+                        // otherwise not
+                    } catch (RuntimeException e2) {
+                        e.addSuppressed(e2);
+                        throw e;
+                    }
                 }
             }
         }
     }
-
 }

@@ -61,6 +61,7 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
         String mapName = "index." + getId();
         Transaction t = mvTable.getTransactionBegin();
         dataMap = t.openMap(mapName, keyType, valueType);
+        dataMap.map.setVolatile(!indexType.isPersistent());
         t.commit();
         assert mapName.equals(dataMap.getName()) : mapName + " != " + dataMap.getName();
         if (!keyType.equals(dataMap.getKeyType())) {

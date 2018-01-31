@@ -52,7 +52,6 @@ public class TestMVStore extends TestBase {
     @Override
     public void test() throws Exception {
         testBulkInsert();
-
         testRemoveMapRollback();
         testProvidedFileStoreNotOpenedAndClosed();
         testVolatileMap();

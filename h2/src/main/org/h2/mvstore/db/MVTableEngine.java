@@ -95,6 +95,7 @@ public final class MVTableEngine implements TableEngine {
                 }
 
             });
+            builder.autoCommitDisabled().autoCommitBufferSize(1024);
         }
         store.open(db, builder, encrypted);
         db.setMvStore(store);

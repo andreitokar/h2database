@@ -1143,20 +1143,18 @@ public abstract class Page implements Cloneable
         void writeUnsavedRecursive(Chunk chunk, WriteBuffer buff) {
             if (!isSaved()) {
                 int patch = write(chunk, buff);
-                if (!isLeaf()) {
-                    int len = getRawChildPageCount();
-                    for (int i = 0; i < len; i++) {
-                        Page p = children[i].page;
-                        if (p != null) {
-                            p.writeUnsavedRecursive(chunk, buff);
-                            children[i] = new PageReference(p);
-                        }
+                int len = getRawChildPageCount();
+                for (int i = 0; i < len; i++) {
+                    Page p = children[i].page;
+                    if (p != null) {
+                        p.writeUnsavedRecursive(chunk, buff);
+                        children[i] = new PageReference(p);
                     }
-                    int old = buff.position();
-                    buff.position(patch);
-                    writeChildren(buff, false);
-                    buff.position(old);
                 }
+                int old = buff.position();
+                buff.position(patch);
+                writeChildren(buff, false);
+                buff.position(old);
             }
         }
 
@@ -1178,7 +1176,6 @@ public abstract class Page implements Cloneable
 
         @Override
         public int getRawChildPageCount() {
-//            assert children.length == getKeyCount() + 1;
             return getKeyCount() + 1;
         }
 

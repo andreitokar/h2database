@@ -276,6 +276,7 @@ public class Database implements DataHandler {
         this.cacheType = StringUtils.toUpperEnglish(
                 ci.removeProperty("CACHE_TYPE", Constants.CACHE_TYPE_DEFAULT));
         this.lockMode = ci.getProperty("LOCK_MODE", Constants.DEFAULT_LOCK_MODE);
+        this.writeDelay = ci.getProperty("WRITE_DELAY", Constants.DEFAULT_WRITE_DELAY);
         openDatabase(traceLevelFile, traceLevelSystemOut, closeAtVmShutdown);
     }
 

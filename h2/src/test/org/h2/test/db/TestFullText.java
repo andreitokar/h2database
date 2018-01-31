@@ -290,7 +290,7 @@ public class TestFullText extends TestBase {
                                 ResultSet rs = stat.executeQuery("SELECT * FROM " +
                                         prefix + "_SEARCH('" + knownWord +
                                         "', 0, 0)");
-                                assertTrue(knownWord, rs.next());
+                                assertTrue(rs.next());
                             }
                         }
                         trace("closing connection");

@@ -33,7 +33,10 @@ public class TestOutOfMemory extends TestBase {
      * @param a ignored
      */
     public static void main(String... a) throws Exception {
-        TestBase.createCaller().init().test();
+        TestBase init = TestBase.createCaller().init();
+        init.config.multiThreaded = true;
+        System.out.println(init.config);
+        init.test();
     }
 
     @Override
@@ -112,13 +115,14 @@ public class TestOutOfMemory extends TestBase {
             Statement stat = conn.createStatement();
             try {
                 stat.execute("create table test(id int, name varchar) as " +
-                        "select x, space(10000000) from system_range(1, 1000)");
+                        "select x, space(10000000+x) from system_range(1, 1000)");
                 fail();
             } catch (SQLException e) {
                 assertTrue("Unexpected error code: " + e.getErrorCode(),
                         ErrorCode.OUT_OF_MEMORY == e.getErrorCode() ||
-                                ErrorCode.DATABASE_IS_CLOSED == e.getErrorCode() ||
-                                ErrorCode.GENERAL_ERROR_1 == e.getErrorCode());
+                        ErrorCode.FILE_CORRUPTED_1 == e.getErrorCode() ||
+                        ErrorCode.DATABASE_IS_CLOSED == e.getErrorCode() ||
+                        ErrorCode.GENERAL_ERROR_1 == e.getErrorCode());
             }
             try {
                 conn.close();
@@ -126,17 +130,20 @@ public class TestOutOfMemory extends TestBase {
             } catch (SQLException e) {
                 assertTrue("Unexpected error code: " + e.getErrorCode(),
                         ErrorCode.OUT_OF_MEMORY == e.getErrorCode() ||
-                                ErrorCode.DATABASE_IS_CLOSED == e.getErrorCode() ||
-                                ErrorCode.GENERAL_ERROR_1 == e.getErrorCode());
+                        ErrorCode.FILE_CORRUPTED_1 == e.getErrorCode() ||
+                        ErrorCode.DATABASE_IS_CLOSED == e.getErrorCode() ||
+                        ErrorCode.GENERAL_ERROR_1 == e.getErrorCode());
             }
-//            for (int i = 0; i < 5; i++) {
-//                System.gc();
-//                Thread.sleep(20);
-//            }
-//            conn = DriverManager.getConnection(url);
-//            stat = conn.createStatement();
-//            stat.execute("SELECT 1");
-//            conn.close();
+/*
+            for (int i = 0; i < 5; i++) {
+                System.gc();
+                Thread.sleep(20);
+            }
+            conn = DriverManager.getConnection(url);
+            stat = conn.createStatement();
+            stat.execute("SELECT 1");
+            conn.close();
+*/
         } finally {
             // release the static data this test generates
             FileUtils.deleteRecursive(filename, true);

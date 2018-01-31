@@ -6,13 +6,10 @@
 package org.h2.test.store;
 
 import java.util.AbstractSet;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 import org.h2.mvstore.MVMap;
-import org.h2.mvstore.MVStore;
-import org.h2.mvstore.type.ObjectDataType;
 
 /**
  * A custom map returning the keys and values values 1 .. 10.

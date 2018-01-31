@@ -93,10 +93,11 @@ public class TestMvccMultiThreaded2 extends TestBase {
         }
 
         if (DISPLAY_STATS) {
-            System.out.println(String.format("+ INFO: TestMvccMultiThreaded2 RUN STATS threads=%d, minProcessed=%d, maxProcessed=%d, "+
-                    "totalProcessed=%d, averagePerThread=%d, averagePerThreadPerSecond=%d\n",
-                    TEST_THREAD_COUNT, minProcessed, maxProcessed, totalProcessed, totalProcessed/TEST_THREAD_COUNT,
-                    totalProcessed/(TEST_THREAD_COUNT * TEST_TIME_SECONDS)));
+            System.out.println(String.format(
+                    "+ INFO: TestMvccMultiThreaded2 RUN STATS threads=%d, minProcessed=%d, maxProcessed=%d, "
+                            + "totalProcessed=%d, averagePerThread=%d, averagePerThreadPerSecond=%d\n",
+                    TEST_THREAD_COUNT, minProcessed, maxProcessed, totalProcessed, totalProcessed / TEST_THREAD_COUNT,
+                    totalProcessed / (TEST_THREAD_COUNT * TEST_TIME_SECONDS)));
         }
 
         IOUtils.closeSilently(conn);
