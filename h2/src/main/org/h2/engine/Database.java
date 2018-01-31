@@ -44,6 +44,7 @@ import org.h2.schema.Sequence;
 import org.h2.schema.TriggerObject;
 import org.h2.store.DataHandler;
 import org.h2.store.FileLock;
+import org.h2.store.FileLockMethod;
 import org.h2.store.FileStore;
 import org.h2.store.InDoubtTransaction;
 import org.h2.store.LobStorageBackend;
@@ -139,7 +140,7 @@ public class Database implements DataHandler {
     private boolean starting;
     private TraceSystem traceSystem;
     private Trace trace;
-    private final int fileLockMethod;
+    private final FileLockMethod fileLockMethod;
     private Role publicRole;
     private final AtomicLong modificationDataId = new AtomicLong();
     private final AtomicLong modificationMetaId = new AtomicLong();
@@ -235,14 +236,14 @@ public class Database implements DataHandler {
         }
         if (dbSettings.mvStore && lockMethodName == null) {
             if (autoServerMode) {
-                fileLockMethod = FileLock.LOCK_FILE;
+                fileLockMethod = FileLockMethod.FILE;
             } else {
-                fileLockMethod = FileLock.LOCK_FS;
+                fileLockMethod = FileLockMethod.FS;
             }
         } else {
             fileLockMethod = FileLock.getFileLockMethod(lockMethodName);
         }
-        if (dbSettings.mvStore && fileLockMethod == FileLock.LOCK_SERIALIZED) {
+        if (dbSettings.mvStore && fileLockMethod == FileLockMethod.SERIALIZED) {
             throw DbException.getUnsupportedException(
                     "MV_STORE combined with FILE_LOCK=SERIALIZED");
         }
@@ -420,7 +421,7 @@ public class Database implements DataHandler {
      */
     private synchronized boolean reconnectModified(boolean pending) {
         if (readOnly || lock == null ||
-                fileLockMethod != FileLock.LOCK_SERIALIZED) {
+                fileLockMethod != FileLockMethod.SERIALIZED) {
             return true;
         }
         try {
@@ -529,7 +530,7 @@ public class Database implements DataHandler {
                 }
                 if (lock != null) {
                     stopServer();
-                    if (fileLockMethod != FileLock.LOCK_SERIALIZED) {
+                    if (fileLockMethod != FileLockMethod.SERIALIZED) {
                         // allow testing shutdown
                         lock.unlock();
                     }
@@ -659,9 +660,9 @@ public class Database implements DataHandler {
             trace.info("opening {0} (build {1})", databaseName, Constants.BUILD_ID);
             if (autoServerMode) {
                 if (readOnly ||
-                        fileLockMethod == FileLock.LOCK_NO ||
-                        fileLockMethod == FileLock.LOCK_SERIALIZED ||
-                        fileLockMethod == FileLock.LOCK_FS) {
+                        fileLockMethod == FileLockMethod.NO ||
+                        fileLockMethod == FileLockMethod.SERIALIZED ||
+                        fileLockMethod == FileLockMethod.FS) {
                     throw DbException.getUnsupportedException(
                             "autoServerMode && (readOnly || " +
                             "fileLockMethod == NO || " +
@@ -677,8 +678,8 @@ public class Database implements DataHandler {
                             "Lock file exists: " + lockFileName);
                 }
             }
-            if (!readOnly && fileLockMethod != FileLock.LOCK_NO) {
-                if (fileLockMethod != FileLock.LOCK_FS) {
+            if (!readOnly && fileLockMethod != FileLockMethod.NO) {
+                if (fileLockMethod != FileLockMethod.FS) {
                     lock = new FileLock(traceSystem, lockFileName, Constants.LOCK_SLEEP);
                     lock.lock(fileLockMethod);
                     if (autoServerMode) {
@@ -1290,7 +1291,8 @@ public class Database implements DataHandler {
             if (closing) {
                 return;
             }
-            if (fileLockMethod == FileLock.LOCK_SERIALIZED &&
+            throwLastBackgroundException();
+            if (fileLockMethod == FileLockMethod.SERIALIZED &&
                     !reconnectChangePending) {
                 // another connection may have written something - don't write
                 try {
@@ -1467,8 +1469,8 @@ public class Database implements DataHandler {
         }
         closeFiles();
         if (persistent && lock == null &&
-                fileLockMethod != FileLock.LOCK_NO &&
-                fileLockMethod != FileLock.LOCK_FS) {
+                fileLockMethod != FileLockMethod.NO &&
+                fileLockMethod != FileLockMethod.FS) {
             // everything already closed (maybe in checkPowerOff)
             // don't delete temp files in this case because
             // the database could be open now (even from within another process)
@@ -1486,7 +1488,7 @@ public class Database implements DataHandler {
             lobSession = null;
         }
         if (lock != null) {
-            if (fileLockMethod == FileLock.LOCK_SERIALIZED) {
+            if (fileLockMethod == FileLockMethod.SERIALIZED) {
                 // wait before deleting the .lock file,
                 // otherwise other connections can not detect that
                 if (lock.load().containsKey("changePending")) {
@@ -2017,7 +2019,7 @@ public class Database implements DataHandler {
         if (readOnly) {
             throw DbException.get(ErrorCode.DATABASE_IS_READ_ONLY);
         }
-        if (fileLockMethod == FileLock.LOCK_SERIALIZED) {
+        if (fileLockMethod == FileLockMethod.SERIALIZED) {
             if (!reconnectChangePending) {
                 throw DbException.get(ErrorCode.DATABASE_IS_READ_ONLY);
             }
@@ -2577,7 +2579,7 @@ public class Database implements DataHandler {
             if (pageSize != Constants.DEFAULT_PAGE_SIZE) {
                 pageStore.setPageSize(pageSize);
             }
-            if (!readOnly && fileLockMethod == FileLock.LOCK_FS) {
+            if (!readOnly && fileLockMethod == FileLockMethod.FS) {
                 pageStore.setLockFile(true);
             }
             pageStore.setLogMode(logMode);
@@ -2613,7 +2615,7 @@ public class Database implements DataHandler {
      * @return true if reconnecting is required
      */
     public boolean isReconnectNeeded() {
-        if (fileLockMethod != FileLock.LOCK_SERIALIZED) {
+        if (fileLockMethod != FileLockMethod.SERIALIZED) {
             return false;
         }
         if (reconnectChangePending) {
@@ -2667,7 +2669,7 @@ public class Database implements DataHandler {
      * the .lock.db file.
      */
     public void checkpointIfRequired() {
-        if (fileLockMethod != FileLock.LOCK_SERIALIZED ||
+        if (fileLockMethod != FileLockMethod.SERIALIZED ||
                 readOnly || !reconnectChangePending || closing) {
             return;
         }
@@ -2696,7 +2698,7 @@ public class Database implements DataHandler {
     }
 
     public boolean isFileLockSerialized() {
-        return fileLockMethod == FileLock.LOCK_SERIALIZED;
+        return fileLockMethod == FileLockMethod.SERIALIZED;
     }
 
     private void flushSequences() {
@@ -2730,7 +2732,7 @@ public class Database implements DataHandler {
      *          false if another connection was faster
      */
     public boolean beforeWriting() {
-        if (fileLockMethod != FileLock.LOCK_SERIALIZED) {
+        if (fileLockMethod != FileLockMethod.SERIALIZED) {
             return true;
         }
         while (checkpointRunning) {
@@ -2759,7 +2761,7 @@ public class Database implements DataHandler {
      * This method is called after updates are finished.
      */
     public void afterWriting() {
-        if (fileLockMethod != FileLock.LOCK_SERIALIZED) {
+        if (fileLockMethod != FileLockMethod.SERIALIZED) {
             return;
         }
         synchronized (reconnectSync) {

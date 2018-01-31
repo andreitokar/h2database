@@ -90,7 +90,7 @@ import org.h2.command.dml.Set;
 import org.h2.command.dml.SetTypes;
 import org.h2.command.dml.TransactionCommand;
 import org.h2.command.dml.Update;
-import org.h2.constraint.ConstraintReferential;
+import org.h2.constraint.ConstraintActionType;
 import org.h2.engine.Constants;
 import org.h2.engine.Database;
 import org.h2.engine.DbObject;
@@ -105,6 +105,7 @@ import org.h2.engine.User;
 import org.h2.engine.UserAggregate;
 import org.h2.engine.UserDataType;
 import org.h2.expression.Aggregate;
+import org.h2.expression.Aggregate.AggregateType;
 import org.h2.expression.Alias;
 import org.h2.expression.CompareLike;
 import org.h2.expression.Comparison;
@@ -121,6 +122,7 @@ import org.h2.expression.FunctionCall;
 import org.h2.expression.JavaAggregate;
 import org.h2.expression.JavaFunction;
 import org.h2.expression.Operation;
+import org.h2.expression.Operation.OpType;
 import org.h2.expression.Parameter;
 import org.h2.expression.Rownum;
 import org.h2.expression.SequenceValue;
@@ -1220,6 +1222,9 @@ public class Parser {
     private Insert parseInsert() {
         Insert command = new Insert(session);
         currentPrepared = command;
+        if (database.getMode().onDuplicateKeyUpdate && readIf("IGNORE")) {
+            command.setIgnore(true);
+        }
         read("INTO");
         Table table = readTableOrView();
         command.setTable(table);
@@ -1596,12 +1601,12 @@ public class Parser {
             ifExists = readIfExists(ifExists);
             command.setIfExists(ifExists);
             if (readIf("CASCADE")) {
-                command.setDropAction(ConstraintReferential.CASCADE);
+                command.setDropAction(ConstraintActionType.CASCADE);
                 readIf("CONSTRAINTS");
             } else if (readIf("RESTRICT")) {
-                command.setDropAction(ConstraintReferential.RESTRICT);
+                command.setDropAction(ConstraintActionType.RESTRICT);
             } else if (readIf("IGNORE")) {
-                command.setDropAction(ConstraintReferential.SET_DEFAULT);
+                command.setDropAction(ConstraintActionType.SET_DEFAULT);
             }
             return command;
         } else if (readIf("INDEX")) {
@@ -1651,7 +1656,7 @@ public class Parser {
             command.setViewName(viewName);
             ifExists = readIfExists(ifExists);
             command.setIfExists(ifExists);
-            Integer dropAction = parseCascadeOrRestrict();
+            ConstraintActionType dropAction = parseCascadeOrRestrict();
             if (dropAction != null) {
                 command.setDropAction(dropAction);
             }
@@ -1961,21 +1966,21 @@ public class Parser {
             if (readIf("UNION")) {
                 SelectUnion union = new SelectUnion(session, command);
                 if (readIf("ALL")) {
-                    union.setUnionType(SelectUnion.UNION_ALL);
+                    union.setUnionType(SelectUnion.UnionType.UNION_ALL);
                 } else {
                     readIf("DISTINCT");
-                    union.setUnionType(SelectUnion.UNION);
+                    union.setUnionType(SelectUnion.UnionType.UNION);
                 }
                 union.setRight(parseSelectSub());
                 command = union;
             } else if (readIf("MINUS") || readIf("EXCEPT")) {
                 SelectUnion union = new SelectUnion(session, command);
-                union.setUnionType(SelectUnion.EXCEPT);
+                union.setUnionType(SelectUnion.UnionType.EXCEPT);
                 union.setRight(parseSelectSub());
                 command = union;
             } else if (readIf("INTERSECT")) {
                 SelectUnion union = new SelectUnion(session, command);
-                union.setUnionType(SelectUnion.INTERSECT);
+                union.setUnionType(SelectUnion.UnionType.INTERSECT);
                 union.setRight(parseSelectSub());
                 command = union;
             } else {
@@ -2553,7 +2558,7 @@ public class Parser {
         Expression r = readSum();
         while (true) {
             if (readIf("||")) {
-                r = new Operation(Operation.CONCAT, r, readSum());
+                r = new Operation(OpType.CONCAT, r, readSum());
             } else if (readIf("~")) {
                 if (readIf("*")) {
                     Function function = Function.getFunction(database, "CAST");
@@ -2583,9 +2588,9 @@ public class Parser {
         Expression r = readFactor();
         while (true) {
             if (readIf("+")) {
-                r = new Operation(Operation.PLUS, r, readFactor());
+                r = new Operation(OpType.PLUS, r, readFactor());
             } else if (readIf("-")) {
-                r = new Operation(Operation.MINUS, r, readFactor());
+                r = new Operation(OpType.MINUS, r, readFactor());
             } else {
                 return r;
             }
@@ -2596,45 +2601,45 @@ public class Parser {
         Expression r = readTerm();
         while (true) {
             if (readIf("*")) {
-                r = new Operation(Operation.MULTIPLY, r, readTerm());
+                r = new Operation(OpType.MULTIPLY, r, readTerm());
             } else if (readIf("/")) {
-                r = new Operation(Operation.DIVIDE, r, readTerm());
+                r = new Operation(OpType.DIVIDE, r, readTerm());
             } else if (readIf("%")) {
-                r = new Operation(Operation.MODULUS, r, readTerm());
+                r = new Operation(OpType.MODULUS, r, readTerm());
             } else {
                 return r;
             }
         }
     }
 
-    private Expression readAggregate(int aggregateType, String aggregateName) {
+    private Expression readAggregate(AggregateType aggregateType, String aggregateName) {
         if (currentSelect == null) {
             throw getSyntaxError();
         }
         currentSelect.setGroupQuery();
         Expression r;
-        if (aggregateType == Aggregate.COUNT) {
+        if (aggregateType == AggregateType.COUNT) {
             if (readIf("*")) {
-                r = new Aggregate(Aggregate.COUNT_ALL, null, currentSelect,
+                r = new Aggregate(AggregateType.COUNT_ALL, null, currentSelect,
                         false);
             } else {
                 boolean distinct = readIf("DISTINCT");
                 Expression on = readExpression();
                 if (on instanceof Wildcard && !distinct) {
                     // PostgreSQL compatibility: count(t.*)
-                    r = new Aggregate(Aggregate.COUNT_ALL, null, currentSelect,
+                    r = new Aggregate(AggregateType.COUNT_ALL, null, currentSelect,
                             false);
                 } else {
-                    r = new Aggregate(Aggregate.COUNT, on, currentSelect,
+                    r = new Aggregate(AggregateType.COUNT, on, currentSelect,
                             distinct);
                 }
             }
-        } else if (aggregateType == Aggregate.GROUP_CONCAT) {
+        } else if (aggregateType == AggregateType.GROUP_CONCAT) {
             Aggregate agg = null;
             boolean distinct = readIf("DISTINCT");
 
             if (equalsToken("GROUP_CONCAT", aggregateName)) {
-                agg = new Aggregate(Aggregate.GROUP_CONCAT,
+                agg = new Aggregate(AggregateType.GROUP_CONCAT,
                     readExpression(), currentSelect, distinct);
                 if (readIf("ORDER")) {
                     read("BY");
@@ -2646,7 +2651,7 @@ public class Parser {
                 }
             } else if (equalsToken("STRING_AGG", aggregateName)) {
                 // PostgreSQL compatibility: string_agg(expression, delimiter)
-                agg = new Aggregate(Aggregate.GROUP_CONCAT,
+                agg = new Aggregate(AggregateType.GROUP_CONCAT,
                     readExpression(), currentSelect, distinct);
                 read(",");
                 agg.setGroupConcatSeparator(readExpression());
@@ -2718,7 +2723,7 @@ public class Parser {
         return agg;
     }
 
-    private int getAggregateType(String name) {
+    private AggregateType getAggregateType(String name) {
         if (!identifiersToUpper) {
             // if not yet converted to uppercase, do it now
             name = StringUtils.toUpperEnglish(name);
@@ -2730,8 +2735,8 @@ public class Parser {
         if (schema != null) {
             return readJavaFunction(schema, name);
         }
-        int agg = getAggregateType(name);
-        if (agg >= 0) {
+        AggregateType agg = getAggregateType(name);
+        if (agg != null) {
             return readAggregate(agg, name);
         }
         Function function = Function.getFunction(database, name);
@@ -3190,7 +3195,7 @@ public class Parser {
                 }
                 read();
             } else {
-                r = new Operation(Operation.NEGATE, readTerm(), null);
+                r = new Operation(OpType.NEGATE, readTerm(), null);
             }
             break;
         case PLUS:
@@ -3254,7 +3259,7 @@ public class Parser {
             Function function = Function.getFunction(database, "ARRAY_GET");
             function.setParameter(0, r);
             r = readExpression();
-            r = new Operation(Operation.PLUS, r, ValueExpression.get(ValueInt
+            r = new Operation(OpType.PLUS, r, ValueExpression.get(ValueInt
                     .get(1)));
             function.setParameter(1, r);
             r = function;
@@ -4006,8 +4011,10 @@ public class Parser {
             case '#':
                 if (database.getMode().supportPoundSymbolForColumnNames) {
                     type = CHAR_NAME;
-                    break;
+                } else {
+                    type = CHAR_SPECIAL_1;
                 }
+                break;
             default:
                 if (c >= 'a' && c <= 'z') {
                     if (identifiersToUpper) {
@@ -5021,7 +5028,7 @@ public class Parser {
         command.setForce(force);
         String name = readIdentifierWithSchema();
         if (isKeyword(name) || Function.getFunction(database, name) != null ||
-                getAggregateType(name) >= 0) {
+                getAggregateType(name) != null) {
             throw DbException.get(ErrorCode.FUNCTION_ALIAS_ALREADY_EXISTS_1,
                     name);
         }
@@ -5155,7 +5162,7 @@ public class Parser {
             // fine
         } else if (isKeyword(aliasName) ||
                 Function.getFunction(database, aliasName) != null ||
-                getAggregateType(aliasName) >= 0) {
+                getAggregateType(aliasName) != null) {
             throw DbException.get(ErrorCode.FUNCTION_ALIAS_ALREADY_EXISTS_1,
                     aliasName);
         }
@@ -6377,28 +6384,28 @@ public class Parser {
         return command;
     }
 
-    private int parseAction() {
-        Integer result = parseCascadeOrRestrict();
+    private ConstraintActionType parseAction() {
+        ConstraintActionType result = parseCascadeOrRestrict();
         if (result != null) {
             return result;
         }
         if (readIf("NO")) {
             read("ACTION");
-            return ConstraintReferential.RESTRICT;
+            return ConstraintActionType.RESTRICT;
         }
         read("SET");
         if (readIf("NULL")) {
-            return ConstraintReferential.SET_NULL;
+            return ConstraintActionType.SET_NULL;
         }
         read("DEFAULT");
-        return ConstraintReferential.SET_DEFAULT;
+        return ConstraintActionType.SET_DEFAULT;
     }
 
-    private Integer parseCascadeOrRestrict() {
+    private ConstraintActionType parseCascadeOrRestrict() {
         if (readIf("CASCADE")) {
-            return ConstraintReferential.CASCADE;
+            return ConstraintActionType.CASCADE;
         } else if (readIf("RESTRICT")) {
-            return ConstraintReferential.RESTRICT;
+            return ConstraintActionType.RESTRICT;
         } else {
             return null;
         }

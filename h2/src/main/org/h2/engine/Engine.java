@@ -10,7 +10,6 @@ import java.util.Map;
 
 import java.util.HashMap;
 import java.util.Objects;
-
 import org.h2.api.ErrorCode;
 import org.h2.command.CommandInterface;
 import org.h2.command.Parser;
@@ -18,6 +17,7 @@ import org.h2.command.dml.SetTypes;
 import org.h2.message.DbException;
 import org.h2.message.Trace;
 import org.h2.store.FileLock;
+import org.h2.store.FileLockMethod;
 import org.h2.util.MathUtils;
 import org.h2.util.ThreadDeadlockDetector;
 import org.h2.util.Utils;
@@ -144,8 +144,8 @@ public class Engine implements SessionFactory {
         try {
             ConnectionInfo backup = null;
             String lockMethodName = ci.getProperty("FILE_LOCK", null);
-            int fileLockMethod = FileLock.getFileLockMethod(lockMethodName);
-            if (fileLockMethod == FileLock.LOCK_SERIALIZED) {
+            FileLockMethod fileLockMethod = FileLock.getFileLockMethod(lockMethodName);
+            if (fileLockMethod == FileLockMethod.SERIALIZED) {
                 // In serialized mode, database instance sharing is not possible
                 ci.setProperty("OPEN_NEW", "TRUE");
                 try {
