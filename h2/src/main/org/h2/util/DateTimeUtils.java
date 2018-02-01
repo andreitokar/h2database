@@ -15,6 +15,7 @@ import java.util.GregorianCalendar;
 import java.util.Locale;
 import java.util.TimeZone;
 import org.h2.api.ErrorCode;
+import org.h2.engine.Mode;
 import org.h2.message.DbException;
 import org.h2.value.Value;
 import org.h2.value.ValueDate;
@@ -270,35 +271,6 @@ public class DateTimeUtils {
     }
 
     /**
-     * Convert a date to the specified time zone.
-     *
-     * @param x the date to convert
-     * @param target the calendar with the target timezone
-     * @return the milliseconds in UTC
-     */
-    public static long convertToLocal(java.util.Date x, Calendar target) {
-        if (target == null) {
-            throw DbException.getInvalidValueException("calendar", null);
-        }
-        target = (Calendar) target.clone();
-        Calendar local = DateTimeUtils.createGregorianCalendar();
-        local.setTime(x);
-        convertTime(local, target);
-        return target.getTimeInMillis();
-    }
-
-    private static void convertTime(Calendar from, Calendar to) {
-        to.set(Calendar.ERA, from.get(Calendar.ERA));
-        to.set(Calendar.YEAR, from.get(Calendar.YEAR));
-        to.set(Calendar.MONTH, from.get(Calendar.MONTH));
-        to.set(Calendar.DAY_OF_MONTH, from.get(Calendar.DAY_OF_MONTH));
-        to.set(Calendar.HOUR_OF_DAY, from.get(Calendar.HOUR_OF_DAY));
-        to.set(Calendar.MINUTE, from.get(Calendar.MINUTE));
-        to.set(Calendar.SECOND, from.get(Calendar.SECOND));
-        to.set(Calendar.MILLISECOND, from.get(Calendar.MILLISECOND));
-    }
-
-    /**
      * Convert the timestamp using the specified calendar.
      *
      * @param x the time
@@ -432,6 +404,102 @@ public class DateTimeUtils {
         }
         nanos += ((((hour * 60L) + minute) * 60) + second) * 1000000000;
         return negative ? -nanos : nanos;
+    }
+
+    /**
+     * See:
+     * https://stackoverflow.com/questions/3976616/how-to-find-nth-occurrence-of-character-in-a-string#answer-3976656
+     */
+    private static int findNthIndexOf(String str, char chr, int n) {
+        int pos = str.indexOf(chr);
+        while (--n > 0 && pos != -1)
+            pos = str.indexOf(chr, pos + 1);
+        return pos;
+    }
+
+    /**
+     * Parses timestamp value from the specified string.
+     *
+     * @param s
+     *            string to parse
+     * @param mode
+     *            database mode, or {@code null}
+     * @param withTimeZone
+     *            if {@code true} return {@link ValueTimestampTimeZone} instead of
+     *            {@link ValueTimestamp}
+     * @return parsed timestamp
+     */
+    public static Value parseTimestamp(String s, Mode mode, boolean withTimeZone) {
+        int dateEnd = s.indexOf(' ');
+        if (dateEnd < 0) {
+            // ISO 8601 compatibility
+            dateEnd = s.indexOf('T');
+            if (dateEnd < 0 && mode != null && mode.allowDB2TimestampFormat) {
+                // DB2 also allows dash between date and time
+                dateEnd = findNthIndexOf(s, '-', 3);
+            }
+        }
+        int timeStart;
+        if (dateEnd < 0) {
+            dateEnd = s.length();
+            timeStart = -1;
+        } else {
+            timeStart = dateEnd + 1;
+        }
+        long dateValue = parseDateValue(s, 0, dateEnd);
+        long nanos;
+        short tzMinutes = 0;
+        if (timeStart < 0) {
+            nanos = 0;
+        } else {
+            int timeEnd = s.length();
+            TimeZone tz = null;
+            if (s.endsWith("Z")) {
+                tz = UTC;
+                timeEnd--;
+            } else {
+                int timeZoneStart = s.indexOf('+', dateEnd + 1);
+                if (timeZoneStart < 0) {
+                    timeZoneStart = s.indexOf('-', dateEnd + 1);
+                }
+                if (timeZoneStart >= 0) {
+                    String tzName = "GMT" + s.substring(timeZoneStart);
+                    tz = TimeZone.getTimeZone(tzName);
+                    if (!tz.getID().startsWith(tzName)) {
+                        throw new IllegalArgumentException(
+                                tzName + " (" + tz.getID() + "?)");
+                    }
+                    timeEnd = timeZoneStart;
+                } else {
+                    timeZoneStart = s.indexOf(' ', dateEnd + 1);
+                    if (timeZoneStart > 0) {
+                        String tzName = s.substring(timeZoneStart + 1);
+                        tz = TimeZone.getTimeZone(tzName);
+                        if (!tz.getID().startsWith(tzName)) {
+                            throw new IllegalArgumentException(tzName);
+                        }
+                        timeEnd = timeZoneStart;
+                    }
+                }
+            }
+            nanos = parseTimeNanos(s, dateEnd + 1, timeEnd, true);
+            if (tz != null) {
+                if (withTimeZone) {
+                    if (tz != UTC) {
+                        long millis = convertDateTimeValueToMillis(tz, dateValue, nanos / 1000000);
+                        tzMinutes = (short) (tz.getOffset(millis) / 1000 / 60);
+                    }
+                } else {
+                    long millis = convertDateTimeValueToMillis(tz, dateValue, nanos / 1000000);
+                    dateValue = dateValueFromDate(millis);
+                    nanos = nanos % 1000000 + nanosFromDate(millis);
+                }
+            }
+        }
+        if (withTimeZone) {
+            return ValueTimestampTimeZone.fromDateValueAndNanos(dateValue, nanos, tzMinutes);
+        }
+        return ValueTimestamp.fromDateValueAndNanos(dateValue, nanos);
     }
 
     /**
@@ -751,6 +819,25 @@ public class DateTimeUtils {
     }
 
     /**
+     * Convert an encoded date-time value to millis, using the supplied timezone.
+     *
+     * @param tz the timezone
+     * @param dateValue the date value
+     * @param ms milliseconds of day
+     * @return the date
+     */
+    public static long convertDateTimeValueToMillis(TimeZone tz, long dateValue, long ms) {
+        long second = ms / 1000;
+        ms -= second * 1000;
+        int minute = (int) (second / 60);
+        second -= minute * 60;
+        int hour = minute / 60;
+        minute -= hour * 60;
+        return getMillis(tz, yearFromDateValue(dateValue), monthFromDateValue(dateValue), dayFromDateValue(dateValue),
+                hour, minute, (int) second, (int) ms);
+    }
+
+    /**
      * Convert an encoded date value / time value to a timestamp, using the
      * default timezone.
      *
@@ -760,19 +847,9 @@ public class DateTimeUtils {
      */
     public static Timestamp convertDateValueToTimestamp(long dateValue,
             long timeNanos) {
-        long millis = timeNanos / 1000000;
-        timeNanos -= millis * 1000000;
-        long s = millis / 1000;
-        millis -= s * 1000;
-        long m = s / 60;
-        s -= m * 60;
-        long h = m / 60;
-        m -= h * 60;
-        long ms = getMillis(null, yearFromDateValue(dateValue),
-                monthFromDateValue(dateValue), dayFromDateValue(dateValue),
-                (int) h, (int) m, (int) s, 0);
-        Timestamp ts = new Timestamp(ms);
-        ts.setNanos((int) (timeNanos + millis * 1000000));
+        Timestamp ts = new Timestamp(convertDateTimeValueToMillis(null, dateValue, timeNanos / 1000000));
+        // This method expects the complete nanoseconds value including milliseconds
+        ts.setNanos((int) (timeNanos % 1000000000));
         return ts;
     }
 
@@ -997,6 +1074,115 @@ public class DateTimeUtils {
         Timestamp resultDate = new Timestamp(calendar.getTimeInMillis());
         resultDate.setNanos(refDate.getNanos());
         return resultDate;
+    }
+
+    /**
+     * Append a date to the string builder.
+     *
+     * @param buff the target string builder
+     * @param dateValue the date value
+     */
+    public static void appendDate(StringBuilder buff, long dateValue) {
+        int y = yearFromDateValue(dateValue);
+        int m = monthFromDateValue(dateValue);
+        int d = dayFromDateValue(dateValue);
+        if (y > 0 && y < 10000) {
+            StringUtils.appendZeroPadded(buff, 4, y);
+        } else {
+            buff.append(y);
+        }
+        buff.append('-');
+        StringUtils.appendZeroPadded(buff, 2, m);
+        buff.append('-');
+        StringUtils.appendZeroPadded(buff, 2, d);
+    }
+
+    /**
+     * Append a time to the string builder.
+     *
+     * @param buff the target string builder
+     * @param nanos the time in nanoseconds
+     * @param alwaysAddMillis whether to always add at least ".0"
+     */
+    public static void appendTime(StringBuilder buff, long nanos,
+            boolean alwaysAddMillis) {
+        if (nanos < 0) {
+            buff.append('-');
+            nanos = -nanos;
+        }
+        /*
+         * nanos now either in range from 0 to Long.MAX_VALUE or equals to
+         * Long.MIN_VALUE. We need to divide nanos by 1000000 with unsigned division to
+         * get correct result. The simplest way to do this with such constraints is to
+         * divide -nanos by -1000000.
+         */
+        long ms = -nanos / -1000000;
+        nanos -= ms * 1000000;
+        long s = ms / 1000;
+        ms -= s * 1000;
+        long m = s / 60;
+        s -= m * 60;
+        long h = m / 60;
+        m -= h * 60;
+        StringUtils.appendZeroPadded(buff, 2, h);
+        buff.append(':');
+        StringUtils.appendZeroPadded(buff, 2, m);
+        buff.append(':');
+        StringUtils.appendZeroPadded(buff, 2, s);
+        if (alwaysAddMillis || ms > 0 || nanos > 0) {
+            buff.append('.');
+            int start = buff.length();
+            StringUtils.appendZeroPadded(buff, 3, ms);
+            if (nanos > 0) {
+                StringUtils.appendZeroPadded(buff, 6, nanos);
+            }
+            for (int i = buff.length() - 1; i > start; i--) {
+                if (buff.charAt(i) != '0') {
+                    break;
+                }
+                buff.deleteCharAt(i);
+            }
+        }
+    }
+
+    /**
+     * Append a time zone to the string builder.
+     *
+     * @param buff the target string builder
+     * @param tz the time zone in minutes
+     */
+    public static void appendTimeZone(StringBuilder buff, short tz) {
+        if (tz < 0) {
+            buff.append('-');
+            tz = (short) -tz;
+        } else {
+            buff.append('+');
+        }
+        int hours = tz / 60;
+        tz -= hours * 60;
+        int mins = tz;
+        StringUtils.appendZeroPadded(buff, 2, hours);
+        if (mins != 0) {
+            buff.append(':');
+            StringUtils.appendZeroPadded(buff, 2, mins);
+        }
+    }
+
+    /**
+     * Formats timestamp with time zone as string.
+     *
+     * @param dateValue the year-month-day bit field
+     * @param timeNanos nanoseconds since midnight
+     * @param timeZoneOffsetMins the time zone offset in minutes
+     * @return formatted string
+     */
+    public static String timestampTimeZoneToString(long dateValue, long timeNanos, short timeZoneOffsetMins) {
+        StringBuilder buff = new StringBuilder(ValueTimestampTimeZone.DISPLAY_SIZE);
+        appendDate(buff, dateValue);
+        buff.append(' ');
+        appendTime(buff, timeNanos, true);
+        appendTimeZone(buff, timeZoneOffsetMins);
+        return buff.toString();
     }
 
 }
