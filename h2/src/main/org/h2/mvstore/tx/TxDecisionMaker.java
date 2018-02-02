@@ -62,8 +62,9 @@ public class TxDecisionMaker extends MVMap.DecisionMaker<VersionedValue> {
 
     @Override
     public final void reset() {
-        if (decision != MVMap.Decision.ABORT) {
-            // map was updated after our decision has been made
+        if (decision != null && decision != MVMap.Decision.ABORT) {
+            // positive decision has been made already and undo record created,
+            // but map was updated afterwards and undo record deletion required
             transaction.logUndo();
         }
         blockingTransaction = null;

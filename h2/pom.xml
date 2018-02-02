@@ -92,12 +92,14 @@
 
 
     <!-- START TEST DEPENDENCIES !-->
+<!--
     <dependency>
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-simple</artifactId>
       <version>${slf4j.version}</version>
       <scope>test</scope>
     </dependency>
+-->
     <dependency>
       <groupId>org.hsqldb</groupId>
       <artifactId>hsqldb</artifactId>
@@ -206,8 +208,10 @@
       <testResource>
         <directory>src/test</directory>
         <includes>
+          <include>org/h2/test/bench/test.properties</include>
           <include>org/h2/test/testSimple.in.txt</include>
-          <include>org/h2/test/testScript.sql</include>
+          <include>org/h2/test/scripts/**/*</include>
+          <include>org/h2/test/script/testScript.sql</include>
           <include>org/h2/samples/newsfeed.sql</include>
           <include>org/h2/samples/optimizations.sql</include>
         </includes>
@@ -294,7 +298,6 @@
           <fork>true</fork>
           <compilerArgs>
               <Xlint/>
-              <!--<XDignore.symbol.file/>-->
               <arg>-XDignore.symbol.file</arg>
           </compilerArgs>
         </configuration>

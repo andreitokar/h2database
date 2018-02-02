@@ -304,10 +304,10 @@ public class Build extends BuildBase {
         }
         StringList args = args();
         if (debugInfo) {
-            args = args.plus("-Xlint:unchecked",
+            args = args.plus("-Xlint:unchecked", "-XDignore.symbol.file",
                     "-d", "temp", "-sourcepath", "src/main", "-classpath", classpath);
         } else {
-            args = args.plus("-Xlint:unchecked", "-g:none",
+            args = args.plus("-Xlint:unchecked", "-XDignore.symbol.file", "-g:none",
                     "-d", "temp", "-sourcepath", "src/main", "-classpath", classpath);
         }
         String version = getTargetJavaVersion();

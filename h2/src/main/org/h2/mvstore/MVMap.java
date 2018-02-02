@@ -94,6 +94,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         setInitialRoot(createEmptyLeaf(), store.getCurrentVersion());
     }
 
+    @SuppressWarnings("unchecked")
     private MVMap(MVStore store, DataType keyType, DataType valueType, int id, long createVersion,
                   AtomicReference<RootReference> root, int keysPerPage, boolean singleWriter) {
         this.store = store;
@@ -110,6 +111,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         this.singleWriter = singleWriter;
     }
 
+    @SuppressWarnings("unchecked")
     public static <K,V> void process(Page root, K from, Processor<K,V> processor) {
         CursorPos cursorPos = Cursor.traverseDown(root, from);
         CursorPos keeper = null;
@@ -319,6 +321,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         @Override
         public void confirmSuccess() {}
 
+        @SuppressWarnings("unchecked")
         @Override
         public Page[] process(CursorPos pos) {
             Page leaf = pos.page;
@@ -362,14 +365,16 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     public final void operateBatch(LeafProcessor processor) {
         beforeWrite();
         int attempt = 0;
-        RootReference rootReference = null;
+        RootReference rootReference = getRoot();
         RootReference oldRootReference = null;
-        CursorPos pos = null;
+        CursorPos pos;
         while(true) {
-            if (rootReference == null) {
+            if (rootReference.semaphore) {
+                Thread.yield();
                 rootReference = getRoot();
-                pos = processor.locate(rootReference.root);
+                continue;
             }
+            pos = processor.locate(rootReference.root);
 
             if (pos == null) {
                 return;
@@ -378,7 +383,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             if (replacement == null) {
                 if(rootReference != getRoot()) {
                     processor.stepBack();
-                    rootReference = null;
+                    rootReference = getRoot();
                     continue;
                 }
                 return;
@@ -401,8 +406,9 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             int unsavedMemory = 0;
             boolean needUnlock = false;
             try {
-                if (attempt > 2 && !(needUnlock = lockRoot(processor, rootReference, attempt, contention))) {
-                    rootReference = null;
+                if (attempt > 4 && !(needUnlock = lockRoot(processor, rootReference, attempt, contention))) {
+                    processor.stepBack();
+                    rootReference = getRoot();
                     continue;
                 }
                 int index;
@@ -473,7 +479,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                     needUnlock = false;
                 } else if(!updateRoot(rootReference, p, attempt)) {
                     processor.stepBack();
-                    rootReference = null;
+                    rootReference = getRoot();
                     continue;
                 }
                 while (tip != null) {
@@ -501,11 +507,10 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
     private boolean lockRoot(LeafProcessor processor, RootReference rootReference,
                              int attempt, int contention) {
-        boolean success = !rootReference.semaphore &&
-                          root.compareAndSet(rootReference, new RootReference(rootReference));
+        boolean success = root.compareAndSet(rootReference, new RootReference(rootReference));
         if (!success) {
             processor.stepBack();
-            if(attempt > 4) {
+            if(attempt > 8) {
                 if (attempt <= 24) {
                     Thread.yield();
                 } else {
@@ -1253,7 +1258,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
     @Override
     public Set<K> keySet() {
-        final MVMap<K, V> map = this;
         final Page root = this.getRootPage();
         return new AbstractSet<K>() {
 

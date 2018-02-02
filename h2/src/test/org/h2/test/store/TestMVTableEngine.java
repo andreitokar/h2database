@@ -1504,17 +1504,17 @@ public class TestMVTableEngine extends TestBase {
         try (Connection conn = getConnection(dbName)) {
             Statement stat = conn.createStatement();
             stat.execute("CREATE TABLE test(id INT PRIMARY KEY, name VARCHAR) AS " +
-                    "SELECT x, x || space(1024) || x FROM system_range(1, 1000)");
+                    "SELECT x, x || space(1024) || x FROM system_range(1, 10000)");
             conn.setAutoCommit(false);
             PreparedStatement prep = conn.prepareStatement("DELETE FROM test WHERE id = ?");
             long start = System.nanoTime();
-            for (int i = 0; i < 1000; i++) {
-                prep.setInt(1, reverse ? 1000 - i : i);
+            for (int i = 0; i < 10000; i++) {
+                prep.setInt(1, reverse ? 10000 - i : i);
                 prep.execute();
             }
             long end = System.nanoTime();
             conn.commit();
-            return TimeUnit.NANOSECONDS.toMillis(end - start);
+            return end - start;
         }
     }
 }

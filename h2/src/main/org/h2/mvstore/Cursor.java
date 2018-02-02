@@ -16,6 +16,7 @@ import java.util.Iterator;
 public final class Cursor<K, V> implements Iterator<K> {
     private final K           to;
     private       CursorPos   cursorPos;
+    private       CursorPos   keeper;
     private       K           current;
     private       K           last;
     private       V           lastValue;
@@ -33,37 +34,46 @@ public final class Cursor<K, V> implements Iterator<K> {
     @Override
     @SuppressWarnings("unchecked")
     public boolean hasNext() {
-        if (current != null) {
-            return true;
-        }
-        while (cursorPos != null) {
-            Page page = cursorPos.page;
-            int index = cursorPos.index;
-            if (index >= (page.isLeaf() ? page.getKeyCount() : page.map.getChildPageCount(page))) {
-                cursorPos = cursorPos.parent;
-                if(cursorPos == null)
-                {
-                    return false;
+        if (cursorPos != null) {
+            while (current == null) {
+                Page page = cursorPos.page;
+                int index = cursorPos.index;
+                if (index >= (page.isLeaf() ? page.getKeyCount() : page.map.getChildPageCount(page))) {
+                    CursorPos tmp = cursorPos;
+                    cursorPos = cursorPos.parent;
+                    tmp.parent = keeper;
+                    keeper = tmp;
+                    if(cursorPos == null)
+                    {
+                        return false;
+                    }
+                } else {
+                    while (!page.isLeaf()) {
+                        page = page.getChildPage(index);
+                        if (keeper == null) {
+                            cursorPos = new CursorPos(page, 0, cursorPos);
+                        } else {
+                            CursorPos tmp = keeper;
+                            keeper = keeper.parent;
+                            tmp.parent = cursorPos;
+                            tmp.page = page;
+                            tmp.index = 0;
+                            cursorPos = tmp;
+                        }
+                        index = 0;
+                    }
+                    K key = (K) page.getKey(index);
+                    if (to != null && page.map.getKeyType().compare(key, to) > 0) {
+                        return false;
+                    }
+                    current = last = key;
+                    lastValue = (V) page.getValue(index);
+                    lastPage = page;
                 }
                 ++cursorPos.index;
-            } else {
-                while (!page.isLeaf()) {
-                    page = page.getChildPage(index);
-                    cursorPos = new CursorPos(page, 0, cursorPos);
-                    index = 0;
-                }
-                K key = (K) page.getKey(index);
-                if (to != null && page.map.getKeyType().compare(key, to) > 0) {
-                    return false;
-                }
-                current = last = key;
-                lastValue = (V) page.getValue(index);
-                lastPage = page;
-                ++cursorPos.index;
-                return true;
             }
         }
-        return false;
+        return cursorPos != null;
     }
 
     @Override
@@ -136,8 +146,8 @@ public final class Cursor<K, V> implements Iterator<K> {
      * Fetch the next entry that is equal or larger than the given key, starting
      * from the given page. This method retains the stack.
      *
-     * @param p the page to start
-     * @param key the key to search
+     * @param p the page to start from
+     * @param key the key to search, null means search for the first key
      */
     public static CursorPos traverseDown(Page p, Object key) {
         CursorPos cursorPos = null;

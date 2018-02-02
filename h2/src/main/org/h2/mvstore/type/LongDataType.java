@@ -118,10 +118,11 @@ public final class LongDataType implements ExtendedDataType {
         // for the first time (when cachedCompare is 0),
         // the default value is used
         int x = initialGuess - 1;
+        long[] data = cast(storage);
         if (x < 0 || x > high) {
             x = high >>> 1;
         }
-        return binarySearch(cast(storage), key, low, high, x);
+        return binarySearch(data, key, low, high, x);
     }
 
     private static int binarySearch(long[] data, long key, int low, int high, int x) {
