@@ -74,6 +74,7 @@ public abstract class BasicDataType<T> implements ExtendedDataType {
         }
     }
 
+    @SuppressWarnings("unchecked")
     @Override
     public final void read(ByteBuffer buff, Object storage, int size) {
         T[] data = cast(storage);

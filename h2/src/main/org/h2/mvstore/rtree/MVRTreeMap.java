@@ -102,6 +102,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
      * @param key the key
      * @return the value, or null if not found
      */
+    @SuppressWarnings("unchecked")
     public V get(Page p, Object key) {
         int keyCount = p.getKeyCount();
         if (!p.isLeaf()) {
@@ -173,6 +174,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
         }
     }
 
+    @SuppressWarnings("unchecked")
     private V operate(Page p, Object key, V value, DecisionMaker<? super V> decisionMaker) {
         V result = null;
         if (p.isLeaf()) {

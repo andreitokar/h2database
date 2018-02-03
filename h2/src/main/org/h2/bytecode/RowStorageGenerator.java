@@ -330,6 +330,7 @@ public final class RowStorageGenerator {
     private static final String ROOT_CLASS_NAME_SLASHED = "org/h2/bytecode/RowStorage";
 
 
+    @SuppressWarnings("unchecked")
     public static Class<? extends RowStorage> generateStorageClass(int valueTypes[], int indexes[]) {
         String className = getClassName(valueTypes, indexes);
         Class<?> clazz;

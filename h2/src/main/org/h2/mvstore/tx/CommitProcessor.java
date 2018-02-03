@@ -102,6 +102,7 @@ final class CommitProcessor extends MVMap.DecisionMaker<VersionedValue>
         return decision;
     }
 
+    @SuppressWarnings("unchecked")
     @Override
     public VersionedValue selectValue(VersionedValue existingValue, VersionedValue providedValue) {
         assert decision == MVMap.Decision.PUT;

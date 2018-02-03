@@ -97,6 +97,7 @@ public class TxDecisionMaker extends MVMap.DecisionMaker<VersionedValue> {
             this.value = value;
         }
 
+        @SuppressWarnings("unchecked")
         @Override
         public VersionedValue selectValue(VersionedValue existingValue, VersionedValue providedValue) {
             return new VersionedValue.Uncommitted(undoKey, value,
@@ -111,6 +112,7 @@ public class TxDecisionMaker extends MVMap.DecisionMaker<VersionedValue> {
             super(mapId, key, transaction);
         }
 
+        @SuppressWarnings("unchecked")
         @Override
         public VersionedValue selectValue(VersionedValue existingValue, VersionedValue providedValue) {
             return new VersionedValue.Uncommitted(undoKey, existingValue == null ? null : existingValue.value,

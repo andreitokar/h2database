@@ -265,6 +265,7 @@ public final class TransactionMap<K, V> {
         return set(key, decisionMaker);
     }
 
+    @SuppressWarnings("unchecked")
     private V set(K key, TxDecisionMaker decisionMaker) {
         TransactionStore store = transaction.store;
         Transaction blockingTransaction;

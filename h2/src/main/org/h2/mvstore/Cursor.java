@@ -73,7 +73,7 @@ public final class Cursor<K, V> implements Iterator<K> {
                 ++cursorPos.index;
             }
         }
-        return cursorPos != null;
+        return current != null;
     }
 
     @Override
@@ -118,6 +118,7 @@ public final class Cursor<K, V> implements Iterator<K> {
      *
      * @param n the number of entries to skip
      */
+    @SuppressWarnings("unchecked")
     public void skip(long n) {
         if (n < 10) {
             while (n-- > 0 && hasNext()) {

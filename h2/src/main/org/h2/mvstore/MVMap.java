@@ -849,6 +849,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @param value the expected value
      * @return true if the item was removed
      */
+    @SuppressWarnings("unchecked")
     @Override
     public boolean remove(Object key, Object value) {
         assert !isSingleWriter();
