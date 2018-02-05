@@ -29,12 +29,12 @@ public class TestScalability implements Database.DatabaseTest {
     /**
      * Whether data should be collected.
      */
-    boolean collect;
+    private boolean collect;
 
     /**
      * The flag used to enable or disable trace messages.
      */
-    boolean trace;
+    private boolean trace;
 
     /**
      * This method is called when executing this sample application.
@@ -69,7 +69,7 @@ public class TestScalability implements Database.DatabaseTest {
     private void test() throws Exception {
         FileUtils.deleteRecursive("data", true);
         final String out = "benchmark.html";
-        final int size = 400;
+        final int size = 1000;
 
         ArrayList<Database> dbs = new ArrayList<>();
         int id = 1;
@@ -173,10 +173,10 @@ public class TestScalability implements Database.DatabaseTest {
                 Thread.sleep(1000);
             }
             // calls garbage collection
-            TestBase.getMemoryUsed();
+            int memoryUsed = TestBase.getMemoryUsed();
             Database db = dbs.get(i);
-            System.out.println("Testing the performance of " + db.getName()
-                    + " (" + db.getThreadsCount() + " threads)");
+            System.out.println("Testing the scalability of " + db.getName()
+                    + " (" + db.getThreadsCount() + " threads) " + memoryUsed + " MB used");
             db.startServer();
             Connection conn = db.openNewConnection();
             DatabaseMetaData meta = conn.getMetaData();
@@ -194,6 +194,7 @@ public class TestScalability implements Database.DatabaseTest {
             db.log("Statements per second", "#", statPerSec);
             System.out.println("Statements per second: " + statPerSec);
             System.out.println("GC overhead: " + (100 * db.getTotalGCTime() / db.getTotalTime()) + "%");
+            System.out.println("");
             collect = false;
             db.stopServer();
         }

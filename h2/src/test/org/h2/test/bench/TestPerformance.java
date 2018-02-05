@@ -224,10 +224,10 @@ public class TestPerformance implements Database.DatabaseTest {
                 Thread.sleep(1000);
             }
             // calls garbage collection
-            TestBase.getMemoryUsed();
+            int memoryUsed = TestBase.getMemoryUsed();
             Database db = dbs.get(i);
             System.out.println();
-            System.out.println("Testing the performance of " + db.getName());
+            System.out.println("Testing the performance of " + db.getName() + " " + memoryUsed + " MB used");
             db.startServer();
             Connection conn = db.openNewConnection();
             DatabaseMetaData meta = conn.getMetaData();
