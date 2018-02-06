@@ -16,7 +16,7 @@ import java.sql.Statement;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.h2.bytecode.RowStorage;
 import org.h2.bytecode.RowStorageGenerator;
-import org.h2.java.util.Arrays;
+import java.util.Arrays;
 import org.h2.mvstore.type.DataType;
 import org.h2.result.Row;
 import org.h2.result.RowFactory;

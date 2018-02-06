@@ -112,7 +112,6 @@ public final class LongDataType implements ExtendedDataType {
             return -1;
         }
         long key = ((Long) what);
-        int low = 0;
         int high = size - 1;
         // the cached index minus one, so that
         // for the first time (when cachedCompare is 0),
@@ -122,15 +121,16 @@ public final class LongDataType implements ExtendedDataType {
         if (x < 0 || x > high) {
             x = high >>> 1;
         }
-        return binarySearch(data, key, low, high, x);
+        return binarySearch(data, key, high, x);
     }
 
-    private static int binarySearch(long[] data, long key, int low, int high, int x) {
+    private static int binarySearch(long[] data, long key, int high, int x) {
+        int low = 0;
         while (low <= high) {
-            int compare = Long.compare(key, data[x]);
-            if (compare > 0) {
+            long datum = data[x];
+            if (key > datum) {
                 low = x + 1;
-            } else if (compare < 0) {
+            } else if (key < datum) {
                 high = x - 1;
             } else {
                 return x;

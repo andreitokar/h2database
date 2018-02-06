@@ -35,7 +35,7 @@ public class TestSpaceReuse extends TestBase {
         deleteDb("spaceReuse");
         long max = 0, now = 0, min = Long.MAX_VALUE;
         for (int i = 0; i < 20; i++) {
-            Connection conn = getConnection("spaceReuse");
+            Connection conn = getConnection("spaceReuse;WRITE_DELAY=0");
             Statement stat = conn.createStatement();
             stat.execute("set retention_time 0");
             stat.execute("create table if not exists t(i int)");
