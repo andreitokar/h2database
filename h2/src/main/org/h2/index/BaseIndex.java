@@ -314,14 +314,14 @@ public abstract class BaseIndex extends SchemaObjectBase implements Index {
         switch (database.getMode().uniqueIndexNullsHandling) {
         case ALLOW_DUPLICATES_WITH_ANY_NULL:
             for (int index : columnIds) {
-                if (searchRow.getValue(index) == ValueNull.INSTANCE) {
+                if (searchRow.isNull(index)) {
                     return true;
                 }
             }
             return false;
         case ALLOW_DUPLICATES_WITH_ALL_NULLS:
             for (int index : columnIds) {
-                if (searchRow.getValue(index) != ValueNull.INSTANCE) {
+                if (!searchRow.isNull(index)) {
                     return false;
                 }
             }

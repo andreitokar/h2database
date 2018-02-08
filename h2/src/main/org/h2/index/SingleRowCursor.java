@@ -12,9 +12,9 @@ import org.h2.result.SearchRow;
 /**
  * A cursor with at most one row.
  */
-public class SingleRowCursor implements Cursor {
-    private Row row;
-    private boolean end;
+public final class SingleRowCursor implements Cursor {
+    private final Row     row;
+    private       boolean end;
 
     /**
      * Create a new cursor.
@@ -37,17 +37,15 @@ public class SingleRowCursor implements Cursor {
 
     @Override
     public boolean next() {
-        if (row == null || end) {
-            row = null;
-            return false;
+        if (!end) {
+            end = true;
+            return row != null;
         }
-        end = true;
-        return true;
+        return false;
     }
 
     @Override
     public boolean previous() {
         throw DbException.throwInternalError(toString());
     }
-
 }

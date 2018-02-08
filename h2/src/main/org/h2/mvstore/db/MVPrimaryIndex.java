@@ -17,6 +17,7 @@ import org.h2.engine.Session;
 import org.h2.index.BaseIndex;
 import org.h2.index.Cursor;
 import org.h2.index.IndexType;
+import org.h2.index.SingleRowCursor;
 import org.h2.message.DbException;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.tx.Transaction;
@@ -488,39 +489,5 @@ public final class MVPrimaryIndex extends BaseIndex
             throw DbException.getUnsupportedException("previous");
         }
 
-    }
-
-    private static final class SingleRowCursor implements Cursor
-    {
-        private final Row row;
-        private boolean visited;
-
-        SingleRowCursor(Row row) {
-            this.row = row;
-        }
-
-        @Override
-        public Row get() {
-            return row;
-        }
-
-        @Override
-        public SearchRow getSearchRow() {
-            return row;
-        }
-
-        @Override
-        public boolean next() {
-            if (!visited) {
-                visited = true;
-                return row != null;
-            }
-            return false;
-        }
-
-        @Override
-        public boolean previous() {
-            throw DbException.getUnsupportedException("previous");
-        }
     }
 }

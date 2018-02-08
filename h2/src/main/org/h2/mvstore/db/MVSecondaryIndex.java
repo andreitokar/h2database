@@ -18,6 +18,7 @@ import org.h2.engine.Session;
 import org.h2.index.BaseIndex;
 import org.h2.index.Cursor;
 import org.h2.index.IndexType;
+import org.h2.index.SingleRowCursor;
 import org.h2.message.DbException;
 import org.h2.mvstore.MVMap;
 import org.h2.mvstore.tx.Transaction;
@@ -71,9 +72,7 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
 
     @Override
     public int compareRows(SearchRow rowData, SearchRow compare) {
-//        int expected = super.compareRows(rowData, compare);
         int comp = dataMap.getKeyType().compare(rowData, compare);
-//        assert comp == expected : comp + " != " + expected;
         return comp;
     }
 
@@ -85,7 +84,6 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
             SearchRow r = rowFactory.createRow();
             r.copyFrom(row);
             agent.put(r, ValueNull.INSTANCE);
-//            map.put(r, ValueNull.INSTANCE);
         }
         agent.close();
     }
@@ -248,8 +246,21 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
 
     private Cursor find(Session session, SearchRow first, boolean bigger, SearchRow last) {
         SearchRow min = convertToKey(first, bigger);
-        SearchRow max = convertToKey(last, Boolean.TRUE);
         TransactionMap<SearchRow,Value> map = getMap(session);
+/*
+        if (!bigger && indexType.isUnique() && first != null && !mayHaveNullDuplicates(first) && compareRows(first, last) == 0) {
+            SearchRow searchRow = map.higherKey(min);
+            Row row = null;
+            if (searchRow != null) {
+                min.setKey(SearchRow.MATCH_ALL_ROW_KEY);
+                if (compareRows(searchRow, min) == 0) {
+                    row = mvTable.getRow(session, searchRow.getKey());
+                }
+            }
+            return new SingleRowCursor(row);
+        }
+//*/
+        SearchRow max = convertToKey(last, Boolean.TRUE);
         return new MVStoreCursor(session, map.keyIterator(min, max, false), mvTable);
     }
 

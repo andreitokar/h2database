@@ -30,6 +30,9 @@ public final class TransactionMap<K, V> {
      */
     public final MVMap<K, VersionedValue> map;
 
+    /**
+     * The transaction which is used for this map.
+     */
     final Transaction transaction;
 
     TransactionMap(Transaction transaction, MVMap<K, VersionedValue> map) {
@@ -74,14 +77,13 @@ public final class TransactionMap<K, V> {
      */
     public long sizeAsLong() {
         TransactionStore store = transaction.store;
-        BitSet opentransactions;
         BitSet committingTransactions;
         MVMap.RootReference mapRootReference;
         MVMap.RootReference undoLogRootReferences[];
         long undoLogSize;
         do {
-            opentransactions = store.openTransactions.get();
             committingTransactions = store.committingTransactions.get();
+            BitSet opentransactions = store.openTransactions.get();
             mapRootReference = map.getRoot();
             undoLogRootReferences = new MVMap.RootReference[opentransactions.length()];
             undoLogSize = 0;
@@ -93,9 +95,7 @@ public final class TransactionMap<K, V> {
                     undoLogSize += rootReference.root.getTotalCount() + rootReference.appendCounter;
                 }
             }
-        } while(mapRootReference != map.getRoot()
-                || committingTransactions != store.committingTransactions.get()
-                || opentransactions != store.openTransactions.get());
+        } while(committingTransactions != store.committingTransactions.get());
 
         long size = mapRootReference.root.getTotalCount();
         if (undoLogSize == 0) {

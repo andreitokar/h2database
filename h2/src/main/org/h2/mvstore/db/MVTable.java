@@ -740,6 +740,7 @@ public final class MVTable extends TableBase {
         long savepoint = t.setSavepoint();
         try {
             for (Index index : indexes) {
+                assert !(index instanceof MultiVersionIndex);
                 index.add(session, row);
             }
         } catch (Throwable e) {
@@ -748,21 +749,7 @@ public final class MVTable extends TableBase {
             } catch (Throwable ignore) {
                 e.addSuppressed(ignore);
             }
-            DbException de = DbException.convert(e);
-            if (de.getErrorCode() == ErrorCode.DUPLICATE_KEY_1) {
-                for (Index index : indexes) {
-                    if (index.getIndexType().isUnique() &&
-                            index instanceof MultiVersionIndex) {
-                        MultiVersionIndex mv = (MultiVersionIndex) index;
-                        if (mv.isUncommittedFromOtherSession(session, row)) {
-                            throw DbException.get(
-                                    ErrorCode.CONCURRENT_UPDATE_1,
-                                    index.getName());
-                        }
-                    }
-                }
-            }
-            throw de;
+            throw DbException.convert(e);
         }
         analyzeIfRequired(session);
     }
