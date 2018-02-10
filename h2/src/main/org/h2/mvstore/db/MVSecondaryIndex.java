@@ -136,12 +136,12 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
         for (String bufferName : bufferNames) {
             Iterator<SearchRow> iter = openMap(bufferName).keyIterator(null);
             if (iter.hasNext()) {
-                queue.add(new Source(iter));
+                queue.offer(new Source(iter));
             }
         }
         try {
             while (!queue.isEmpty()) {
-                Source s = queue.remove();
+                Source s = queue.poll();
                 SearchRow row = s.next();
 
                 if (indexType.isUnique() && !mayHaveNullDuplicates(row)) {

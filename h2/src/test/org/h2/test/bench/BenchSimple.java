@@ -41,8 +41,8 @@ public class BenchSimple implements Bench {
             }
         }
         db.commit();
-        db.update("CREATE UNIQUE INDEX IDX_NAME ON TEST(NAME)");
-        db.commit();
+//        db.update("CREATE UNIQUE INDEX IDX_NAME ON TEST(NAME)");
+//        db.commit();
         db.closeConnection();
         db.end();
 
@@ -69,6 +69,7 @@ public class BenchSimple implements Bench {
         }
         db.end();
 
+/*
         db.start(this, "Query2 (random)");
         prep = db.prepare("SELECT * FROM TEST WHERE NAME=?");
         for (int i = 0; i < records / 1; i++) {
@@ -76,6 +77,7 @@ public class BenchSimple implements Bench {
             db.queryReadResult(prep);
         }
         db.end();
+*/
 
         db.start(this, "Query (sequential)");
         prep = db.prepare("SELECT * FROM TEST WHERE ID=?");
