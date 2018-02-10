@@ -870,8 +870,7 @@ public class MetaTable extends Table {
                         Constraint constraint = constraints.get(k);
                         if (constraint.usesIndex(index)) {
                             if (index.getIndexType().isPrimaryKey()) {
-                                if (constraint.getConstraintType().equals(
-                                        Constraint.PRIMARY_KEY)) {
+                                if (constraint.getConstraintType() == Constraint.Type.PRIMARY_KEY) {
                                     constraintName = constraint.getName();
                                 }
                             } else {
@@ -1548,7 +1547,7 @@ public class MetaTable extends Table {
             for (SchemaObject obj : database.getAllSchemaObjects(
                     DbObject.CONSTRAINT)) {
                 Constraint constraint = (Constraint) obj;
-                if (!(constraint.getConstraintType().equals(Constraint.REFERENTIAL))) {
+                if (constraint.getConstraintType() != Constraint.Type.REFERENTIAL) {
                     continue;
                 }
                 ConstraintReferential ref = (ConstraintReferential) constraint;
@@ -1601,7 +1600,7 @@ public class MetaTable extends Table {
             for (SchemaObject obj : database.getAllSchemaObjects(
                     DbObject.CONSTRAINT)) {
                 Constraint constraint = (Constraint) obj;
-                String constraintType = constraint.getConstraintType();
+                Constraint.Type constraintType = constraint.getConstraintType();
                 String checkExpression = null;
                 IndexColumn[] indexColumns = null;
                 Table table = constraint.getTable();
@@ -1617,12 +1616,12 @@ public class MetaTable extends Table {
                 if (!checkIndex(session, tableName, indexFrom, indexTo)) {
                     continue;
                 }
-                if (constraintType.equals(Constraint.CHECK)) {
+                if (constraintType == Constraint.Type.CHECK) {
                     checkExpression = ((ConstraintCheck) constraint).getExpression().getSQL();
-                } else if (constraintType.equals(Constraint.UNIQUE) ||
-                        constraintType.equals(Constraint.PRIMARY_KEY)) {
+                } else if (constraintType == Constraint.Type.UNIQUE ||
+                           constraintType == Constraint.Type.PRIMARY_KEY) {
                     indexColumns = ((ConstraintUnique) constraint).getColumns();
-                } else if (constraintType.equals(Constraint.REFERENTIAL)) {
+                } else if (constraintType == Constraint.Type.REFERENTIAL) {
                     indexColumns = ((ConstraintReferential) constraint).getColumns();
                 }
                 String columnList = null;
@@ -1642,7 +1641,7 @@ public class MetaTable extends Table {
                         // CONSTRAINT_NAME
                         identifier(constraint.getName()),
                         // CONSTRAINT_TYPE
-                        constraintType,
+                        constraintType.toString(),
                         // TABLE_CATALOG
                         catalog,
                         // TABLE_SCHEMA

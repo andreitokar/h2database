@@ -470,8 +470,9 @@ public final class MVTable extends TableBase {
                 database.getReferentialIntegrity()) {
             ArrayList<Constraint> constraints = getConstraints();
             if (constraints != null) {
-                for (Constraint c : constraints) {
-                    if (!(c.getConstraintType().equals(Constraint.REFERENTIAL))) {
+                for (int i = 0, size = constraints.size(); i < size; i++) {
+                    Constraint c = constraints.get(i);
+                    if (c.getConstraintType() != Constraint.Type.REFERENTIAL) {
                         continue;
                     }
                     ConstraintReferential ref = (ConstraintReferential) c;
