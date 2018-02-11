@@ -92,6 +92,7 @@ public class TestScript extends TestBase {
         } else {
             decimal2 = "decimal_numeric";
         }
+        
         for (String s : new String[] { "array", "bigint", "binary", "blob",
                 "boolean", "char", "clob", "date", "decimal", decimal2, "double", "enum",
                 "geometry", "identity", "int", "other", "real", "smallint",
@@ -135,7 +136,7 @@ public class TestScript extends TestBase {
                 "set", "table", "transaction-id", "truncate-value", "user" }) {
             testScript("functions/system/" + s + ".sql");
         }
-        for (String s : new String[] { "current_date", "current_timestamp",
+        for (String s : new String[] { "add_months", "current_date", "current_timestamp",
                 "current-time", "dateadd", "datediff", "dayname",
                 "day-of-month", "day-of-week", "day-of-year", "extract",
                 "formatdatetime", "hour", "minute", "month", "monthname",

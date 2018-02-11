@@ -253,7 +253,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
         }
     }
     public String getParsingCreateViewName() {
-        if (viewNameStack.size() == 0) {
+        if (viewNameStack.isEmpty()) {
             return null;
         }
         return viewNameStack.peek();
@@ -655,7 +655,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
                 // increment the data mod count, so that other sessions
                 // see the changes
                 // TODO should not rely on locking
-                if (locks.size() > 0) {
+                if (!locks.isEmpty()) {
                     for (int i = 0, size = locks.size(); i < size; i++) {
                         Table t = locks.get(i);
                         if (t instanceof MVTable) {
@@ -731,10 +731,10 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
             }
             temporaryLobs.clear();
         }
-        if (temporaryResultLobs != null && temporaryResultLobs.size() > 0) {
+        if (temporaryResultLobs != null && !temporaryResultLobs.isEmpty()) {
             long keepYoungerThan = System.nanoTime() -
                     TimeUnit.MILLISECONDS.toNanos(database.getSettings().lobTimeout);
-            while (temporaryResultLobs.size() > 0) {
+            while (!temporaryResultLobs.isEmpty()) {
                 TimeoutValue tv = temporaryResultLobs.getFirst();
                 if (onTimeout && tv.created >= keepYoungerThan) {
                     break;
@@ -748,7 +748,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
     }
 
     private void checkCommitRollback() {
-        if (commitOrRollbackDisabled && locks.size() > 0) {
+        if (commitOrRollbackDisabled && !locks.isEmpty()) {
             throw DbException.get(ErrorCode.COMMIT_ROLLBACK_NOT_ALLOWED);
         }
     }
@@ -984,7 +984,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
                 DbException.throwInternalError();
             }
         }
-        if (locks.size() > 0) {
+        if (!locks.isEmpty()) {
             // don't use the enhanced for loop to save memory
             for (int i = 0, size = locks.size(); i < size; i++) {
                 Table t = locks.get(i);

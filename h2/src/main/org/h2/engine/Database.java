@@ -1244,7 +1244,7 @@ public class Database implements DataHandler {
                 trace.info("disconnecting session #{0}", session.getId());
             }
         }
-        if (userSessions.size() == 0 &&
+        if (userSessions.isEmpty() &&
                 session != systemSession && session != lobSession) {
             if (closeDelay == 0) {
                 close(false);
@@ -1307,7 +1307,7 @@ public class Database implements DataHandler {
             }
             closing = true;
             stopServer();
-            if (userSessions.size() > 0) {
+            if (!userSessions.isEmpty()) {
                 if (!fromShutdownHook) {
                     return;
                 }
@@ -1322,7 +1322,7 @@ public class Database implements DataHandler {
                 // set it to null, to make sure it's called only once
                 eventListener = null;
                 e.closingDatabase();
-                if (userSessions.size() > 0) {
+                if (!userSessions.isEmpty()) {
                     // if a connection was opened, we can't close the database
                     return;
                 }

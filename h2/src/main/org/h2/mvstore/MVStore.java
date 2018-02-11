@@ -2350,7 +2350,7 @@ public final class MVStore {
                 keep = c;
             }
         }
-        if (remove.size() > 0) {
+        if (!remove.isEmpty()) {
             // remove the youngest first, so we don't create gaps
             // (in case we remove many chunks)
             Collections.sort(remove, Collections.reverseOrder());
