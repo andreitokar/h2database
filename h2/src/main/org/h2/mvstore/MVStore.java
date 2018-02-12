@@ -408,9 +408,7 @@ public final class MVStore {
 
     private void panic(IllegalStateException e) {
         if (!closed) {
-            if (backgroundExceptionHandler != null) {
-                backgroundExceptionHandler.uncaughtException(null, e);
-            }
+            handleException(e);
             panicException = e;
             closeImmediately();
         }
@@ -955,10 +953,8 @@ public final class MVStore {
     public void closeImmediately() {
         try {
             closeStore(false);
-        } catch (Exception e) {
-            if (backgroundExceptionHandler != null) {
-                backgroundExceptionHandler.uncaughtException(null, e);
-            }
+        } catch (Throwable e) {
+            handleException(e);
         }
     }
 
@@ -2569,8 +2565,16 @@ public final class MVStore {
                 autoCompactLastFileOpCount = fileStore.getWriteCount() + fileStore.getReadCount();
             }
         } catch (Throwable e) {
-            if (backgroundExceptionHandler != null) {
-                backgroundExceptionHandler.uncaughtException(null, e);
+            handleException(e);
+        }
+    }
+
+    private void handleException(Throwable ex) {
+        if (backgroundExceptionHandler != null) {
+            try {
+                backgroundExceptionHandler.uncaughtException(null, ex);
+            } catch(Throwable ignore) {
+                ex.addSuppressed(ignore);
             }
         }
     }
