@@ -2534,18 +2534,18 @@ public final class MVStore {
      * needed.
      */
     void writeInBackground() {
-        if (closed) {
-            return;
-        }
-
-        // could also commit when there are many unsaved pages,
-        // but according to a test it doesn't really help
-
-        long time = getTimeSinceCreation();
-        if (time <= lastCommitTime + autoCommitDelay) {
-            return;
-        }
         try {
+            if (closed) {
+                return;
+            }
+
+            // could also commit when there are many unsaved pages,
+            // but according to a test it doesn't really help
+
+            long time = getTimeSinceCreation();
+            if (time <= lastCommitTime + autoCommitDelay) {
+                return;
+            }
             commit();
             if (autoCompactFillRate > 0) {
                 // whether there were file read or write operations since
@@ -2574,7 +2574,9 @@ public final class MVStore {
             try {
                 backgroundExceptionHandler.uncaughtException(null, ex);
             } catch(Throwable ignore) {
-                ex.addSuppressed(ignore);
+                if (ex != ignore) { // OOME may be the same
+                    ex.addSuppressed(ignore);
+                }
             }
         }
     }
