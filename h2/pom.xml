@@ -211,9 +211,10 @@
           <include>org/h2/test/bench/test.properties</include>
           <include>org/h2/test/testSimple.in.txt</include>
           <include>org/h2/test/scripts/**/*</include>
-          <include>org/h2/test/script/testScript.sql</include>
-          <include>org/h2/samples/newsfeed.sql</include>
-          <include>org/h2/samples/optimizations.sql</include>
+          <!--<include>org/h2/test/script/testScript.sql</include>-->
+          <include>org/h2/samples/*.sql</include>
+          <!--<include>org/h2/samples/newsfeed.sql</include>-->
+          <!--<include>org/h2/samples/optimizations.sql</include>-->
         </includes>
       </testResource>
     </testResources>
@@ -306,6 +307,4 @@
       </plugin>
     </plugins>
   </build>
-
-
 </project>
