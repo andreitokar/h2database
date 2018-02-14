@@ -188,6 +188,10 @@ public class TestOutOfMemory extends TestBase {
             assertFalse(rs.wasNull());
             assertEquals(1004, text.length());
 
+            // TODO: there are intermittent failures here
+            // where number is about 1000 short of expected value.
+            // This indicates a real problem - durability failure
+            // and need to be looked at.
             rs = stat.executeQuery("SELECT sum(length(text)) FROM stuff");
             assertTrue(rs.next());
             assertEquals(3010893, rs.getInt(1));
@@ -222,7 +226,7 @@ public class TestOutOfMemory extends TestBase {
                 assertTrue(rs.next());
                 assertEquals(3010893, rs.getInt(1));
 
-                eatMemory(15_000);
+                eatMemory(5_000);
                 prep.execute();
                 fail();
             } catch (SQLException ignore) {

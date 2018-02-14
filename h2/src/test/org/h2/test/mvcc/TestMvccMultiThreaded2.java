@@ -11,7 +11,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
-import org.h2.jdbc.JdbcSQLException;
 import org.h2.test.TestBase;
 import org.h2.util.IOUtils;
 
@@ -24,7 +23,7 @@ public class TestMvccMultiThreaded2 extends TestBase {
     private static final int TEST_TIME_SECONDS = 60;
     private static final boolean DISPLAY_STATS = false;
 
-    private static final String URL = ";MVCC=TRUE;LOCK_TIMEOUT=120000;MULTI_THREADED=TRUE";
+    private static final String URL = ";MVCC=TRUE;LOCK_TIMEOUT=120000;MULTI_THREADED=TRUE;LOCK_MODE=0";
 
     /**
      * Run just this test.
@@ -127,24 +126,20 @@ public class TestMvccMultiThreaded2 extends TestBase {
                 Thread.yield();
 
                 while (!done) {
-                    try {
-                        PreparedStatement ps = conn.prepareStatement(
-                                "SELECT * FROM test WHERE entity_id = ? FOR UPDATE");
-                        ps.setString(1, "1");
-                        ResultSet rs = ps.executeQuery();
+                    PreparedStatement ps = conn.prepareStatement(
+                            "SELECT * FROM test WHERE entity_id = ? FOR UPDATE");
+                    ps.setString(1, "1");
+                    ResultSet rs = ps.executeQuery();
 
-                        assertTrue(rs.next());
-                        assertTrue(rs.getInt(2) == 100);
+                    assertTrue(rs.next());
+                    assertTrue(rs.getInt(2) == 100);
 
-                        conn.commit();
-                        iterationsProcessed++;
+                    conn.commit();
+                    iterationsProcessed++;
 
-                        long now = System.currentTimeMillis();
-                        if (now - start > 1000 * TEST_TIME_SECONDS) {
-                            done = true;
-                        }
-                    } catch (JdbcSQLException e1) {
-                        throw e1;
+                    long now = System.currentTimeMillis();
+                    if (now - start > 1000 * TEST_TIME_SECONDS) {
+                        done = true;
                     }
                 }
             } catch (SQLException e) {
