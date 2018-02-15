@@ -320,10 +320,11 @@ public final class Transaction {
      */
     public void commit() {
         assert store.openTransactions.get().get(transactionId);
-        long state = setStatus(STATUS_COMMITTING);
-        boolean hasChanges = hasChanges(state);
         Throwable ex = null;
+        boolean hasChanges = false;
         try {
+            long state = setStatus(STATUS_COMMITTING);
+            hasChanges = hasChanges(state);
             if (hasChanges) {
                 store.commit(this);
             }
@@ -354,6 +355,7 @@ public final class Transaction {
         long logId = getLogId(lastState);
         try {
             store.rollbackTo(this, logId, savepointId);
+        } finally {
             long expectedState = composeState(STATUS_ROLLING_BACK, logId, hasRollback(lastState));
             long newState = composeState(STATUS_OPEN, savepointId, true);
             if (!statusAndLogId.compareAndSet(expectedState, newState)) {
@@ -363,7 +365,6 @@ public final class Transaction {
                                 "while rollback to savepoint was in progress",
                         transactionId);
             }
-        } finally {
             notifyAllWaitingTransactions();
         }
     }
@@ -372,12 +373,18 @@ public final class Transaction {
      * Roll the transaction back. Afterwards, this transaction is closed.
      */
     public void rollback() {
-        long lastState = setStatus(STATUS_ROLLED_BACK);
-        long logId = getLogId(lastState);
-        if(logId > 0) {
-            store.rollbackTo(this, logId, 0);
+        try {
+            int status = getStatus();
+            if(status != STATUS_COMMITTING && status != STATUS_COMMITTED) {
+                long lastState = setStatus(STATUS_ROLLED_BACK);
+                long logId = getLogId(lastState);
+                if (logId > 0) {
+                    store.rollbackTo(this, logId, 0);
+                }
+            }
+        } finally {
+            store.endTransaction(this, true);
         }
-        store.endTransaction(this, true);
     }
 
     /**

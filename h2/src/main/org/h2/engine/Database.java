@@ -2146,7 +2146,7 @@ public class Database implements DataHandler {
         if(exception != null) {
             return exception;
         }
-        return backgroundException.get();
+        return backgroundException.getAndSet(null);
     }
 
 

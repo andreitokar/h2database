@@ -775,26 +775,10 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
         checkCommitRollback();
         currentTransactionName = null;
         transactionStart = 0;
-//*
-        boolean needCommit = undoLog.size() > 0 || transaction != null && transaction.hasChanges();
+        boolean needCommit = undoLog.size() > 0 || transaction != null;
         if(needCommit) {
             rollbackTo(null, false);
         }
-/*/
-        boolean needCommit = false;
-        if (undoLog.size() > 0) {
-            rollbackTo(null, false);
-            needCommit = true;
-        }
-        if (transaction != null) {
-            rollbackTo(null, false);
-            needCommit = true;
-            // rollback stored the undo operations in the transaction
-            // committing will end the transaction
-            transaction.commit();
-            transaction = null;
-        }
-//*/
         if (locks.size() > 0 || needCommit) {
             database.commit(this);
         }
@@ -888,9 +872,9 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
                 // and we need to unlock before we call removeSession(), which might
                 // want to take the meta lock using the system session.
                 database.unlockMeta(this);
-                database.removeSession(this);
             } finally {
                 closed = true;
+                database.removeSession(this);
             }
         }
     }
