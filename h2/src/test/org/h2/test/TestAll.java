@@ -730,161 +730,163 @@ kill -9 `jps -l | grep "org.h2.test." | cut -d " " -f 1`
         System.out.println("Test " + toString() +
                 " (" + Utils.getMemoryUsed() + " KB used)");
         beforeTest();
+        try {
 
-        // db
-        addTest(new TestScriptSimple());
-        addTest(new TestScript());
-        addTest(new TestAlter());
-        addTest(new TestAlterSchemaRename());
-        addTest(new TestAutoRecompile());
-        addTest(new TestBackup());
-        addTest(new TestBigDb());
-        addTest(new TestBigResult());
-        addTest(new TestCases());
-        addTest(new TestCheckpoint());
-        addTest(new TestCompatibility());
-        addTest(new TestCompatibilityOracle());
-        addTest(new TestCsv());
-        addTest(new TestDeadlock());
-        if (vmlens) {
-            return;
+            // db
+            addTest(new TestScriptSimple());
+            addTest(new TestScript());
+            addTest(new TestAlter());
+            addTest(new TestAlterSchemaRename());
+            addTest(new TestAutoRecompile());
+            addTest(new TestBackup());
+            addTest(new TestBigDb());
+            addTest(new TestBigResult());
+            addTest(new TestCases());
+            addTest(new TestCheckpoint());
+            addTest(new TestCompatibility());
+            addTest(new TestCompatibilityOracle());
+            addTest(new TestCsv());
+            addTest(new TestDeadlock());
+            if (vmlens) {
+                return;
+            }
+            addTest(new TestDrop());
+            addTest(new TestDuplicateKeyUpdate());
+            addTest(new TestEncryptedDb());
+            addTest(new TestExclusive());
+            addTest(new TestFullText());
+            addTest(new TestFunctionOverload());
+            addTest(new TestFunctions());
+            addTest(new TestInit());
+            addTest(new TestIndex());
+            addTest(new TestIndexHints());
+            addTest(new TestLargeBlob());
+            addTest(new TestLinkedTable());
+            addTest(new TestListener());
+            addTest(new TestLob());
+            addTest(new TestMergeUsing());
+            addTest(new TestMultiConn());
+            addTest(new TestMultiDimension());
+            addTest(new TestMultiThreadedKernel());
+            addTest(new TestOpenClose());
+            addTest(new TestOptimizations());
+            addTest(new TestOptimizerHints());
+            addTest(new TestOutOfMemory());
+            addTest(new TestReadOnly());
+            addTest(new TestRecursiveQueries());
+            addTest(new TestGeneralCommonTableQueries());
+            if (!memory) {
+                // requires persistent store for reconnection tests
+                addTest(new TestPersistentCommonTableExpressions());
+            }
+            addTest(new TestRights());
+            addTest(new TestRunscript());
+            addTest(new TestSQLInjection());
+            addTest(new TestSessionsLocks());
+            addTest(new TestSelectCountNonNullColumn());
+            addTest(new TestSequence());
+            addTest(new TestShow());
+            addTest(new TestSpaceReuse());
+            addTest(new TestSpatial());
+            addTest(new TestSpeed());
+            addTest(new TestTableEngines());
+            addTest(new TestRowFactory());
+            addTest(new TestTempTables());
+            addTest(new TestTransaction());
+            addTest(new TestTriggersConstraints());
+            addTest(new TestTwoPhaseCommit());
+            addTest(new TestView());
+            addTest(new TestViewAlterTable());
+            addTest(new TestViewDropView());
+            addTest(new TestReplace());
+            addTest(new TestSynonymForTable());
+            addTest(new TestColumnNamer());
+
+
+            // jaqu
+            addTest(new AliasMapTest());
+            addTest(new AnnotationsTest());
+            addTest(new ClobTest());
+            addTest(new ModelsTest());
+            addTest(new SamplesTest());
+            addTest(new UpdateTest());
+
+            // jdbc
+            addTest(new TestBatchUpdates());
+            addTest(new TestCallableStatement());
+            addTest(new TestCancel());
+            //        addTest(new TestConcurrentConnectionUsage());
+            addTest(new TestConnection());
+            addTest(new TestDatabaseEventListener());
+            addTest(new TestJavaObject());
+            addTest(new TestLimitUpdates());
+            addTest(new TestLobApi());
+            addTest(new TestManyJdbcObjects());
+            addTest(new TestMetaData());
+            addTest(new TestNativeSQL());
+            addTest(new TestPreparedStatement());
+            addTest(new TestResultSet());
+            addTest(new TestStatement());
+            addTest(new TestTransactionIsolation());
+            addTest(new TestUpdatableResultSet());
+            addTest(new TestZloty());
+            addTest(new TestCustomDataTypesHandler());
+            addTest(new TestSetCollation());
+
+            // jdbcx
+            addTest(new TestConnectionPool());
+            addTest(new TestDataSource());
+            addTest(new TestXA());
+            addTest(new TestXASimple());
+
+            // server
+            addTest(new TestAutoServer());
+            addTest(new TestNestedLoop());
+
+            // mvcc & row level locking
+            addTest(new TestMvcc1());
+            addTest(new TestMvcc2());
+            addTest(new TestMvcc3());
+            addTest(new TestMvcc4());
+            addTest(new TestMvccMultiThreaded());
+            addTest(new TestMvccMultiThreaded2());
+            addTest(new TestRowLocks());
+
+            // synth
+            addTest(new TestBtreeIndex());
+            addTest(new TestConcurrentUpdate());
+            addTest(new TestDiskFull());
+            addTest(new TestCrashAPI());
+            addTest(new TestFuzzOptimizations());
+            addTest(new TestLimit());
+            addTest(new TestRandomCompare());
+            addTest(new TestKillRestart());
+            addTest(new TestKillRestartMulti());
+            addTest(new TestMultiThreaded());
+            addTest(new TestOuterJoins());
+            addTest(new TestNestedJoins());
+            addTest(new TestStringAggCompatibility());
+
+            runAddedTests();
+
+            // serial
+            addTest(new TestDateStorage());
+            addTest(new TestDriver());
+            addTest(new TestJavaObjectSerializer());
+            addTest(new TestLocale());
+            addTest(new TestMemoryUsage());
+            addTest(new TestMultiThread());
+            addTest(new TestPowerOff());
+            addTest(new TestReorderWrites());
+            addTest(new TestRandomSQL());
+            addTest(new TestQueryCache());
+            addTest(new TestUrlJavaObjectSerializer());
+            addTest(new TestWeb());
+
+            runAddedTests(1);
+        } finally {
+            afterTest();
         }
-        addTest(new TestDrop());
-        addTest(new TestDuplicateKeyUpdate());
-        addTest(new TestEncryptedDb());
-        addTest(new TestExclusive());
-        addTest(new TestFullText());
-        addTest(new TestFunctionOverload());
-        addTest(new TestFunctions());
-        addTest(new TestInit());
-        addTest(new TestIndex());
-        addTest(new TestIndexHints());
-        addTest(new TestLargeBlob());
-        addTest(new TestLinkedTable());
-        addTest(new TestListener());
-        addTest(new TestLob());
-        addTest(new TestMergeUsing());
-        addTest(new TestMultiConn());
-        addTest(new TestMultiDimension());
-        addTest(new TestMultiThreadedKernel());
-        addTest(new TestOpenClose());
-        addTest(new TestOptimizations());
-        addTest(new TestOptimizerHints());
-        addTest(new TestOutOfMemory());
-        addTest(new TestReadOnly());
-        addTest(new TestRecursiveQueries());
-        addTest(new TestGeneralCommonTableQueries());
-        if (!memory) {
-            // requires persistent store for reconnection tests
-            addTest(new TestPersistentCommonTableExpressions());
-        }
-        addTest(new TestRights());
-        addTest(new TestRunscript());
-        addTest(new TestSQLInjection());
-        addTest(new TestSessionsLocks());
-        addTest(new TestSelectCountNonNullColumn());
-        addTest(new TestSequence());
-        addTest(new TestShow());
-        addTest(new TestSpaceReuse());
-        addTest(new TestSpatial());
-        addTest(new TestSpeed());
-        addTest(new TestTableEngines());
-        addTest(new TestRowFactory());
-        addTest(new TestTempTables());
-        addTest(new TestTransaction());
-        addTest(new TestTriggersConstraints());
-        addTest(new TestTwoPhaseCommit());
-        addTest(new TestView());
-        addTest(new TestViewAlterTable());
-        addTest(new TestViewDropView());
-        addTest(new TestReplace());
-        addTest(new TestSynonymForTable());
-        addTest(new TestColumnNamer());
-
-
-        // jaqu
-        addTest(new AliasMapTest());
-        addTest(new AnnotationsTest());
-        addTest(new ClobTest());
-        addTest(new ModelsTest());
-        addTest(new SamplesTest());
-        addTest(new UpdateTest());
-
-        // jdbc
-        addTest(new TestBatchUpdates());
-        addTest(new TestCallableStatement());
-        addTest(new TestCancel());
-//        addTest(new TestConcurrentConnectionUsage());
-        addTest(new TestConnection());
-        addTest(new TestDatabaseEventListener());
-        addTest(new TestJavaObject());
-        addTest(new TestLimitUpdates());
-        addTest(new TestLobApi());
-        addTest(new TestManyJdbcObjects());
-        addTest(new TestMetaData());
-        addTest(new TestNativeSQL());
-        addTest(new TestPreparedStatement());
-        addTest(new TestResultSet());
-        addTest(new TestStatement());
-        addTest(new TestTransactionIsolation());
-        addTest(new TestUpdatableResultSet());
-        addTest(new TestZloty());
-        addTest(new TestCustomDataTypesHandler());
-        addTest(new TestSetCollation());
-
-        // jdbcx
-        addTest(new TestConnectionPool());
-        addTest(new TestDataSource());
-        addTest(new TestXA());
-        addTest(new TestXASimple());
-
-        // server
-        addTest(new TestAutoServer());
-        addTest(new TestNestedLoop());
-
-        // mvcc & row level locking
-        addTest(new TestMvcc1());
-        addTest(new TestMvcc2());
-        addTest(new TestMvcc3());
-        addTest(new TestMvcc4());
-        addTest(new TestMvccMultiThreaded());
-        addTest(new TestMvccMultiThreaded2());
-        addTest(new TestRowLocks());
-
-        // synth
-        addTest(new TestBtreeIndex());
-        addTest(new TestConcurrentUpdate());
-        addTest(new TestDiskFull());
-        addTest(new TestCrashAPI());
-        addTest(new TestFuzzOptimizations());
-        addTest(new TestLimit());
-        addTest(new TestRandomCompare());
-        addTest(new TestKillRestart());
-        addTest(new TestKillRestartMulti());
-        addTest(new TestMultiThreaded());
-        addTest(new TestOuterJoins());
-        addTest(new TestNestedJoins());
-        addTest(new TestStringAggCompatibility());
-
-        runAddedTests();
-
-        // serial
-        addTest(new TestDateStorage());
-        addTest(new TestDriver());
-        addTest(new TestJavaObjectSerializer());
-        addTest(new TestLocale());
-        addTest(new TestMemoryUsage());
-        addTest(new TestMultiThread());
-        addTest(new TestPowerOff());
-        addTest(new TestReorderWrites());
-        addTest(new TestRandomSQL());
-        addTest(new TestQueryCache());
-        addTest(new TestUrlJavaObjectSerializer());
-        addTest(new TestWeb());
-
-        runAddedTests(1);
-
-        afterTest();
     }
 
     private void testUnit() {
@@ -1089,7 +1091,7 @@ kill -9 `jps -l | grep "org.h2.test." | cut -d " " -f 1`
     }
 
     public int getPort() {
-        return server == null ? 9192 : server.getPort();
+        return server == null ? Constants.DEFAULT_TCP_PORT : server.getPort();
     }
 
     /**

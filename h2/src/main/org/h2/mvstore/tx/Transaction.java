@@ -240,7 +240,6 @@ public final class Transaction {
      */
     long log(int mapId, Object key, VersionedValue oldValue) {
         long currentState = statusAndLogId.getAndIncrement();
-        checkNotClosed(Transaction.getStatus(currentState));
         long logId = getLogId(currentState);
         int currentStatus = getStatus(currentState);
         checkOpen(currentStatus);
@@ -286,10 +285,8 @@ public final class Transaction {
      */
     public <K, V> TransactionMap<K, V> openMap(String name,
                                                DataType keyType, DataType valueType) {
-        checkNotClosed();
-        MVMap<K, VersionedValue> map = store.openMap(name, keyType,
-                valueType);
-        return new TransactionMap<>(this, map);
+        MVMap<K, VersionedValue> map = store.openMap(name, keyType, valueType);
+        return openMap(map);
     }
 
     /**
@@ -300,8 +297,7 @@ public final class Transaction {
      * @param map the base map
      * @return the transactional map
      */
-    public <K, V> TransactionMap<K, V> openMap(
-            MVMap<K, VersionedValue> map) {
+    public <K, V> TransactionMap<K, V> openMap(MVMap<K, VersionedValue> map) {
         checkNotClosed();
         return new TransactionMap<>(this, map);
     }
@@ -374,13 +370,10 @@ public final class Transaction {
      */
     public void rollback() {
         try {
-            int status = getStatus();
-            if(status != STATUS_COMMITTING && status != STATUS_COMMITTED) {
-                long lastState = setStatus(STATUS_ROLLED_BACK);
-                long logId = getLogId(lastState);
-                if (logId > 0) {
-                    store.rollbackTo(this, logId, 0);
-                }
+            long lastState = setStatus(STATUS_ROLLED_BACK);
+            long logId = getLogId(lastState);
+            if (logId > 0) {
+                store.rollbackTo(this, logId, 0);
             }
         } finally {
             store.endTransaction(this, true);
@@ -418,15 +411,11 @@ public final class Transaction {
     /**
      * Check whether this transaction is open or prepared.
      */
-    private void checkNotClosed(int status) {
-        if (status == STATUS_CLOSED) {
+    private void checkNotClosed() {
+        if (getStatus() == STATUS_CLOSED) {
             throw DataUtils.newIllegalStateException(
                     DataUtils.ERROR_CLOSED, "Transaction {0} is closed", transactionId);
         }
-    }
-
-    private void checkNotClosed() {
-        checkNotClosed(getStatus());
     }
 
     void closeIt() {

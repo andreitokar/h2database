@@ -26,7 +26,6 @@ import org.h2.engine.SysProperties;
 import org.h2.index.Cursor;
 import org.h2.index.Index;
 import org.h2.index.IndexType;
-import org.h2.index.MultiVersionIndex;
 import org.h2.message.DbException;
 import org.h2.message.Trace;
 import org.h2.mvstore.DataUtils;
@@ -130,6 +129,9 @@ public final class MVTable extends TableBase {
     public MVTable(CreateTableData data, MVTableEngine.Store store) {
         super(data);
         nextAnalyze = database.getSettings().analyzeAuto;
+        if(nextAnalyze <= 0) {
+            nextAnalyze = Integer.MAX_VALUE;
+        }
         this.store = store;
         this.transactionStore = store.getTransactionStore();
         this.isHidden = data.isHidden;
@@ -741,7 +743,6 @@ public final class MVTable extends TableBase {
         long savepoint = t.setSavepoint();
         try {
             for (Index index : indexes) {
-                assert !(index instanceof MultiVersionIndex);
                 index.add(session, row);
             }
         } catch (Throwable e) {
@@ -768,13 +769,12 @@ public final class MVTable extends TableBase {
                 index.update(session, oldRow, newRow);
             }
         } catch (Throwable e) {
-            DbException dbException = DbException.convert(e);
             try {
                 t.rollbackToSavepoint(savepoint);
             } catch (Throwable ignore) {
-                dbException.addSuppressed(ignore);
+                e.addSuppressed(ignore);
             }
-            throw dbException;
+            throw DbException.convert(e);
         }
         analyzeIfRequired(session);
     }
@@ -786,13 +786,12 @@ public final class MVTable extends TableBase {
 
     private void analyzeIfRequired(Session session) {
         synchronized (this) {
-            if (nextAnalyze == 0 || nextAnalyze > changesSinceAnalyze++) {
+            if (++changesSinceAnalyze <= nextAnalyze) {
                 return;
             }
             changesSinceAnalyze = 0;
-            int n = 2 * nextAnalyze;
-            if (n > 0) {
-                nextAnalyze = n;
+            if (nextAnalyze <= Integer.MAX_VALUE / 2) {
+                nextAnalyze *= 2;
             }
         }
         session.markTableForAnalyze(this);

@@ -43,6 +43,7 @@ public class Utils {
 
     private static final int GC_DELAY = 50;
     private static final int MAX_GC = 8;
+    private static final int MAX_COLLECTIONS_TO_WAIT = 3;
     private static long lastGC;
 
     private static final HashMap<String, byte[]> RESOURCES = new HashMap<>();
@@ -274,20 +275,31 @@ public class Utils {
         return totalGCTime;
     }
 
+    public static long getGarbageCollectionCount() {
+        long totalGCCount = 0;
+        for (GarbageCollectorMXBean gcMXBean : ManagementFactory.getGarbageCollectorMXBeans()) {
+            long collectionCount = gcMXBean.getCollectionCount();
+            if(collectionCount > 0) {
+                totalGCCount += collectionCount;
+            }
+        }
+        return totalGCCount;
+    }
+
     private static synchronized void collectGarbage() {
-        Runtime runtime = Runtime.getRuntime();
-        long total = runtime.totalMemory();
         long time = System.nanoTime();
         if (lastGC + TimeUnit.MILLISECONDS.toNanos(GC_DELAY) < time) {
+            Runtime runtime = Runtime.getRuntime();
+            long initialCount = getGarbageCollectionCount();
             for (int i = 0; i < MAX_GC; i++) {
                 runtime.gc();
-                long now = runtime.totalMemory();
-                if (now == total) {
-                    lastGC = System.nanoTime();
+                try { Thread.sleep(GC_DELAY); } catch (InterruptedException ignore) {}
+                long count = getGarbageCollectionCount();
+                if (count - initialCount > MAX_COLLECTIONS_TO_WAIT) {
                     break;
                 }
-                total = now;
             }
+            lastGC = System.nanoTime();
         }
     }
 

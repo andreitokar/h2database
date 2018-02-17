@@ -33,8 +33,11 @@ public class TestJavaObjectSerializer extends TestBase {
         test.config.memory = true;
         test.config.networked = true;
         test.config.beforeTest();
-        test.test();
-        test.config.afterTest();
+        try {
+            test.test();
+        } finally {
+            test.config.afterTest();
+        }
     }
 
     @Override
