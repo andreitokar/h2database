@@ -318,6 +318,7 @@ public class Column {
                 synchronized (localDefaultExpression) {
                     value = localDefaultExpression.getValue(session).convertTo(type);
                 }
+                session.getGeneratedKeys().add(this);
                 if (primaryKey) {
                     session.setLastIdentity(value);
                 }
@@ -330,6 +331,7 @@ public class Column {
                 synchronized (localDefaultExpression) {
                     value = localDefaultExpression.getValue(session).convertTo(type);
                 }
+                session.getGeneratedKeys().add(this);
             }
             if (value == ValueNull.INSTANCE && !nullable) {
                 if (mode.convertInsertNullToZero) {

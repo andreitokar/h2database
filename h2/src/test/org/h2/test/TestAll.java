@@ -97,6 +97,7 @@ import org.h2.test.jdbc.TestConnection;
 import org.h2.test.jdbc.TestCustomDataTypesHandler;
 import org.h2.test.jdbc.TestDatabaseEventListener;
 import org.h2.test.jdbc.TestDriver;
+import org.h2.test.jdbc.TestGetGeneratedKeys;
 import org.h2.test.jdbc.TestJavaObject;
 import org.h2.test.jdbc.TestJavaObjectSerializer;
 import org.h2.test.jdbc.TestLimitUpdates;
