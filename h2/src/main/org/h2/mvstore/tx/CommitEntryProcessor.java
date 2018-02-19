@@ -20,8 +20,8 @@ import java.util.Queue;
  *
  * @author <a href='mailto:andrei.tokar@gmail.com'>Andrei Tokar</a>
  */
-final class CommitProcessor extends MVMap.DecisionMaker<VersionedValue>
-                            implements MVMap.Processor<Long, Record>,
+final class CommitEntryProcessor extends MVMap.DecisionMaker<VersionedValue>
+                            implements MVMap.EntryProcessor<Long, Record>,
                                        MVMap.LeafProcessor
 {
     private final TransactionStore transactionStore;
@@ -36,7 +36,7 @@ final class CommitProcessor extends MVMap.DecisionMaker<VersionedValue>
     private Object lastKeyOnPage;
 
 
-    CommitProcessor(TransactionStore transactionStore, int transactionId, boolean batchMode) {
+    CommitEntryProcessor(TransactionStore transactionStore, int transactionId, boolean batchMode) {
         this.transactionStore = transactionStore;
         this.transactionId = transactionId;
         this.batchMode = batchMode;
@@ -233,7 +233,7 @@ final class CommitProcessor extends MVMap.DecisionMaker<VersionedValue>
     }
 
     private boolean verifyCleanCommit(MVMap<Object, VersionedValue> map) {
-        MVMap.process(map.getRootPage(), null, new MVMap.Processor<Object, VersionedValue>() {
+        MVMap.process(map.getRootPage(), null, new MVMap.EntryProcessor<Object, VersionedValue>() {
             @Override
             public boolean process(Object key, VersionedValue value) {
                 assert TransactionStore.getTransactionId(value.getOperationId()) != transactionId;

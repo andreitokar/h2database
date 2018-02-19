@@ -155,6 +155,26 @@ public abstract class Page implements Cloneable
     }
 
     /**
+     * Get the value for the given key, or null if not found.
+     * Search is done in the tree rooted at given page.
+     *
+     * @param key the key
+     * @param p the root page
+     * @return the value, or null if not found
+     */
+    public static Object get(Page p, Object key) {
+        while (true) {
+            int index = p.binarySearch(key);
+            if (p.isLeaf()) {
+                return index >= 0 ? p.getValue(index) : null;
+            } else if (index++ < 0) {
+                index = -index;
+            }
+            p = p.getChildPage(index);
+        }
+    }
+
+    /**
      * Read a page.
      *
      * @param fileStore the file store
@@ -343,26 +363,6 @@ public abstract class Page implements Cloneable
         return pos;
     }
 
-    /**
-     * Get the value for the given key, or null if not found.
-     * Search is done in the tree rooted at given page.
-     *
-     * @param key the key
-     * @param p the root page
-     * @return the value, or null if not found
-     */
-    public static Object get(Page p, Object key) {
-        while (true) {
-            int index = p.binarySearch(key);
-            if (p.isLeaf()) {
-                return index >= 0 ? p.getValue(index) : null;
-            } else if (index++ < 0) {
-                index = -index;
-            }
-            p = p.getChildPage(index);
-        }
-    }
-
     @Override
     public String toString() {
         StringBuilder buff = new StringBuilder();
@@ -372,7 +372,7 @@ public abstract class Page implements Cloneable
 
     protected void dump(StringBuilder buff) {
         buff.append("id: ").append(System.identityHashCode(this)).append('\n');
-        buff.append("pos: ").append(Long.toHexString(pos)).append("\n");
+        buff.append("pos: ").append(Long.toHexString(pos)).append('\n');
         if (isSaved()) {
             int chunkId = DataUtils.getPageChunkId(pos);
             buff.append("chunk: ").append(Long.toHexString(chunkId)).append('\n');

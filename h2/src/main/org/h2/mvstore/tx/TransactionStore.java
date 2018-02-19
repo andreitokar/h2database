@@ -385,7 +385,7 @@ public final class TransactionStore {
                 MVMap<Long, Record> undoLog = undoLogs[transactionId];
                 MVMap.RootReference rootReference = undoLog.flushAppendBuffer();
                 Page rootPage = rootReference.root;
-                CommitProcessor committProcessor = new CommitProcessor(this, transactionId,
+                CommitEntryProcessor committProcessor = new CommitEntryProcessor(this, transactionId,
                         rootPage.getTotalCount() > 32);
                 MVMap.process(rootPage, null, committProcessor);
                 committProcessor.flush();

@@ -32,7 +32,6 @@ import org.h2.compress.Compressor;
 import org.h2.engine.Constants;
 import org.h2.mvstore.cache.CacheLongKeyLIRS;
 import org.h2.util.MathUtils;
-import org.h2.util.Utils;
 import static org.h2.mvstore.MVMap.INITIAL_VERSION;
 
 /*
@@ -571,13 +570,9 @@ public final class MVStore {
     private MVMap<String, String> getMetaMap(long version) {
         Chunk c = getChunkForVersion(version);
         DataUtils.checkArgument(c != null, "Unknown version {0}", version);
-//        if(c == null || c.block == Long.MAX_VALUE) {
-//            return meta;
-//        } else {
-            c = readChunkHeader(c.block);
-            MVMap<String, String> oldMeta = meta.openReadOnly(c.metaRootPos, version);
-            return oldMeta;
-//        }
+        c = readChunkHeader(c.block);
+        MVMap<String, String> oldMeta = meta.openReadOnly(c.metaRootPos, version);
+        return oldMeta;
     }
 
     private Chunk getChunkForVersion(long version) {
@@ -774,7 +769,6 @@ public final class MVStore {
     }
 
     private Chunk verifyLastChunks() {
-//        long time = getTimeSinceCreation();
         assert lastChunk == null || chunks.containsKey(lastChunk.id) : lastChunk;
         BitSet validIds = new BitSet();
         Queue<Chunk> queue = new PriorityQueue<>(chunks.size(), new Comparator<Chunk>() {
@@ -785,21 +779,8 @@ public final class MVStore {
         });
         queue.addAll(chunks.values());
         int newestValidChunk = -1;
-//        Chunk old = null;
         Chunk c;
         while((c = queue.poll()) != null) {
-/*
-            if (old != null && c.time < old.time) {
-                // old chunk (maybe leftover from a previous crash)
-                break;
-            }
-            old = c;
-            if (c.time + retentionTime < time) {
-                // old chunk, no need to verify
-                newestValidChunk = c.id;
-                continue;
-            }
-*/
             Chunk test = readChunkHeaderAndFooter(c.block);
             if (test == null || test.id != c.id) {
                 continue;
@@ -1358,7 +1339,7 @@ public final class MVStore {
                 }
             }
         }
-        return collector.referenced;
+        return collector.getReferenced();
     }
 
 
@@ -1388,6 +1369,10 @@ public final class MVStore {
             if (child != null) {
                 child.setMapId(mapId);
             }
+        }
+
+        public Set<Integer> getReferenced() {
+            return referenced;
         }
 
         public void visit(long pos) {
@@ -1494,10 +1479,7 @@ public final class MVStore {
             }
         }
         Chunk r = retainChunk;
-        if (r != null && c.version > r.version) {
-            return false;
-        }
-        return true;
+        return r == null || c.version <= r.version;
     }
 
     private long getTimeSinceCreation() {
@@ -2819,8 +2801,8 @@ public final class MVStore {
     }
 
     public static final class TxCounter {
-        private final long version;
-        private final AtomicInteger counter = new AtomicInteger();
+        public final long version;
+        public final AtomicInteger counter = new AtomicInteger();
 
         private TxCounter(long version) {
             this.version = version;

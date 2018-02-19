@@ -151,7 +151,7 @@ public final class TransactionMap<K, V> {
     }
 
     private static final class MapSizeAdjuster extends AbstractMapSizeAdjuster
-                                               implements MVMap.Processor<Object,VersionedValue> {
+                                               implements MVMap.EntryProcessor<Object,VersionedValue> {
 
         private MapSizeAdjuster(BitSet committingTransactions, int transactionId) {
             super(committingTransactions, transactionId);
@@ -172,7 +172,7 @@ public final class TransactionMap<K, V> {
     }
 
     private static final class UndoLogMapSizeAdjuster extends AbstractMapSizeAdjuster
-                                                      implements MVMap.Processor<Long,Record> {
+                                                      implements MVMap.EntryProcessor<Long,Record> {
         private final Page root;
         private final int    mapId;
 

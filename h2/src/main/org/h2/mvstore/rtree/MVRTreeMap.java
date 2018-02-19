@@ -51,7 +51,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
     @Override
     @SuppressWarnings("unchecked")
     public V get(Object key) {
-        V result = (V) get(getRootPage(), key);
+        V result = get(getRootPage(), key);
         return result;
     }
 
