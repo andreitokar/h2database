@@ -1108,7 +1108,7 @@ public abstract class Page implements Cloneable
         protected void readPayLoad(ByteBuffer buff) {
             int keyCount = getKeyCount();
             children = new PageReference[keyCount + 1];
-            long[] p = new long[keyCount + 1];
+            long p[] = new long[keyCount + 1];
             for (int i = 0; i <= keyCount; i++) {
                 p[i] = buff.getLong();
             }
@@ -1181,12 +1181,10 @@ public abstract class Page implements Cloneable
 
         @Override
         protected void recalculateMemory() {
-            if(isPersistent()) {
-                super.recalculateMemory();
-                int mem = DataUtils.PAGE_NODE_MEMORY + Constants.MEMORY_ARRAY +
-                        getRawChildPageCount() * (Constants.MEMORY_POINTER + DataUtils.PAGE_MEMORY_CHILD);
-                addMemory(mem);
-            }
+            super.recalculateMemory();
+            int mem = DataUtils.PAGE_NODE_MEMORY + Constants.MEMORY_ARRAY +
+                    getRawChildPageCount() * (Constants.MEMORY_POINTER + DataUtils.PAGE_MEMORY_CHILD);
+            addMemory(mem);
         }
 
         @Override
@@ -1431,12 +1429,10 @@ public abstract class Page implements Cloneable
 
         @Override
         protected void recalculateMemory() {
-            if(isPersistent()) {
-                super.recalculateMemory();
-                int mem = DataUtils.PAGE_LEAF_MEMORY + Constants.MEMORY_ARRAY +
-                            map.getExtendedValueType().getMemorySize(values, getKeyCount());
-                addMemory(mem);
-            }
+            super.recalculateMemory();
+            int mem = DataUtils.PAGE_LEAF_MEMORY + Constants.MEMORY_ARRAY +
+                        map.getExtendedValueType().getMemorySize(values, getKeyCount());
+            addMemory(mem);
         }
 
         @Override

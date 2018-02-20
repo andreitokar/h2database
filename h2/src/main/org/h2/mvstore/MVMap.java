@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicReference;
+import org.h2.engine.Constants;
 import org.h2.mvstore.type.DataType;
 import org.h2.mvstore.type.ExtendedDataType;
 import org.h2.mvstore.type.ObjectDataType;
@@ -41,7 +42,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     /**
      * The store.
      */
-    protected final MVStore store;
+    public final MVStore store;
 
     private final AtomicReference<RootReference> root;
 
@@ -1489,7 +1490,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         @Override
         public int getMemorySize(Object storage, int size) {
             Object data[] = (Object[])storage;
-            int mem = 0;
+            int mem = size * (Constants.MEMORY_POINTER + Constants.MEMORY_OBJECT);
             for (int i = 0; i < size; i++) {
                 mem += dataType.getMemory(data[i]);
             }

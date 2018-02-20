@@ -854,12 +854,14 @@ public class TestMVStore extends TestBase {
         }
         s.close();
         int[] expectedReadsForCacheSize = {
-                1880, 1789, 1578, 1374, 995, 711, 541
+                1880, 1789, 1616, 1374, 970, 711, 541   // compressed
+//                1887, 1775, 1599, 1355, 1035, 732, 507    // uncompressed
         };
-        for (int cacheSize = 0; cacheSize <= 6; cacheSize += 4) {
+        for (int cacheSize = 0; cacheSize <= 6; cacheSize += 1) {
             int cacheMB = 1 + 3 * cacheSize;
             s = new MVStore.Builder().
                     fileName(fileName).
+                    autoCommitDisabled().
                     cacheSize(cacheMB).open();
             assertEquals(cacheMB, s.getCacheSize());
             map = s.openMap("test");
@@ -871,6 +873,14 @@ public class TestMVStore extends TestBase {
             }
             long readCount = s.getFileStore().getReadCount();
             int expected = expectedReadsForCacheSize[cacheSize];
+            System.out.println("Cache "+cacheMB+"Mb, reads: " + readCount + " expected: " + expected +
+                    " size: " + s.getFileStore().getReadBytes() +
+                    " cache used: " + s.getCacheSizeUsed() +
+                    " cache hits: " + s.getCache().getHits() +
+                    " cache misses: " + s.getCache().getMisses() +
+                    " cache requests: " + (s.getCache().getHits() + s.getCache().getMisses()) +
+                    ""
+            );
             assertTrue("reads: " + readCount + " expected: " + expected,
                     Math.abs(100 - (100 * expected / readCount)) < 5);
             s.close();

@@ -2692,7 +2692,7 @@ public final class MVStore {
         if (cache == null) {
             return 0;
         }
-        return (int) (cache.getUsedMemory() / 1024 / 1024);
+        return (int) (cache.getUsedMemory() >> 20);
     }
 
     /**
@@ -2706,7 +2706,7 @@ public final class MVStore {
         if (cache == null) {
             return 0;
         }
-        return (int) (cache.getMaxMemory() / 1024 / 1024);
+        return (int) (cache.getMaxMemory() >> 20);
     }
 
     /**
