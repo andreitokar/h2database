@@ -668,8 +668,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
             } finally {
                 transaction = null;
             }
-        }
-        if (containsUncommitted()) {
+        } else if (containsUncommitted()) {
             // need to commit even if rollback is not possible
             // (create/drop table and so on)
             database.commit(this);

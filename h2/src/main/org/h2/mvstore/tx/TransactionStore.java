@@ -471,11 +471,12 @@ public final class TransactionStore {
         } while(!success);
 
         if (hasChanges) {
-            if (t.wasStored && !preparedTransactions.isClosed()) {
+            boolean wasStored = t.wasStored;
+            if (wasStored && !preparedTransactions.isClosed()) {
                 preparedTransactions.remove(txId);
             }
 
-            if (store.getAutoCommitDelay() == 0) {
+            if (wasStored || store.getAutoCommitDelay() == 0) {
                 store.commit();
             } else {
                 boolean empty = true;
