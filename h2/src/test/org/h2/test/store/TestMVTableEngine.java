@@ -728,7 +728,7 @@ public class TestMVTableEngine extends TestBase {
                     + Constants.SUFFIX_MV_FILE;
             long size = FileUtils.size(fileName);
             if (i < 10) {
-                maxSize = Math.max(size, maxSize) * 6 / 5 /* * 1.2*/;
+                maxSize = Math.max(size, maxSize) * 6 / 5;
             } else if (size > maxSize) {
                 fail(i + " size: " + size + " max: " + maxSize);
             }
@@ -741,7 +741,6 @@ public class TestMVTableEngine extends TestBase {
         conn.close();
         long sizeNew = FileUtils.size(getBaseDir() + "/" + getTestName()
                 + Constants.SUFFIX_MV_FILE);
-        System.out.println("new: " + sizeNew + " old: " + sizeOld);
         assertTrue("new: " + sizeNew + " old: " + sizeOld, sizeNew < sizeOld);
     }
 

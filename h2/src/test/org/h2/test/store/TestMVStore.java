@@ -873,15 +873,13 @@ public class TestMVStore extends TestBase {
             }
             long readCount = s.getFileStore().getReadCount();
             int expected = expectedReadsForCacheSize[cacheSize];
-            System.out.println("Cache "+cacheMB+"Mb, reads: " + readCount + " expected: " + expected +
+            assertTrue("Cache "+cacheMB+"Mb, reads: " + readCount + " expected: " + expected +
                     " size: " + s.getFileStore().getReadBytes() +
                     " cache used: " + s.getCacheSizeUsed() +
                     " cache hits: " + s.getCache().getHits() +
                     " cache misses: " + s.getCache().getMisses() +
                     " cache requests: " + (s.getCache().getHits() + s.getCache().getMisses()) +
-                    ""
-            );
-            assertTrue("reads: " + readCount + " expected: " + expected,
+                    "",
                     Math.abs(100 - (100 * expected / readCount)) < 5);
             s.close();
         }
@@ -1461,10 +1459,13 @@ public class TestMVStore extends TestBase {
             assertEquals(i + 1, m.size());
         }
         assertEquals(1000, m.size());
+        // previously (131896) we fail to account for initial root page for every map
+        // there are two of them here (meta and "data"), hence lack of 256 bytes
+//        assertEquals(132152, s.getUnsavedMemory());
         // accounting have changed: now we split and count on upward traversal
         // after node modification, whereas before it was on a way down
         // and before node modification
-        assertEquals(64284, s.getUnsavedMemory());
+        assertEquals(127356, s.getUnsavedMemory());
         s.commit();
         assertEquals(2, s.getFileStore().getWriteCount());
         s.close();
