@@ -128,7 +128,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
     private long modificationMetaID = -1;
     private SubQueryInfo subQueryInfo;
     private int parsingView;
-    private Deque<String> viewNameStack = new ArrayDeque<>();
+    private final Deque<String> viewNameStack = new ArrayDeque<>();
     private int preparingQueryExpression;
     private volatile SmallLRUCache<Object, ViewIndex> viewIndexCache;
     private HashMap<Object, ViewIndex> subQueryIndexCache;

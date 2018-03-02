@@ -120,7 +120,7 @@ public final class MVTable extends TableBase {
     private final Trace traceLock;
     private int changesSinceAnalyze;
     private int nextAnalyze;
-    private boolean containsLargeObject;
+    private final boolean containsLargeObject;
     private Column rowIdColumn;
 
     private final MVTableEngine.Store store;
@@ -135,11 +135,14 @@ public final class MVTable extends TableBase {
         this.store = store;
         this.transactionStore = store.getTransactionStore();
         this.isHidden = data.isHidden;
+        boolean b = false;
         for (Column col : getColumns()) {
             if (DataType.isLargeObject(col.getType())) {
-                containsLargeObject = true;
+                b = true;
+                break;
             }
         }
+        containsLargeObject = b;
         traceLock = database.getTrace(Trace.LOCK);
     }
 

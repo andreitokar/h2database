@@ -55,6 +55,15 @@ public interface Index extends SchemaObject {
     void update(Session session, Row oldRow, Row newRow);
 
     /**
+     * Returns {@code true} if {@code find()} implementation performs scan over all
+     * index, {@code false} if {@code find()} performs the fast lookup.
+     *
+     * @return {@code true} if {@code find()} implementation performs scan over all
+     *         index, {@code false} if {@code find()} performs the fast lookup
+     */
+    boolean isFindUsingFullTableScan();
+
+    /**
      * Find a row or a list of rows and create a cursor to iterate over the
      * result.
      *
