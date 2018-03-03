@@ -36,7 +36,7 @@ public class BenchSimple implements Bench {
             prep.setInt(1, i);
             prep.setString(2, "Hello World " + i);
             db.update(prep, "insertTest");
-            if (i % commitEvery == 0) {
+            if ((i+1) % commitEvery == 0) {
                 db.commit();
             }
         }
