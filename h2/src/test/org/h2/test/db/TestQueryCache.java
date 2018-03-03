@@ -74,11 +74,9 @@ public class TestQueryCache extends TestBase {
                 if (i == 1000) {
                     // take from cache and do not close,
                     // so that next iteration will have a cache miss
-                    prep = conn.prepareStatement(query);
+                    conn.prepareStatement(query);
                 } else if (i == 1001) {
                     first = time;
-                    // try to avoid pauses in subsequent iterations
-                    System.gc();
                 } else if (i > 1001) {
                     if (first > time) {
                         firstGreater++;

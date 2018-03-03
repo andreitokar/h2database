@@ -97,7 +97,6 @@ public class TestMemoryUsage extends TestBase {
             }
             stat.execute("CHECKPOINT");
             int usedNow = Utils.getMemoryUsed();
-            System.out.println(usedNow + ", was " + used);
             assertTrue(usedNow + "  < " + used * 1.3, usedNow < used * 1.3);
         }
     }
