@@ -138,7 +138,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     }
 
     /**
-     * Open this map.
+     * Initialize this map.
      */
     protected void init() {}
 
