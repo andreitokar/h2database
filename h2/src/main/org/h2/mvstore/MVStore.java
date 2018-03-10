@@ -471,7 +471,6 @@ public final class MVStore {
      * @param builder the map builder
      * @return the map
      */
-    @SuppressWarnings({ "unchecked", "rawtypes" })
     public synchronized <M extends MVMap<K, V>, K, V> M openMap(
             String name, MVMap.MapBuilder<M, K, V> builder) {
         int id = getMapId(name);
