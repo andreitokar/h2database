@@ -226,12 +226,28 @@ public class MathUtils {
         return res;
     }
 
+    /**
+     * Get the value that is equal to or higher than this value, and that is a
+     * power of two.
+     *
+     * @param x the original value
+     * @return the next power of two value
+     * @throws IllegalArgumentException if x < 0 or x > 0x40000000
+     */
     private static int _nextPowerOf2(int x) {
-        long i = 1;
-        while (i < x && i < (Integer.MAX_VALUE / 2)) {
-            i += i;
+        if (x == 0) {
+            return 1;
+        } else if (x < 0 || x > 0x4000_0000 ) {
+            throw new IllegalArgumentException("Argument out of range"
+                    + " [0x0-0x40000000]. Argument was: " + x);
         }
-        return (int) i;
+        x--;
+        x |= x >> 1;
+        x |= x >> 2;
+        x |= x >> 4;
+        x |= x >> 8;
+        x |= x >> 16;
+        return ++x;
     }
 
     /**

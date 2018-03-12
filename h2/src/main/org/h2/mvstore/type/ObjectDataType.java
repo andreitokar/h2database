@@ -21,6 +21,7 @@ import java.util.UUID;
 import org.h2.engine.Constants;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.WriteBuffer;
+import org.h2.util.Utils;
 
 /**
  * A data type implementation for the most common data types, including
@@ -1293,7 +1294,7 @@ public class ObjectDataType implements DataType {
                 return BigInteger.valueOf(DataUtils.readVarLong(buff));
             }
             int len = DataUtils.readVarInt(buff);
-            byte[] bytes = DataUtils.newBytes(len);
+            byte[] bytes = Utils.newBytes(len);
             buff.get(bytes);
             return new BigInteger(bytes);
         }
@@ -1370,7 +1371,7 @@ public class ObjectDataType implements DataType {
             }
             int scale = DataUtils.readVarInt(buff);
             int len = DataUtils.readVarInt(buff);
-            byte[] bytes = DataUtils.newBytes(len);
+            byte[] bytes = Utils.newBytes(len);
             buff.get(bytes);
             BigInteger b = new BigInteger(bytes);
             return new BigDecimal(b, scale);
@@ -1804,7 +1805,7 @@ public class ObjectDataType implements DataType {
             if (tag != TYPE_ARRAY) {
                 byte[] data;
                 int len = tag - TAG_BYTE_ARRAY_0_15;
-                data = DataUtils.newBytes(len);
+                data = Utils.newBytes(len);
                 buff.get(data);
                 return data;
             }
@@ -1868,7 +1869,7 @@ public class ObjectDataType implements DataType {
      */
     static class SerializedObjectType extends AutoDetectDataType {
 
-        private int averageSize = 10000;
+        private int averageSize = 10_000;
 
         SerializedObjectType(ObjectDataType base) {
             super(base, TYPE_SERIALIZED_OBJECT);
@@ -1935,7 +1936,7 @@ public class ObjectDataType implements DataType {
         @Override
         public Object read(ByteBuffer buff, int tag) {
             int len = DataUtils.readVarInt(buff);
-            byte[] data = DataUtils.newBytes(len);
+            byte[] data = Utils.newBytes(len);
             int size = data.length * 2;
             // adjust the average size
             // using an exponential moving average
