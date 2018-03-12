@@ -1281,6 +1281,16 @@ public abstract class Table extends SchemaObjectBase {
         database.checkWritingAllowed();
     }
 
+    private static Value getGeneratedValue(Session session, Column column, Expression expression) {
+        Value v;
+        if (expression == null) {
+            v = column.validateConvertUpdateSequence(session, null);
+        } else {
+            v = expression.getValue(session);
+        }
+        return column.convert(v);
+    }
+
     /**
      * Get or generate a default value for the given column.
      *
@@ -1289,14 +1299,18 @@ public abstract class Table extends SchemaObjectBase {
      * @return the value
      */
     public Value getDefaultValue(Session session, Column column) {
-        Expression defaultExpr = column.getDefaultExpression();
-        Value v;
-        if (defaultExpr == null) {
-            v = column.validateConvertUpdateSequence(session, null);
-        } else {
-            v = defaultExpr.getValue(session);
-        }
-        return column.convert(v);
+        return getGeneratedValue(session, column, column.getDefaultExpression());
+    }
+
+    /**
+     * Generates on update value for the given column.
+     *
+     * @param session the session
+     * @param column the column
+     * @return the value
+     */
+    public Value getOnUpdateValue(Session session, Column column) {
+        return getGeneratedValue(session, column, column.getOnUpdateExpression());
     }
 
     @Override

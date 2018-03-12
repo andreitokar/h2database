@@ -11,6 +11,8 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import org.h2.jdbc.JdbcSQLException;
+import org.h2.message.DbException;
 import org.h2.test.TestBase;
 import org.h2.util.IOUtils;
 
@@ -62,6 +64,9 @@ public class TestMvccMultiThreaded2 extends TestBase {
         ps.setInt(1, 1);
         ps.setInt(2, 100);
         ps.executeUpdate();
+        ps.setInt(1, 2);
+        ps.setInt(2, 200);
+        ps.executeUpdate();
         conn.commit();
 
         ArrayList<SelectForUpdate> threads = new ArrayList<>();
@@ -79,9 +84,11 @@ public class TestMvccMultiThreaded2 extends TestBase {
         @SuppressWarnings("unused")
         int minProcessed = Integer.MAX_VALUE, maxProcessed = 0, totalProcessed = 0;
 
+        boolean allOk = true;
         for (SelectForUpdate sfu : threads) {
             // make sure all threads have stopped by joining with them
             sfu.join();
+            allOk &= sfu.ok;
             totalProcessed += sfu.iterationsProcessed;
             if (sfu.iterationsProcessed > maxProcessed) {
                 maxProcessed = sfu.iterationsProcessed;
@@ -101,6 +108,8 @@ public class TestMvccMultiThreaded2 extends TestBase {
 
         IOUtils.closeSilently(conn);
         deleteDb(getTestName());
+
+        assertTrue(allOk);
     }
 
     /**
@@ -109,6 +118,8 @@ public class TestMvccMultiThreaded2 extends TestBase {
     private class SelectForUpdate extends Thread {
 
         public int iterationsProcessed;
+
+        public boolean ok;
 
         SelectForUpdate() {
         }
@@ -126,29 +137,44 @@ public class TestMvccMultiThreaded2 extends TestBase {
                 Thread.yield();
 
                 while (!done) {
-                    PreparedStatement ps = conn.prepareStatement(
-                            "SELECT * FROM test WHERE entity_id = ? FOR UPDATE");
-                    ps.setString(1, "1");
-                    ResultSet rs = ps.executeQuery();
+                    try {
+                        PreparedStatement ps = conn.prepareStatement(
+                                "SELECT * FROM test WHERE entity_id = ? FOR UPDATE");
+                        String id;
+                        int value;
+                        if ((iterationsProcessed & 1) == 0) {
+                            id = "1";
+                            value = 100;
+                        } else {
+                            id = "2";
+                            value = 200;
+                        }
+                        ps.setString(1, id);
+                        ResultSet rs = ps.executeQuery();
 
-                    assertTrue(rs.next());
-                    assertTrue(rs.getInt(2) == 100);
+                        assertTrue(rs.next());
+                        assertTrue(rs.getInt(2) == value);
 
-                    conn.commit();
-                    iterationsProcessed++;
+                        conn.commit();
+                        iterationsProcessed++;
 
-                    long now = System.currentTimeMillis();
-                    if (now - start > 1000 * TEST_TIME_SECONDS) {
-                        done = true;
+                        long now = System.currentTimeMillis();
+                        if (now - start > 1000 * TEST_TIME_SECONDS) {
+                            done = true;
+                        }
+                    } catch (JdbcSQLException e1) {
+                        throw e1;
                     }
                 }
             } catch (SQLException e) {
                 TestBase.logError("SQL error from thread "+getName(), e);
+                throw DbException.convert(e);
             } catch (Exception e) {
                 TestBase.logError("General error from thread "+getName(), e);
                 throw e;
             }
             IOUtils.closeSilently(conn);
+            ok = true;
         }
     }
 }
