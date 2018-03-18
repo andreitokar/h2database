@@ -354,7 +354,7 @@ public final class MVStore {
             int kb = DataUtils.getConfigParam(config, "autoCommitBufferSize", 1024);
             // 19 KB memory is about 1 KB storage
             autoCommitMemory = kb * 1024 * 19;
-            autoCompactFillRate = DataUtils.getConfigParam(config, "autoCompactFillRate", 50);
+            autoCompactFillRate = DataUtils.getConfigParam(config, "autoCompactFillRate", 40);
             char[] encryptionKey = (char[]) config.get("encryptionKey");
             try {
                 if (!fileStoreIsProvided) {
@@ -722,7 +722,7 @@ public final class MVStore {
                 int length = c.len * BLOCK_SIZE;
                 fileStore.markUsed(start, length);
             }
-            assert fileStore.getFileLengthInUse() == _getFileLengthInUse() : fileStore.getFileLengthInUse() + " != " + _getFileLengthInUse();
+            assert fileStore.getFileLengthInUse() == measureFileLengthInUse() : fileStore.getFileLengthInUse() + " != " + measureFileLengthInUse();
             // read all chunk headers and footers within the retention time,
             // to detect unwritten data after a power failure
         } while((newest = verifyLastChunks()) != null);
@@ -1082,14 +1082,7 @@ public final class MVStore {
     private void storeNow() {
         assert Thread.holdsLock(this);
         long time = getTimeSinceCreation();
-        int freeDelay = retentionTime / 10;
-        if (time >= lastFreeUnusedChunks + freeDelay) {
-            // set early in case it fails (out of memory or so)
-            lastFreeUnusedChunks = time;
-            freeUnusedChunks();
-            // set it here as well, to avoid calling it often if it was slow
-            lastFreeUnusedChunks = getTimeSinceCreation();
-        }
+        freeUnusedIfNeeded(time);
         int currentUnsavedPageCount = unsavedMemory;
         long storeVersion = currentStoreVersion;
         long version = ++currentVersion;
@@ -1124,7 +1117,6 @@ public final class MVStore {
             }
         }
         Chunk c = new Chunk(newChunkId);
-
         c.pageCount = Integer.MAX_VALUE;
         c.pageCountLive = Integer.MAX_VALUE;
         c.maxLen = Long.MAX_VALUE;
@@ -1202,7 +1194,7 @@ public final class MVStore {
         long filePos = allocateFileSpace(length, !reuseSpace);
         c.block = filePos / BLOCK_SIZE;
         c.len = length / BLOCK_SIZE;
-        assert fileStore.getFileLengthInUse() == _getFileLengthInUse() : fileStore.getFileLengthInUse() + " != " + _getFileLengthInUse() + " " + c;
+        assert fileStore.getFileLengthInUse() == measureFileLengthInUse() : fileStore.getFileLengthInUse() + " != " + measureFileLengthInUse() + " " + c;
         c.metaRootPos = metaRoot.getPos();
         // calculate and set the likely next position
         if (reuseSpace) {
@@ -1279,6 +1271,21 @@ public final class MVStore {
         lastStoredVersion = storeVersion;
     }
 
+    /**
+     * Try to free unused chunks. This method doesn't directly write, but can
+     * change the metadata, and therefore cause a background write.
+     */
+    private void freeUnusedIfNeeded(long time) {
+        int freeDelay = retentionTime / 5;
+        if (time >= lastFreeUnusedChunks + freeDelay) {
+            // set early in case it fails (out of memory or so)
+            lastFreeUnusedChunks = time;
+            freeUnusedChunks();
+            // set it here as well, to avoid calling it often if it was slow
+            lastFreeUnusedChunks = getTimeSinceCreation();
+        }
+    }
+
     private synchronized void freeUnusedChunks() {
         if (lastChunk != null && reuseSpace) {
             Set<Integer> referenced = collectReferencedChunks();
@@ -1295,7 +1302,7 @@ public final class MVStore {
                         long start = c.block * BLOCK_SIZE;
                         int length = c.len * BLOCK_SIZE;
                         fileStore.free(start, length);
-                        assert fileStore.getFileLengthInUse() == _getFileLengthInUse() : fileStore.getFileLengthInUse() + " != " + _getFileLengthInUse();
+                        assert fileStore.getFileLengthInUse() == measureFileLengthInUse() : fileStore.getFileLengthInUse() + " != " + measureFileLengthInUse();
                     } else {
                         if (c.unused == 0) {
                             c.unused = time;
@@ -1573,11 +1580,11 @@ public final class MVStore {
      */
     private long getFileLengthInUse() {
         long result = fileStore.getFileLengthInUse();
-        assert result == _getFileLengthInUse() : result + " != " + _getFileLengthInUse();
+        assert result == measureFileLengthInUse() : result + " != " + measureFileLengthInUse();
         return result;
     }
 
-    private long _getFileLengthInUse() {
+    private long measureFileLengthInUse() {
         long size = 2;
         for (Chunk c : chunks.values()) {
             if (c.len != Integer.MAX_VALUE) {
@@ -1841,28 +1848,29 @@ public final class MVStore {
         }
     }
 
-    private ArrayList<Chunk> findOldChunks(int targetFillRate, int write) {
-        if (lastChunk == null) {
-            // nothing to do
-            return null;
-        }
-
-        // calculate the fill rate
-        long maxLengthSum = 0;
-        long maxLengthLiveSum = 0;
-
+    /**
+     * Get the current fill rate (percentage of used space in the file). Unlike
+     * the fill rate of the store, here we only account for chunk data; the fill
+     * rate here is how much of the chunk data is live (still referenced). Young
+     * chunks are considered live.
+     *
+     * @return the fill rate, in percent (100 is completely full)
+     */
+    public int getCurrentFillRate() {
+        long maxLengthSum = 1;
+        long maxLengthLiveSum = 1;
         long time = getTimeSinceCreation();
-
         for (Chunk c : chunks.values()) {
-            // ignore young chunks, because we don't optimize those
-            if (c.time + retentionTime <= time) {
-                maxLengthSum += c.maxLen;
+            maxLengthSum += c.maxLen;
+            if (c.time + retentionTime > time) {
+                // young chunks (we don't optimize those):
+                // assume if they are fully live
+                // so that we don't try to optimize yet
+                // until they get old
+                maxLengthLiveSum += c.maxLen;
+            } else {
                 maxLengthLiveSum += c.maxLenLive;
             }
-        }
-        if (maxLengthLiveSum < 0) {
-            // no old data
-            return null;
         }
         // the fill rate of all chunks combined
         if (maxLengthSum <= 0) {
@@ -1870,6 +1878,16 @@ public final class MVStore {
             maxLengthSum = 1;
         }
         int fillRate = (int) (100 * maxLengthLiveSum / maxLengthSum);
+        return fillRate;
+    }
+
+    private ArrayList<Chunk> findOldChunks(int targetFillRate, int write) {
+        if (lastChunk == null) {
+            // nothing to do
+            return null;
+        }
+        long time = getTimeSinceCreation();
+        int fillRate = getCurrentFillRate();
         if (fillRate >= targetFillRate) {
             return null;
         }
@@ -2340,7 +2358,7 @@ public final class MVStore {
                 long start = c.block * BLOCK_SIZE;
                 int length = c.len * BLOCK_SIZE;
                 fileStore.free(start, length);
-                assert fileStore.getFileLengthInUse() == _getFileLengthInUse() : fileStore.getFileLengthInUse() + " != " + _getFileLengthInUse();
+                assert fileStore.getFileLengthInUse() == measureFileLengthInUse() : fileStore.getFileLengthInUse() + " != " + measureFileLengthInUse();
                 // overwrite the chunk,
                 // so it is not be used later on
                 WriteBuffer buff = getWriteBuffer();
@@ -2542,10 +2560,8 @@ public final class MVStore {
                     fileOps = false;
                 }
                 // use a lower fill rate if there were any file operations
-                int fillRate = fileOps ? autoCompactFillRate / 3 : autoCompactFillRate;
-                // TODO how to avoid endless compaction if there is a bug
-                // in the bookkeeping?
-                compact(fillRate, autoCommitMemory);
+                int targetFillRate = fileOps ? autoCompactFillRate / 3 : autoCompactFillRate;
+                compact(targetFillRate, autoCommitMemory);
                 autoCompactLastFileOpCount = fileStore.getWriteCount() + fileStore.getReadCount();
             }
         } catch (Throwable e) {
@@ -2826,7 +2842,7 @@ public final class MVStore {
         private final MVStore store;
         private final int sleep;
 
-        private BackgroundWriterThread(MVStore store, int sleep, String fileStoreName) {
+        BackgroundWriterThread(MVStore store, int sleep, String fileStoreName) {
             super("MVStore background writer " + fileStoreName);
             this.store = store;
             this.sleep = sleep;
@@ -2914,7 +2930,7 @@ public final class MVStore {
          * this value, then chunks at the end of the file are moved. Compaction
          * stops if the target fill rate is reached.
          * <p>
-         * The default value is 50 (50%). The value 0 disables auto-compacting.
+         * The default value is 40 (40%). The value 0 disables auto-compacting.
          * <p>
          *
          * @param percent the target fill rate
