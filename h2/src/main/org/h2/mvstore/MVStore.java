@@ -1130,9 +1130,9 @@ public final class MVStore {
         c.next = Long.MAX_VALUE;
         chunks.put(c.id, c);
         // force a metadata update
-        meta.put(Chunk.getMetaKey(c.id), c.asString());
-        meta.remove(Chunk.getMetaKey(c.id));
-        markMetaChanged();
+//        meta.put(Chunk.getMetaKey(c.id), c.asString());
+//        meta.remove(Chunk.getMetaKey(c.id));
+//        markMetaChanged();
         ArrayList<Page> changed = new ArrayList<>();
         for (Iterator<MVMap<?, ?>> iter = maps.values().iterator(); iter.hasNext(); ) {
             MVMap<?, ?> map = iter.next();
