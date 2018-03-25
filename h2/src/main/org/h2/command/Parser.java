@@ -285,13 +285,7 @@ public class Parser {
             if (hasMore) {
                 String remaining = originalSQL.substring(parseIndex);
                 if (remaining.trim().length() != 0) {
-                    CommandList list = new CommandList(this, sql, c, remaining);
-                    // list.addCommand(c);
-                    // do {
-                    // c = parseCommand();
-                    // list.addCommand(c);
-                    // } while (currentToken.equals(";"));
-                    c = list;
+                    c = new CommandList(this, sql, c, remaining);
                 }
             }
             return c;
@@ -1135,9 +1129,9 @@ public class Parser {
                 command.setQuery(parseSelect());
                 read(")");
             }
-            command.setQueryAlias(readFromAlias(null, Arrays.asList("ON")));
+            command.setQueryAlias(readFromAlias(null, Collections.singletonList("ON")));
 
-            String[] querySQLOutput = new String[]{null};
+            String[] querySQLOutput = {null};
             List<Column> columnTemplateList = TableView.createQueryColumnTemplateList(null, command.getQuery(),
                     querySQLOutput);
             TableView temporarySourceTableView = createCTEView(
@@ -1152,15 +1146,12 @@ public class Parser {
             command.setSourceTableFilter(sourceTableFilter);
         } else {
             /* Its a table name, simulate a query by building a select query for the table */
-            List<String> excludeIdentifiers = Arrays.asList("ON");
+            List<String> excludeIdentifiers = Collections.singletonList("ON");
             TableFilter sourceTableFilter = readSimpleTableFilter(0, excludeIdentifiers);
             command.setSourceTableFilter(sourceTableFilter);
 
-            StringBuilder buff = new StringBuilder("SELECT * FROM ")
-                    .append(sourceTableFilter.getTable().getName());
-            if (sourceTableFilter.getTableAlias() != null) {
-                buff.append(" AS ").append(sourceTableFilter.getTableAlias());
-            }
+            StringBuilder buff = new StringBuilder("SELECT * FROM ");
+            appendTableWithSchemaAndAlias(buff, sourceTableFilter.getTable(), sourceTableFilter.getTableAlias());
             Prepared preparedQuery = prepare(session, buff.toString(), null/*paramValues*/);
             command.setQuery((Select) preparedQuery);
 
@@ -1203,18 +1194,23 @@ public class Parser {
 
         // build and prepare the targetMatchQuery ready to test each rows
         // existence in the target table (using source row to match)
-        StringBuilder targetMatchQuerySQL = new StringBuilder(
-                "SELECT _ROWID_ FROM " + command.getTargetTable().getName());
-        if (command.getTargetTableFilter().getTableAlias() != null) {
-            targetMatchQuerySQL.append(
-                    " AS " + command.getTargetTableFilter().getTableAlias());
-        }
+        StringBuilder targetMatchQuerySQL = new StringBuilder("SELECT _ROWID_ FROM ");
+        appendTableWithSchemaAndAlias(targetMatchQuerySQL, command.getTargetTable(),
+                command.getTargetTableFilter().getTableAlias());
         targetMatchQuerySQL
                 .append(" WHERE ").append(command.getOnCondition().getSQL());
         command.setTargetMatchQuery(
                 (Select) parse(targetMatchQuerySQL.toString()));
 
         return command;
+    }
+
+    private static void appendTableWithSchemaAndAlias(StringBuilder buff, Table table, String alias) {
+        buff.append(quoteIdentifier(table.getSchema().getName()))
+            .append('.').append(quoteIdentifier(table.getName()));
+        if (alias != null) {
+            buff.append(" AS ").append(quoteIdentifier(alias));
+        }
     }
 
     private Insert parseInsert() {
@@ -2137,8 +2133,7 @@ public class Parser {
             query.setNeverLazy(true);
             return query;
         }
-        Select select = parseSelectSimple();
-        return select;
+        return parseSelectSimple();
     }
 
     private void parseSelectSimpleFromPart(Select command) {
@@ -2443,7 +2438,7 @@ public class Parser {
                     if (database.getMode().prohibitEmptyInPredicate) {
                         throw getSyntaxError();
                     }
-                    r = ValueExpression.get(ValueBoolean.get(false));
+                    r = ValueExpression.get(ValueBoolean.FALSE);
                 } else {
                     if (isSelect()) {
                         Query query = parseSelect();
@@ -2533,7 +2528,7 @@ public class Parser {
                                 } else {
                                     rightFilter.mapAndAddFilter(r);
                                 }
-                                r = ValueExpression.get(ValueBoolean.get(true));
+                                r = ValueExpression.get(ValueBoolean.TRUE);
                             }
                         }
                     } else {
@@ -2636,7 +2631,7 @@ public class Parser {
                     readExpression(), currentSelect, distinct);
                 if (readIf("ORDER")) {
                     read("BY");
-                    r.setGroupConcatOrder(parseSimpleOrderList());
+                    r.setOrderByList(parseSimpleOrderList());
                 }
 
                 if (readIf("SEPARATOR")) {
@@ -2650,7 +2645,7 @@ public class Parser {
                 r.setGroupConcatSeparator(readExpression());
                 if (readIf("ORDER")) {
                     read("BY");
-                    r.setGroupConcatOrder(parseSimpleOrderList());
+                    r.setOrderByList(parseSimpleOrderList());
                 }
             } else {
                 r = null;
@@ -2662,7 +2657,7 @@ public class Parser {
                 readExpression(), currentSelect, distinct);
             if (readIf("ORDER")) {
                 read("BY");
-                r.setArrayAggOrder(parseSimpleOrderList());
+                r.setOrderByList(parseSimpleOrderList());
             }
         } else {
             boolean distinct = readIf("DISTINCT");
@@ -2684,8 +2679,7 @@ public class Parser {
         ArrayList<SelectOrderBy> orderList = New.arrayList();
         do {
             SelectOrderBy order = new SelectOrderBy();
-            Expression expr = readExpression();
-            order.expression = expr;
+            order.expression = readExpression();
             if (readIf("DESC")) {
                 order.descending = true;
             } else {
@@ -2717,8 +2711,7 @@ public class Parser {
             argList.add(readExpression());
         }
         args = argList.toArray(new Expression[0]);
-        JavaFunction func = new JavaFunction(functionAlias, args);
-        return func;
+        return new JavaFunction(functionAlias, args);
     }
 
     private JavaAggregate readJavaAggregate(UserAggregate aggregate) {
@@ -2930,8 +2923,7 @@ public class Parser {
         if (database.isAllowBuiltinAliasOverride()) {
             FunctionAlias functionAlias = database.getSchema(session.getCurrentSchemaName()).findFunction(name);
             if (functionAlias != null) {
-                JavaFunction func = new JavaFunction(functionAlias, new Expression[0]);
-                return func;
+                return new JavaFunction(functionAlias, new Expression[0]);
             }
         }
         Function function = Function.getFunction(database, name);
@@ -3038,7 +3030,7 @@ public class Parser {
             int index = currentValue.getInt() - 1;
             if (index < 0 || index >= Constants.MAX_PARAMETER_INDEX) {
                 throw DbException.getInvalidValueException(
-                        "parameter index", index);
+                        "parameter index", index + 1);
             }
             if (indexedParameterList.size() <= index) {
                 indexedParameterList.ensureCapacity(index + 1);
@@ -3280,11 +3272,11 @@ public class Parser {
             break;
         case TRUE:
             read();
-            r = ValueExpression.get(ValueBoolean.get(true));
+            r = ValueExpression.get(ValueBoolean.TRUE);
             break;
         case FALSE:
             read();
-            r = ValueExpression.get(ValueBoolean.get(false));
+            r = ValueExpression.get(ValueBoolean.FALSE);
             break;
         case ROWNUM:
             read();
@@ -3331,8 +3323,7 @@ public class Parser {
                     throw getSyntaxError();
                 }
                 Expression[] args = { r };
-                JavaFunction func = new JavaFunction(f, args);
-                r = func;
+                r = new JavaFunction(f, args);
             } else {
                 Column col = parseColumnWithType(null);
                 Function function = Function.getFunction(database, "CAST");
@@ -3465,8 +3456,7 @@ public class Parser {
         if (!(expr instanceof ValueExpression)) {
             throw DbException.getSyntaxError(sqlCommand, parseIndex, "string");
         }
-        String s = expr.getValue(session).getString();
-        return s;
+        return expr.getValue(session).getString();
     }
 
     // TODO: why does this function allow defaultSchemaName=null - which resets
@@ -3575,23 +3565,15 @@ public class Parser {
     private boolean equalsToken(String a, String b) {
         if (a == null) {
             return b == null;
-        } else if (a.equals(b)) {
-            return true;
-        } else if (!identifiersToUpper && a.equalsIgnoreCase(b)) {
-            return true;
-        }
-        return false;
+        } else
+            return a.equals(b) || !identifiersToUpper && a.equalsIgnoreCase(b);
     }
 
     private static boolean equalsTokenIgnoreCase(String a, String b) {
         if (a == null) {
             return b == null;
-        } else if (a.equals(b)) {
-            return true;
-        } else if (a.equalsIgnoreCase(b)) {
-            return true;
-        }
-        return false;
+        } else
+            return a.equals(b) || a.equalsIgnoreCase(b);
     }
 
     private boolean isTokenInList(Collection<String> upperCaseTokenList) {
@@ -4843,8 +4825,8 @@ public class Parser {
         } while (readIf(","));
         int columnCount = columns.size();
         int rowCount = rows.size();
-        for (int i = 0; i < rowCount; i++) {
-            if (rows.get(i).size() != columnCount) {
+        for (ArrayList<Expression> row : rows) {
+            if (row.size() != columnCount) {
                 throw DbException.get(ErrorCode.COLUMN_COUNT_DOES_NOT_MATCH);
             }
         }
@@ -4864,10 +4846,9 @@ public class Parser {
         tf.setColumns(columns);
         tf.doneWithParameters();
         Table table = new FunctionTable(mainSchema, session, tf, tf);
-        TableFilter filter = new TableFilter(session, table, null,
+        return new TableFilter(session, table, null,
                 rightsChecked, currentSelect, orderInFrom,
                 null);
-        return filter;
     }
 
     private Call parseCall() {
@@ -5218,7 +5199,6 @@ public class Parser {
         Table recursiveTable = null;
         ArrayList<Column> columns = New.arrayList();
         String[] cols = null;
-        Database db = database;
 
         // column names are now optional - they can be inferred from the named
         // query, if not supplied by user
@@ -5264,9 +5244,9 @@ public class Parser {
          * data and table if we don't have a working CTE already.
          */
         recursiveTable = TableView.createShadowTableForRecursiveTableExpression(
-                isPersistent, session, cteViewName, schema, columns, db);
+                isPersistent, session, cteViewName, schema, columns, database);
         List<Column> columnTemplateList;
-        String[] querySQLOutput = new String[]{null};
+        String[] querySQLOutput = {null};
         try {
             read("AS");
             read("(");
@@ -5281,13 +5261,11 @@ public class Parser {
             TableView.destroyShadowTableForRecursiveExpression(isPersistent, session, recursiveTable);
         }
 
-        TableView view = createCTEView(cteViewName,
+        return createCTEView(cteViewName,
                 querySQLOutput[0], columnTemplateList,
                 true/* allowRecursiveQueryDetection */,
                 true/* add to session */,
                 isPersistent, session);
-
-        return view;
     }
 
     private TableView createCTEView(String cteViewName,  String querySQL,

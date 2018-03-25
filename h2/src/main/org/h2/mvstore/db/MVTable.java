@@ -475,8 +475,7 @@ public final class MVTable extends TableBase {
                 database.getReferentialIntegrity()) {
             ArrayList<Constraint> constraints = getConstraints();
             if (constraints != null) {
-                for (int i = 0, size = constraints.size(); i < size; i++) {
-                    Constraint c = constraints.get(i);
+                for (Constraint c : constraints) {
                     if (c.getConstraintType() != Constraint.Type.REFERENTIAL) {
                         continue;
                     }
@@ -766,9 +765,7 @@ public final class MVTable extends TableBase {
         Transaction t = session.getTransaction();
         long savepoint = t.setSavepoint();
         try {
-            for (int i = 0, size = indexes.size(); i < size; i++) {
-                Index index = indexes.get(i);
-                assert index.isRowIdIndex() == (i == 0) : i + " " + index;
+            for (Index index : indexes) {
                 index.update(session, oldRow, newRow);
             }
         } catch (Throwable e) {

@@ -104,8 +104,7 @@ public abstract class Table extends SchemaObjectBase {
     public void rename(String newName) {
         super.rename(newName);
         if (constraints != null) {
-            for (int i = 0, size = constraints.size(); i < size; i++) {
-                Constraint constraint = constraints.get(i);
+            for (Constraint constraint : constraints) {
                 constraint.rebuild();
             }
         }
@@ -296,8 +295,7 @@ public abstract class Table extends SchemaObjectBase {
     public Index getIndex(String indexName) {
         ArrayList<Index> indexes = getIndexes();
         if (indexes != null) {
-            for (int i = 0; i < indexes.size(); i++) {
-                Index index = indexes.get(i);
+            for (Index index : indexes) {
                 if (index.getName().equals(indexName)) {
                     return index;
                 }
@@ -403,9 +401,7 @@ public abstract class Table extends SchemaObjectBase {
             return;
         }
         if (sequences != null) {
-            for (Sequence s : sequences) {
-                dependencies.add(s);
-            }
+            dependencies.addAll(sequences);
         }
         ExpressionVisitor visitor = ExpressionVisitor.getDependenciesVisitor(
                 dependencies);
@@ -643,8 +639,7 @@ public abstract class Table extends SchemaObjectBase {
         HashSet<Constraint> constraintsToDrop = new HashSet<>();
         if (constraints != null) {
             for (Column col : columnsToDrop) {
-                for (int i = 0, size = constraints.size(); i < size; i++) {
-                    Constraint constraint = constraints.get(i);
+                for (Constraint constraint : constraints) {
                     HashSet<Column> columns = constraint.getReferencedColumns(this);
                     if (!columns.contains(col)) {
                         continue;
@@ -662,8 +657,7 @@ public abstract class Table extends SchemaObjectBase {
         ArrayList<Index> indexes = getIndexes();
         if (indexes != null) {
             for (Column col : columnsToDrop) {
-                for (int i = 0, size = indexes.size(); i < size; i++) {
-                    Index index = indexes.get(i);
+                for (Index index : indexes) {
                     if (index.getCreateSQL() == null) {
                         continue;
                     }
@@ -837,8 +831,7 @@ public abstract class Table extends SchemaObjectBase {
     public Index findPrimaryKey() {
         ArrayList<Index> indexes = getIndexes();
         if (indexes != null) {
-            for (int i = 0, size = indexes.size(); i < size; i++) {
-                Index idx = indexes.get(i);
+            for (Index idx : indexes) {
                 if (idx.getIndexType().isPrimaryKey()) {
                     return idx;
                 }
@@ -973,7 +966,7 @@ public abstract class Table extends SchemaObjectBase {
      * @param constraint the constraint to add
      */
     public void addConstraint(Constraint constraint) {
-        if (constraints == null || constraints.indexOf(constraint) < 0) {
+        if (constraints == null || !constraints.contains(constraint)) {
             constraints = add(constraints, constraint);
         }
     }
@@ -1069,8 +1062,7 @@ public abstract class Table extends SchemaObjectBase {
             boolean before) {
         if (constraints != null) {
             // don't use enhanced for loop to avoid creating objects
-            for (int i = 0, size = constraints.size(); i < size; i++) {
-                Constraint constraint = constraints.get(i);
+            for (Constraint constraint : constraints) {
                 if (constraint.isBefore() == before) {
                     constraint.checkRow(session, this, oldRow, newRow);
                 }

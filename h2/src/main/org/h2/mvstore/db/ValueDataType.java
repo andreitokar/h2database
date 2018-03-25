@@ -499,9 +499,9 @@ public class ValueDataType extends BasicDataType<Value> {
         case Value.NULL:
             return ValueNull.INSTANCE;
         case BOOLEAN_TRUE:
-            return ValueBoolean.get(true);
+            return ValueBoolean.TRUE;
         case BOOLEAN_FALSE:
-            return ValueBoolean.get(false);
+            return ValueBoolean.FALSE;
         case INT_NEG:
             return ValueInt.get(-readVarInt(buff));
         case Value.ENUM:
@@ -598,9 +598,8 @@ public class ValueDataType extends BasicDataType<Value> {
                 int tableId = readVarInt(buff);
                 long lobId = readVarLong(buff);
                 long precision = readVarLong(buff);
-                ValueLobDb lob = ValueLobDb.create(type,
+                return ValueLobDb.create(type,
                         handler, tableId, lobId, null, precision);
-                return lob;
             } else {
                 throw DbException.get(ErrorCode.FILE_CORRUPTED_1,
                         "lob type: " + smallLen);
@@ -624,10 +623,7 @@ public class ValueDataType extends BasicDataType<Value> {
                         readVarInt(buff),
                         readVarInt(buff));
             }
-            while (true) {
-                if (buff.get() == 0) {
-                    break;
-                }
+            while (buff.get() != 0) {
                 Object[] o = new Object[columns];
                 for (int i = 0; i < columns; i++) {
                     o[i] = ((Value) readValue(buff)).getObject();

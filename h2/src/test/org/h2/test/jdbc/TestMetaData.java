@@ -8,11 +8,14 @@ package org.h2.test.jdbc;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.Driver;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Types;
+import java.util.UUID;
+
 import org.h2.api.ErrorCode;
 import org.h2.engine.Constants;
 import org.h2.engine.SysProperties;
@@ -127,7 +130,7 @@ public class TestMetaData extends TestBase {
         rs = stat.executeQuery("select 1 from dual");
         rs.next();
         rsMeta = rs.getMetaData();
-        assertTrue(rsMeta.getCatalogName(1) != null);
+        assertNotNull(rsMeta.getCatalogName(1));
         assertEquals("1", rsMeta.getColumnLabel(1));
         assertEquals("1", rsMeta.getColumnName(1));
         assertEquals("", rsMeta.getSchemaName(1));
@@ -135,6 +138,13 @@ public class TestMetaData extends TestBase {
         assertEquals(ResultSet.HOLD_CURSORS_OVER_COMMIT, conn.getHoldability());
         assertEquals(ResultSet.HOLD_CURSORS_OVER_COMMIT, rs.getHoldability());
         stat.executeUpdate("drop table test");
+
+        PreparedStatement prep = conn.prepareStatement("SELECT X FROM TABLE (X UUID = ?)");
+        prep.setObject(1, UUID.randomUUID());
+        rs = prep.executeQuery();
+        rsMeta = rs.getMetaData();
+        assertEquals("UUID", rsMeta.getColumnTypeName(1));
+
         conn.close();
     }
 
@@ -367,7 +377,7 @@ public class TestMetaData extends TestBase {
         assertTrue(dr.jdbcCompliant());
 
         assertEquals(0, dr.getPropertyInfo(null, null).length);
-        assertTrue(dr.connect("jdbc:test:false", null) == null);
+        assertNull(dr.connect("jdbc:test:false", null));
 
         assertTrue(meta.getNumericFunctions().length() > 0);
         assertTrue(meta.getStringFunctions().length() > 0);
@@ -994,9 +1004,9 @@ public class TestMetaData extends TestBase {
                 Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR,
                 Types.VARCHAR, Types.VARCHAR, Types.VARCHAR }, null, null);
 
-        assertTrue(conn.getWarnings() == null);
+        assertNull(conn.getWarnings());
         conn.clearWarnings();
-        assertTrue(conn.getWarnings() == null);
+        assertNull(conn.getWarnings());
         conn.close();
     }
 
@@ -1050,7 +1060,7 @@ public class TestMetaData extends TestBase {
 
         rs = meta.getTables(null, Constants.SCHEMA_MAIN,
                 null, new String[] { "TABLE" });
-        assertTrue(rs.getStatement() == null);
+        assertNull(rs.getStatement());
         rs.next();
         assertEquals("TEST", rs.getString("TABLE_NAME"));
         assertFalse(rs.next());

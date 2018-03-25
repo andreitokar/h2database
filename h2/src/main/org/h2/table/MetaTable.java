@@ -816,7 +816,7 @@ public class MetaTable extends Table {
             // reduce the number of tables to scan - makes some metadata queries
             // 10x faster
             final ArrayList<Table> tablesToList;
-            if (indexFrom != null && indexTo != null && indexFrom.equals(indexTo)) {
+            if (indexFrom != null && indexFrom.equals(indexTo)) {
                 String tableName = identifier(indexFrom.getString());
                 tablesToList = getTablesByName(session, tableName);
             } else {
@@ -897,7 +897,7 @@ public class MetaTable extends Table {
             // reduce the number of tables to scan - makes some metadata queries
             // 10x faster
             final ArrayList<Table> tablesToList;
-            if (indexFrom != null && indexTo != null && indexFrom.equals(indexTo)) {
+            if (indexFrom != null && indexFrom.equals(indexTo)) {
                 String tableName = identifier(indexFrom.getString());
                 tablesToList = getTablesByName(session, tableName);
             } else {
@@ -1047,9 +1047,7 @@ public class MetaTable extends Table {
             // database settings
             ArrayList<String> settingNames = New.arrayList();
             HashMap<String, String> s = database.getSettings().getSettings();
-            for (String k : s.keySet()) {
-                settingNames.add(k);
-            }
+            settingNames.addAll(s.keySet());
             Collections.sort(settingNames);
             for (String k : settingNames) {
                 add(rows, k, s.get(k));
@@ -1694,7 +1692,8 @@ public class MetaTable extends Table {
                         // CONSTRAINT_NAME
                         identifier(constraint.getName()),
                         // CONSTRAINT_TYPE
-                        constraintType.toString(),
+                        constraintType == Constraint.Type.PRIMARY_KEY ?
+                                constraintType.getSqlName() : constraintType.name(),
                         // TABLE_CATALOG
                         catalog,
                         // TABLE_SCHEMA

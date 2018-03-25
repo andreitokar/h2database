@@ -195,8 +195,7 @@ public class Update extends Prepared {
     public String getPlanSQL() {
         StatementBuilder buff = new StatementBuilder("UPDATE ");
         buff.append(targetTableFilter.getPlanSQL(false)).append("\nSET\n    ");
-        for (int i = 0, size = columns.size(); i < size; i++) {
-            Column c = columns.get(i);
+        for (Column c : columns) {
             Expression e = expressionMap.get(c);
             buff.appendExceptFirst(",\n    ");
             buff.append(c.getName()).append(" = ").append(e.getSQL());
@@ -218,8 +217,7 @@ public class Update extends Prepared {
             condition = condition.optimize(session);
             condition.createIndexConditions(session, targetTableFilter);
         }
-        for (int i = 0, size = columns.size(); i < size; i++) {
-            Column c = columns.get(i);
+        for (Column c : columns) {
             Expression e = expressionMap.get(c);
             e.mapColumns(targetTableFilter, 0);
             if (sourceTableFilter!=null){

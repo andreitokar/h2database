@@ -2908,13 +2908,7 @@ public class Database implements DataHandler {
      * @return true if they match
      */
     public boolean equalsIdentifiers(String a, String b) {
-        if (a == b || a.equals(b)) {
-            return true;
-        }
-        if (!dbSettings.databaseToUpper && a.equalsIgnoreCase(b)) {
-            return true;
-        }
-        return false;
+        return a.equals(b) || (!dbSettings.databaseToUpper && a.equalsIgnoreCase(b));
     }
 
     @Override

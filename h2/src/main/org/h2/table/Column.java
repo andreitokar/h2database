@@ -329,27 +329,31 @@ public class Column {
      */
     public Value validateConvertUpdateSequence(Session session, Value value) {
         final Expression localDefaultExpression = defaultExpression;
+        Mode mode = session.getDatabase().getMode();
         if (value == null) {
             if (localDefaultExpression == null) {
                 value = ValueNull.INSTANCE;
             } else {
                 synchronized (localDefaultExpression) {
-                    value = localDefaultExpression.getValue(session).convertTo(type);
+                    value = convert(localDefaultExpression.getValue(session), mode);
                 }
-                session.getGeneratedKeys().add(this);
+                if (!localDefaultExpression.isConstant()) {
+                    session.getGeneratedKeys().add(this);
+                }
                 if (primaryKey) {
                     session.setLastIdentity(value);
                 }
             }
         }
-        Mode mode = session.getDatabase().getMode();
         if (value == ValueNull.INSTANCE) {
             if (convertNullToDefault) {
                 assert localDefaultExpression != null;
                 synchronized (localDefaultExpression) {
-                    value = localDefaultExpression.getValue(session).convertTo(type);
+                    value = convert(localDefaultExpression.getValue(session), mode);
                 }
-                session.getGeneratedKeys().add(this);
+                if (!localDefaultExpression.isConstant()) {
+                    session.getGeneratedKeys().add(this);
+                }
             }
             if (value == ValueNull.INSTANCE && !nullable) {
                 if (mode.convertInsertNullToZero) {
@@ -455,15 +459,12 @@ public class Column {
             originalSQL = "INT";
         }
         String sequenceName;
-        while (true) {
+        do {
             ValueUuid uuid = ValueUuid.getNewRandom();
             String s = uuid.getString();
             s = StringUtils.toUpperEnglish(s.replace('-', '_'));
             sequenceName = "SYSTEM_SEQUENCE_" + s;
-            if (schema.findSequence(sequenceName) == null) {
-                break;
-            }
-        }
+        } while (schema.findSequence(sequenceName) != null);
         Sequence seq = new Sequence(schema, id, sequenceName, start, increment);
         seq.setTemporary(temporary);
         session.getDatabase().addSchemaObject(session, seq);
@@ -720,8 +721,7 @@ public class Column {
             sql = checkConstraint.getSQL();
             name = oldName;
         }
-        Expression expr = parser.parseExpression(sql);
-        return expr;
+        return parser.parseExpression(sql);
     }
 
     String getDefaultSQL() {

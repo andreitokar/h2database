@@ -987,7 +987,16 @@ public abstract class Value {
                     case STRING_IGNORECASE:
                     case STRING_FIXED:
                         return ValueEnum.get(enumerators, getString());
-                    default:
+                    case JAVA_OBJECT:
+                        Object object = JdbcUtils.deserialize(getBytesNoCopy(),
+                                getDataHandler());
+                        if (object instanceof String) {
+                            return ValueEnum.get(enumerators, (String) object);
+                        } else if (object instanceof Integer) {
+                            return ValueEnum.get(enumerators, (int) object);
+                        }
+                    //$FALL-THROUGH$
+                default:
                         throw DbException.get(
                                 ErrorCode.DATA_CONVERSION_ERROR_1, getString());
                 }
@@ -1047,12 +1056,12 @@ public abstract class Value {
                         s.equalsIgnoreCase("t") ||
                         s.equalsIgnoreCase("yes") ||
                         s.equalsIgnoreCase("y")) {
-                    return ValueBoolean.get(true);
+                    return ValueBoolean.TRUE;
                 } else if (s.equalsIgnoreCase("false") ||
                         s.equalsIgnoreCase("f") ||
                         s.equalsIgnoreCase("no") ||
                         s.equalsIgnoreCase("n")) {
-                    return ValueBoolean.get(false);
+                    return ValueBoolean.FALSE;
                 } else {
                     // convert to a number, and if it is not 0 then it is true
                     return ValueBoolean.get(new BigDecimal(s).signum() != 0);
