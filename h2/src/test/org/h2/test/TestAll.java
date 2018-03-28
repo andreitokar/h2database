@@ -172,7 +172,6 @@ import org.h2.test.synth.thread.TestMulti;
 import org.h2.test.unit.TestAnsCompression;
 import org.h2.test.unit.TestAutoReconnect;
 import org.h2.test.unit.TestBinaryArithmeticStream;
-import org.h2.test.unit.TestBitField;
 import org.h2.test.unit.TestBitStream;
 import org.h2.test.unit.TestBnf;
 import org.h2.test.unit.TestCache;
@@ -915,7 +914,6 @@ kill -9 `jps -l | grep "org.h2.test." | cut -d " " -f 1`
         addTest(new TestAnsCompression());
         addTest(new TestAutoReconnect());
         addTest(new TestBinaryArithmeticStream());
-        addTest(new TestBitField());
         addTest(new TestBitStream());
         addTest(new TestBnf());
         addTest(new TestCache());

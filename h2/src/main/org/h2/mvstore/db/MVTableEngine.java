@@ -9,6 +9,7 @@ import java.io.InputStream;
 import java.lang.Thread.UncaughtExceptionHandler;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,7 +33,6 @@ import org.h2.store.InDoubtTransaction;
 import org.h2.store.fs.FileChannelInputStream;
 import org.h2.store.fs.FileUtils;
 import org.h2.table.TableBase;
-import org.h2.util.BitField;
 import org.h2.util.New;
 
 /**
@@ -254,7 +254,7 @@ public final class MVTableEngine implements TableEngine {
          *
          * @param objectIds the ids of the objects to keep
          */
-        public void removeTemporaryMaps(BitField objectIds) {
+        public void removeTemporaryMaps(BitSet objectIds) {
             for (String mapName : store.getMapNames()) {
                 if (mapName.startsWith("temp.")) {
                     store.removeMap(mapName);
