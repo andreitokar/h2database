@@ -1390,7 +1390,7 @@ public class TestMVStore extends TestBase {
         s.close();
 
         s = openStore(fileName);
-        s.setAutoCommitDelay(0);
+//        s.setAutoCommitDelay(0);
         m = s.openMap("data");
         assertEquals("Hi", m.get("1"));
         assertEquals(null, m.get("2"));
@@ -1399,7 +1399,7 @@ public class TestMVStore extends TestBase {
         // which is rather implementation artifact then intentional.
         // Once store is closed, only one sinle version of the data
         // will exists upon re-opening - the latest.
-        // I hope nobody relies on this.
+        // I hope nobody relies on this "multi-versioning".
 /*
         mOld = m.openVersion(old3);
         assertEquals("Hallo", mOld.get("1"));
@@ -1441,6 +1441,7 @@ public class TestMVStore extends TestBase {
             }
         }
         assertTrue(s.compact(100, 50 * 1024));
+        // compaction alone will not guarantee file size reduction
         s.compactMoveChunks();
         s.close();
         long len2 = FileUtils.size(fileName);
@@ -1459,13 +1460,8 @@ public class TestMVStore extends TestBase {
             assertEquals(i + 1, m.size());
         }
         assertEquals(1000, m.size());
-        // previously (131896) we fail to account for initial root page for every map
-        // there are two of them here (meta and "data"), hence lack of 256 bytes
-//        assertEquals(132152, s.getUnsavedMemory());
-        // accounting have changed: now we split and count on upward traversal
-        // after node modification, whereas before it was on a way down
-        // and before node modification
-        assertEquals(127356, s.getUnsavedMemory());
+        // memory calculations were adjusted, so as this out-of-the-thin-air number
+        assertEquals(127146, s.getUnsavedMemory());
         s.commit();
         assertEquals(2, s.getFileStore().getWriteCount());
         s.close();
@@ -1500,6 +1496,7 @@ public class TestMVStore extends TestBase {
         FileUtils.delete(fileName);
         MVMap<String, String> meta;
         MVStore s = openStore(fileName);
+//        s.setAutoCommitDelay(0);
         assertEquals(45000, s.getRetentionTime());
         s.setRetentionTime(0);
         assertEquals(0, s.getRetentionTime());
@@ -1526,7 +1523,9 @@ public class TestMVStore extends TestBase {
         s.close();
 
         s = openStore(fileName);
+//        s.setAutoCommitDelay(0);
         s.setRetentionTime(45000);
+        assertEquals(1, s.getLastStoredVersion());
         assertEquals(2, s.getCurrentVersion());
         meta = s.getMetaMap();
         m = s.openMap("data");
@@ -1541,16 +1540,21 @@ public class TestMVStore extends TestBase {
         assertEquals("Hallo", m1.get("1"));
         assertTrue(s.hasUnsavedChanges());
         s.rollbackTo(v2);
+        assertEquals(1, s.getLastStoredVersion());
+        assertEquals(1, meta.getVersion());
         assertFalse(s.hasUnsavedChanges());
         assertNull(meta.get("name.data1"));
         assertNull(m0.get("1"));
         assertEquals("Hello", m.get("1"));
-        assertEquals(3, s.commit());
+        // no changes - no real commit here
+        assertEquals(2, s.commit());
         s.close();
 
         s = openStore(fileName);
+//        s.setAutoCommitDelay(0);
         s.setRetentionTime(45000);
-        assertEquals(3, s.getCurrentVersion());
+        assertEquals(2, s.getCurrentVersion());
+//        assertEquals(1, s.getLastStoredVersion());
         meta = s.getMetaMap();
         assertNotNull(meta.get("name.data"));
         assertNotNull(meta.get("name.data0"));
@@ -1563,12 +1567,13 @@ public class TestMVStore extends TestBase {
         m.put("1",  "Hallo");
         s.commit();
         long v3 = s.getCurrentVersion();
-        assertEquals(4, v3);
+        assertEquals(3, v3);
         s.close();
 
         s = openStore(fileName);
+//        s.setAutoCommitDelay(0);
         s.setRetentionTime(45000);
-        assertEquals(4, s.getCurrentVersion());
+        assertEquals(3, s.getCurrentVersion());
         m = s.openMap("data");
         m.put("1",  "Hi");
         s.close();

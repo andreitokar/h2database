@@ -235,8 +235,19 @@ public final class MVStore {
      */
     private long lastStoredVersion = INITIAL_VERSION;
 
+    /**
+     * Oldest store version in use. All version beyond this can be safely dropped
+     */
     private final AtomicLong oldestVersionToKeep = new AtomicLong();
+
+    /**
+     * Collection of all versions used by currently open transactions.
+     */
     private final Deque<TxCounter> versions = new LinkedList<>();
+
+    /**
+     * Counter of open transactions for the latest (current) store version
+     */
     private volatile TxCounter currentTxCounter = new TxCounter(currentVersion);
 
     /**
@@ -729,6 +740,9 @@ public final class MVStore {
         } while((newest = verifyLastChunks()) != null);
 
         setWriteVersion(currentVersion);
+        if (lastStoredVersion == INITIAL_VERSION) {
+            lastStoredVersion = currentVersion - 1;
+        }
     }
 
     private void loadChunkMeta() {
@@ -2319,6 +2333,7 @@ public final class MVStore {
             currentVersion = version;
             setWriteVersion(version);
             metaChanged = false;
+            lastStoredVersion = INITIAL_VERSION;
             return;
         }
         DataUtils.checkArgument(
@@ -2390,13 +2405,18 @@ public final class MVStore {
                 }
             }
         }
+/*
         // rollback might have rolled back the stored chunk metadata as well
         if (lastChunk != null) {
             for (Chunk c : chunks.values()) {
                 meta.put(Chunk.getMetaKey(c.id), c.asString());
             }
         }
+*/
         currentVersion = version;
+        if (lastStoredVersion == INITIAL_VERSION) {
+            lastStoredVersion = currentVersion - 1;
+        }
     }
 
     private static long getRootPos(MVMap<String, String> map, int mapId) {
@@ -2819,6 +2839,11 @@ public final class MVStore {
         setOldestVersionToKeep(txCounter != null ? txCounter.version : currentTxCounter.version);
     }
 
+    /**
+     * Class TxCounter is a simple data structure to hold version of the store
+     * along with the counter of open transactions,
+     * which are still operating on this version.
+     */
     public static final class TxCounter {
         public final long version;
         public final AtomicInteger counter = new AtomicInteger();
