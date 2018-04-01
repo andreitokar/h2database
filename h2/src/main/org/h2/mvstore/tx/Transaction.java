@@ -81,7 +81,7 @@ public final class Transaction {
      */
     public final int transactionId;
 
-    public final long sequenceNo;
+    public final long sequenceNum;
 
     /*
      * Transation state is an atomic composite field:
@@ -105,11 +105,11 @@ public final class Transaction {
     MVMap blockingMap;
     Object blockingKey;
 
-    Transaction(TransactionStore store, int transactionId, long sequenceNo, int status,
+    Transaction(TransactionStore store, int transactionId, long sequenceNum, int status,
                 String name, long logId, long timeoutMillis, int ownerId, TransactionStore.RollbackListener listener) {
         this.store = store;
         this.transactionId = transactionId;
-        this.sequenceNo = sequenceNo;
+        this.sequenceNum = sequenceNum;
         this.statusAndLogId = new AtomicLong(composeState(status, logId, false));
         this.name = name;
         this.timeoutMillis = timeoutMillis;
@@ -120,7 +120,7 @@ public final class Transaction {
     Transaction(Transaction tx) {
         this.store = tx.store;
         this.transactionId = tx.transactionId;
-        this.sequenceNo = tx.sequenceNo;
+        this.sequenceNum = tx.sequenceNum;
         this.statusAndLogId = new AtomicLong(tx.statusAndLogId.get());
         this.name = tx.name;
         this.timeoutMillis = tx.timeoutMillis;
@@ -494,7 +494,7 @@ public final class Transaction {
     @Override
     public String toString() {
         long state = statusAndLogId.get();
-        return transactionId + "(" + sequenceNo + ") " + STATUS_NAMES[getStatus(state)] + " " + getLogId(state);
+        return transactionId + "(" + sequenceNum + ") " + STATUS_NAMES[getStatus(state)] + " " + getLogId(state);
     }
 
 

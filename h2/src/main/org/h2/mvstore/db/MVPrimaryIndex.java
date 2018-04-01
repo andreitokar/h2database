@@ -117,13 +117,18 @@ public final class MVPrimaryIndex extends BaseIndex
         TransactionMap<Long,Row> map = getMap(session);
         long rowKey = row.getKey();
         try {
-            Row old = map.put(rowKey, row);
+            Row old = map.putIfAbsent(rowKey, row);
             if (old != null) {
                 String sql = "PRIMARY KEY ON " + table.getSQL();
                 if (mainIndexColumn >= 0 && mainIndexColumn < indexColumns.length) {
                     sql += "(" + indexColumns[mainIndexColumn].getSQL() + ")";
                 }
-                DbException e = DbException.get(ErrorCode.DUPLICATE_KEY_1, sql);
+                int errorCode = ErrorCode.CONCURRENT_UPDATE_1;
+                if (map.get(rowKey) != null) {
+                    // committed
+                    errorCode = ErrorCode.DUPLICATE_KEY_1;
+                }
+                DbException e = DbException.get(errorCode, sql);
                 e.setSource(this);
                 throw e;
             }

@@ -231,6 +231,22 @@ public final class TransactionMap<K, V> {
     }
 
     /**
+     * Put the value for the given key if entry for this key does not exist.
+     * It is atomic equivalent of the following expression:
+     * contains(key) ? get(k) : put(key, value);
+     *
+     * @param key the key
+     * @param value the new value (not null)
+     * @return the old value
+     */
+    @SuppressWarnings("unchecked")
+    public V putIfAbsent(K key, V value) {
+        DataUtils.checkArgument(value != null, "The value may not be null");
+        TxDecisionMaker decisionMaker = new TxDecisionMaker.PutIfAbsentDecisionMaker(map.getId(), key, value, transaction);
+        return set(key, decisionMaker);
+    }
+
+    /**
      * Lock row for the given key.
      * <p>
      * If the row is locked, this method will retry until the row could be
@@ -269,26 +285,26 @@ public final class TransactionMap<K, V> {
     private V set(K key, TxDecisionMaker decisionMaker) {
         TransactionStore store = transaction.store;
         Transaction blockingTransaction;
-        long sequenceNoWhenStarted;
+        long sequenceNumWhenStarted;
         do {
-            sequenceNoWhenStarted = store.openTransactions.get().getVersion();
+            sequenceNumWhenStarted = store.openTransactions.get().getVersion();
             assert transaction.getBlockerId() == 0;
 
             VersionedValue result = map.put(key, VersionedValue.DUMMY, decisionMaker);
 
             MVMap.Decision decision = decisionMaker.getDecision();
             assert decision != null;
-            if (decision != MVMap.Decision.ABORT) {
+            blockingTransaction = decisionMaker.getBlockingTransaction();
+            if (decision != MVMap.Decision.ABORT || blockingTransaction == null) {
                 transaction.blockingMap = null;
                 transaction.blockingKey = null;
                 //noinspection unchecked
                 return result == null ? null : (V) result.value;
             }
-            blockingTransaction = decisionMaker.getBlockingTransaction();
             decisionMaker.reset();
             transaction.blockingMap = map;
             transaction.blockingKey = key;
-        } while (blockingTransaction.sequenceNo > sequenceNoWhenStarted || transaction.waitFor(blockingTransaction));
+        } while (blockingTransaction.sequenceNum > sequenceNumWhenStarted || transaction.waitFor(blockingTransaction));
 
         throw DataUtils.newIllegalStateException(DataUtils.ERROR_TRANSACTION_LOCKED,
                 "Map entry <{0}> with key <{1}> is locked by tx {2} and can not be updated by tx {3} within allocated time interval {4} ms.",
