@@ -1390,14 +1390,13 @@ public class TestMVStore extends TestBase {
         s.close();
 
         s = openStore(fileName);
-//        s.setAutoCommitDelay(0);
         m = s.openMap("data");
         assertEquals("Hi", m.get("1"));
         assertEquals(null, m.get("2"));
 
         // This test tries to cast in bronze some peculiar behaviour,
         // which is rather implementation artifact then intentional.
-        // Once store is closed, only one sinle version of the data
+        // Once store is closed, only one single version of the data
         // will exists upon re-opening - the latest.
         // I hope nobody relies on this "multi-versioning".
 /*
@@ -1496,7 +1495,6 @@ public class TestMVStore extends TestBase {
         FileUtils.delete(fileName);
         MVMap<String, String> meta;
         MVStore s = openStore(fileName);
-//        s.setAutoCommitDelay(0);
         assertEquals(45000, s.getRetentionTime());
         s.setRetentionTime(0);
         assertEquals(0, s.getRetentionTime());
@@ -1523,7 +1521,6 @@ public class TestMVStore extends TestBase {
         s.close();
 
         s = openStore(fileName);
-//        s.setAutoCommitDelay(0);
         s.setRetentionTime(45000);
         assertEquals(1, s.getLastStoredVersion());
         assertEquals(2, s.getCurrentVersion());
@@ -1551,10 +1548,8 @@ public class TestMVStore extends TestBase {
         s.close();
 
         s = openStore(fileName);
-//        s.setAutoCommitDelay(0);
         s.setRetentionTime(45000);
         assertEquals(2, s.getCurrentVersion());
-//        assertEquals(1, s.getLastStoredVersion());
         meta = s.getMetaMap();
         assertNotNull(meta.get("name.data"));
         assertNotNull(meta.get("name.data0"));
@@ -1571,7 +1566,6 @@ public class TestMVStore extends TestBase {
         s.close();
 
         s = openStore(fileName);
-//        s.setAutoCommitDelay(0);
         s.setRetentionTime(45000);
         assertEquals(3, s.getCurrentVersion());
         m = s.openMap("data");

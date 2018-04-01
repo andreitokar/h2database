@@ -8,7 +8,6 @@ package org.h2.mvstore.rtree;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.Map;
-
 import org.h2.mvstore.CursorPos;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.MVMap;

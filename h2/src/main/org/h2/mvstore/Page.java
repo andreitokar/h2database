@@ -72,21 +72,34 @@ public abstract class Page implements Cloneable
     private volatile boolean removedInMemory;
 
     /**
-     * The estimated number of bytes used per page object.
+     * The estimated number of bytes used per base page.
      */
-    private static final int PAGE_MEMORY = Constants.MEMORY_OBJECT + 2 * Constants.MEMORY_POINTER + Constants.MEMORY_ARRAY + 17;
-    protected static final int PAGE_NODE_MEMORY = PAGE_MEMORY + Constants.MEMORY_POINTER + 8 + Constants.MEMORY_ARRAY;
-    protected static final int PAGE_LEAF_MEMORY = PAGE_MEMORY + Constants.MEMORY_POINTER + Constants.MEMORY_ARRAY;
+    private static final int PAGE_MEMORY =
+            Constants.MEMORY_OBJECT +           // this
+            2 * Constants.MEMORY_POINTER +      // map, keys
+            Constants.MEMORY_ARRAY +            // Object[] keys
+            17;                                 // pos, cachedCompare, memory, removedInMemory
+    /**
+     * The estimated number of bytes used per empty internal page object.
+     */
+    static final int PAGE_NODE_MEMORY =
+            PAGE_MEMORY +                       // super
+            Constants.MEMORY_POINTER +          // children
+            Constants.MEMORY_ARRAY +            // totalCount
+            8;
+    /**
+     * The estimated number of bytes used per empty leaf page.
+     */
+    static final int PAGE_LEAF_MEMORY =
+            PAGE_MEMORY +                       // super
+            Constants.MEMORY_POINTER +          // values
+            Constants.MEMORY_ARRAY;             //  Object[] values
 
     /**
      * The estimated number of bytes used per child entry.
      */
-    protected static final int PAGE_MEMORY_CHILD = Constants.MEMORY_POINTER + 16; //  16 = two longs
+    static final int PAGE_MEMORY_CHILD = Constants.MEMORY_POINTER + 16; //  16 = two longs
 
-    /**
-     * Marker value for memory field, meaning that memory accounting is replaced by key count.
-     */
-    private static final int IN_MEMORY = Integer.MIN_VALUE;
 
     private static final PageReference[] SINGLE_EMPTY = { PageReference.EMPTY };
 
@@ -227,7 +240,8 @@ public abstract class Page implements Cloneable
     /**
      * Read an inner node page from the buffer, but ignore the keys and
      * values.
-     *  @param fileStore the file store
+     *
+     * @param fileStore the file store
      * @param pos the position
      * @param filePos the position in the file
      * @param maxPos the maximum position (the end of the chunk)
@@ -303,9 +317,9 @@ public abstract class Page implements Cloneable
 
     /**
      * Create a copy of this page with potentially different owning map.
-     * This is used exclusively during bulk map copiing.
-     * Child page references for nodes are cleared (repointed to an empty page)
-     * to be filled-in later to copiing procedure. This way it can be saved
+     * This is used exclusively during bulk map copying.
+     * Child page references for nodes are cleared (re-pointed to an empty page)
+     * to be filled-in later to copying procedure. This way it can be saved
      * mid-process without tree integrity violation
      *
      * @param map new map to own resulting page
