@@ -95,7 +95,7 @@ public class TestConcurrent extends TestMVStore {
         }
     }
 
-    private void testConcurrentSaveCompact() throws Exception {
+    private void testConcurrentSaveCompact() {
         String fileName = "memFS:" + getTestName();
         FileUtils.delete(fileName);
         final MVStore s = new MVStore.Builder().
@@ -104,7 +104,7 @@ public class TestConcurrent extends TestMVStore {
                 open();
         try {
             s.setRetentionTime(0);
-            s.setVersionsToKeep(0);
+//            s.setVersionsToKeep(0);
             final MVMap<Integer, Integer> dataMap = s.openMap("data");
             Task task = new Task() {
                 @Override
@@ -512,7 +512,7 @@ public class TestConcurrent extends TestMVStore {
                     // sometimes closing works, in which case
                     // storing must fail at some point (not necessarily
                     // immediately)
-                    for (int x = counter.get(), y = x; x <= y + 2; x++) {
+                    for (int x = counter.get(), y = x + 2; x <= y; x++) {
                         Thread.sleep(1);
                     }
                     Exception e = task.getException();
@@ -679,9 +679,9 @@ public class TestConcurrent extends TestMVStore {
         try {
             for (int k = 0; k < 10000; k++) {
                 Iterator<Integer> it = map.keyIterator(r.nextInt(len));
-                long old = s.getCurrentVersion();
+                long old = map.getVersion();
                 s.commit();
-                if (map.getVersion() == old) {
+                while (map.getVersion() == old) {
                     Thread.yield();
                 }
                 while (it.hasNext()) {
@@ -717,7 +717,7 @@ public class TestConcurrent extends TestMVStore {
         final Random rand = new Random(1);
         Task task = new Task() {
             @Override
-            public void call() throws Exception {
+            public void call() {
                 while (!stop) {
                     try {
                         if (rand.nextBoolean()) {
@@ -728,13 +728,10 @@ public class TestConcurrent extends TestMVStore {
                         m.get(rand.nextInt(size));
                     } catch (ConcurrentModificationException e) {
                         detected.incrementAndGet();
-                    } catch (NegativeArraySizeException e) {
-                        notDetected.incrementAndGet();
-                    } catch (ArrayIndexOutOfBoundsException e) {
-                        notDetected.incrementAndGet();
-                    } catch (IllegalArgumentException e) {
-                        notDetected.incrementAndGet();
-                    } catch (NullPointerException e) {
+                    } catch ( NegativeArraySizeException
+                            | ArrayIndexOutOfBoundsException
+                            | IllegalArgumentException
+                            | NullPointerException e) {
                         notDetected.incrementAndGet();
                     }
                 }
@@ -754,13 +751,10 @@ public class TestConcurrent extends TestMVStore {
                         m.get(rand.nextInt(size));
                     } catch (ConcurrentModificationException e) {
                         detected.incrementAndGet();
-                    } catch (NegativeArraySizeException e) {
-                        notDetected.incrementAndGet();
-                    } catch (ArrayIndexOutOfBoundsException e) {
-                        notDetected.incrementAndGet();
-                    } catch (IllegalArgumentException e) {
-                        notDetected.incrementAndGet();
-                    } catch (NullPointerException e) {
+                    } catch ( NegativeArraySizeException
+                            | ArrayIndexOutOfBoundsException
+                            | NullPointerException
+                            | IllegalArgumentException e) {
                         notDetected.incrementAndGet();
                     }
                 }
@@ -784,7 +778,7 @@ public class TestConcurrent extends TestMVStore {
         s.commit();
         Task task = new Task() {
             @Override
-            public void call() throws Exception {
+            public void call() {
                 while (!stop) {
                     long v = s.getCurrentVersion() - 1;
                     Map<Integer, Integer> old = m.openVersion(v);

@@ -232,6 +232,7 @@ public abstract class Page implements Cloneable
      * @param pos the position
      * @param filePos the position in the file
      * @param maxPos the maximum position (the end of the chunk)
+     * @param collector to report child pages positions to
      */
     static void readChildrensPositions(FileStore fileStore, long pos,
                                        long filePos, long maxPos,
@@ -330,6 +331,16 @@ public abstract class Page implements Cloneable
      * @return the child page
      */
     public abstract Page getChildPage(int index);
+
+    /**
+     * Get the child page at the given index only if is
+     * already loaded. Does not make any attempt to load
+     * the page or retrieve it from the cache.
+     *
+     * @param index the index
+     * @return the child page, null if it is not loaded
+     */
+    public abstract Page getChildPageIfLoaded(int index);
 
     /**
      * Get the position of the child.
@@ -957,6 +968,11 @@ public abstract class Page implements Cloneable
         }
 
         @Override
+        public Page getChildPageIfLoaded(int index) {
+            return children[index].page;
+        }
+
+        @Override
         public long getChildPagePos(int index) {
             return children[index].pos;
         }
@@ -1252,6 +1268,9 @@ public abstract class Page implements Cloneable
         public Page getChildPage(int index) {
             throw new UnsupportedOperationException();
         }
+
+        @Override
+        public Page getChildPageIfLoaded(int index) { throw new UnsupportedOperationException(); }
 
         @Override
         public long getChildPagePos(int index) {
