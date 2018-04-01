@@ -91,16 +91,16 @@ public abstract class Page implements Cloneable
     private static final PageReference[] SINGLE_EMPTY = { PageReference.EMPTY };
 
 
-    private Page(MVMap<?, ?> map) {
+    Page(MVMap<?, ?> map) {
         this.map = map;
     }
 
-    private Page(MVMap<?, ?> map, Page source) {
+    Page(MVMap<?, ?> map, Page source) {
         this(map, source.keyCount, source.keys);
         memory = source.memory;
     }
 
-    private Page(MVMap<?, ?> map, int keyCount, Object keys) {
+    Page(MVMap<?, ?> map, int keyCount, Object keys) {
         this.map = map;
         this.keyCount = keyCount;
         this.keys = keys;
@@ -227,16 +227,15 @@ public abstract class Page implements Cloneable
     /**
      * Read an inner node page from the buffer, but ignore the keys and
      * values.
-     *
-     * @param fileStore the file store
+     *  @param fileStore the file store
      * @param pos the position
      * @param filePos the position in the file
      * @param maxPos the maximum position (the end of the chunk)
      * @param collector to report child pages positions to
      */
-    static void readChildrensPositions(FileStore fileStore, long pos,
-                                       long filePos, long maxPos,
-                                       MVStore.ChunkIdsCollector collector) {
+    static void readChildrenPositions(FileStore fileStore, long pos,
+                                        long filePos, long maxPos,
+                                        MVStore.ChunkIdsCollector collector) {
         ByteBuffer buff;
         int maxLength = DataUtils.getPageMaxLength(pos);
         if (maxLength == DataUtils.PAGE_LARGE) {
@@ -832,7 +831,7 @@ public abstract class Page implements Cloneable
         return 0; //getKeyCount();
     }
 
-    protected final void addMemory(int mem) {
+    final void addMemory(int mem) {
         memory += mem;
     }
 
@@ -894,7 +893,7 @@ public abstract class Page implements Cloneable
             this(page, page.getPos(), page.getTotalCount());
         }
 
-        private PageReference(long pos, long count) {
+        PageReference(long pos, long count) {
             this(null, pos, count);
             assert pos != 0;
         }
@@ -924,19 +923,19 @@ public abstract class Page implements Cloneable
         /**
         * The total entry count of this page and all children.
         */
-       private long totalCount;
+        private long totalCount;
 
-        private NonLeaf(MVMap<?, ?> map) {
+        NonLeaf(MVMap<?, ?> map) {
             super(map);
         }
 
-        private NonLeaf(MVMap<?, ?> map, NonLeaf source, PageReference[] children, long totalCount) {
+        private NonLeaf(MVMap<?, ?> map, NonLeaf source, PageReference children[], long totalCount) {
             super(map, source);
             this.children = children;
             this.totalCount = totalCount;
         }
 
-        private NonLeaf(MVMap<?, ?> map, int keyCount, Object keys, PageReference[] children, long totalCount) {
+        NonLeaf(MVMap<?, ?> map, int keyCount, Object keys, PageReference children[], long totalCount) {
             super(map, keyCount, keys);
             this.children = children;
             this.totalCount = totalCount;
@@ -982,6 +981,7 @@ public abstract class Page implements Cloneable
             throw new UnsupportedOperationException();
         }
 
+        @Override
         @SuppressWarnings("SuspiciousSystemArraycopy")
         public Page split(int at) {
             assert !isSaved();
@@ -1081,6 +1081,7 @@ public abstract class Page implements Cloneable
             }
         }
 
+        @Override
         @SuppressWarnings("SuspiciousSystemArraycopy")
         public void extendCapacity() {
             super.extendCapacity();
@@ -1240,7 +1241,7 @@ public abstract class Page implements Cloneable
          */
         private Object values;
 
-        private Leaf(MVMap<?, ?> map) {
+        Leaf(MVMap<?, ?> map) {
             super(map);
         }
 
@@ -1249,7 +1250,7 @@ public abstract class Page implements Cloneable
             this.values = source.values;
         }
 
-        private Leaf(MVMap<?, ?> map, int keyCount, Object keys, Object values) {
+        Leaf(MVMap<?, ?> map, int keyCount, Object keys, Object values) {
             super(map, keyCount, keys);
             this.values = values;
         }
@@ -1323,7 +1324,7 @@ public abstract class Page implements Cloneable
             Object old = setValueInternal(index, value);
             if(isPersistent()) {
                 addMemory(valueType.getMemory(value) -
-                          valueType.getMemory(old));
+                            valueType.getMemory(old));
             }
             return old;
         }
@@ -1390,6 +1391,7 @@ public abstract class Page implements Cloneable
             throw new UnsupportedOperationException();
         }
 
+        @Override
         @SuppressWarnings("SuspiciousSystemArraycopy")
         public void extendCapacity() {
             super.extendCapacity();

@@ -152,7 +152,7 @@ public abstract class TxDecisionMaker extends MVMap.DecisionMaker<VersionedValue
                 } else if (
                         // entry belongs to a committing transaction
                         // and therefore will be committed soon
-                        isCommitted(blockingId/* = getTransactionId(id)*/)
+                        isCommitted(blockingId)
                         // transaction has been committed and is closed by now
                         || fetchTransaction(blockingId) == null) {
                     // In this two cases, we assume that we are looking

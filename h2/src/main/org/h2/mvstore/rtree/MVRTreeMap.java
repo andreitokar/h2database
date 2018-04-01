@@ -27,7 +27,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
     /**
      * The spatial key type.
      */
-    private final SpatialDataType keyType;
+    final SpatialDataType keyType;
 
     private boolean quadraticSplit;
 
@@ -609,6 +609,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
          * @param valueType the key type
          * @return this
          */
+        @Override
         public Builder<V> valueType(DataType valueType) {
             setValueType(valueType);
             return this;
