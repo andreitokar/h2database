@@ -100,6 +100,10 @@ public abstract class Page implements Cloneable
      */
     static final int PAGE_MEMORY_CHILD = Constants.MEMORY_POINTER + 16; //  16 = two longs
 
+    /**
+     * Marker value for memory field, meaning that memory accounting is replaced by key count.
+     */
+    private static final int IN_MEMORY = Integer.MIN_VALUE;
 
     private static final PageReference[] SINGLE_EMPTY = { PageReference.EMPTY };
 
