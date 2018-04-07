@@ -952,7 +952,7 @@ public final class DataUtils {
      * @return the parsed value
      * @throws IllegalStateException if parsing fails
      */
-    public static long readHexLong(Map<String,?> map, String key, long defaultValue) {
+    public static long readHexLong(Map<String, ?> map, String key, long defaultValue) {
         Object v = map.get(key);
         if (v == null) {
             return defaultValue;
@@ -1016,7 +1016,7 @@ public final class DataUtils {
      * @return the parsed value
      * @throws IllegalStateException if parsing fails
      */
-    public static int readHexInt(Map<String,?> map, String key, int defaultValue) {
+    public static int readHexInt(Map<String, ?> map, String key, int defaultValue) {
         Object v = map.get(key);
         if (v == null) {
             return defaultValue;

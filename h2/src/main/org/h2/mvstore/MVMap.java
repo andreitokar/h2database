@@ -44,25 +44,25 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      */
     private final AtomicReference<RootReference> root;
 
-    private final int              id;
-    private final long             createVersion;
-    private final DataType         keyType;
+    private final int id;
+    private final long createVersion;
+    private final DataType keyType;
     private final ExtendedDataType extendedKeyType;
-    private final DataType         valueType;
+    private final DataType valueType;
     private final ExtendedDataType extendedValueType;
-    private final int              keysPerPage;
-    private final boolean          singleWriter;
-    private final K                keysBuffer[];
-    private final V                valuesBuffer[];
+    private final int keysPerPage;
+    private final boolean singleWriter;
+    private final K keysBuffer[];
+    private final V valuesBuffer[];
 
 
     /**
      * Whether the map is closed. Volatile so we don't accidentally write to a
      * closed map in multithreaded mode.
      */
-    private volatile boolean closed;
-    private          boolean readOnly;
-    private          boolean isVolatile;
+    private volatile  boolean closed;
+    private boolean readOnly;
+    private boolean isVolatile;
 
     /**
      * This designates the "last stored" version for a store which was
@@ -84,7 +84,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     }
 
     // constructor for cloneIt()
-    protected MVMap(MVMap<K,V> source) {
+    protected MVMap(MVMap<K, V> source) {
         this(source.store, source.keyType, source.valueType, source.id, source.createVersion,
                 new AtomicReference<>(source.root.get()), source.keysPerPage, source.singleWriter);
     }
@@ -1166,36 +1166,37 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @param sourceMap the source map
      */
     final void copyFrom(MVMap<K, V> sourceMap) {
-        beforeWrite();
-        setRoot(copy(sourceMap.getRootPage(), null));
+        // We are going to cheat a little bit in the copy()
+        // by setting map's root to an arbitrary nodes
+        // to allow for just created ones to be saved.
+        // That's why it's important to preserve all chunks
+        // created in the process, especially it retention time
+        // is set to a lower value, or even 0.
+        MVStore.TxCounter txCounter = store.registerVersionUsage();
+        try {
+            beforeWrite();
+            setRoot(copy(sourceMap.getRootPage()));
+        } finally {
+            store.deregisterVersionUsage(txCounter);
+        }
     }
 
-    private Page copy(Page source, CursorPos parent) {
+    private Page copy(Page source) {
         Page target = source.copy(this);
         store.registerUnsavedPage(target.getMemory());
         if (!source.isLeaf()) {
-            CursorPos pos = new CursorPos(target, 0, parent);
             for (int i = 0; i < getChildPageCount(target); i++) {
                 if (source.getChildPagePos(i) != 0) {
                     // position 0 means no child
                     // (for example the last entry of an r-tree node)
                     // (the MVMap is also used for r-trees for compacting)
-                    pos.index = i;
-                    Page child = copy(source.getChildPage(i), pos);
+                    Page child = copy(source.getChildPage(i));
                     target.setChild(i, child);
-                    pos.page = target;
                 }
             }
 
-            if(store.isSaveNeeded()) {
-                Page child = target;
-                for(CursorPos p = parent; p != null; p = p.parent) {
-                    p.page.setChild(p.index, child);
-                    child = p.page;
-                }
-                setRoot(child);
-                beforeWrite();
-            }
+            setRoot(target);
+            beforeWrite();
         }
         return target;
     }
@@ -1686,7 +1687,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         }
 
         @Override
-        public Builder<K,V> valueType(DataType dataType) {
+        public Builder<K, V> valueType(DataType dataType) {
             setValueType(dataType);
             return this;
         }
