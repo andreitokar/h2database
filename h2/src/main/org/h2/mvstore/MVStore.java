@@ -127,7 +127,7 @@ MVStore:
 /**
  * A persistent storage for maps.
  */
-public final class MVStore {
+public class MVStore {
 
     /**
      * Whether assertions are enabled.
