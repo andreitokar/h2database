@@ -39,6 +39,9 @@ public final class TransactionStore {
      */
     final MVStore store;
 
+    /**
+     * Default blocked transaction timeout
+     */
     private final long timeoutMillis;
 
     /**
@@ -52,7 +55,7 @@ public final class TransactionStore {
     private int maxTransactionId = MAX_OPEN_TRANSACTIONS;
     private final AtomicReferenceArray<Transaction> transactions = new AtomicReferenceArray<>(MAX_OPEN_TRANSACTIONS);
     /**
-     * The undo logs.
+     * Undo logs.
      * <p>
      * If the first entry for a transaction doesn't have a logId
      * of 0, then the transaction is partially committed (which means rollback
@@ -477,7 +480,7 @@ public final class TransactionStore {
             }
 
             if (wasStored || store.getAutoCommitDelay() == 0) {
-                store.commit();
+                store.tryCommit();
             } else {
                 boolean empty = true;
                 BitSet openTrans = openTransactions.get();
@@ -495,7 +498,7 @@ public final class TransactionStore {
                     int max = store.getAutoCommitMemory();
                     // save at 3/4 capacity
                     if (unsaved * 4 > max * 3) {
-                        store.commit();
+                        store.tryCommit();
                     }
                 }
             }

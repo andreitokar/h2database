@@ -403,23 +403,6 @@ public final class TransactionMap<K, V> {
     }
 
     /**
-     * Whether the entry for this key was added or removed from this
-     * session.
-     *
-     * @param key the key
-     * @return true if yes
-     */
-    public boolean isSameTransaction(K key) {
-        VersionedValue data = map.get(key);
-        if (data == null) {
-            // doesn't exist or deleted by a committed transaction
-            return false;
-        }
-        int tx = getTransactionId(data.getOperationId());
-        return tx == transaction.transactionId;
-    }
-
-    /**
      * Get the effective value for the given key.
      *
      * @param key the key
@@ -444,6 +427,23 @@ public final class TransactionMap<K, V> {
         } else {
             return (V) data.getCommittedValue();
         }
+    }
+
+    /**
+     * Whether the entry for this key was added or removed from this
+     * session.
+     *
+     * @param key the key
+     * @return true if yes
+     */
+    public boolean isSameTransaction(K key) {
+        VersionedValue data = map.get(key);
+        if (data == null) {
+            // doesn't exist or deleted by a committed transaction
+            return false;
+        }
+        int tx = getTransactionId(data.getOperationId());
+        return tx == transaction.transactionId;
     }
 
     /**
@@ -592,6 +592,7 @@ public final class TransactionMap<K, V> {
      * Iterate over entries.
      *
      * @param from the first key to return
+     * @param to the last key to return
      * @return the iterator
      */
     public Iterator<Map.Entry<K, V>> entryIterator(final K from, final K to) {
