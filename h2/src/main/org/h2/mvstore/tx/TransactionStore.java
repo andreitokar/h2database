@@ -51,6 +51,8 @@ public final class TransactionStore {
     private final MVMap<Integer, Object[]> preparedTransactions;
     private final MVMap<String, DataType> typeRegistry;
     private final DataType dataType;
+    final AtomicReference<VersionedBitSet> openTransactions = new AtomicReference<>(new VersionedBitSet());
+    final AtomicReference<BitSet> committingTransactions = new AtomicReference<>(new BitSet());
     private boolean init;
     private int maxTransactionId = MAX_OPEN_TRANSACTIONS;
     private final AtomicReferenceArray<Transaction> transactions = new AtomicReferenceArray<>(MAX_OPEN_TRANSACTIONS);
@@ -66,8 +68,6 @@ public final class TransactionStore {
      */
     @SuppressWarnings("unchecked")
     final MVMap<Long,Record> undoLogs[] = (MVMap<Long,Record>[])new MVMap[MAX_OPEN_TRANSACTIONS];
-    final AtomicReference<VersionedBitSet> openTransactions = new AtomicReference<>(new VersionedBitSet());
-    final AtomicReference<BitSet> committingTransactions = new AtomicReference<>(new BitSet());
     private final MVMap.Builder<Long, Record> undoLogBuilder;
 
     /**
