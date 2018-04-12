@@ -51,6 +51,7 @@ import org.h2.util.ColumnNamerConfiguration;
 import org.h2.util.New;
 import org.h2.util.SmallLRUCache;
 import org.h2.value.Value;
+import org.h2.value.ValueArray;
 import org.h2.value.ValueLong;
 import org.h2.value.ValueNull;
 import org.h2.value.ValueString;
@@ -775,7 +776,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
         if(needCommit) {
             rollbackTo(null, false);
         }
-        if (locks.size() > 0 || needCommit) {
+        if (!locks.isEmpty() || needCommit) {
             database.commit(this);
         }
         cleanTempTables(false);
@@ -1663,14 +1664,14 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
      */
     public Transaction getTransaction() {
         if (transaction == null) {
-            MVTableEngine.Store mvStore = database.getMvStore();
-            if(mvStore != null) {
-                if (mvStore.isClosed()) {
+            MVTableEngine.Store store = database.getMvStore();
+            if(store != null) {
+                if (store.isClosed()) {
                     Throwable backgroundException = database.getBackgroundException();
                     database.shutdownImmediately();
                     throw DbException.get(ErrorCode.DATABASE_IS_CLOSED, backgroundException);
                 }
-                transaction = mvStore.getTransactionStore().begin(this, this.lockTimeout, id);
+                transaction = store.getTransactionStore().begin(this, this.lockTimeout, id);
             }
             startStatement = -1;
         }
@@ -1768,9 +1769,9 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
                            VersionedValue restoredValue) {
         // Here we are relying on the fact that map which backs table's primary index
         // has the same name as the table itself
-        MVTableEngine.Store mvStore = database.getMvStore();
-        if(mvStore != null) {
-            MVTable table = mvStore.getTable(map.getName());
+        MVTableEngine.Store store = database.getMvStore();
+        if(store != null) {
+            MVTable table = store.getTable(map.getName());
             if (table != null) {
                 long recKey = (Long)key;
                 Row oldRow = getRowFromVersionedValue(table, recKey, existingValue);
@@ -1801,9 +1802,22 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
 
     private static Row getRowFromVersionedValue(MVTable table, long recKey,
                                                 VersionedValue versionedValue) {
-
         Object value = versionedValue == null ? null : versionedValue.value;
-        return value == null ? null : MVPrimaryIndex.convertValueToRow(recKey, value, table);
+        Row result = null;
+        if (value != null) {
+            Row result11;
+            if(value instanceof Row) {
+                result11 = (Row) value;
+                assert result11.getKey() == recKey
+                     : result11.getKey() + " != " + recKey;
+            } else {
+                ValueArray array = (ValueArray) value;
+                result11 = table.createRow(array.getList(), 0);
+                result11.setKey(recKey);
+            }
+            result = result11;
+        }
+        return result;
     }
 
     /**

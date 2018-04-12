@@ -38,7 +38,7 @@ public final class Transaction {
      * closed while the transaction is committing. When opening a store,
      * such transactions should be committed.
      */
-    public static final int STATUS_COMMITTING   = 3;
+    public static final int STATUS_COMMITTING = 3;
 
     /**
      * The status of a transaction that has been logically committed or rather
@@ -50,7 +50,7 @@ public final class Transaction {
      * This transaction's id can not be re-used until all the above is completed
      * and transaction is closed.
      */
-    public static final int STATUS_COMMITTED    = 4;
+    public static final int STATUS_COMMITTED = 4;
 
     /**
      * The status of a transaction that currently in a process of rolling back
@@ -68,6 +68,13 @@ public final class Transaction {
             "CLOSED", "OPEN", "PREPARED", "COMMITTING",
             "COMMITTED", "ROLLING_BACK", "ROLLED_BACK"
     };
+    static final int LOG_ID_BITS = 40;
+    private static final int LOG_ID_BITS1 = LOG_ID_BITS + 1;
+    private static final long LOG_ID_LIMIT = 1L << LOG_ID_BITS;
+    private static final long LOG_ID_MASK = (1L << LOG_ID_BITS1) - 1;
+    private static final int STATUS_BITS = 4;
+    private static final int STATUS_MASK = (1 << STATUS_BITS) - 1;
+
 
     /**
      * The transaction store.
@@ -78,18 +85,25 @@ public final class Transaction {
 
     /**
      * The transaction id.
+     * More appropriate name for this field would be "slotId"
      */
     public final int transactionId;
 
+    /**
+     * This is really a transaction identity, because it's not re-used.
+     */
     public final long sequenceNum;
 
     /*
      * Transation state is an atomic composite field:
-     * bit 44       : flag whether transaction had rollback(s)
-     * bits 42-40   : status
+     * bit  45      : flag whether transaction had rollback(s)
+     * bits 44-41   : status
+     * bits 40      : overflow control bit, 1 indicates overflow
      * bits 39-0    : log id of the last entry in the undo log map
      */
     private final AtomicLong statusAndLogId;
+
+    private MVStore.TxCounter txCounter;
 
     private String name;
 
@@ -98,8 +112,6 @@ public final class Transaction {
     private volatile Transaction blockingTransaction;
 
     private final int ownerId;
-
-    private MVStore.TxCounter txCounter;
 
     boolean wasStored;
     MVMap blockingMap;
@@ -241,6 +253,12 @@ public final class Transaction {
     long log(int mapId, Object key, VersionedValue oldValue) {
         long currentState = statusAndLogId.getAndIncrement();
         long logId = getLogId(currentState);
+        if (logId >= LOG_ID_LIMIT) {
+            throw DataUtils.newIllegalStateException(
+                    DataUtils.ERROR_TRANSACTION_TOO_BIG,
+                    "Transaction {0} has too many changes",
+                    transactionId);
+        }
         int currentStatus = getStatus(currentState);
         checkOpen(currentStatus);
         long undoKey = TransactionStore.getOperationId(transactionId, logId);
@@ -255,6 +273,12 @@ public final class Transaction {
     void logUndo() {
         long currentState = statusAndLogId.decrementAndGet();
         long logId = getLogId(currentState);
+        if (logId >= LOG_ID_LIMIT) {
+            throw DataUtils.newIllegalStateException(
+                    DataUtils.ERROR_TRANSACTION_CORRUPT,
+                    "Transaction {0} has internal error",
+                    transactionId);
+        }
         int currentStatus = getStatus(currentState);
         checkOpen(currentStatus);
         Long undoKey = TransactionStore.getOperationId(transactionId, logId);
@@ -499,15 +523,15 @@ public final class Transaction {
 
 
     private static int getStatus(long state) {
-        return (int)(state >>> 40) & 15;
+        return (int)(state >>> LOG_ID_BITS1) & STATUS_MASK;
     }
 
     private static long getLogId(long state) {
-        return state & ((1L << 40) - 1);
+        return state & LOG_ID_MASK;
     }
 
     private static boolean hasRollback(long state) {
-        return (state & (1L << 44)) != 0;
+        return (state & (1L << (STATUS_BITS + LOG_ID_BITS1))) != 0;
     }
 
     private static boolean hasChanges(long state) {
@@ -515,9 +539,12 @@ public final class Transaction {
     }
 
     private static long composeState(int status, long logId, boolean hasRollback) {
+        assert logId < LOG_ID_LIMIT : logId;
+        assert (status & ~STATUS_MASK) == 0 : status;
+
         if (hasRollback) {
-            status |= 16;
+            status |= 1 << STATUS_BITS;
         }
-        return ((long)status << 40) | logId;
+        return ((long)status << LOG_ID_BITS1) | logId;
     }
 }

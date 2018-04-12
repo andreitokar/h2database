@@ -30,10 +30,6 @@ import org.h2.mvstore.type.StringDataType;
  */
 public final class TransactionStore {
 
-    private static final int MAX_OPEN_TRANSACTIONS = 0x100;
-    private static final String TYPE_REGISTRY_NAME = "_";
-    private static final String UNDO_LOG_NAME_PEFIX = "undoLog-";
-
     /**
      * The store.
      */
@@ -49,13 +45,9 @@ public final class TransactionStore {
      * Key: transactionId, value: [ status, name ].
      */
     private final MVMap<Integer, Object[]> preparedTransactions;
+
     private final MVMap<String, DataType> typeRegistry;
-    private final DataType dataType;
-    final AtomicReference<VersionedBitSet> openTransactions = new AtomicReference<>(new VersionedBitSet());
-    final AtomicReference<BitSet> committingTransactions = new AtomicReference<>(new BitSet());
-    private boolean init;
-    private int maxTransactionId = MAX_OPEN_TRANSACTIONS;
-    private final AtomicReferenceArray<Transaction> transactions = new AtomicReferenceArray<>(MAX_OPEN_TRANSACTIONS);
+
     /**
      * Undo logs.
      * <p>
@@ -69,6 +61,28 @@ public final class TransactionStore {
     @SuppressWarnings("unchecked")
     final MVMap<Long,Record> undoLogs[] = (MVMap<Long,Record>[])new MVMap[MAX_OPEN_TRANSACTIONS];
     private final MVMap.Builder<Long, Record> undoLogBuilder;
+
+    private final DataType dataType;
+
+    final AtomicReference<VersionedBitSet> openTransactions = new AtomicReference<>(new VersionedBitSet());
+
+    final AtomicReference<BitSet> committingTransactions = new AtomicReference<>(new BitSet());
+
+    private boolean init;
+
+    private int maxTransactionId = MAX_OPEN_TRANSACTIONS;
+    private final AtomicReferenceArray<Transaction> transactions = new AtomicReferenceArray<>(MAX_OPEN_TRANSACTIONS);
+
+
+    /**
+     * Hard limit on the number of concurrently opened transactions
+     */
+    // TODO: introduce constructor parameter instead of a static field, driven by URL parameter
+    private static final int MAX_OPEN_TRANSACTIONS = 0x100;
+
+    private static final String TYPE_REGISTRY_NAME = "_";
+    private static final String UNDO_LOG_NAME_PEFIX = "undoLog-";
+
 
     /**
      * Create a new transaction store.
@@ -131,7 +145,7 @@ public final class TransactionStore {
                             name = (String) data[1];
                         }
                         long logId = getLogId(undoLog.lastKey()) + 1;
-                        registerTransaction(status, name, logId, timeoutMillis, 0, listener);
+                        registerTransaction(transactionId, status, name, logId, timeoutMillis, 0, listener);
                     }
                 }
             }
@@ -202,6 +216,9 @@ public final class TransactionStore {
         return store.hasMap(name);
     }
 
+    private static final int LOG_ID_BITS = Transaction.LOG_ID_BITS;
+    private static final long LOG_ID_MASK = (1L << LOG_ID_BITS) - 1;
+
     /**
      * Combine the transaction id and the log id to an operation id.
      *
@@ -210,11 +227,11 @@ public final class TransactionStore {
      * @return the operation id
      */
     static long getOperationId(int transactionId, long logId) {
-        DataUtils.checkArgument(transactionId >= 0 && transactionId < (1 << 24),
+        DataUtils.checkArgument(transactionId >= 0 && transactionId < (1 << (64 - LOG_ID_BITS)),
                 "Transaction id out of range: {0}", transactionId);
-        DataUtils.checkArgument(logId >= 0 && logId < (1L << 40),
+        DataUtils.checkArgument(logId >= 0 && logId <= LOG_ID_MASK,
                 "Transaction log id out of range: {0}", logId);
-        return ((long) transactionId << 40) | logId;
+        return ((long) transactionId << LOG_ID_BITS) | logId;
     }
 
     /**
@@ -224,7 +241,7 @@ public final class TransactionStore {
      * @return the transaction id
      */
     static int getTransactionId(long operationId) {
-        return (int) (operationId >>> 40);
+        return (int) (operationId >>> LOG_ID_BITS);
     }
 
     /**
@@ -234,7 +251,7 @@ public final class TransactionStore {
      * @return the log id
      */
     static long getLogId(long operationId) {
-        return operationId & ((1L << 40) - 1);
+        return operationId & LOG_ID_MASK;
     }
 
     /**
@@ -243,10 +260,10 @@ public final class TransactionStore {
      * @return the list of transactions (sorted by id)
      */
     public List<Transaction> getOpenTransactions() {
-        ArrayList<Transaction> list = new ArrayList<>();
         if(!init) {
             init();
         }
+        ArrayList<Transaction> list = new ArrayList<>();
         int transactionId = 0;
         BitSet bitSet = openTransactions.get();
         while((transactionId = bitSet.nextSetBit(transactionId + 1)) > 0) {
@@ -289,19 +306,24 @@ public final class TransactionStore {
         if(timeoutMillis <= 0) {
             timeoutMillis = this.timeoutMillis;
         }
-        Transaction transaction = registerTransaction(Transaction.STATUS_OPEN, null, 0,
+        Transaction transaction = registerTransaction(0, Transaction.STATUS_OPEN, null, 0,
                                                       timeoutMillis, ownerId, listener);
         return transaction;
     }
 
-    private Transaction registerTransaction(int status, String name, long logId,
+    private Transaction registerTransaction(int txId, int status, String name, long logId,
                                             long timeoutMillis, int ownerId, RollbackListener listener) {
         int transactionId;
         long sequenceNo;
         boolean success;
         do {
             VersionedBitSet original = openTransactions.get();
-            transactionId = original.nextClearBit(1);
+            if (txId == 0) {
+                transactionId = original.nextClearBit(1);
+            } else {
+                transactionId = txId;
+                assert !original.get(transactionId);
+            }
             if (transactionId > maxTransactionId) {
                 throw DataUtils.newIllegalStateException(
                         DataUtils.ERROR_TOO_MANY_OPEN_TRANSACTIONS,
@@ -317,8 +339,8 @@ public final class TransactionStore {
 
         Transaction transaction = new Transaction(this, transactionId, sequenceNo, status, name, logId,
                                                   timeoutMillis, ownerId, listener);
-        assert transactions.get(transactionId) == null;
-        transactions.set(transactionId, transaction);
+        success = transactions.compareAndSet(transactionId, null, transaction);
+        assert success;
 
         if (undoLogs[transactionId] == null) {
             String undoName = UNDO_LOG_NAME_PEFIX + transactionId;
@@ -739,12 +761,15 @@ public final class TransactionStore {
     }
 
     public interface RollbackListener {
+
         RollbackListener NONE = new RollbackListener() {
             @Override
-            public void onRollback(MVMap<Object, VersionedValue> map, Object key, VersionedValue existingValue, VersionedValue restoredValue) {
+            public void onRollback(MVMap<Object, VersionedValue> map, Object key,
+                                   VersionedValue existingValue, VersionedValue restoredValue) {
 
             }
         };
+
         void onRollback(MVMap<Object,VersionedValue> map, Object key,
                         VersionedValue existingValue, VersionedValue restoredValue);
     }

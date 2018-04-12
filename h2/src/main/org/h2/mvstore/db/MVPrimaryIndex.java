@@ -31,7 +31,6 @@ import org.h2.table.Column;
 import org.h2.table.IndexColumn;
 import org.h2.table.TableFilter;
 import org.h2.value.Value;
-import org.h2.value.ValueArray;
 import org.h2.value.ValueLong;
 import org.h2.value.ValueNull;
 
@@ -439,20 +438,6 @@ public final class MVPrimaryIndex extends BaseIndex
         return dataMap.getInstance(t);
     }
 
-    public static Row convertValueToRow(long key, Object value, MVTable mvTable) {
-        Row result;
-        if(value instanceof Row) {
-            result = (Row) value;
-            assert result.getKey() == key
-                 : result.getKey() + " != " + key;
-        } else {
-            ValueArray array = (ValueArray) value;
-            result = mvTable.createRow(array.getList(), 0);
-            result.setKey(key);
-        }
-        return result;
-    }
-
 
     /**
      * A cursor.
@@ -463,7 +448,7 @@ public final class MVPrimaryIndex extends BaseIndex
         private       Entry<Long,Row>           current;
         private       Row                       row;
 
-        private MVStoreCursor(Iterator<Entry<Long, Row>> it) {
+        MVStoreCursor(Iterator<Entry<Long, Row>> it) {
             this.it = it;
         }
 
