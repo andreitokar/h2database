@@ -64,24 +64,48 @@ public final class TransactionStore {
 
     private final DataType dataType;
 
+    /**
+     * This BitSet is used as vacancy indicator for transaction slots in transactions[].
+     * It provides easy way to find first unoccupied slot, and also allows for copy-on-write
+     * non-blocking updates.
+     */
     final AtomicReference<VersionedBitSet> openTransactions = new AtomicReference<>(new VersionedBitSet());
 
+    /**
+     * This is intended to be the source of ultimate truth about transaction being committed.
+     * Once bit is set, corresponding transaction is logically committed,
+     * although it might be plenty of "uncommitted" entries in various maps
+     * and undo record are still around.
+     * Nevertheless, all of those should be considered by other transactions as committed.
+     */
     final AtomicReference<BitSet> committingTransactions = new AtomicReference<>(new BitSet());
 
     private boolean init;
 
+    /**
+     * Soft limit on the number of concurrently opened transactions.
+     * Not really needed but used by some test.
+     */
     private int maxTransactionId = MAX_OPEN_TRANSACTIONS;
-    private final AtomicReferenceArray<Transaction> transactions = new AtomicReferenceArray<>(MAX_OPEN_TRANSACTIONS);
 
+    /**
+     * Array holding all open transaction objects.
+     * Position in array is "transaction id".
+     * VolatileReferenceArray would do the job here, but there is no such thing in Java yet
+     */
+    private final AtomicReferenceArray<Transaction> transactions =
+                                                        new AtomicReferenceArray<>(MAX_OPEN_TRANSACTIONS + 1);
+
+
+    private static final String TYPE_REGISTRY_NAME = "_";
+    private static final String UNDO_LOG_NAME_PEFIX = "undoLog-";
 
     /**
      * Hard limit on the number of concurrently opened transactions
      */
     // TODO: introduce constructor parameter instead of a static field, driven by URL parameter
-    private static final int MAX_OPEN_TRANSACTIONS = 0x100;
+    private static final int MAX_OPEN_TRANSACTIONS = 65535;
 
-    private static final String TYPE_REGISTRY_NAME = "_";
-    private static final String UNDO_LOG_NAME_PEFIX = "undoLog-";
 
 
     /**
@@ -95,6 +119,7 @@ public final class TransactionStore {
 
     /**
      * Create a new transaction store.
+     *
      * @param store the store
      * @param dataType the data type for map keys and values
      * @param timeoutMillis lock aquisition timeout in milliseconds, 0 means no wait
@@ -202,7 +227,7 @@ public final class TransactionStore {
      */
     public void setMaxTransactionId(int max) {
         DataUtils.checkArgument(max <= MAX_OPEN_TRANSACTIONS,
-                "Concurrent transactions limit is too hight: {0}", max);
+                "Concurrent transactions limit is too high: {0}", max);
         this.maxTransactionId = max;
     }
 
@@ -476,10 +501,14 @@ public final class TransactionStore {
     }
 
     /**
-     * End this transaction
+     * End this transaction. Change status to CLOSED and vacate transaction slot.
+     * Will try to commit MVStore if autocommitDelay is 0 or if database is idle
+     * and amount of unsaved changes is sizable.
      *
      * @param t the transaction
-     * @param hasChanges whether transaction has done any updated
+     * @param hasChanges true if transaction has done any updated
+     *                  (even if fully rolled back),
+     *                   false if just data access
      */
     void endTransaction(Transaction t, boolean hasChanges) {
         t.closeIt();

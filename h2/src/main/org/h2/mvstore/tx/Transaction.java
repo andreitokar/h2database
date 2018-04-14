@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * A transaction.
  */
-public final class Transaction {
+public class Transaction {
 
     /**
      * The status of a closed transaction (committed or rolled back).
@@ -81,6 +81,9 @@ public final class Transaction {
      */
     final TransactionStore store;
 
+    /**
+     * Listener for this transaction's rollback changes.
+     */
     final TransactionStore.RollbackListener listener;
 
     /**
@@ -95,7 +98,7 @@ public final class Transaction {
     public final long sequenceNum;
 
     /*
-     * Transation state is an atomic composite field:
+     * Transaction state is an atomic composite field:
      * bit  45      : flag whether transaction had rollback(s)
      * bits 44-41   : status
      * bits 40      : overflow control bit, 1 indicates overflow
@@ -186,9 +189,9 @@ public final class Transaction {
                             currentStatus == STATUS_COMMITTED ||
                             currentStatus == STATUS_ROLLED_BACK;
                     break;
-               default:
-                   valid = false;
-                   break;
+                default:
+                    valid = false;
+                    break;
             }
             if (!valid) {
                 throw DataUtils.newIllegalStateException(
@@ -308,7 +311,7 @@ public final class Transaction {
      * @return the transaction map
      */
     public <K, V> TransactionMap<K, V> openMap(String name,
-                                               DataType keyType, DataType valueType) {
+                                                DataType keyType, DataType valueType) {
         MVMap<K, VersionedValue> map = store.openMap(name, keyType, valueType);
         return openMap(map);
     }

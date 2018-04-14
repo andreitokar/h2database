@@ -38,7 +38,7 @@ import org.h2.util.New;
 /**
  * A table engine that internally uses the MVStore.
  */
-public final class MVTableEngine implements TableEngine {
+public class MVTableEngine implements TableEngine {
 
     /**
      * Initialize the MVStore.
