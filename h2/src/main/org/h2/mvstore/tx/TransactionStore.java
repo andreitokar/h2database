@@ -355,7 +355,7 @@ public final class TransactionStore {
                         "There are {0} open transactions",
                         transactionId - 1);
             }
-            VersionedBitSet clone = original.cloneIt();
+            VersionedBitSet clone = original.clone();
             clone.set(transactionId);
             sequenceNo = clone.getVersion() + 1;
             clone.setVersion(sequenceNo);
@@ -519,7 +519,7 @@ public final class TransactionStore {
         do {
             VersionedBitSet original = openTransactions.get();
             assert original.get(txId);
-            VersionedBitSet clone = original.cloneIt();
+            VersionedBitSet clone = original.clone();
             clone.clear(txId);
             success = openTransactions.compareAndSet(original, clone);
         } while(!success);

@@ -286,11 +286,12 @@ public final class TransactionMap<K, V> {
         TransactionStore store = transaction.store;
         Transaction blockingTransaction;
         long sequenceNumWhenStarted;
+        VersionedValue result;
         do {
             sequenceNumWhenStarted = store.openTransactions.get().getVersion();
             assert transaction.getBlockerId() == 0;
 
-            VersionedValue result = map.put(key, VersionedValue.DUMMY, decisionMaker);
+            result = map.put(key, VersionedValue.DUMMY, decisionMaker);
 
             MVMap.Decision decision = decisionMaker.getDecision();
             assert decision != null;
@@ -307,8 +308,8 @@ public final class TransactionMap<K, V> {
         } while (blockingTransaction.sequenceNum > sequenceNumWhenStarted || transaction.waitFor(blockingTransaction));
 
         throw DataUtils.newIllegalStateException(DataUtils.ERROR_TRANSACTION_LOCKED,
-                "Map entry <{0}> with key <{1}> is locked by tx {2} and can not be updated by tx {3} within allocated time interval {4} ms.",
-                map.getName(), key, blockingTransaction.transactionId, transaction.transactionId, transaction.timeoutMillis);
+                "Map entry <{0}> with key <{1}> and value {2} is locked by tx {3} and can not be updated by tx {4} within allocated time interval {5} ms.",
+                map.getName(), key, result, blockingTransaction.transactionId, transaction.transactionId, transaction.timeoutMillis);
     }
 
     /**
