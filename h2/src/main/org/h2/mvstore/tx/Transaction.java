@@ -149,6 +149,10 @@ public class Transaction {
         return transactionId;
     }
 
+    public long getSequenceNum() {
+        return sequenceNum;
+    }
+
     public int getStatus() {
         return getStatus(statusAndLogId.get());
     }

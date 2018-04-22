@@ -1636,7 +1636,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
             if (transaction == null || !transaction.hasChanges()) {
                 return ValueNull.INSTANCE;
             }
-            return ValueString.get(Long.toString(getTransaction().getId()));
+            return ValueString.get(Long.toString(getTransaction().getSequenceNum()));
         }
         if (!database.isPersistent()) {
             return ValueNull.INSTANCE;

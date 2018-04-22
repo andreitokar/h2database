@@ -166,6 +166,7 @@ public class Database implements DataHandler {
     private final String cacheType;
     private final String accessModeData;
     private boolean referentialIntegrity = true;
+    /** ie. the MVCC setting */
     private boolean multiVersion;
     private DatabaseCloser closeOnExit;
     private Mode mode = Mode.getRegular();
@@ -281,13 +282,13 @@ public class Database implements DataHandler {
                 ci.removeProperty("CACHE_TYPE", Constants.CACHE_TYPE_DEFAULT));
         this.lockMode = ci.getProperty("LOCK_MODE", Constants.DEFAULT_LOCK_MODE);
         this.writeDelay = ci.getProperty("WRITE_DELAY", Constants.DEFAULT_WRITE_DELAY);
-        openDatabase(traceLevelFile, traceLevelSystemOut, closeAtVmShutdown);
+        openDatabase(traceLevelFile, traceLevelSystemOut, closeAtVmShutdown, ci);
     }
 
     private void openDatabase(int traceLevelFile, int traceLevelSystemOut,
-            boolean closeAtVmShutdown) {
+            boolean closeAtVmShutdown, ConnectionInfo ci) {
         try {
-            open(traceLevelFile, traceLevelSystemOut);
+            open(traceLevelFile, traceLevelSystemOut, ci);
             if (closeAtVmShutdown) {
                 try {
                     closeOnExit = new DatabaseCloser(this, 0, true);
@@ -622,7 +623,7 @@ public class Database implements DataHandler {
         return dbSettings.databaseToUpper ? StringUtils.toUpperEnglish(n) : n;
     }
 
-    private synchronized void open(int traceLevelFile, int traceLevelSystemOut) {
+    private synchronized void open(int traceLevelFile, int traceLevelSystemOut, ConnectionInfo ci) {
         if (persistent) {
             String dataFileName = databaseName + Constants.SUFFIX_OLD_DATABASE_FILE;
             boolean existsData = FileUtils.exists(dataFileName);
@@ -645,6 +646,9 @@ public class Database implements DataHandler {
             }
             if (existsPage && !existsMv) {
                 dbSettings.mvStore = false;
+                // Need to re-init this because the first time we do it we don't
+                // know if we have an mvstore or a pagestore.
+                multiVersion = ci.getProperty("MVCC", false);
             }
             if (readOnly) {
                 if (traceLevelFile >= TraceSystem.DEBUG) {
@@ -2597,7 +2601,8 @@ public class Database implements DataHandler {
     }
 
     /**
-     * Get the first user defined table.
+     * Get the first user defined table, excluding the LOB_BLOCKS table that the
+     * Recover tool creates.
      *
      * @return the table or null if no table is defined
      */
@@ -2606,6 +2611,11 @@ public class Database implements DataHandler {
             if (table.getCreateSQL() != null) {
                 if (table.isHidden()) {
                     // LOB tables
+                    continue;
+                }
+                // exclude the LOB_MAP that the Recover tool creates
+                if (table.getName().equals("LOB_BLOCKS") && table.getSchema()
+                        .getName().equals("INFORMATION_SCHEMA")) {
                     continue;
                 }
                 return table;
