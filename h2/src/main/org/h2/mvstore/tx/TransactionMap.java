@@ -9,7 +9,6 @@ import org.h2.mvstore.Cursor;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.MVMap;
 import org.h2.mvstore.Page;
-import static org.h2.mvstore.tx.TransactionStore.getTransactionId;
 import org.h2.mvstore.type.DataType;
 import java.util.BitSet;
 import java.util.Iterator;
@@ -22,6 +21,15 @@ import java.util.Map;
  * @param <V> the value type
  */
 public final class TransactionMap<K, V> {
+
+    /**
+     * If a record was read that was updated by this transaction, and the
+     * update occurred before this log id, the older version is read. This
+     * is so that changes are not immediately visible, to support statement
+     * processing (for example "update test set id = id + 1").
+     */
+    long readLogId = Long.MAX_VALUE;
+
     /**
      * The map used for writing (the latest version).
      * <p>
@@ -47,7 +55,7 @@ public final class TransactionMap<K, V> {
      * @param savepoint the savepoint
      */
     public void setSavepoint(long savepoint) {
-//            this.readLogId = savepoint;
+        this.readLogId = savepoint;
     }
 
     /**
@@ -162,7 +170,7 @@ public final class TransactionMap<K, V> {
             assert value != null;
             long id = value.getOperationId();
             if (id != 0) {  // skip committed entries
-                Object v = isVisible(getTransactionId(id)) ? value.value : value.getCommittedValue();
+                Object v = isVisible(TransactionStore.getTransactionId(id)) ? value.value : value.getCommittedValue();
                 if (v == null) {
                     decrement();
                 }
@@ -186,7 +194,7 @@ public final class TransactionMap<K, V> {
         public boolean process(Long undoKey, Record op) {
             if (op.mapId == mapId) {
                 assert undoKey != null;
-                int txId = getTransactionId(undoKey);
+                int txId = TransactionStore.getTransactionId(undoKey);
                 boolean isVisible = isVisible(txId);
                 if (isVisible ? op.oldValue != null && op.oldValue.getOperationId() == 0 && op.oldValue.value != null
                               : op.oldValue == null) {
@@ -367,7 +375,7 @@ public final class TransactionMap<K, V> {
             VersionedValue old = getValue(current, committingTransactions);
             if (!map.areValuesEqual(old, current)) {
                 assert current != null;
-                long tx = getTransactionId(current.getOperationId());
+                long tx = TransactionStore.getTransactionId(current.getOperationId());
                 if (tx == transaction.transactionId) {
                     if (value == null) {
                         // ignore removing an entry
@@ -421,7 +429,7 @@ public final class TransactionMap<K, V> {
             // it is committed
             return (V)data.value;
         }
-        int tx = getTransactionId(id);
+        int tx = TransactionStore.getTransactionId(id);
         if (tx == transaction.transactionId || transaction.store.committingTransactions.get().get(tx)) {
             // added by this transaction or another transaction which is committed by now
             return (V)data.value;
@@ -443,7 +451,7 @@ public final class TransactionMap<K, V> {
             // doesn't exist or deleted by a committed transaction
             return false;
         }
-        int tx = getTransactionId(data.getOperationId());
+        int tx = TransactionStore.getTransactionId(data.getOperationId());
         return tx == transaction.transactionId;
     }
 
@@ -456,12 +464,12 @@ public final class TransactionMap<K, V> {
      *                               at the time when snapshot was taken
      * @return the value
      */
-    private VersionedValue getValue(VersionedValue data, BitSet committingTransactions) {
+    VersionedValue getValue(VersionedValue data, BitSet committingTransactions) {
         long id;
         int tx;
         if (data != null &&     // skip if entry doesn't exist or it was deleted by a committed transaction
             (id = data.getOperationId()) != 0 && // skip if it is committed
-            (tx = getTransactionId(id)) != transaction.transactionId && !committingTransactions.get(tx)) {
+            (tx = TransactionStore.getTransactionId(id)) != transaction.transactionId && !committingTransactions.get(tx)) {
             // current value comes from another uncommitted transaction
             // take committed value instead
             Object committedValue = data.getCommittedValue();
@@ -728,7 +736,7 @@ public final class TransactionMap<K, V> {
                 }
                 if (data != null && (data.value != null ||
                         includeAllUncommitted && transactionMap.transaction.transactionId !=
-                                                    getTransactionId(data.getOperationId()))) {
+                                                    TransactionStore.getTransactionId(data.getOperationId()))) {
                     current = registerCurrent(key, data);
                     return;
                 }

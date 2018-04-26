@@ -622,42 +622,43 @@ public class Recover extends Tool implements DataHandler {
                     continue;
                 }
                 String tableId = mapName.substring("table.".length());
-                TransactionMap<Long, Row> dataMap = store.begin().openMap(
-                        mapName);
-                Iterator<Long> dataIt = dataMap.keyIterator(null);
-                while (dataIt.hasNext()) {
-                    Long rowId = dataIt.next();
-                    Value[] values = dataMap.get(rowId).getValueList();
-                    try {
-                        SimpleRow r = new SimpleRow(values);
-                        MetaRecord meta = new MetaRecord(r);
-                        schema.add(meta);
-                        if (meta.getObjectType() == DbObject.TABLE_OR_VIEW) {
-                            String sql = values[3].getString();
-                            String name = extractTableOrViewName(sql);
-                            tableMap.put(meta.getId(), name);
+                if (Integer.parseInt(tableId) == 0) {
+                    TransactionMap<Long, Row> dataMap = store.begin().openMap(
+                            mapName);
+                    Iterator<Long> dataIt = dataMap.keyIterator(null);
+                    while (dataIt.hasNext()) {
+                        Long rowId = dataIt.next();
+                        Value[] values = dataMap.get(rowId).getValueList();
+                        try {
+                            SimpleRow r = new SimpleRow(values);
+                            MetaRecord meta = new MetaRecord(r);
+                            schema.add(meta);
+                            if (meta.getObjectType() == DbObject.TABLE_OR_VIEW) {
+                                String sql = values[3].getString();
+                                String name = extractTableOrViewName(sql);
+                                tableMap.put(meta.getId(), name);
+                            }
+                        } catch (Throwable t) {
+                            writeError(writer, t);
                         }
-                    } catch (Throwable t) {
-                        writeError(writer, t);
                     }
                 }
             }
-        }
-        // Have to do these before the tables because settings like COLLATION may affect some of them,
-        // and we can't change settings after we have created user tables
-        writeSchemaSET(writer);
-        writer.println("---- Table Data ----");
-        for (String mapName : mv.getMapNames()) {
-            if (!mapName.startsWith("table.")) {
-                continue;
-            }
-            String tableId = mapName.substring("table.".length());
-            if (Integer.parseInt(tableId) == 0) {
-                continue;
-            }
-            TransactionMap<Long, Row> dataMap = store.begin().openMap(
-                    mapName);
-            Iterator<Long> dataIt = dataMap.keyIterator(null);
+            // Have to do these before the tables because settings like COLLATION may affect some of them,
+            // and we can't change settings after we have created user tables
+            writeSchemaSET(writer);
+            writer.println("---- Table Data ----");
+            for (String mapName : mv.getMapNames()) {
+                if (!mapName.startsWith("table.")) {
+                    continue;
+                }
+                String tableId = mapName.substring("table.".length());
+                if (Integer.parseInt(tableId) == 0) {
+                    continue;
+                }
+                TransactionMap<Long, Row> dataMap = store.begin().openMap(
+                        mapName);
+                Iterator<Long> dataIt = dataMap.keyIterator(null);
                 boolean init = false;
                 while (dataIt.hasNext()) {
                     Long rowId = dataIt.next();

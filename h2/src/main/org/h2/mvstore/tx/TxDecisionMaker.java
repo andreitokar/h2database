@@ -49,9 +49,9 @@ public abstract class TxDecisionMaker extends MVMap.DecisionMaker<VersionedValue
                 || fetchTransaction(blockingId) == null) {
             // condition above means transaction has been committed and closed by now
 
-            // In both cases, we assume that we are looking at final value for this transaction
-            // and if it's not the case, then it will fail later
-            // because a tree root definitely has been changed
+            // In both cases, we assume that we are looking at the final value for this transaction
+            // and if it's not the case, then it will fail later,
+            // because a tree root has definitely been changed.
             logIt(existingValue.value == null ? null : new VersionedValue(existingValue.value));
             decision = MVMap.Decision.PUT;
         } else {
@@ -78,7 +78,6 @@ public abstract class TxDecisionMaker extends MVMap.DecisionMaker<VersionedValue
     }
 
     final Transaction getBlockingTransaction() {
-//        assert blockingTransaction != null : "Tx is missing";
         return blockingTransaction;
     }
 
@@ -145,8 +144,8 @@ public abstract class TxDecisionMaker extends MVMap.DecisionMaker<VersionedValue
             } else {
                 long id = existingValue.getOperationId();
                 if (id == 0 // entry is a committed one
-                        || isThisTransaction(blockingId = getTransactionId(id)) // it came from the same transaction
-                        ) {
+                            // or it came from the same transaction
+                        || isThisTransaction(blockingId = getTransactionId(id))) {
                     logIt(existingValue);
                     return setDecision(MVMap.Decision.PUT);
                 } else if (
@@ -155,7 +154,7 @@ public abstract class TxDecisionMaker extends MVMap.DecisionMaker<VersionedValue
                         isCommitted(blockingId)
                         // transaction has been committed and is closed by now
                         || fetchTransaction(blockingId) == null) {
-                    // In this two cases, we assume that we are looking
+                    // In those two cases, we assume that we are looking
                     // at the final value for this transaction,
                     // and if it's not the case, then it will fail later
                     // because a tree root definitely has been changed
