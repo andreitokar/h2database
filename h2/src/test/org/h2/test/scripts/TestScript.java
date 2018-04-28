@@ -23,11 +23,11 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Random;
+
 import org.h2.api.ErrorCode;
 import org.h2.engine.SysProperties;
 import org.h2.test.TestAll;
 import org.h2.test.TestBase;
-import org.h2.util.New;
 import org.h2.util.StringUtils;
 
 /**
@@ -40,7 +40,7 @@ public class TestScript extends TestBase {
 
     /** If set to true, the test will exit at the first failure. */
     private boolean failFast;
-    private final ArrayList<String> statements = New.arrayList();
+    private final ArrayList<String> statements = new ArrayList<>();
 
     private boolean reconnectOften;
     private Connection conn;
@@ -49,7 +49,7 @@ public class TestScript extends TestBase {
     private LineNumberReader in;
     private int outputLineNo;
     private PrintStream out;
-    private final ArrayList<String[]> result = New.arrayList();
+    private final ArrayList<String[]> result = new ArrayList<>();
     private String putBack;
     private StringBuilder errors;
 
