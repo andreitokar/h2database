@@ -87,11 +87,13 @@ public class TestScript extends TestBase {
 
         testScript("testScript.sql");
         testScript("derived-column-names.sql");
+        testScript("dual.sql");
         testScript("indexes.sql");
         testScript("information_schema.sql");
         testScript("joins.sql");
         testScript("range_table.sql");
         testScript("altertable-index-reuse.sql");
+        testScript("altertable-fk.sql");
         testScript("default-and-on_update.sql");
         testScript("query-optimisations.sql");
         String decimal2;
