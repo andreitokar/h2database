@@ -102,15 +102,15 @@ public final class DataUtils {
     public static final int ERROR_TRANSACTION_TOO_BIG = 104;
 
     /**
+     * Deadlock discovered and one of transactions involved chosen as victim and rolled back.
+     */
+    public static final int ERROR_TRANSACTIONS_DEADLOCK = 105;
+
+    /**
      * The transaction store can not be initialized because data type
      * is not found in type registry.
      */
-    public static final int ERROR_UNKNOWN_DATA_TYPE = 105;
-
-    /**
-     * Deadlock discovered and one of transactions involved chosen as victim and rolled back.
-     */
-    public static final int ERROR_TRANSACTIONS_DEADLOCK = 106;
+    public static final int ERROR_UNKNOWN_DATA_TYPE = 106;
 
     /**
      * The type for leaf page.

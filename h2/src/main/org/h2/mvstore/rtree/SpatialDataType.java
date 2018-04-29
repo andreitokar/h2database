@@ -12,6 +12,7 @@ import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.WriteBuffer;
 import org.h2.mvstore.type.DataType;
 import org.h2.util.Utils;
+import org.h2.value.Value;
 
 /**
  * A spatial data type. This class supports up to 31 dimensions. Each dimension

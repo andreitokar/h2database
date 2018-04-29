@@ -106,19 +106,49 @@ public class Transaction {
      */
     private final AtomicLong statusAndLogId;
 
+    /**
+     * Reference to a counter for an earliest store version used by this transaction.
+     * Referenced version and all newer ones can not be discarded
+     * at least until this transaction ends.
+     */
     private MVStore.TxCounter txCounter;
 
+    /**
+     * Transaction name.
+     */
     private String name;
 
+    /**
+     * Indicates whether this transaction was stored in preparedTransactions map
+     */
+    boolean wasStored;
+
+    /**
+     * How long to wait for blocking transaction to commit or rollback.
+     */
     final long timeoutMillis;
 
-    private volatile Transaction blockingTransaction;
-
+    /**
+     * Identification of the owner of this transaction,
+     * usually the owner is a database session.
+     */
     private final int ownerId;
 
-    boolean wasStored;
+    /**
+     * Blocking transaction, if any
+     */
+    private volatile Transaction blockingTransaction;
+
+    /**
+     * Map on which this transaction is blocked.
+     */
     MVMap blockingMap;
+
+    /**
+     * Key in blockingMap on which this transaction is blocked.
+     */
     Object blockingKey;
+
 
     Transaction(TransactionStore store, int transactionId, long sequenceNum, int status,
                 String name, long logId, long timeoutMillis, int ownerId, TransactionStore.RollbackListener listener) {

@@ -402,16 +402,6 @@ public final class TransactionMap<K, V> {
     }
 
     /**
-     * Whether the map contains the key.
-     *
-     * @param key the key
-     * @return true if the map contains an entry for this key
-     */
-    public boolean containsKey(K key) {
-        return get(key) != null;
-    }
-
-    /**
      * Get the effective value for the given key.
      *
      * @param key the key
@@ -436,6 +426,16 @@ public final class TransactionMap<K, V> {
         } else {
             return (V) data.getCommittedValue();
         }
+    }
+
+    /**
+     * Whether the map contains the key.
+     *
+     * @param key the key
+     * @return true if the map contains an entry for this key
+     */
+    public boolean containsKey(K key) {
+        return get(key) != null;
     }
 
     /**
@@ -657,7 +657,7 @@ public final class TransactionMap<K, V> {
             @Override
             public void remove() {
                 throw DataUtils.newUnsupportedOperationException(
-                        "Removing is not supported");
+                        "Removal is not supported");
             }
         };
     }
@@ -765,7 +765,7 @@ public final class TransactionMap<K, V> {
         @Override
         public final void remove() {
             throw DataUtils.newUnsupportedOperationException(
-                    "Removing is not supported");
+                    "Removal is not supported");
         }
     }
 }
