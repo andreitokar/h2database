@@ -250,7 +250,7 @@ public class IndexCursor implements Cursor {
             }
         }
         int comp = a.compareTo(b, table.getDatabase().getCompareMode());
-        return (comp > 0) ^ !bigger ? a : b;
+        return (comp > 0) == bigger ? a : b;
     }
 
     /**
