@@ -108,6 +108,11 @@ public class ValueDataType extends BasicDataType<Value> {
     }
 
     @Override
+    public int binarySearch(Object key, Object storage, int size, int initialGuess) {
+        return DataUtils.binarySearch(this, key, storage, size, initialGuess);
+    }
+
+    @Override
     public int compare(Object a, Object b) {
         if (a == b) {
             return 0;

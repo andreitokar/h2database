@@ -1444,6 +1444,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             return "RootReference("+ System.identityHashCode(root)+","+version+","+ lockedForUpdate +")";
         }
     }
+
     private static final class DataTypeExtentionWrapper implements ExtendedDataType {
         private static final Object[] EMPTY_OBJ_ARRAY = new Object[0];
 
@@ -1494,28 +1495,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
         @Override
         public int binarySearch(Object key, Object storage, int size, int initialGuess) {
-            Object keys[] = (Object[])storage;
-            int low = 0;
-            int high = size - 1;
-            // the cached index minus one, so that
-            // for the first time (when cachedCompare is 0),
-            // the default value is used
-            int x = initialGuess - 1;
-            if (x < 0 || x > high) {
-                x = high >>> 1;
-            }
-            while (low <= high) {
-                int compare = dataType.compare(key, keys[x]);
-                if (compare > 0) {
-                    low = x + 1;
-                } else if (compare < 0) {
-                    high = x - 1;
-                } else {
-                    return x;
-                }
-                x = (low + high) >>> 1;
-            }
-            return -(low + 1);
+            return DataUtils.binarySearch(dataType, key, storage, size, initialGuess);
         }
 
         @Override

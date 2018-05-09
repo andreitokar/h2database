@@ -11,10 +11,11 @@ import org.h2.message.DbException;
 import org.h2.mvstore.Cursor;
 import org.h2.mvstore.MVMap;
 import org.h2.mvstore.MVMap.Builder;
+import org.h2.mvstore.type.DataType;
+import org.h2.mvstore.type.LongDataType;
 import org.h2.result.ResultExternal;
 import org.h2.value.Value;
 import org.h2.value.ValueArray;
-import org.h2.value.ValueLong;
 
 /**
  * Plain temporary result.
@@ -29,7 +30,7 @@ class MVPlainTempResult extends MVTempResult {
     /**
      * Map with identities of rows as keys rows as values.
      */
-    private final MVMap<ValueLong, ValueArray> map;
+    private final MVMap<Long, ValueArray> map;
 
     /**
      * Counter for the identities of rows. A separate counter is used instead of
@@ -47,7 +48,7 @@ class MVPlainTempResult extends MVTempResult {
     /**
      * Cursor for the {@link #next()} method.
      */
-    private Cursor<ValueLong, ValueArray> cursor;
+    private Cursor<Long, ValueArray> cursor;
 
     /**
      * Creates a shallow copy of the result.
@@ -71,9 +72,9 @@ class MVPlainTempResult extends MVTempResult {
      */
     MVPlainTempResult(Database database, Expression[] expressions) {
         super(database);
-        ValueDataType keyType = new ValueDataType(null, null, null);
+        DataType keyType = LongDataType.INSTANCE;
         valueType = new ValueDataType(database.getCompareMode(), database, new int[expressions.length]);
-        Builder<ValueLong, ValueArray> builder = new MVMap.Builder<ValueLong, ValueArray>().keyType(keyType)
+        Builder<Long, ValueArray> builder = new MVMap.Builder<Long, ValueArray>().keyType(keyType)
                 .valueType(valueType);
         map = store.openMap("tmp", builder);
     }
@@ -81,7 +82,7 @@ class MVPlainTempResult extends MVTempResult {
     @Override
     public int addRow(Value[] values) {
         assert parent == null && index == null;
-        map.put(ValueLong.get(counter++), ValueArray.get(values));
+        map.put(counter++, ValueArray.get(values));
         return ++rowCount;
     }
 
@@ -100,7 +101,7 @@ class MVPlainTempResult extends MVTempResult {
     private void createIndex() {
         Builder<ValueArray, Boolean> builder = new MVMap.Builder<ValueArray, Boolean>().keyType(valueType);
         index = store.openMap("idx", builder);
-        Cursor<ValueLong, ValueArray> c = map.cursor(null);
+        Cursor<Long, ValueArray> c = map.cursor(null);
         while (c.hasNext()) {
             c.next();
             index.putIfAbsent(c.getValue(), true);

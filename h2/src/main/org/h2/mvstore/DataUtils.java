@@ -17,6 +17,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.h2.engine.Constants;
+import org.h2.mvstore.type.DataType;
 
 /**
  * Utility methods
@@ -1035,6 +1036,31 @@ public final class DataUtils {
             throw newIllegalStateException(ERROR_FILE_CORRUPT,
                     "Error parsing the value {0}", v, e);
         }
+    }
+
+    public static int binarySearch(DataType dataType, Object key, Object storage, int size, int initialGuess) {
+        Object keys[] = (Object[])storage;
+        int low = 0;
+        int high = size - 1;
+        // the cached index minus one, so that
+        // for the first time (when cachedCompare is 0),
+        // the default value is used
+        int x = initialGuess - 1;
+        if (x < 0 || x > high) {
+            x = high >>> 1;
+        }
+        while (low <= high) {
+            int compare = dataType.compare(key, keys[x]);
+            if (compare > 0) {
+                low = x + 1;
+            } else if (compare < 0) {
+                high = x - 1;
+            } else {
+                return x;
+            }
+            x = (low + high) >>> 1;
+        }
+        return -(low + 1);
     }
 
     /**
