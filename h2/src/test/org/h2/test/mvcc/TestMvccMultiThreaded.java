@@ -30,6 +30,9 @@ public class TestMvccMultiThreaded extends TestBase {
 
     @Override
     public void test() throws Exception {
+        if (!config.mvcc) {
+            return;
+        }
         testConcurrentSelectForUpdate();
         testMergeWithUniqueKeyViolation();
         testConcurrentMerge();

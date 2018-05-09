@@ -34,7 +34,7 @@ public class TestMvcc4 extends TestBase {
 
     @Override
     public void test() throws SQLException {
-        if (config.networked) {
+        if (config.networked || !config.mvcc) {
             return;
         }
         testSelectForUpdateAndUpdateConcurrency();

@@ -12,7 +12,6 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
-
 import org.h2.api.DatabaseEventListener;
 import org.h2.api.ErrorCode;
 import org.h2.command.ddl.CreateTableData;
@@ -440,11 +439,6 @@ public class RegularTable extends TableBase {
     }
 
     @Override
-    public boolean isLockedExclusivelyBy(Session session) {
-        return lockExclusiveSession == session;
-    }
-
-    @Override
     public boolean lock(Session session, boolean exclusive,
             boolean forceLockEvenInMvcc) {
         int lockMode = database.getLockMode();
@@ -645,11 +639,13 @@ public class RegularTable extends TableBase {
                     }
                 }
             }
-            Session lockExclusiveSession = this.lockExclusiveSession;
-            if (error == null && lockExclusiveSession != null) {
-                Table t = lockExclusiveSession.getWaitForLock();
+            // take a local copy so we don't see inconsistent data, since we are
+            // not locked while checking the lockExclusiveSession value
+            Session copyOfLockExclusiveSession = this.lockExclusiveSession;
+            if (error == null && copyOfLockExclusiveSession != null) {
+                Table t = copyOfLockExclusiveSession.getWaitForLock();
                 if (t != null) {
-                    error = t.checkDeadlock(lockExclusiveSession, clash, visited);
+                    error = t.checkDeadlock(copyOfLockExclusiveSession, clash, visited);
                     if (error != null) {
                         error.add(session);
                     }
@@ -669,6 +665,11 @@ public class RegularTable extends TableBase {
     @Override
     public boolean isLockedExclusively() {
         return lockExclusiveSession != null;
+    }
+
+    @Override
+    public boolean isLockedExclusivelyBy(Session session) {
+        return lockExclusiveSession == session;
     }
 
     @Override

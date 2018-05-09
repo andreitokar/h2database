@@ -10,6 +10,8 @@ import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.MVMap;
 import org.h2.mvstore.Page;
 import org.h2.mvstore.type.DataType;
+
+import java.util.AbstractMap;
 import java.util.BitSet;
 import java.util.Iterator;
 import java.util.Map;
@@ -697,7 +699,7 @@ public final class TransactionMap<K, V> {
         @Override
         @SuppressWarnings("unchecked")
         protected Map.Entry<K, V> registerCurrent(K key, VersionedValue data) {
-            return new DataUtils.MapEntry<>(key, (V) data.value);
+            return new AbstractMap.SimpleImmutableEntry<>(key, (V) data.value);
         }
     }
 

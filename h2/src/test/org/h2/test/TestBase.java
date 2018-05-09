@@ -244,6 +244,8 @@ public abstract class TestBase {
             if (config.mvStore) {
                 name = addOption(name, "MV_STORE", "true");
                 // name = addOption(name, "MVCC", "true");
+            } else {
+                name = addOption(name, "MV_STORE", "false");
             }
             return name;
         }
@@ -847,6 +849,19 @@ public abstract class TestBase {
         }
         assertFalse(message, rs0.next());
         assertFalse(message, rs1.next());
+    }
+
+    /**
+     * Check if two objects are the same, and if not throw an exception.
+     *
+     * @param expected the expected value
+     * @param actual the actual value
+     * @throws AssertionError if the objects are not the same
+     */
+    public void assertSame(Object expected, Object actual) {
+        if (expected != actual) {
+            fail(" expected: " + expected + " != actual: " + actual);
+        }
     }
 
     /**
