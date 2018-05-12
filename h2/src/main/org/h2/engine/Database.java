@@ -943,12 +943,12 @@ public class Database implements DataHandler {
         if (meta == null) {
             return true;
         }
-        boolean doCheck = SysProperties.CHECK2
+        boolean doCheck = SysProperties.CHECK2;
         if (doCheck) {
             // If we are locking two different databases in the same stack, just ignore it.
             // This only happens in TestLinkedTable where we connect to another h2 DB in the same process.
-            doCheck = META_LOCK_DEBUGGING_DB.get() != null
-                                && META_LOCK_DEBUGGING_DB.get() != this;
+            Database databaseToTrack = META_LOCK_DEBUGGING_DB.get();
+            doCheck = databaseToTrack != null && databaseToTrack != this;
             if (doCheck) {
                 final Session prev = META_LOCK_DEBUGGING.get();
                 if (prev != null && prev != session) {
@@ -961,7 +961,7 @@ public class Database implements DataHandler {
             }
         }
         boolean wasLocked = meta.lock(session, true, true);
-        if (doCheck && !wasLocked && meta.isLockedExclusively() /* && false*/) {
+        if (doCheck && !wasLocked && meta.isLockedExclusively()) {
             final Session prev = META_LOCK_DEBUGGING.get();
             if (prev == null) {
                 META_LOCK_DEBUGGING.set(session);
@@ -1478,7 +1478,7 @@ public class Database implements DataHandler {
             }
         }
         reconnectModified(false);
-        if (mvStore != null && !mvStore.getStore().isClosed()) {
+        if (mvStore != null && mvStore.getStore() != null && !mvStore.getStore().isClosed()) {
             long maxCompactTime = dbSettings.maxCompactTime;
             if (compactMode == CommandInterface.SHUTDOWN_COMPACT) {
                 mvStore.compactFile(dbSettings.maxCompactTime);

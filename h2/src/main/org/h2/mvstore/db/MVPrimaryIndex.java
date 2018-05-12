@@ -328,7 +328,7 @@ public final class MVPrimaryIndex extends BaseIndex
             return new MVStoreCursor(Collections.<Entry<Long,Row>> emptyList().iterator());
         }
         Row value = map.get(rowId);
-        Entry<Long,Row> e = new AbstractMap.SimpleImmutableEntry<Long,Row>(rowId, value);
+        Entry<Long,Row> e = new AbstractMap.SimpleImmutableEntry<>(rowId, value);
         List<Entry<Long,Row>> list = Collections.singletonList(e);
         MVStoreCursor c = new MVStoreCursor(list.iterator());
         c.next();

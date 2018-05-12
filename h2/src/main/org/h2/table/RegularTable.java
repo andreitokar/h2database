@@ -11,6 +11,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import org.h2.api.DatabaseEventListener;
 import org.h2.api.ErrorCode;
@@ -54,7 +55,10 @@ public class RegularTable extends TableBase {
     private Index scanIndex;
     private long rowCount;
     private volatile Session lockExclusiveSession;
-    private HashSet<Session> lockSharedSessions = new HashSet<>();
+
+    // using a ConcurrentHashMap as a set
+    private ConcurrentHashMap<Session, Session> lockSharedSessions =
+            new ConcurrentHashMap<>();
 
     /**
      * The queue of sessions waiting to lock the table. It is a FIFO queue to
@@ -459,10 +463,10 @@ public class RegularTable extends TableBase {
         if (lockExclusiveSession == session) {
             return true;
         }
+        if (!exclusive && lockSharedSessions.containsKey(session)) {
+          return true;
+      }
         synchronized (database) {
-            if (lockExclusiveSession == session) {
-                return true;
-            }
             if (!exclusive && lockSharedSessions.contains(session)) {
                 return true;
             }
@@ -542,7 +546,7 @@ public class RegularTable extends TableBase {
                     lockExclusiveSession = session;
                     return true;
                 } else if (lockSharedSessions.size() == 1 &&
-                        lockSharedSessions.contains(session)) {
+                        lockSharedSessions.containsKey(session)) {
                     traceLock(session, exclusive, "add (upgraded) for ");
                     lockExclusiveSession = session;
                     return true;
@@ -561,10 +565,10 @@ public class RegularTable extends TableBase {
                         return true;
                     }
                 }
-                if (!lockSharedSessions.contains(session)) {
+                if (!lockSharedSessions.containsKey(session)) {
                     traceLock(session, exclusive, "ok");
                     session.addLock(this);
-                    lockSharedSessions.add(session);
+                    lockSharedSessions.put(session, session);
                 }
                 return true;
             }
@@ -625,7 +629,7 @@ public class RegularTable extends TableBase {
             }
             visited.add(session);
             ArrayList<Session> error = null;
-            for (Session s : lockSharedSessions) {
+            for (Session s : lockSharedSessions.keySet()) {
                 if (s == session) {
                     // it doesn't matter if we have locked the object already
                     continue;
@@ -641,7 +645,7 @@ public class RegularTable extends TableBase {
             }
             // take a local copy so we don't see inconsistent data, since we are
             // not locked while checking the lockExclusiveSession value
-            Session copyOfLockExclusiveSession = this.lockExclusiveSession;
+            Session copyOfLockExclusiveSession = lockExclusiveSession;
             if (error == null && copyOfLockExclusiveSession != null) {
                 Table t = copyOfLockExclusiveSession.getWaitForLock();
                 if (t != null) {
@@ -677,6 +681,7 @@ public class RegularTable extends TableBase {
         if (database != null) {
             traceLock(s, lockExclusiveSession == s, "unlock");
             if (lockExclusiveSession == s) {
+                lockSharedSessions.remove(s);
                 lockExclusiveSession = null;
             }
             synchronized (database) {
