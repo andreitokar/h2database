@@ -946,7 +946,8 @@ public class Database implements DataHandler {
         boolean doCheck = SysProperties.CHECK2;
         if (doCheck) {
             // If we are locking two different databases in the same stack, just ignore it.
-            // This only happens in TestLinkedTable where we connect to another h2 DB in the same process.
+            // This only happens in TestLinkedTable where we connect to another h2 DB in the
+            // same process.
             Database databaseToTrack = META_LOCK_DEBUGGING_DB.get();
             doCheck = databaseToTrack != null && databaseToTrack != this;
             if (doCheck) {
