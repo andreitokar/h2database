@@ -107,7 +107,8 @@ public final class TransactionMap<K, V> {
             }
         } while(committingTransactions != store.committingTransactions.get());
 
-        long size = mapRootReference.root.getTotalCount();
+        Page mapRootPage = mapRootReference.root;
+        long size = mapRootPage.getTotalCount();
         if (undoLogSize == 0) {
             return size;
         }
@@ -116,7 +117,7 @@ public final class TransactionMap<K, V> {
             // the undo log is larger than the map -
             // count the entries of the map
             MapSizeAdjuster processor = new MapSizeAdjuster(committingTransactions, transaction.transactionId);
-            MVMap.process(mapRootReference.root, null, processor);
+            MVMap.process(mapRootPage, null, processor);
             adjuster = processor;
         } else {
             // The undo log is smaller than the map -
@@ -124,7 +125,7 @@ public final class TransactionMap<K, V> {
             // Entry is irrelevant if it was newly added by the uncommitted transaction, other than the curent one.
             // Also irrelevalnt are entries with value of null, if they are modified (not created)
             // by the current transaction or some committed transaction, which is not closed yet.
-            UndoLogMapSizeAdjuster processor = new UndoLogMapSizeAdjuster(committingTransactions, mapRootReference.root,
+            UndoLogMapSizeAdjuster processor = new UndoLogMapSizeAdjuster(committingTransactions, mapRootPage,
                                                             map.getId(), transaction.transactionId);
             for (MVMap.RootReference undoLogRootReference : undoLogRootReferences) {
                 if (undoLogRootReference != null) {

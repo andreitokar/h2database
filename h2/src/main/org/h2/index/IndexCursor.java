@@ -220,8 +220,15 @@ public class IndexCursor implements Cursor {
         return row;
     }
 
-    private SearchRow getSearchRow(SearchRow row, int columnId, Value v,
-            boolean max) {
+    private SearchRow getSearchRow(SearchRow row, int columnId, Value v, boolean max) {
+        Column column = columnId == ROWID_INDEX ?
+                                table.getRowIdColumn() :
+                                table.getColumn(columnId);
+        int vType = v.getType();
+        int resType = Value.getHigherOrder(column.getType(), vType);
+        if(vType != resType) {
+            v = column.convert(v, session.getDatabase().getMode());
+        }
         if (row == null) {
             row = table.getTemplateRow();
         } else {
