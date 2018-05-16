@@ -126,7 +126,7 @@ public final class TransactionMap<K, V> {
             // Also irrelevalnt are entries with value of null, if they are modified (not created)
             // by the current transaction or some committed transaction, which is not closed yet.
             UndoLogMapSizeAdjuster processor = new UndoLogMapSizeAdjuster(committingTransactions, mapRootPage,
-                                                            map.getId(), transaction.transactionId);
+                                                            map, transaction.transactionId);
             for (MVMap.RootReference undoLogRootReference : undoLogRootReferences) {
                 if (undoLogRootReference != null) {
                     MVMap.process(undoLogRootReference.root, null, processor);
@@ -185,23 +185,23 @@ public final class TransactionMap<K, V> {
     private static final class UndoLogMapSizeAdjuster extends AbstractMapSizeAdjuster
                                                       implements MVMap.EntryProcessor<Long,Record> {
         private final Page root;
-        private final int    mapId;
+        private final MVMap<?, VersionedValue> map;
 
-        private UndoLogMapSizeAdjuster(BitSet committingTransactions, Page root, int mapId, int transactionId) {
+        private UndoLogMapSizeAdjuster(BitSet committingTransactions, Page root, MVMap<?, VersionedValue> map, int transactionId) {
             super(committingTransactions, transactionId);
             this.root = root;
-            this.mapId = mapId;
+            this.map = map;
         }
 
         @Override
         public boolean process(Long undoKey, Record op) {
-            if (op.mapId == mapId) {
+            if (op.mapId == map.getId()) {
                 assert undoKey != null;
                 int txId = TransactionStore.getTransactionId(undoKey);
                 boolean isVisible = isVisible(txId);
                 if (isVisible ? op.oldValue != null && op.oldValue.getOperationId() == 0 && op.oldValue.value != null
                               : op.oldValue == null) {
-                    VersionedValue currentValue = (VersionedValue) Page.get(root, op.key);
+                    VersionedValue currentValue = map.get(root, op.key);
                     if (isVisible ? (currentValue == null || currentValue.value == null)
                                   : currentValue != null) {
                         decrement();
@@ -374,7 +374,7 @@ public final class TransactionMap<K, V> {
                 mapRootReference = map.getRoot();
             } while(committingTransactions != store.committingTransactions.get());
 
-            VersionedValue current = (VersionedValue) Page.get(mapRootReference.root, key);
+            VersionedValue current = map.get(mapRootReference.root, key);
             VersionedValue old = getValue(current, committingTransactions);
             if (!map.areValuesEqual(old, current)) {
                 assert current != null;
@@ -412,7 +412,7 @@ public final class TransactionMap<K, V> {
      */
     @SuppressWarnings("unchecked")
     public V get(K key) {
-        VersionedValue data = (VersionedValue) Page.get(map.getRootPage(), key);
+        VersionedValue data = map.get(key);
         if (data == null) {
             // doesn't exist or deleted by a committed transaction
             return null;

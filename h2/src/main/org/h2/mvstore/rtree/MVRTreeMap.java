@@ -48,12 +48,6 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
         return new MVRTreeMap<>(this);
     }
 
-    @Override
-    public V get(Object key) {
-        V result = get(getRootPage(), key);
-        return result;
-    }
-
     /**
      * Iterate over all keys that have an intersection with the given rectangle.
      *

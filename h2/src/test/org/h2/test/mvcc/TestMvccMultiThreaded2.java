@@ -139,10 +139,10 @@ public class TestMvccMultiThreaded2 extends TestBase {
                 // give the other threads a chance to start up before going into our work loop
                 Thread.yield();
 
+                PreparedStatement ps = conn.prepareStatement(
+                        "SELECT * FROM test WHERE entity_id = ? FOR UPDATE");
                 while (!done) {
                     try {
-                        PreparedStatement ps = conn.prepareStatement(
-                                "SELECT * FROM test WHERE entity_id = ? FOR UPDATE");
                         String id;
                         int value;
                         if ((iterationsProcessed & 1) == 0) {
