@@ -390,20 +390,21 @@ public final class TransactionStore {
 
     /**
      * Add an undoLog entry.
-     * @param undoKey transactionId/LogId
+     * @param transactionId id of the transaction
+     * @param logId sequential number of the log record within transaction
      * @param record Record to add
      */
-    void addUndoLogRecord(Long undoKey, Record record) {
-        int transactionId = getTransactionId(undoKey);
+    long addUndoLogRecord(int transactionId, long logId, Record record) {
+        long undoKey = TransactionStore.getOperationId(transactionId, logId);
         undoLogs[transactionId].append(undoKey, record);
+        return undoKey;
     }
 
     /**
      * Remove an undoLog entry.
-     * @param undoKey transactionId/LogId
+     * @param transactionId id of the transaction
      */
-    void removeUndoLogRecord(Long undoKey) {
-        int transactionId = getTransactionId(undoKey);
+    void removeUndoLogRecord(int transactionId) {
         undoLogs[transactionId].trimLast();
     }
 
@@ -789,16 +790,31 @@ public final class TransactionStore {
         }
     }
 
+    /**
+     * This listener can be registered with the transaction to be notified of
+     * every compensating change during transaction rollback.
+     * Normally this is not required, if no external resources were modified,
+     * because state of all transactional maps will be restored automatically.
+     * Only state of external resources, possibly modified by triggers
+     * need to be restored.
+     */
     public interface RollbackListener {
 
         RollbackListener NONE = new RollbackListener() {
             @Override
             public void onRollback(MVMap<Object, VersionedValue> map, Object key,
-                                   VersionedValue existingValue, VersionedValue restoredValue) {
-
+                                    VersionedValue existingValue, VersionedValue restoredValue) {
+                // do nothing
             }
         };
 
+        /**
+         * Notified of a single map change (add/update/remove)
+         * @param map modified
+         * @param key of the modified entry
+         * @param existingValue value in the map (null if delete is rolled back)
+         * @param restoredValue value to be restored (null if add is rolled back)
+         */
         void onRollback(MVMap<Object,VersionedValue> map, Object key,
                         VersionedValue existingValue, VersionedValue restoredValue);
     }

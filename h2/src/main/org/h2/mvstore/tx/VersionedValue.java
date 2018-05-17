@@ -120,11 +120,11 @@ public class VersionedValue
             }
             VersionedValue one = (VersionedValue) a;
             VersionedValue two = (VersionedValue) b;
-            int comp = Long.compare(one.getOperationId(), two.getOperationId());
+            long comp = one.getOperationId() - two.getOperationId();
             if (comp == 0) {
                 comp = valueType.compare(one.value, two.value);
             }
-            return comp;
+            return Long.signum(comp);
         }
 
         @Override

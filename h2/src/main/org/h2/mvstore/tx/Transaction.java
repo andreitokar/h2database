@@ -151,7 +151,8 @@ public class Transaction {
 
 
     Transaction(TransactionStore store, int transactionId, long sequenceNum, int status,
-                String name, long logId, long timeoutMillis, int ownerId, TransactionStore.RollbackListener listener) {
+                String name, long logId, long timeoutMillis, int ownerId,
+                TransactionStore.RollbackListener listener) {
         this.store = store;
         this.transactionId = transactionId;
         this.sequenceNum = sequenceNum;
@@ -274,8 +275,8 @@ public class Transaction {
 
     public void markStatementEnd() {
         MVStore.TxCounter counter = txCounter;
-        txCounter = null;
         if(counter != null) {
+            txCounter = null;
             store.store.deregisterVersionUsage(counter);
         }
     }
@@ -298,9 +299,8 @@ public class Transaction {
         }
         int currentStatus = getStatus(currentState);
         checkOpen(currentStatus);
-        long undoKey = TransactionStore.getOperationId(transactionId, logId);
         Record log = new Record(mapId, key, oldValue);
-        store.addUndoLogRecord(undoKey, log);
+        long undoKey = store.addUndoLogRecord(transactionId, logId, log);
         return undoKey;
     }
 
@@ -318,8 +318,7 @@ public class Transaction {
         }
         int currentStatus = getStatus(currentState);
         checkOpen(currentStatus);
-        Long undoKey = TransactionStore.getOperationId(transactionId, logId);
-        store.removeUndoLogRecord(undoKey);
+        store.removeUndoLogRecord(transactionId);
     }
 
     /**
