@@ -925,7 +925,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
                     if (!locks.contains(log.getTable())
                             && TableType.TABLE_LINK != tableType
                             && TableType.EXTERNAL_TABLE_ENGINE != tableType) {
-                        DbException.throwInternalError("" + tableType);
+                        DbException.throwInternalError(String.valueOf(tableType));
                     }
                 }
             }

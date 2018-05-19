@@ -678,8 +678,7 @@ public final class TransactionMap<K, V> {
 
     private static final class KeyIterator<K> extends TMIterator<K,K> {
 
-        public KeyIterator(TransactionMap<K, ?> transactionMap,
-                           K from, K to, boolean includeUncommitted) {
+        public KeyIterator(TransactionMap<K, ?> transactionMap, K from, K to, boolean includeUncommitted) {
             super(transactionMap, from, to, includeUncommitted);
         }
 
@@ -709,8 +708,7 @@ public final class TransactionMap<K, V> {
         private final boolean                  includeAllUncommitted;
         private       X                        current;
 
-        protected TMIterator(TransactionMap<K,?> transactionMap, K from, K to, boolean includeAllUncommitted)
-        {
+        protected TMIterator(TransactionMap<K,?> transactionMap, K from, K to, boolean includeAllUncommitted) {
             this.transactionMap = transactionMap;
             TransactionStore store = transactionMap.transaction.store;
             MVMap<K, VersionedValue> map = transactionMap.map;

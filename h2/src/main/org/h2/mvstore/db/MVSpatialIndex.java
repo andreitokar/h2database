@@ -50,7 +50,6 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
      */
     final MVTable mvTable;
 
-    private final String mapName;
     private final TransactionMap<SpatialKey, Value> dataMap;
     private final MVRTreeMap<VersionedValue> spatialMap;
 
@@ -94,7 +93,7 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
         if (!database.isStarting()) {
             checkIndexColumnTypes(columns);
         }
-        mapName = "index." + getId();
+        String mapName = "index." + getId();
         ValueDataType vt = new ValueDataType(null, null, null);
         DataType valueType = new VersionedValue.Type(vt);
         MVRTreeMap.Builder<VersionedValue> mapBuilder =

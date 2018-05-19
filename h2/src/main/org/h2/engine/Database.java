@@ -73,7 +73,6 @@ import org.h2.util.SourceCompiler;
 import org.h2.util.StringUtils;
 import org.h2.util.TempFileDeleter;
 import org.h2.util.Utils;
-import org.h2.value.CaseInsensitiveConcurrentMap;
 import org.h2.value.CaseInsensitiveMap;
 import org.h2.value.CompareMode;
 import org.h2.value.NullableKeyConcurrentMap;
@@ -425,7 +424,7 @@ public class Database implements DataHandler {
                 if (now > reconnectCheckNext) {
                     if (pending) {
                         String pos = pageStore == null ?
-                                null : "" + pageStore.getWriteCountTotal();
+                                null : Long.toString(pageStore.getWriteCountTotal());
                         lock.setProperty("logPos", pos);
                         lock.save();
                     }
@@ -447,7 +446,7 @@ public class Database implements DataHandler {
                 }
             }
             String pos = pageStore == null ?
-                    null : "" + pageStore.getWriteCountTotal();
+                    null : Long.toString(pageStore.getWriteCountTotal());
             lock.setProperty("logPos", pos);
             if (pending) {
                 lock.setProperty("changePending", "true-" + Math.random());
@@ -2681,7 +2680,7 @@ public class Database implements DataHandler {
         long now = System.nanoTime();
         if (now > reconnectCheckNext + reconnectCheckDelayNs) {
             if (SysProperties.CHECK && checkpointAllowed < 0) {
-                DbException.throwInternalError("" + checkpointAllowed);
+                DbException.throwInternalError(Integer.toString(checkpointAllowed));
             }
             synchronized (reconnectSync) {
                 if (checkpointAllowed > 0) {
@@ -2751,7 +2750,7 @@ public class Database implements DataHandler {
             if (reconnectModified(true)) {
                 checkpointAllowed++;
                 if (SysProperties.CHECK && checkpointAllowed > 20) {
-                    throw DbException.throwInternalError("" + checkpointAllowed);
+                    throw DbException.throwInternalError(Integer.toString(checkpointAllowed));
                 }
                 return true;
             }
@@ -2773,7 +2772,7 @@ public class Database implements DataHandler {
             checkpointAllowed--;
         }
         if (SysProperties.CHECK && checkpointAllowed < 0) {
-            throw DbException.throwInternalError("" + checkpointAllowed);
+            throw DbException.throwInternalError(Integer.toString(checkpointAllowed));
         }
     }
 
@@ -2895,9 +2894,7 @@ public class Database implements DataHandler {
      * @return the hash map
      */
     public <V> ConcurrentHashMap<String, V> newConcurrentStringMap() {
-        return dbSettings.databaseToUpper ?
-                new NullableKeyConcurrentMap<V>() :
-                new CaseInsensitiveConcurrentMap<V>();
+        return new NullableKeyConcurrentMap<>(!dbSettings.databaseToUpper);
     }
 
     /**
