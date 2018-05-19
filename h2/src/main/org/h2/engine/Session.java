@@ -1776,8 +1776,8 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
 
     @Override
     public void onRollback(MVMap<Object, VersionedValue> map, Object key,
-                           VersionedValue existingValue,
-                           VersionedValue restoredValue) {
+                            VersionedValue existingValue,
+                            VersionedValue restoredValue) {
         // Here we are relying on the fact that map which backs table's primary index
         // has the same name as the table itself
         MVTableEngine.Store store = database.getMvStore();
@@ -1816,20 +1816,19 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
         Object value = versionedValue == null ? null : versionedValue.value;
         Row result = null;
         if (value != null) {
-            Row result11;
             if(value instanceof Row) {
-                result11 = (Row) value;
-                assert result11.getKey() == recKey
-                     : result11.getKey() + " != " + recKey;
+                result = (Row) value;
+                assert result.getKey() == recKey
+                     : result.getKey() + " != " + recKey;
             } else {
                 ValueArray array = (ValueArray) value;
-                result11 = table.createRow(array.getList(), 0);
-                result11.setKey(recKey);
+                result = table.createRow(array.getList(), 0);
+                result.setKey(recKey);
             }
-            result = result11;
         }
         return result;
     }
+
 
     /**
      * Represents a savepoint (a position in a transaction to where one can roll

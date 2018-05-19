@@ -250,7 +250,6 @@ public final class TransactionMap<K, V> {
      * @param value the new value (not null)
      * @return the old value
      */
-    @SuppressWarnings("unchecked")
     public V putIfAbsent(K key, V value) {
         DataUtils.checkArgument(value != null, "The value may not be null");
         TxDecisionMaker decisionMaker = new TxDecisionMaker.PutIfAbsentDecisionMaker(map.getId(), key, value, transaction);
@@ -292,7 +291,6 @@ public final class TransactionMap<K, V> {
         return set(key, decisionMaker);
     }
 
-    @SuppressWarnings("unchecked")
     private V set(K key, TxDecisionMaker decisionMaker) {
         TransactionStore store = transaction.store;
         Transaction blockingTransaction;
