@@ -185,6 +185,7 @@ public abstract class Command implements CommandInterface {
         startTimeNanos = 0;
         long start = 0;
         Database database = session.getDatabase();
+        Object sync = database.getMvStore() != null ? null : database.isMultiThreaded() ? session : database;
         session.waitIfExclusiveModeEnabled();
         boolean callStop = true;
         boolean writing = !isReadOnly();
@@ -193,13 +194,22 @@ public abstract class Command implements CommandInterface {
                 // wait
             }
         }
+
         session.startStatementWithinTransaction();
         session.setCurrentCommand(this, false);
         try {
             while (true) {
                 database.checkPowerOff();
                 try {
-                    ResultInterface result = query(maxrows);
+                    ResultInterface result;
+                    if (sync != null) {
+                        //noinspection SynchronizationOnLocalVariableOrMethodParameter
+                        synchronized (sync) {
+                            result = query(maxrows);
+                        }
+                    } else {
+                        result = query(maxrows);
+                    }
                     callStop = !result.isLazy();
                     return result;
                 } catch (DbException e) {
@@ -241,6 +251,7 @@ public abstract class Command implements CommandInterface {
     public ResultWithGeneratedKeys executeUpdate(Object generatedKeysRequest) {
         long start = 0;
         Database database = session.getDatabase();
+        Object sync = database.getMvStore() != null ? null : database.isMultiThreaded() ? session : database;
         session.waitIfExclusiveModeEnabled();
         boolean callStop = true;
         boolean writing = !isReadOnly();
@@ -257,7 +268,15 @@ public abstract class Command implements CommandInterface {
             while (true) {
                 database.checkPowerOff();
                 try {
-                    int updateCount = update();
+                    int updateCount;
+                    if (sync != null) {
+                        //noinspection SynchronizationOnLocalVariableOrMethodParameter
+                        synchronized (sync) {
+                            updateCount = update();
+                        }
+                    } else {
+                        updateCount = update();
+                    }
                     if (!Boolean.FALSE.equals(generatedKeysRequest)) {
                         return new ResultWithGeneratedKeys.WithKeys(updateCount,
                                 session.getGeneratedKeys().getKeys(session));
@@ -295,8 +314,8 @@ public abstract class Command implements CommandInterface {
                 } else {
                     session.rollbackTo(rollback, false);
                 }
-            } catch(Throwable ignore) {
-                e.addSuppressed(ignore);
+            } catch(Throwable nested) {
+                e.addSuppressed(nested);
             }
             ex = e;
             throw e;
@@ -307,11 +326,11 @@ public abstract class Command implements CommandInterface {
                     if (callStop) {
                         stop();
                     }
-                } catch(Throwable ignore) {
+                } catch(Throwable nested) {
                     if(ex == null) {
-                        throw ignore;
+                        throw nested;
                     } else {
-                        ex.addSuppressed(ignore);
+                        ex.addSuppressed(nested);
                     }
                 } finally {
                     if (writing) {

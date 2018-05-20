@@ -386,7 +386,7 @@ java org.h2.test.TestAll timer
     /**
      * If MAX_MEMORY_UNDO=3 should be used.
      */
-    boolean diskUndo;
+    public boolean diskUndo;
 
     /**
      * If TRACE_LEVEL_SYSTEM_OUT should be set to 2 (for debugging only).
@@ -401,7 +401,7 @@ java org.h2.test.TestAll timer
     /**
      * The THROTTLE value to use.
      */
-    int throttle;
+    public int throttle;
 
     /**
      * The THROTTLE value to use by default.
@@ -421,7 +421,7 @@ java org.h2.test.TestAll timer
     /**
      * The cache type.
      */
-    String cacheType;
+    public String cacheType;
 
     /** If not null the database should be opened with the collation parameter */
     public String collation;
@@ -837,6 +837,7 @@ kill -9 `jps -l | grep "org.h2.test." | cut -d " " -f 1`
             addTest(new TestPreparedStatement());
             addTest(new TestResultSet());
             addTest(new TestStatement());
+            addTest(new TestGetGeneratedKeys());
             addTest(new TestTransactionIsolation());
             addTest(new TestUpdatableResultSet());
             addTest(new TestZloty());

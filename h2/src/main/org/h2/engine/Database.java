@@ -308,13 +308,13 @@ public class Database implements DataHandler {
                 }
                 traceSystem.close();
             }
-            DbException dbException = DbException.convert(e);
             try {
                 closeOpenFilesAndUnlock(false);
-            } catch(Throwable ignore) {
+            } catch(Throwable nested) {
                 // to preserve original exeption
-                e.addSuppressed(ignore);
+                e.addSuppressed(nested);
             }
+            DbException dbException = DbException.convert(e);
             throw dbException;
         }
     }
@@ -1331,7 +1331,7 @@ public class Database implements DataHandler {
                     closing = true;
                 }
             }
-            if(!this.isReadOnly()) {
+            if (!this.isReadOnly()) {
                 removeOrphanedLobs();
             }
             try {
@@ -1424,81 +1424,84 @@ public class Database implements DataHandler {
      * @param flush whether writing is allowed
      */
     private synchronized void closeOpenFilesAndUnlock(boolean flush) {
-        stopWriter();
-        if (pageStore != null) {
-            if (flush) {
-                try {
-                    pageStore.checkpoint();
-                    if (!readOnly) {
-                        lockMeta(pageStore.getPageStoreSession());
-                        pageStore.compact(compactMode);
-                        unlockMeta(pageStore.getPageStoreSession());
+        try {
+            stopWriter();
+            if (pageStore != null) {
+                if (flush) {
+                    try {
+                        pageStore.checkpoint();
+                        if (!readOnly) {
+                            lockMeta(pageStore.getPageStoreSession());
+                            pageStore.compact(compactMode);
+                            unlockMeta(pageStore.getPageStoreSession());
+                        }
+                    } catch (DbException e) {
+                        if (SysProperties.CHECK2) {
+                            int code = e.getErrorCode();
+                            if (code != ErrorCode.DATABASE_IS_CLOSED &&
+                                    code != ErrorCode.LOCK_TIMEOUT_1 &&
+                                    code != ErrorCode.IO_EXCEPTION_2) {
+                                e.printStackTrace();
+                            }
+                        }
+                        trace.error(e, "close");
+                    } catch (Throwable t) {
+                        if (SysProperties.CHECK2) {
+                            t.printStackTrace();
+                        }
+                        trace.error(t, "close");
                     }
-                } catch (DbException e) {
-                    if (SysProperties.CHECK2) {
-                        int code = e.getErrorCode();
-                        if (code != ErrorCode.DATABASE_IS_CLOSED &&
-                                code != ErrorCode.LOCK_TIMEOUT_1 &&
-                                code != ErrorCode.IO_EXCEPTION_2) {
-                            e.printStackTrace();
+                }
+            }
+            reconnectModified(false);
+            if (mvStore != null && mvStore.getStore() != null && !mvStore.getStore().isClosed()) {
+                long maxCompactTime = dbSettings.maxCompactTime;
+                if (compactMode == CommandInterface.SHUTDOWN_COMPACT) {
+                    mvStore.compactFile(dbSettings.maxCompactTime);
+                } else if (compactMode == CommandInterface.SHUTDOWN_DEFRAG) {
+                    maxCompactTime = Long.MAX_VALUE;
+                } else if (getSettings().defragAlways) {
+                    maxCompactTime = Long.MAX_VALUE;
+                }
+                mvStore.close(maxCompactTime);
+            }
+            if (systemSession != null) {
+                systemSession.close();
+                systemSession = null;
+            }
+            if (lobSession != null) {
+                lobSession.close();
+                lobSession = null;
+            }
+            closeFiles();
+            if (persistent && lock == null &&
+                    fileLockMethod != FileLockMethod.NO &&
+                    fileLockMethod != FileLockMethod.FS) {
+                // everything already closed (maybe in checkPowerOff)
+                // don't delete temp files in this case because
+                // the database could be open now (even from within another process)
+                return;
+            }
+            if (persistent) {
+                deleteOldTempFiles();
+            }
+        } finally {
+            if (lock != null) {
+                if (fileLockMethod == FileLockMethod.SERIALIZED) {
+                    // wait before deleting the .lock file,
+                    // otherwise other connections can not detect that
+                    if (lock.load().containsKey("changePending")) {
+                        try {
+                            Thread.sleep(TimeUnit.NANOSECONDS
+                                    .toMillis((long) (reconnectCheckDelayNs * 1.1)));
+                        } catch (InterruptedException e) {
+                            trace.error(e, "close");
                         }
                     }
-                    trace.error(e, "close");
-                } catch (Throwable t) {
-                    if (SysProperties.CHECK2) {
-                        t.printStackTrace();
-                    }
-                    trace.error(t, "close");
                 }
+                lock.unlock();
+                lock = null;
             }
-        }
-        reconnectModified(false);
-        if (mvStore != null && mvStore.getStore() != null && !mvStore.getStore().isClosed()) {
-            long maxCompactTime = dbSettings.maxCompactTime;
-            if (compactMode == CommandInterface.SHUTDOWN_COMPACT) {
-                mvStore.compactFile(dbSettings.maxCompactTime);
-            } else if (compactMode == CommandInterface.SHUTDOWN_DEFRAG) {
-                maxCompactTime = Long.MAX_VALUE;
-            } else if (getSettings().defragAlways) {
-                maxCompactTime = Long.MAX_VALUE;
-            }
-            mvStore.close(maxCompactTime);
-        }
-        closeFiles();
-        if (persistent && lock == null &&
-                fileLockMethod != FileLockMethod.NO &&
-                fileLockMethod != FileLockMethod.FS) {
-            // everything already closed (maybe in checkPowerOff)
-            // don't delete temp files in this case because
-            // the database could be open now (even from within another process)
-            return;
-        }
-        if (persistent) {
-            deleteOldTempFiles();
-        }
-        if (systemSession != null) {
-            systemSession.close();
-            systemSession = null;
-        }
-        if (lobSession != null) {
-            lobSession.close();
-            lobSession = null;
-        }
-        if (lock != null) {
-            if (fileLockMethod == FileLockMethod.SERIALIZED) {
-                // wait before deleting the .lock file,
-                // otherwise other connections can not detect that
-                if (lock.load().containsKey("changePending")) {
-                    try {
-                        Thread.sleep(TimeUnit.NANOSECONDS
-                                .toMillis((long) (reconnectCheckDelayNs * 1.1)));
-                    } catch (InterruptedException e) {
-                        trace.error(e, "close");
-                    }
-                }
-            }
-            lock.unlock();
-            lock = null;
         }
     }
 

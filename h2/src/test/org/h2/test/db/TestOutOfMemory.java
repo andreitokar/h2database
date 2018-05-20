@@ -133,10 +133,20 @@ public class TestOutOfMemory extends TestBase {
                         ErrorCode.GENERAL_ERROR_1 == e.getErrorCode());
             }
             recoverAfterOOM();
-            conn = DriverManager.getConnection(url);
-            stat = conn.createStatement();
-            stat.execute("SELECT 1");
-            conn.close();
+            try {
+                conn = DriverManager.getConnection(url);
+                stat = conn.createStatement();
+                stat.execute("SELECT 1");
+                conn.close();
+            } catch (SQLException e) {
+                assertTrue("Unexpected error code: " + e.getErrorCode(),
+                        ErrorCode.OUT_OF_MEMORY == e.getErrorCode() ||
+                        ErrorCode.FILE_CORRUPTED_1 == e.getErrorCode() ||
+                        ErrorCode.DATABASE_IS_CLOSED == e.getErrorCode() ||
+                        ErrorCode.GENERAL_ERROR_1 == e.getErrorCode());
+                recoverAfterOOM();
+                println("testDatabaseUsingInMemoryFileSystem() " + e.getErrorCode());
+            }
         } finally {
             // release the static data this test generates
             FileUtils.deleteRecursive(filename, true);

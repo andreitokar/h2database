@@ -1839,7 +1839,7 @@ public class MetaTable extends Table {
                             // STATEMENT_START
                             new Timestamp(start).toString(),
                             // CONTAINS_UNCOMMITTED
-                            Boolean.toString(s.containsUncommitted())
+                            Boolean.toString(s.containsUncommitted()),
                             // STATE
                             String.valueOf(s.getState()),
                             // BLOCKER_ID INT

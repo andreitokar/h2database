@@ -141,6 +141,9 @@ public class FileLock implements Runnable {
                 if (load().equals(properties)) {
                     FileUtils.delete(fileName);
                 }
+                else {
+                    trace.debug("oops");
+                }
             }
             if (serverSocket != null) {
                 serverSocket.close();
@@ -331,7 +334,8 @@ public class FileLock implements Runnable {
         }
         save();
         sleep(SLEEP_GAP);
-        if (!load().equals(properties)) {
+        Properties load = load();
+        if (!load.equals(properties)) {
             fileName = null;
             throw getExceptionFatal("Concurrent update", null);
         }

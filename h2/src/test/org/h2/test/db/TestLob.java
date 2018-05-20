@@ -215,7 +215,7 @@ public class TestLob extends TestBase {
         Statement stat2 = conn2.createStatement();
         ResultSet rs = stat2.executeQuery("select data from lob");
         rs.next();
-        stat.execute("delete lob");
+        stat.execute("delete from lob");
         InputStream in = rs.getBinaryStream(1);
         in.read();
         conn2.close();
@@ -785,7 +785,7 @@ public class TestLob extends TestBase {
         Statement stat = conn.createStatement();
         stat.execute("CREATE TABLE TEST(ID INT, DATA CLOB)");
         stat.execute("INSERT INTO TEST VALUES(1, SPACE(100000))");
-        stat.execute("SET @TOTAL = SELECT DATA FROM TEST WHERE ID=1");
+        stat.execute("SET @TOTAL = (SELECT DATA FROM TEST WHERE ID=1)");
         stat.execute("DROP TABLE TEST");
         stat.execute("CALL @TOTAL LIKE '%X'");
         stat.execute("CREATE TABLE TEST(ID INT, DATA CLOB)");
@@ -1018,7 +1018,7 @@ public class TestLob extends TestBase {
         conn0.commit();
         conn0.setAutoCommit(true);
         Statement stat0 = conn0.createStatement();
-        stat0.executeUpdate("drop table CLOB_ENTITY if exists");
+        stat0.executeUpdate("drop table if exists CLOB_ENTITY");
         stat0.getWarnings();
         stat0.executeUpdate("create table CLOB_ENTITY (ID bigint not null, " +
                 "DATA clob, CLOB_DATA clob, primary key (ID))");

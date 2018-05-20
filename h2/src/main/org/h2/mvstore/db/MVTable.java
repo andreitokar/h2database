@@ -720,8 +720,8 @@ public final class MVTable extends TableBase {
         } catch (Throwable e) {
             try {
                 t.rollbackToSavepoint(savepoint);
-            } catch (Throwable ignore) {
-                e.addSuppressed(ignore);
+            } catch (Throwable nested) {
+                e.addSuppressed(nested);
             }
             throw DbException.convert(e);
         }
@@ -751,8 +751,8 @@ public final class MVTable extends TableBase {
         } catch (Throwable e) {
             try {
                 t.rollbackToSavepoint(savepoint);
-            } catch (Throwable ignore) {
-                e.addSuppressed(ignore);
+            } catch (Throwable nested) {
+                e.addSuppressed(nested);
             }
             throw DbException.convert(e);
         }
@@ -772,8 +772,8 @@ public final class MVTable extends TableBase {
         } catch (Throwable e) {
             try {
                 t.rollbackToSavepoint(savepoint);
-            } catch (Throwable ignore) {
-                e.addSuppressed(ignore);
+            } catch (Throwable nested) {
+                e.addSuppressed(nested);
             }
             throw DbException.convert(e);
         }
