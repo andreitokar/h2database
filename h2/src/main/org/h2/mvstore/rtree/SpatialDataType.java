@@ -11,7 +11,6 @@ import java.util.ArrayList;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.WriteBuffer;
 import org.h2.mvstore.type.DataType;
-import org.h2.util.Utils;
 import org.h2.value.Value;
 
 /**
@@ -354,17 +353,18 @@ public class SpatialDataType implements DataType {
     }
 
     private static ArrayList<Object> getNotNull(ArrayList<Object> list) {
-        ArrayList<Object> result = null;
+        boolean foundNull = false;
         for (Object o : list) {
             SpatialKey a = (SpatialKey) o;
             if (a.isNull()) {
-                result = Utils.newSmallArrayList();
+                foundNull = true;
                 break;
             }
         }
-        if (result == null) {
+        if (!foundNull) {
             return list;
         }
+        ArrayList<Object> result = new ArrayList<>();
         for (Object o : list) {
             SpatialKey a = (SpatialKey) o;
             if (!a.isNull()) {

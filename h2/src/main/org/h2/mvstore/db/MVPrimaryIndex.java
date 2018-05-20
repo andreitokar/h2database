@@ -325,7 +325,7 @@ public final class MVPrimaryIndex extends BaseIndex
         TransactionMap<Long,Row> map = getMap(session);
         Long rowId = first ? map.firstKey() : map.lastKey();
         if (rowId == null) {
-            return new MVStoreCursor(Collections.<Entry<Long,Row>> emptyList().iterator());
+            return new MVStoreCursor(Collections.<Entry<Long,Row>> emptyIterator());
         }
         Row value = map.get(rowId);
         Entry<Long,Row> e = new AbstractMap.SimpleImmutableEntry<>(rowId, value);

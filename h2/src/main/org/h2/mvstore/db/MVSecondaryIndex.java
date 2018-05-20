@@ -33,7 +33,6 @@ import org.h2.result.SortOrder;
 import org.h2.table.Column;
 import org.h2.table.IndexColumn;
 import org.h2.table.TableFilter;
-import org.h2.util.Utils;
 import org.h2.value.CompareMode;
 import org.h2.value.Value;
 import org.h2.value.ValueNull;
@@ -324,7 +323,7 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
         while (true) {
             if (key == null) {
                 return new MVStoreCursor(session,
-                        Collections.<SearchRow>emptyList().iterator(), mvTable);
+                        Collections.<SearchRow>emptyIterator(), mvTable);
             }
             if (key.getValue(columnIds[0]) != ValueNull.INSTANCE) {
                 break;
