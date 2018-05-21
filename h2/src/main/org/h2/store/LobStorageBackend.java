@@ -15,7 +15,6 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
-
 import org.h2.api.ErrorCode;
 import org.h2.engine.Database;
 import org.h2.engine.SysProperties;
@@ -227,9 +226,8 @@ public class LobStorageBackend implements LobStorageInterface {
                 prep.setLong(1, block);
                 ResultSet rs = prep.executeQuery();
                 if (!rs.next()) {
-                    throw DbException.get(ErrorCode.IO_EXCEPTION_1,
-                            "Missing lob entry, block: " + block)
-                            .getSQLException();
+                    throw DbException.getJdbcSQLException(ErrorCode.IO_EXCEPTION_1,
+                            "Missing lob entry, block: " + block);
                 }
                 int compressed = rs.getInt(1);
                 byte[] buffer = rs.getBytes(2);
@@ -249,11 +247,7 @@ public class LobStorageBackend implements LobStorageInterface {
      * @return the prepared statement
      */
     PreparedStatement prepare(String sql) throws SQLException {
-        if (SysProperties.CHECK2) {
-            if (!Thread.holdsLock(database)) {
-                throw DbException.throwInternalError();
-            }
-        }
+        assert Thread.holdsLock(database);
         PreparedStatement prep = prepared.remove(sql);
         if (prep == null) {
             prep = conn.prepareStatement(sql);
@@ -268,11 +262,7 @@ public class LobStorageBackend implements LobStorageInterface {
      * @param prep the prepared statement
      */
     void reuse(String sql, PreparedStatement prep) {
-        if (SysProperties.CHECK2) {
-            if (!Thread.holdsLock(database)) {
-                throw DbException.throwInternalError();
-            }
-        }
+        assert Thread.holdsLock(database);
         prepared.put(sql, prep);
     }
 
@@ -654,8 +644,8 @@ public class LobStorageBackend implements LobStorageInterface {
                 prep.setLong(1, lobId);
                 ResultSet rs = prep.executeQuery();
                 if (!rs.next()) {
-                    throw DbException.get(ErrorCode.IO_EXCEPTION_1,
-                            "Missing lob entry: " + lobId).getSQLException();
+                    throw DbException.getJdbcSQLException(ErrorCode.IO_EXCEPTION_1,
+                            "Missing lob entry: " + lobId);
                 }
                 byteCount = rs.getLong(1);
                 reuse(sql, prep);
@@ -669,8 +659,8 @@ public class LobStorageBackend implements LobStorageInterface {
             rs.next();
             int lobMapCount = rs.getInt(1);
             if (lobMapCount == 0) {
-                throw DbException.get(ErrorCode.IO_EXCEPTION_1,
-                        "Missing lob entry: " + lobId).getSQLException();
+                throw DbException.getJdbcSQLException(ErrorCode.IO_EXCEPTION_1,
+                        "Missing lob entry: " + lobId);
             }
             reuse(sql, prep);
 
