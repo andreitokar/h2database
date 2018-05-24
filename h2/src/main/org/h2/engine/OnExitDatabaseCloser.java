@@ -5,7 +5,6 @@
  */
 package org.h2.engine;
 
-import java.util.ArrayList;
 import java.util.WeakHashMap;
 
 import org.h2.message.Trace;
@@ -67,9 +66,11 @@ class OnExitDatabaseCloser extends Thread {
     }
 
     private static void onShutdown() {
-        terminated = true;
+        synchronized(OnExitDatabaseCloser.class) {
+            terminated = true;
+        }
         RuntimeException root = null;
-        for (Database database : collectDatabasesToClose()) {
+        for (Database database : DATABASES.keySet()) {
             try {
                 database.close(true);
             } catch (RuntimeException e) {
@@ -93,10 +94,6 @@ class OnExitDatabaseCloser extends Thread {
         if (root != null) {
             throw root;
         }
-    }
-
-    private static synchronized Iterable<Database> collectDatabasesToClose() {
-        return new ArrayList<>(DATABASES.keySet());
     }
 
     private OnExitDatabaseCloser() {
