@@ -162,7 +162,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @param value the value (may not be null)
      * @return the old value if the key existed, or null otherwise
      */
-    @SuppressWarnings("unchecked")
     public final V put(K key, V value, DecisionMaker<? super V> decisionMaker) {
         DataUtils.checkArgument(value != null, "The value may not be null");
         return operate(key, value, decisionMaker);

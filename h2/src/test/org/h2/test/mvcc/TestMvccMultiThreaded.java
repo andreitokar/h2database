@@ -9,7 +9,7 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.ArrayList;
-import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
 import org.h2.api.ErrorCode;
 import org.h2.test.TestBase;
 import org.h2.util.Task;
@@ -51,12 +51,12 @@ public class TestMvccMultiThreaded extends TestBase {
             Task task = new Task() {
                 @Override
                 public void call() throws Exception {
-                    Connection conn = getConnection(getTestName());
-                    Statement stat = conn.createStatement();
-                    while(!stop) {
-                        stat.execute("select * from test where id=1 for update");
+                    try (Connection conn = getConnection(getTestName())) {
+                        Statement stat = conn.createStatement();
+                        while (!stop) {
+                            stat.execute("select * from test where id=1 for update");
+                        }
                     }
-                    conn.close();
                 }
             }.execute();
             tasks.add(task);
@@ -99,7 +99,6 @@ public class TestMvccMultiThreaded extends TestBase {
         conn.createStatement().execute(
                 "create table test(id int primary key, name varchar)");
         Task[] tasks = new Task[len];
-        final boolean[] stop = { false };
         for (int i = 0; i < len; i++) {
             final Connection c = connList[i];
             c.setAutoCommit(false);
@@ -110,14 +109,12 @@ public class TestMvccMultiThreaded extends TestBase {
                         c.createStatement().execute(
                                 "merge into test values(1, 'x')");
                         c.commit();
-                        Thread.sleep(1);
                     }
                 }
             };
             tasks[i].execute();
         }
         Thread.sleep(1000);
-        stop[0] = true;
         for (int i = 0; i < len; i++) {
             tasks[i].get();
         }
@@ -143,7 +140,7 @@ public class TestMvccMultiThreaded extends TestBase {
         final int count = 1000;
         Task[] tasks = new Task[len];
 
-        final CountDownLatch latch = new CountDownLatch(len);
+        final CyclicBarrier barrier = new CyclicBarrier(len);
 
         for (int i = 0; i < len; i++) {
             final int x = i;
@@ -160,8 +157,7 @@ public class TestMvccMultiThreaded extends TestBase {
                         connList[x].createStatement().execute(
                                 "update test set value=value+1");
                         connList[x].commit();
-                        latch.countDown();
-                        latch.await();
+                        barrier.await();
                     }
                 }
             };

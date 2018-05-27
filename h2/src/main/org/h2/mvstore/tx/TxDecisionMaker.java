@@ -43,18 +43,15 @@ public abstract class TxDecisionMaker extends MVMap.DecisionMaker<VersionedValue
                 isThisTransaction(blockingId = getTransactionId(id))) {
             logIt(existingValue);
             decision = MVMap.Decision.PUT;
-        } else if (isCommitted(blockingId)
-                // condition above means that entry belongs to a committing transaction
-                // and therefore will be committed soon
-                || fetchTransaction(blockingId) == null) {
-            // condition above means transaction has been committed and closed by now
-
-            // In both cases, we assume that we are looking at the final value for this transaction
+        } else if (isCommitted(blockingId)) {
+            // Condition above means that entry belongs to a committing transaction.
+            // We assume that we are looking at the final value for this transaction,
             // and if it's not the case, then it will fail later,
             // because a tree root has definitely been changed.
             logIt(existingValue.value == null ? null : new VersionedValue(existingValue.value));
             decision = MVMap.Decision.PUT;
         } else {
+            fetchTransaction(blockingId);
             // this entry comes from a different transaction, and this transaction is not committed yet
             // should wait on blockingTransaction that was determined earlier
             decision = MVMap.Decision.ABORT;
@@ -139,28 +136,23 @@ public abstract class TxDecisionMaker extends MVMap.DecisionMaker<VersionedValue
             if (existingValue == null) {
                 logIt(null);
                 return setDecision(MVMap.Decision.PUT);
-            } else if(existingValue.value != null) {
-                return setDecision(MVMap.Decision.ABORT);
             } else {
                 long id = existingValue.getOperationId();
                 if (id == 0 // entry is a committed one
                             // or it came from the same transaction
                         || isThisTransaction(blockingId = getTransactionId(id))) {
+                    if(existingValue.value != null) {
+                        return setDecision(MVMap.Decision.ABORT);
+                    }
                     logIt(existingValue);
                     return setDecision(MVMap.Decision.PUT);
-                } else if (
+                } else if (isCommitted(blockingId) && existingValue.value == null) {
                         // entry belongs to a committing transaction
                         // and therefore will be committed soon
-                        isCommitted(blockingId)
-                        // transaction has been committed and is closed by now
-                        || fetchTransaction(blockingId) == null) {
-                    // In those two cases, we assume that we are looking
-                    // at the final value for this transaction,
-                    // and if it's not the case, then it will fail later
-                    // because a tree root definitely has been changed
                     logIt(null);
                     return setDecision(MVMap.Decision.PUT);
                 } else {
+                    fetchTransaction(blockingId);
                     // map already has specified key
                     return setDecision(MVMap.Decision.ABORT);
                 }
