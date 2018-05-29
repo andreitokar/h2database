@@ -1039,7 +1039,7 @@ public class Database implements DataHandler {
                         }
                     }
                     Row found = cursor.get();
-                    found = meta.removeRow(session, found);
+                    meta.removeRow(session, found);
                     if (isMultiVersion()) {
                         // TODO this should work without MVCC, but avoid risks at
                         // the moment

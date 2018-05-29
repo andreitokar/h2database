@@ -220,16 +220,13 @@ public final class MVPrimaryIndex extends BaseIndex
         }
     }
 
-    public void lockRows(Session session, Iterator<Row> rowsForUpdate) {
+    public void lockRow(Session session, Row row) {
         TransactionMap<Long, Row> map = getMap(session);
-        while (rowsForUpdate.hasNext()) {
-            Row row = rowsForUpdate.next();
-            long key = row.getKey();
-            try {
-                map.lock(key);
-            } catch (IllegalStateException ex) {
-                throw mvTable.convertException(ex);
-            }
+        long key = row.getKey();
+        try {
+            map.lock(key);
+        } catch (IllegalStateException ex) {
+            throw mvTable.convertException(ex);
         }
     }
 

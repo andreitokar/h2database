@@ -173,41 +173,12 @@ public abstract class Table extends SchemaObjectBase {
     }
 
     /**
-     * Update a row to the table and all indexes.
-     *
-     * @param session the session
-     * @param oldRow the row to update
-     * @param newRow the row with updated values (_rowid_ suppose to be the same)
-     * @throws DbException if a constraint was violated
-     */
-    public void updateRow(Session session, Row oldRow, Row newRow) {
-        newRow.setKey(oldRow.getKey());
-        removeRow(session, oldRow);
-        addRow(session, newRow);
-    }
-
-    /**
      * Remove a row from the table and all indexes.
      *
      * @param session the session
      * @param row the row
      */
-    public abstract Row removeRow(Session session, Row row);
-
-    /**
-     * Locks rows, preventing any updated to them, except from the session specified.
-     *
-     * @param session the session
-     * @param rowsForUpdate rows to lock
-     */
-    public void lockRows(Session session, Iterator<Row> rowsForUpdate) {
-        while (rowsForUpdate.hasNext()) {
-            Row row = rowsForUpdate.next();
-            updateRow(session, row, row);
-            session.log(this, UndoLogRecord.DELETE, row);
-            session.log(this, UndoLogRecord.INSERT, row);
-        }
-    }
+    public abstract void removeRow(Session session, Row row);
 
     /**
      * Remove all rows from the table and indexes.
@@ -224,6 +195,32 @@ public abstract class Table extends SchemaObjectBase {
      * @throws DbException if a constraint was violated
      */
     public abstract void addRow(Session session, Row row);
+
+    /**
+     * Update a row to the table and all indexes.
+     *
+     * @param session the session
+     * @param oldRow the row to update
+     * @param newRow the row with updated values (_rowid_ suppose to be the same)
+     * @throws DbException if a constraint was violated
+     */
+    public void updateRow(Session session, Row oldRow, Row newRow) {
+        newRow.setKey(oldRow.getKey());
+        removeRow(session, oldRow);
+        addRow(session, newRow);
+    }
+
+    /**
+     * Locks row, preventing any updated to it, except from the session specified.
+     *
+     * @param session the session
+     * @param row to lock
+     */
+    public void lockRow(Session session, Row row) {
+        updateRow(session, row, row);
+        session.log(this, UndoLogRecord.DELETE, row);
+        session.log(this, UndoLogRecord.INSERT, row);
+    }
 
     /**
      * Commit an operation (when using multi-version concurrency).
@@ -524,7 +521,7 @@ public abstract class Table extends SchemaObjectBase {
             Row o = rows.next();
             rows.next();
             try {
-                Row removedRow = removeRow(session, o);
+                removeRow(session, o);
             } catch (DbException e) {
                 if (e.getErrorCode() == ErrorCode.CONCURRENT_UPDATE_1) {
                     session.rollbackTo(rollback, false);

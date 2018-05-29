@@ -2152,7 +2152,7 @@ public class MetaTable extends Table {
     }
 
     @Override
-    public Row removeRow(Session session, Row row) {
+    public void removeRow(Session session, Row row) {
         throw DbException.getUnsupportedException("META");
     }
 

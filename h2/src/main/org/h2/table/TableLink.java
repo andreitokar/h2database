@@ -421,9 +421,9 @@ public class TableLink extends Table {
     }
 
     @Override
-    public Row removeRow(Session session, Row row) {
+    public void removeRow(Session session, Row row) {
         checkReadOnly();
-        return getScanIndex(session).removeRow(session, row);
+        getScanIndex(session).removeRow(session, row);
     }
 
     @Override

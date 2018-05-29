@@ -377,12 +377,12 @@ java org.h2.test.TestAll timer
      * If the transaction log should be kept small (that is, the log should be
      * switched early).
      */
-    boolean smallLog;
+    public boolean smallLog;
 
     /**
      * If SSL should be used for remote connections.
      */
-    boolean ssl;
+    public boolean ssl;
 
     /**
      * If MAX_MEMORY_UNDO=3 should be used.

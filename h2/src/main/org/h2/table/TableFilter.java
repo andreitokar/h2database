@@ -1155,12 +1155,12 @@ public class TableFilter implements ColumnResolver {
     }
 
     /**
-     * Lock the given rows.
+     * Lock the given row.
      *
-     * @param forUpdateRows the rows to lock
+     * @param row to lock
      */
-    public void lockRows(Iterator<Row> forUpdateRows) {
-        table.lockRows(session, forUpdateRows);
+    public void lockRow(Row row) {
+        table.lockRow(session, row);
     }
 
     public TableFilter getNestedJoin() {

@@ -704,18 +704,14 @@ public final class MVTable extends TableBase {
     }
 
     @Override
-    public Row removeRow(Session session, Row row) {
-        Row result = row;
+    public void removeRow(Session session, Row row) {
         lastModificationId = database.getNextModificationDataId();
         Transaction t = session.getTransaction();
         long savepoint = t.setSavepoint();
         try {
             for (int i = indexes.size() - 1; i >= 0; i--) {
                 Index index = indexes.get(i);
-                Row r = index.removeRow(session, row);
-                if(index.isRowIdIndex()) {
-                    result = r;
-                }
+                index.removeRow(session, row);
             }
         } catch (Throwable e) {
             try {
@@ -726,7 +722,6 @@ public final class MVTable extends TableBase {
             throw DbException.convert(e);
         }
         analyzeIfRequired(session);
-        return result;
     }
 
     @Override
@@ -781,8 +776,8 @@ public final class MVTable extends TableBase {
     }
 
     @Override
-    public void lockRows(Session session, Iterator<Row> rowsForUpdate) {
-        primaryIndex.lockRows(session, rowsForUpdate);
+    public void lockRow(Session session, Row row) {
+        primaryIndex.lockRow(session, row);
     }
 
     private void analyzeIfRequired(Session session) {
