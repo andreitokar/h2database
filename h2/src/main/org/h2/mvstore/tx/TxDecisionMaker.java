@@ -6,7 +6,6 @@
 package org.h2.mvstore.tx;
 
 import org.h2.mvstore.MVMap;
-import static org.h2.mvstore.tx.TransactionStore.getTransactionId;
 
 /**
  * Class TxDecisionMaker.
@@ -32,7 +31,6 @@ public abstract class TxDecisionMaker extends MVMap.DecisionMaker<VersionedValue
     @Override
     public MVMap.Decision decide(VersionedValue existingValue, VersionedValue providedValue) {
         assert decision == null;
-        assert providedValue != null;
         long id;
         int blockingId;
         // if map does not have that entry yet
@@ -40,7 +38,7 @@ public abstract class TxDecisionMaker extends MVMap.DecisionMaker<VersionedValue
                 // or entry is a committed one
                 (id = existingValue.getOperationId()) == 0 ||
                 // or it came from the same transaction
-                isThisTransaction(blockingId = getTransactionId(id))) {
+                isThisTransaction(blockingId = TransactionStore.getTransactionId(id))) {
             logIt(existingValue);
             decision = MVMap.Decision.PUT;
         } else if (isCommitted(blockingId)) {
@@ -130,7 +128,6 @@ public abstract class TxDecisionMaker extends MVMap.DecisionMaker<VersionedValue
         @Override
         public MVMap.Decision decide(VersionedValue existingValue, VersionedValue providedValue) {
             assert getDecision() == null;
-            assert providedValue != null;
             int blockingId;
             // if map does not have that entry yet
             if (existingValue == null) {
@@ -140,7 +137,7 @@ public abstract class TxDecisionMaker extends MVMap.DecisionMaker<VersionedValue
                 long id = existingValue.getOperationId();
                 if (id == 0 // entry is a committed one
                             // or it came from the same transaction
-                        || isThisTransaction(blockingId = getTransactionId(id))) {
+                        || isThisTransaction(blockingId = TransactionStore.getTransactionId(id))) {
                     if(existingValue.value != null) {
                         return setDecision(MVMap.Decision.ABORT);
                     }
@@ -152,8 +149,11 @@ public abstract class TxDecisionMaker extends MVMap.DecisionMaker<VersionedValue
                     logIt(null);
                     return setDecision(MVMap.Decision.PUT);
                 } else {
+                    // map already has specified key from uncommitted
+                    // at the time transaction.
                     fetchTransaction(blockingId);
-                    // map already has specified key
+                    // If it's closed by now, we can retry right away,
+                    // otherwise we need to wait for it to close and then try again
                     return setDecision(MVMap.Decision.ABORT);
                 }
             }

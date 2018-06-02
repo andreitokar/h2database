@@ -42,7 +42,7 @@ public class TestMvcc4 extends TestBase {
 
     private void testSelectForUpdateAndUpdateConcurrency() throws SQLException {
         deleteDb("mvcc4");
-        Connection setup = getConnection("mvcc4");
+        Connection setup = getConnection("mvcc4;MULTI_THREADED=TRUE");
         setup.setAutoCommit(false);
 
         {
@@ -82,7 +82,8 @@ public class TestMvcc4 extends TestBase {
                     ps.executeQuery().next();
 
                     executedUpdate.countDown();
-
+                    // interrogate new "blocker_id" metatable field instead of
+                    // relying on stacktraces!? to determine when session is blocking
                     PreparedStatement stmt = c2.prepareStatement("SELECT * FROM INFORMATION_SCHEMA.SESSIONS WHERE BLOCKER_ID = SESSION_ID()");
                     ResultSet resultSet;
                     do {

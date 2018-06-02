@@ -13,7 +13,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceArray;
-
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.MVMap;
 import org.h2.mvstore.MVStore;
@@ -38,7 +37,7 @@ public final class TransactionStore {
     /**
      * Default blocked transaction timeout
      */
-    private final long timeoutMillis;
+    private final int timeoutMillis;
 
     /**
      * The persisted map of prepared transactions.
@@ -326,7 +325,7 @@ public final class TransactionStore {
      * @param ownerId of the owner (Session?) to be reported by getBlockerId
      * @return the transaction
      */
-    public Transaction begin(RollbackListener listener, long timeoutMillis, int ownerId) {
+    public Transaction begin(RollbackListener listener, int timeoutMillis, int ownerId) {
 
         if(timeoutMillis <= 0) {
             timeoutMillis = this.timeoutMillis;
@@ -337,7 +336,7 @@ public final class TransactionStore {
     }
 
     private Transaction registerTransaction(int txId, int status, String name, long logId,
-                                            long timeoutMillis, int ownerId, RollbackListener listener) {
+                                            int timeoutMillis, int ownerId, RollbackListener listener) {
         int transactionId;
         long sequenceNo;
         boolean success;
@@ -389,10 +388,11 @@ public final class TransactionStore {
     }
 
     /**
-     * Add an undoLog entry.
+     * Add an undo log entry.
+     *
      * @param transactionId id of the transaction
      * @param logId sequential number of the log record within transaction
-     * @param record Record to add
+     * @param undoLogRecord Object[mapId, key, previousValue]
      */
     long addUndoLogRecord(int transactionId, long logId, Record record) {
         long undoKey = TransactionStore.getOperationId(transactionId, logId);
@@ -401,7 +401,7 @@ public final class TransactionStore {
     }
 
     /**
-     * Remove an undoLog entry.
+     * Remove an undo log entry.
      * @param transactionId id of the transaction
      */
     void removeUndoLogRecord(int transactionId) {
@@ -421,7 +421,7 @@ public final class TransactionStore {
 
     /**
      * Commit a transaction.
-     *  @param t the transaction
+     *  @param t transaction to commit
      *
      */
     void commit(Transaction t) {
@@ -507,9 +507,9 @@ public final class TransactionStore {
      * and amount of unsaved changes is sizable.
      *
      * @param t the transaction
-     * @param hasChanges true if transaction has done any updated
-     *                  (even if fully rolled back),
-     *                   false if just data access
+     * @param hasChanges true if transaction has done any updates
+     *                  (even if they are fully rolled back),
+     *                   false if it just performed a data access
      */
     void endTransaction(Transaction t, boolean hasChanges) {
         t.closeIt();

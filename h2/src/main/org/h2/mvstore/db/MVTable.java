@@ -51,7 +51,7 @@ import org.h2.value.Value;
 /**
  * A table stored in a MVStore.
  */
-public final class MVTable extends TableBase {
+public class MVTable extends TableBase {
 
     /**
      * The table name this thread is waiting to lock.

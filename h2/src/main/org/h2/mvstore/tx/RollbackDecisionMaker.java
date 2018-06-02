@@ -30,10 +30,10 @@ final class RollbackDecisionMaker extends MVMap.DecisionMaker<Record> {
     @Override
     public MVMap.Decision decide(Record existingValue, Record providedValue) {
         assert decision == null;
+        assert existingValue != null;
         if (existingValue == null) {
             // this should only be possible during initialization
             // when previously database was abruptly killed
-//                assert !store.isInitialized();
             decision = MVMap.Decision.ABORT;
         } else {
             VersionedValue valueToRestore = existingValue.oldValue;

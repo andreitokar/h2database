@@ -45,7 +45,6 @@ import org.h2.schema.SchemaObject;
 import org.h2.schema.Sequence;
 import org.h2.schema.TriggerObject;
 import org.h2.security.auth.Authenticator;
-import org.h2.security.auth.AuthenticatorFactory;
 import org.h2.store.DataHandler;
 import org.h2.store.FileLock;
 import org.h2.store.FileLockMethod;
@@ -1355,9 +1354,9 @@ public class Database implements DataHandler {
                     }
                     closing = true;
                 }
-            }
-            if (!this.isReadOnly()) {
-                removeOrphanedLobs();
+                if (!this.isReadOnly()) {
+                    removeOrphanedLobs();
+                }
             }
             try {
                 if (systemSession != null) {

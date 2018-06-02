@@ -594,7 +594,8 @@ public class Select extends Query {
             }
         }
         ArrayList<Row> forUpdateRows = null;
-        if (isForUpdateMvcc) {
+        boolean lockRows = this.isForUpdateMvcc;
+        if (lockRows) {
             forUpdateRows = Utils.newSmallArrayList();
         }
         int sampleSize = getSampleSizeValue(session);
@@ -607,7 +608,7 @@ public class Select extends Query {
             limitRows = Long.MAX_VALUE;
         }
         while (lazyResult.next()) {
-            if (isForUpdateMvcc) {
+            if (lockRows) {
                 topTableFilter.lockRowAdd(forUpdateRows);
             }
             result.addRow(lazyResult.currentRow());
@@ -615,8 +616,7 @@ public class Select extends Query {
                 break;
             }
         }
-        if (isForUpdateMvcc) {
-            assert forUpdateRows != null;
+        if (lockRows) {
             for (Row row : forUpdateRows) {
                 topTableFilter.lockRow(row);
             }
