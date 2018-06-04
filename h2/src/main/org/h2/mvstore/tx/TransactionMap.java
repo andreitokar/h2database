@@ -22,7 +22,7 @@ import java.util.Map;
  * @param <K> the key type
  * @param <V> the value type
  */
-public final class TransactionMap<K, V> {
+public class TransactionMap<K, V> {
 
     /**
      * If a record was read that was updated by this transaction, and the
@@ -276,7 +276,7 @@ public final class TransactionMap<K, V> {
         return new MVMap.BufferingAgent<K, V>() {
             @Override
             public void put(K key, V value) {
-                agent.put(key, new VersionedValue(value));
+                agent.put(key, VersionedValue.getInstance(value));
             }
 
             @Override
@@ -478,7 +478,7 @@ public final class TransactionMap<K, V> {
             // current value comes from another uncommitted transaction
             // take committed value instead
             Object committedValue = data.getCommittedValue();
-            data = committedValue == null ? null : new VersionedValue(committedValue);
+            data = committedValue == null ? null : VersionedValue.getInstance(committedValue);
         }
         return data;
     }

@@ -46,7 +46,7 @@ public abstract class TxDecisionMaker extends MVMap.DecisionMaker<VersionedValue
             // We assume that we are looking at the final value for this transaction,
             // and if it's not the case, then it will fail later,
             // because a tree root has definitely been changed.
-            logIt(existingValue.value == null ? null : new VersionedValue(existingValue.value));
+            logIt(existingValue.value == null ? null : VersionedValue.getInstance(existingValue.value));
             decision = MVMap.Decision.PUT;
         } else {
             fetchTransaction(blockingId);
@@ -111,10 +111,8 @@ public abstract class TxDecisionMaker extends MVMap.DecisionMaker<VersionedValue
         @SuppressWarnings("unchecked")
         @Override
         public final VersionedValue selectValue(VersionedValue existingValue, VersionedValue providedValue) {
-            return new VersionedValue.Uncommitted(undoKey, value,
-                    existingValue == null ? null : existingValue.getOperationId() == 0 ?
-                                                        existingValue.value :
-                                                        existingValue.getCommittedValue());
+            return VersionedValue.getInstance(undoKey, value,
+                                                existingValue == null ? null : existingValue.getCommittedValue());
         }
     }
 
@@ -170,10 +168,8 @@ public abstract class TxDecisionMaker extends MVMap.DecisionMaker<VersionedValue
         @SuppressWarnings("unchecked")
         @Override
         public VersionedValue selectValue(VersionedValue existingValue, VersionedValue providedValue) {
-            return new VersionedValue.Uncommitted(undoKey, existingValue == null ? null : existingValue.value,
-                    existingValue == null ? null : existingValue.getOperationId() == 0 ?
-                                                        existingValue.value :
-                                                        existingValue.getCommittedValue());
+            assert existingValue != null;   // otherwise, what's there to lock?
+            return VersionedValue.getInstance(undoKey, existingValue.value, existingValue.getCommittedValue());
         }
     }
 }

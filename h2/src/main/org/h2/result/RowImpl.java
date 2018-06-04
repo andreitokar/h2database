@@ -79,7 +79,7 @@ public class RowImpl implements Row {
 
     @Override
     public Value getValue(int i) {
-        return i == ROWID_INDEX ? ValueLong.get(key) : data[i];
+        return i == SearchRow.ROWID_INDEX ? ValueLong.get(key) : data[i];
     }
 
     /**
@@ -99,7 +99,7 @@ public class RowImpl implements Row {
 
     @Override
     public void setValue(int i, Value v) {
-        if (i == ROWID_INDEX) {
+        if (i == SearchRow.ROWID_INDEX) {
             this.key = v.getLong();
         } else {
             data[i] = v;

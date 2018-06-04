@@ -974,7 +974,7 @@ DROP VIEW TEST_VIEW
 "
 
 "Commands (DDL)","TRUNCATE TABLE","
-TRUNCATE TABLE tableName
+TRUNCATE TABLE tableName [ [ CONTINUE | RESTART ] IDENTITY ]
 ","
 Removes all rows from a table.
 Unlike DELETE FROM without where clause, this command can not be rolled back.
@@ -982,6 +982,7 @@ This command is faster than DELETE without where clause.
 Only regular data tables without foreign key constraints can be truncated
 (except if referential integrity is disabled for this database or for this table).
 Linked tables can't be truncated.
+If RESTART IDENTITY is specified next values for auto-incremented columns are restarted.
 
 This command commits an open transaction in this connection.
 ","
@@ -4155,7 +4156,7 @@ ISO_YEAR(CREATED)
 ARRAY_GET(arrayExpression, indexExpression)
 ","
 Returns one element of an array.
-This method returns a string.
+Returns NULL if there is no such element or array is NULL.
 ","
 CALL ARRAY_GET(('Hello', 'World'), 2)
 "
@@ -4164,6 +4165,7 @@ CALL ARRAY_GET(('Hello', 'World'), 2)
 ARRAY_LENGTH(arrayExpression)
 ","
 Returns the length of an array.
+Returns NULL if the specified array is NULL.
 ","
 CALL ARRAY_LENGTH(('Hello', 'World'))
 "
@@ -4171,7 +4173,8 @@ CALL ARRAY_LENGTH(('Hello', 'World'))
 "Functions (System)","ARRAY_CONTAINS","
 ARRAY_CONTAINS(arrayExpression, value)
 ","
-Returns a boolean true if the array contains the value.
+Returns a boolean TRUE if the array contains the value or FALSE if it does not contain it.
+Returns NULL if the specified array is NULL.
 ","
 CALL ARRAY_CONTAINS(('Hello', 'World'), 'Hello')
 "

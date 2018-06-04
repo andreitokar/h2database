@@ -15,37 +15,41 @@ import org.h2.mvstore.type.DataType;
 import java.nio.ByteBuffer;
 
 /**
- * A versioned value (possibly null). It contains a pointer to the old
- * value, and the value itself.
+ * A versioned value (possibly null).
+ * It contains current value and latest committed value if current one is uncommitted.
+ * Also for uncommitted values it contains operationId - a combination of
+ * transactionId and logId.
  */
-public class VersionedValue
-{
+public class VersionedValue {
+
     public static final VersionedValue DUMMY = new VersionedValue(new Object());
 
     /**
-     * The value.
+     * The current value.
      */
     public final Object value;
 
-    VersionedValue(Object value) {
+    static VersionedValue getInstance(Object value) {
         assert value != null;
+        return new VersionedValue(value);
+    }
+
+    public static VersionedValue getInstance(long operationId, Object value, Object committedValue) {
+        return new Uncommitted(operationId, value, committedValue);
+    }
+
+    private VersionedValue(Object value) {
         this.value = value;
     }
 
-    VersionedValue(Object value, @SuppressWarnings("unused") boolean dummy) {
-        this.value = value;
+    public boolean isCommitted() {
+        return true;
     }
 
-    /**
-     * The operation id.
-     */
     public long getOperationId() {
-        return 0;
+        return 0L;
     }
 
-    /**
-     * Initial (committed) value for operationId > 0, committed value otherwise.
-     */
     public Object getCommittedValue() {
         return value;
     }
@@ -55,17 +59,21 @@ public class VersionedValue
         return String.valueOf(value);
     }
 
-
-    static final class Uncommitted extends VersionedValue
+    private static class Uncommitted extends VersionedValue
     {
         private final long   operationId;
         private final Object committedValue;
 
         Uncommitted(long operationId, Object value, Object committedValue) {
-            super(value, false);
+            super(value);
             assert operationId != 0;
             this.operationId = operationId;
             this.committedValue = committedValue;
+        }
+
+        @Override
+        public boolean isCommitted() {
+            return false;
         }
 
         @Override
@@ -89,7 +97,7 @@ public class VersionedValue
     /**
      * The value type for a versioned value.
      */
-    public static final class Type extends BasicDataType<VersionedValue> implements StatefulDataType
+    public static class Type extends BasicDataType<VersionedValue> implements StatefulDataType
     {
         private final DataType valueType;
 

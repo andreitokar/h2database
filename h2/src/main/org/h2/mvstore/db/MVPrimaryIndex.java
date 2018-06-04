@@ -37,7 +37,7 @@ import org.h2.value.ValueNull;
 /**
  * A table stored in a MVStore.
  */
-public final class MVPrimaryIndex extends BaseIndex
+public class MVPrimaryIndex extends BaseIndex
 {
     private final MVTable                  mvTable;
     private final String                   mapName;
@@ -288,7 +288,7 @@ public final class MVPrimaryIndex extends BaseIndex
     @Override
     public int getColumnIndex(Column col) {
         // can not use this index - use the delegate index instead
-        return -1;
+        return SearchRow.ROWID_INDEX;
     }
 
     @Override

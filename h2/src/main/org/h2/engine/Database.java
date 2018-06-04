@@ -316,30 +316,28 @@ public class Database implements DataHandler {
                 OnExitDatabaseCloser.register(this);
             }
         } catch (Throwable e) {
-            if (e instanceof OutOfMemoryError) {
-                e.fillInStackTrace();
-            }
-            boolean alreadyOpen = e instanceof DbException
-                    && ((DbException) e).getErrorCode() == ErrorCode.DATABASE_ALREADY_OPEN_1;
-            if (alreadyOpen) {
-                stopServer();
-            }
-
-            if (traceSystem != null) {
-                if (e instanceof DbException && !alreadyOpen) {
-                    // only write if the database is not already in use
-                    trace.error(e, "opening {0}", databaseName);
-                }
-                traceSystem.close();
-            }
             try {
+                if (e instanceof OutOfMemoryError) {
+                    e.fillInStackTrace();
+                }
+                boolean alreadyOpen = e instanceof DbException
+                        && ((DbException) e).getErrorCode() == ErrorCode.DATABASE_ALREADY_OPEN_1;
+                if (alreadyOpen) {
+                    stopServer();
+                }
+
+                if (traceSystem != null) {
+                    if (e instanceof DbException && !alreadyOpen) {
+                        // only write if the database is not already in use
+                        trace.error(e, "opening {0}", databaseName);
+                    }
+                    traceSystem.close();
+                }
                 closeOpenFilesAndUnlock(false);
-            } catch(Throwable nested) {
-                // to preserve original exeption
-                e.addSuppressed(nested);
+            } catch(Throwable ex) {
+                e.addSuppressed(ex);
             }
-            DbException dbException = DbException.convert(e);
-            throw dbException;
+            throw DbException.convert(e);
         }
     }
 
