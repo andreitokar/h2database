@@ -107,7 +107,7 @@ final class CommitEntryProcessor extends MVMap.DecisionMaker<VersionedValue>
     public VersionedValue selectValue(VersionedValue existingValue, VersionedValue providedValue) {
         assert decision == MVMap.Decision.PUT;
         assert existingValue != null;
-        return new VersionedValue(existingValue.value);
+        return VersionedValue.getInstance(existingValue.value);
     }
 
     @Override
@@ -170,7 +170,7 @@ final class CommitEntryProcessor extends MVMap.DecisionMaker<VersionedValue>
                     if (page == pos.page) {
                         page = page.copy();
                     }
-                    page.setValue(i, new VersionedValue(existingValue.value));
+                    page.setValue(i, VersionedValue.getInstance(existingValue.value));
                 }
             }
         } else {
@@ -190,7 +190,7 @@ final class CommitEntryProcessor extends MVMap.DecisionMaker<VersionedValue>
                     if (value.value == null) {
                         continue;
                     }
-                    value = new VersionedValue(value.value);
+                    value = VersionedValue.getInstance(value.value);
                 }
                 keyType.setValue(keys, count, page.getKey(i));
                 valueType.setValue(values, count, value);

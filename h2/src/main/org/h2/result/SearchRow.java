@@ -19,8 +19,6 @@ public interface SearchRow {
 
     long MATCH_ALL_ROW_KEY = Long.MIN_VALUE + 1;
 
-    int ROWID_INDEX = -1;
-
     /**
      * An empty array of SearchRow objects.
      */
