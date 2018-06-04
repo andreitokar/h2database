@@ -524,12 +524,12 @@ public class MVTable extends TableBase {
         mainIndexColumn = getMainIndexColumn(indexType, cols);
         if (database.isStarting()) {
             if (transactionStore.hasMap("index." + indexId)) {
-                mainIndexColumn = -1;
+                mainIndexColumn = SearchRow.ROWID_INDEX;
             }
         } else if (primaryIndex.getRowCountMax() != 0) {
-            mainIndexColumn = -1;
+            mainIndexColumn = SearchRow.ROWID_INDEX;
         }
-        if (mainIndexColumn != -1) {
+        if (mainIndexColumn != SearchRow.ROWID_INDEX) {
             primaryIndex.setMainIndexColumn(mainIndexColumn);
             index = new MVDelegateIndex(this, indexId, indexName, primaryIndex,
                     indexType);
@@ -776,8 +776,8 @@ public class MVTable extends TableBase {
     }
 
     @Override
-    public void lockRow(Session session, Row row) {
-        primaryIndex.lockRow(session, row);
+    public void lockRows(Session session, Iterable<Row> rowsForUpdate) {
+        primaryIndex.lockRows(session, rowsForUpdate);
     }
 
     private void analyzeIfRequired(Session session) {
@@ -912,7 +912,7 @@ public class MVTable extends TableBase {
     public Column getRowIdColumn() {
         if (rowIdColumn == null) {
             rowIdColumn = new Column(Column.ROWID, Value.LONG);
-            rowIdColumn.setTable(this, -1);
+            rowIdColumn.setTable(this, SearchRow.ROWID_INDEX);
         }
         return rowIdColumn;
     }

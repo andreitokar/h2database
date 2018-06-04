@@ -617,9 +617,7 @@ public class Select extends Query {
             }
         }
         if (lockRows) {
-            for (Row row : forUpdateRows) {
-                topTableFilter.lockRow(row);
-            }
+            topTableFilter.lockRows(forUpdateRows);
         }
         return null;
     }

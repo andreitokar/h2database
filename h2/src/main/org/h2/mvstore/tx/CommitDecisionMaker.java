@@ -49,7 +49,7 @@ final class CommitDecisionMaker extends MVMap.DecisionMaker<VersionedValue> {
     public VersionedValue selectValue(VersionedValue existingValue, VersionedValue providedValue) {
         assert decision == MVMap.Decision.PUT;
         assert existingValue != null;
-        return new VersionedValue(0L, existingValue.value);
+        return new VersionedValue(existingValue.value);
     }
 
     @Override

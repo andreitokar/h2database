@@ -299,7 +299,10 @@ public final class TransactionMap<K, V> {
         do {
             sequenceNumWhenStarted = store.openTransactions.get().getVersion();
             assert transaction.getBlockerId() == 0;
-
+            // although second parameter (value) is not really used,
+            // since TxDecisionMaker has it embedded,
+            // MVRTreeMap has weird traversal logic based on it,
+            // and any non-null value will do
             result = map.put(key, VersionedValue.DUMMY, decisionMaker);
 
             MVMap.Decision decision = decisionMaker.getDecision();
@@ -308,8 +311,9 @@ public final class TransactionMap<K, V> {
             if (decision != MVMap.Decision.ABORT || blockingTransaction == null) {
                 transaction.blockingMap = null;
                 transaction.blockingKey = null;
-                //noinspection unchecked
-                return result == null ? null : (V) result.value;
+                @SuppressWarnings("unchecked")
+                V res = result == null ? null : (V) result.value;
+                return res;
             }
             decisionMaker.reset();
             transaction.blockingMap = map;

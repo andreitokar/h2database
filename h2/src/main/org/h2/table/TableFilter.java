@@ -1159,8 +1159,8 @@ public class TableFilter implements ColumnResolver {
      *
      * @param row to lock
      */
-    public void lockRow(Row row) {
-        table.lockRow(session, row);
+    public void lockRows(Iterable<Row> row) {
+        table.lockRows(session, row);
     }
 
     public TableFilter getNestedJoin() {

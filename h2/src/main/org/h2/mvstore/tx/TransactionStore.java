@@ -123,7 +123,7 @@ public final class TransactionStore {
      * @param dataType the data type for map keys and values
      * @param timeoutMillis lock aquisition timeout in milliseconds, 0 means no wait
      */
-    public TransactionStore(MVStore store, DataType metaDataType, DataType dataType, long timeoutMillis) {
+    public TransactionStore(MVStore store, DataType metaDataType, DataType dataType, int timeoutMillis) {
         this.store = store;
         this.dataType = dataType;
         this.timeoutMillis = timeoutMillis;
@@ -392,7 +392,7 @@ public final class TransactionStore {
      *
      * @param transactionId id of the transaction
      * @param logId sequential number of the log record within transaction
-     * @param undoLogRecord Object[mapId, key, previousValue]
+     * @param record Record(mapId, key, previousValue) to add
      */
     long addUndoLogRecord(int transactionId, long logId, Record record) {
         long undoKey = TransactionStore.getOperationId(transactionId, logId);

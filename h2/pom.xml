@@ -210,7 +210,7 @@
         <includes>
           <include>org/h2/test/bench/test.properties</include>
           <include>org/h2/test/testSimple.in.txt</include>
-          <include>org/h2/test/scripts/**/*</include>
+          <include>org/h2/test/scripts/**/*.sql</include>
           <include>org/h2/samples/*.sql</include>
         </includes>
       </testResource>

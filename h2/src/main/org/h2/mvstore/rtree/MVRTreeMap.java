@@ -180,7 +180,6 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
             result = index < 0 ? null : (V)p.getValue(index);
             Decision decision = decisionMaker.decide(result, value);
             switch (decision) {
-                case REPEAT: break;
                 case ABORT: break;
                 case REMOVE:
                     if(index >= 0) {

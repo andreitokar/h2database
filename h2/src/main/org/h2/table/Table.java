@@ -227,18 +227,6 @@ public abstract class Table extends SchemaObjectBase {
     }
 
     /**
-     * Locks row, preventing any updated to it, except from the session specified.
-     *
-     * @param session the session
-     * @param row to lock
-     */
-    public void lockRow(Session session, Row row) {
-        updateRow(session, row, row);
-        session.log(this, UndoLogRecord.DELETE, row);
-        session.log(this, UndoLogRecord.INSERT, row);
-    }
-
-    /**
      * Commit an operation (when using multi-version concurrency).
      *
      * @param operation the operation
