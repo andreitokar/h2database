@@ -49,6 +49,7 @@ import org.h2.table.Table;
 import org.h2.table.TableFilter;
 import org.h2.table.TableType;
 import org.h2.util.ColumnNamerConfiguration;
+import org.h2.util.CurrentTimestamp;
 import org.h2.util.SmallLRUCache;
 import org.h2.util.Utils;
 import org.h2.value.Value;
@@ -56,6 +57,7 @@ import org.h2.value.ValueArray;
 import org.h2.value.ValueLong;
 import org.h2.value.ValueNull;
 import org.h2.value.ValueString;
+import org.h2.value.ValueTimestampTimeZone;
 
 /**
  * A session represents an embedded database connection. When using the server
@@ -115,7 +117,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
     private volatile long cancelAtNs;
     private boolean closed;
     private final long sessionStart = System.currentTimeMillis();
-    private long transactionStart;
+    private ValueTimestampTimeZone transactionStart;
     private long currentCommandStart;
     private HashMap<String, Value> variables;
     private HashSet<ResultInterface> temporaryResults;
@@ -667,7 +669,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
         tablesToAnalyze = null;
 
         currentTransactionName = null;
-        transactionStart = 0;
+        transactionStart = null;
         if (transaction != null) {
             try {
                 // increment the data mod count, so that other sessions
@@ -774,7 +776,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
     public void rollback() {
         checkCommitRollback();
         currentTransactionName = null;
-        transactionStart = 0;
+        transactionStart = null;
         boolean needCommit = undoLog.size() > 0 || transaction != null;
         if(needCommit) {
             rollbackTo(null, false);
@@ -1125,7 +1127,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
     public void rollbackToSavepoint(String name) {
         checkCommitRollback();
         currentTransactionName = null;
-        transactionStart = 0;
+        transactionStart = null;
         if (savepoints == null) {
             throw DbException.get(ErrorCode.SAVEPOINT_IS_INVALID_1, name);
         }
@@ -1450,9 +1452,9 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
         return sessionStart;
     }
 
-    public long getTransactionStart() {
-        if (transactionStart == 0) {
-            transactionStart = System.currentTimeMillis();
+    public ValueTimestampTimeZone getTransactionStart() {
+        if (transactionStart == null) {
+            transactionStart = CurrentTimestamp.get();
         }
         return transactionStart;
     }

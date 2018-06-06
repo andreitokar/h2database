@@ -25,14 +25,6 @@ import java.util.Map;
 public class TransactionMap<K, V> {
 
     /**
-     * If a record was read that was updated by this transaction, and the
-     * update occurred before this log id, the older version is read. This
-     * is so that changes are not immediately visible, to support statement
-     * processing (for example "update test set id = id + 1").
-     */
-    long readLogId = Long.MAX_VALUE;
-
-    /**
      * The map used for writing (the latest version).
      * <p>
      * Key: key the key of the data.
@@ -48,16 +40,6 @@ public class TransactionMap<K, V> {
     TransactionMap(Transaction transaction, MVMap<K, VersionedValue> map) {
         this.transaction = transaction;
         this.map = map;
-    }
-
-    /**
-     * Set the savepoint. Afterwards, reads are based on the specified
-     * savepoint.
-     *
-     * @param savepoint the savepoint
-     */
-    public void setSavepoint(long savepoint) {
-        this.readLogId = savepoint;
     }
 
     /**
@@ -87,6 +69,7 @@ public class TransactionMap<K, V> {
      */
     public long sizeAsLong() {
         TransactionStore store = transaction.store;
+
         BitSet committingTransactions;
         MVMap.RootReference mapRootReference;
         MVMap.RootReference undoLogRootReferences[];
@@ -335,7 +318,7 @@ public class TransactionMap<K, V> {
      * @return whether the entry could be removed
      */
     public boolean tryRemove(K key) {
-        return trySet(key, null, false);
+        return trySet(key, null);
     }
 
     /**
@@ -350,7 +333,7 @@ public class TransactionMap<K, V> {
      */
     public boolean tryPut(K key, V value) {
         DataUtils.checkArgument(value != null, "The value may not be null");
-        return trySet(key, value, false);
+        return trySet(key, value);
     }
 
     /**
@@ -360,45 +343,13 @@ public class TransactionMap<K, V> {
      *
      * @param key the key
      * @param value the new value (null to remove the value)
-     * @param onlyIfUnchanged only set the value if it was not changed (by
-     *            this or another transaction) since the map was opened
      * @return true if the value was set, false if there was a concurrent
      *         update
      */
-    public boolean trySet(K key, V value, boolean onlyIfUnchanged) {
-
-        if (onlyIfUnchanged) {
-            TransactionStore store = transaction.store;
-            BitSet committingTransactions;
-            MVMap.RootReference mapRootReference;
-            do {
-                committingTransactions = store.committingTransactions.get();
-                mapRootReference = map.getRoot();
-            } while(committingTransactions != store.committingTransactions.get());
-
-            VersionedValue current = map.get(mapRootReference.root, key);
-            VersionedValue old = getValue(current, committingTransactions);
-            if (!map.areValuesEqual(old, current)) {
-                assert current != null;
-                long tx = TransactionStore.getTransactionId(current.getOperationId());
-                if (tx == transaction.transactionId) {
-                    if (value == null) {
-                        // ignore removing an entry
-                        // if it was added or changed
-                        // in the same statement
-                        return true;
-                    } else if (current.value == null) {
-                        // add an entry that was removed
-                        // in the same statement
-                    } else {
-                        return false;
-                    }
-                } else {
-                    return false;
-                }
-            }
-        }
+    public boolean trySet(K key, V value) {
         try {
+            // TODO: effective transaction.timeoutMillis should be set to 0 here and restored before return
+            // TODO: eliminate exception usage as part of normal control flaw
             set(key, value);
             return true;
         } catch (IllegalStateException e) {
@@ -472,9 +423,12 @@ public class TransactionMap<K, V> {
     VersionedValue getValue(VersionedValue data, BitSet committingTransactions) {
         long id;
         int tx;
-        if (data != null &&     // skip if entry doesn't exist or it was deleted by a committed transaction
-            (id = data.getOperationId()) != 0 && // skip if it is committed
-            (tx = TransactionStore.getTransactionId(id)) != transaction.transactionId && !committingTransactions.get(tx)) {
+        // If value doesn't exist or it was deleted by a committed transaction,
+        // or if value is a committed one, just return it.
+        if (data != null &&
+                (id = data.getOperationId()) != 0 &&
+                ((tx = TransactionStore.getTransactionId(id)) != transaction.transactionId &&
+                    !committingTransactions.get(tx))) {
             // current value comes from another uncommitted transaction
             // take committed value instead
             Object committedValue = data.getCommittedValue();
@@ -707,25 +661,34 @@ public class TransactionMap<K, V> {
 
     private abstract static class TMIterator<K,X> implements Iterator<X> {
         private final TransactionMap<K,?> transactionMap;
-        private final BitSet                   committingTransactions;
+        private final BitSet committingTransactions;
         private final Cursor<K,VersionedValue> cursor;
-        private final boolean                  includeAllUncommitted;
-        private       X                        current;
+        private final boolean includeAllUncommitted;
+        private X current;
 
         protected TMIterator(TransactionMap<K,?> transactionMap, K from, K to, boolean includeAllUncommitted) {
             this.transactionMap = transactionMap;
             TransactionStore store = transactionMap.transaction.store;
             MVMap<K, VersionedValue> map = transactionMap.map;
+            // The purpose of the following loop is to get a coherent picture
+            // of a state of two independent volatile / atomic variables
+            // which they had at some recent moment in time.
+            // In order to get such a "snapshot", we wait for a moment of silence
+            // when neither of the variables concurrently chenges it's value.
             BitSet committingTransactions;
             MVMap.RootReference mapRootReference;
             do {
                 committingTransactions = store.committingTransactions.get();
                 mapRootReference = map.getRoot();
-            } while(committingTransactions != store.committingTransactions.get());
-
+            } while (committingTransactions != store.committingTransactions.get());
+            // Now we have a snapshot, where mapRootReference points to state of the map
+            // and committingTransactions mask tells us which of seemingly uncommitted changes
+            // should be considered as committed.
+            // Subsequent map traversal uses this snapshot info only.
             this.cursor = new Cursor<>(mapRootReference.root, from, to);
-            this.includeAllUncommitted = includeAllUncommitted;
             this.committingTransactions = committingTransactions;
+
+            this.includeAllUncommitted = includeAllUncommitted;
         }
 
         protected abstract X registerCurrent(K key, VersionedValue data);
