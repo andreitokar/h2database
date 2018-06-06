@@ -1345,6 +1345,51 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         return asString(null);
     }
 
+    public interface EntryProcessor<K,V> {
+        boolean process(K key, V value);
+    }
+
+    @SuppressWarnings("unchecked")
+    public static <K, V> void process(Page root, K from, EntryProcessor<K,V> entryProcessor) {
+        CursorPos cursorPos = Cursor.traverseDown(root, from);
+        CursorPos keeper = null;
+        while (true) {
+            Page page = cursorPos.page;
+            int index = cursorPos.index;
+            if (index >= (page.isLeaf() ? page.getKeyCount() : root.map.getChildPageCount(page))) {
+                CursorPos tmp = cursorPos;
+                cursorPos = cursorPos.parent;
+                tmp.parent = keeper;
+                keeper = tmp;
+                if(cursorPos == null) {
+                    return;
+                }
+            } else {
+                while (!page.isLeaf()) {
+                    page = page.getChildPage(index);
+                    if (keeper == null) {
+                        cursorPos = new CursorPos(page, 0, cursorPos);
+                    } else {
+                        CursorPos tmp = keeper;
+                        keeper = keeper.parent;
+                        tmp.parent = cursorPos;
+                        tmp.page = page;
+                        tmp.index = 0;
+                        cursorPos = tmp;
+                    }
+                    index = 0;
+                }
+                K key = (K) page.getKey(index);
+                V value = (V) page.getValue(index);
+                if(entryProcessor.process(key, value)) {
+                    return;
+                }
+            }
+            ++cursorPos.index;
+        }
+
+    }
+
     public static final class RootReference
     {
         /**
@@ -1695,52 +1740,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             }
             throw new IllegalArgumentException("Incompatible map type");
         }
-    }
-
-
-    public interface EntryProcessor<K,V> {
-        boolean process(K key, V value);
-    }
-
-    @SuppressWarnings("unchecked")
-    public static <K,V> void process(Page root, K from, EntryProcessor<K,V> entryProcessor) {
-        CursorPos cursorPos = Cursor.traverseDown(root, from);
-        CursorPos keeper = null;
-        while (true) {
-            Page page = cursorPos.page;
-            int index = cursorPos.index;
-            if (index >= (page.isLeaf() ? page.getKeyCount() : root.map.getChildPageCount(page))) {
-                CursorPos tmp = cursorPos;
-                cursorPos = cursorPos.parent;
-                tmp.parent = keeper;
-                keeper = tmp;
-                if(cursorPos == null) {
-                    return;
-                }
-            } else {
-                while (!page.isLeaf()) {
-                    page = page.getChildPage(index);
-                    if (keeper == null) {
-                        cursorPos = new CursorPos(page, 0, cursorPos);
-                    } else {
-                        CursorPos tmp = keeper;
-                        keeper = keeper.parent;
-                        tmp.parent = cursorPos;
-                        tmp.page = page;
-                        tmp.index = 0;
-                        cursorPos = tmp;
-                    }
-                    index = 0;
-                }
-                K key = (K) page.getKey(index);
-                V value = (V) page.getValue(index);
-                if(entryProcessor.process(key, value)) {
-                    return;
-                }
-            }
-            ++cursorPos.index;
-        }
-
     }
 
     public interface LeafProcessor

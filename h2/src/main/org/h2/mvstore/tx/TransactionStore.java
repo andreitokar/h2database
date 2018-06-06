@@ -154,10 +154,8 @@ public final class TransactionStore {
         if(!init) {
             for (String mapName : store.getMapNames()) {
                 if (mapName.startsWith(UNDO_LOG_NAME_PEFIX)) {
-                    int transactionId = Integer.parseInt(mapName.substring(UNDO_LOG_NAME_PEFIX.length()));
                     if (store.hasData(mapName)) {
-                        MVMap<Long,Record> undoLog = store.openMap(mapName, undoLogBuilder);
-                        undoLogs[transactionId] = undoLog;
+                        int transactionId = Integer.parseInt(mapName.substring(UNDO_LOG_NAME_PEFIX.length()));
                         Object[] data = preparedTransactions.get(transactionId);
                         int status;
                         String name;
@@ -168,7 +166,12 @@ public final class TransactionStore {
                             status = (Integer) data[0];
                             name = (String) data[1];
                         }
-                        long logId = getLogId(undoLog.lastKey()) + 1;
+                        MVMap<Long,Record> undoLog = store.openMap(mapName, undoLogBuilder);
+                        undoLogs[transactionId] = undoLog;
+                        Long lastUndoKey = undoLog.lastKey();
+                        assert lastUndoKey != null;
+                        assert getTransactionId(lastUndoKey) == transactionId;
+                        long logId = getLogId(lastUndoKey) + 1;
                         registerTransaction(transactionId, status, name, logId, timeoutMillis, 0, listener);
                     }
                 }
@@ -363,8 +366,9 @@ public final class TransactionStore {
 
         Transaction transaction = new Transaction(this, transactionId, sequenceNo, status, name, logId,
                                                   timeoutMillis, ownerId, listener);
-        success = transactions.compareAndSet(transactionId, null, transaction);
-        assert success;
+
+        assert transactions.get(transactionId) == null;
+        transactions.set(transactionId, transaction);
 
         if (undoLogs[transactionId] == null) {
             String undoName = UNDO_LOG_NAME_PEFIX + transactionId;
@@ -395,7 +399,7 @@ public final class TransactionStore {
      * @param record Record(mapId, key, previousValue) to add
      */
     long addUndoLogRecord(int transactionId, long logId, Record record) {
-        long undoKey = TransactionStore.getOperationId(transactionId, logId);
+        long undoKey = getOperationId(transactionId, logId);
         undoLogs[transactionId].append(undoKey, record);
         return undoKey;
     }
@@ -422,7 +426,6 @@ public final class TransactionStore {
     /**
      * Commit a transaction.
      *  @param t transaction to commit
-     *
      */
     void commit(Transaction t) {
         if (!store.isClosed()) {
@@ -565,14 +568,15 @@ public final class TransactionStore {
      * Rollback to an old savepoint.
      *
      * @param t the transaction
+     * @param maxLogId the last log id
      * @param toLogId the log id to roll back to
      */
-    void rollbackTo(final Transaction t, long fromLogId, long toLogId) {
+    void rollbackTo(Transaction t, long maxLogId, long toLogId) {
         int transactionId = t.getId();
         MVMap<Long, Record> undoLog = undoLogs[transactionId];
         undoLog.flushAppendBuffer();
         RollbackDecisionMaker decisionMaker = new RollbackDecisionMaker(this, transactionId, toLogId, t.listener);
-        for (long logId = fromLogId - 1; logId >= toLogId; logId--) {
+        for (long logId = maxLogId - 1; logId >= toLogId; logId--) {
             Long undoKey = getOperationId(transactionId, logId);
             undoLog.operate(undoKey, null, decisionMaker);
             decisionMaker.reset();
@@ -616,7 +620,8 @@ public final class TransactionStore {
                     int mapId = op.mapId;
                     MVMap<Object, VersionedValue> m = openMap(mapId);
                     if (m != null) { // could be null if map was removed later on
-                        current = new Change(m.getName(), op.key, op.oldValue == null ? null : op.oldValue.value);
+                        VersionedValue oldValue = op.oldValue;
+                        current = new Change(m.getName(), op.key, oldValue == null ? null : oldValue.value);
                         return;
                     }
                 }
@@ -648,6 +653,63 @@ public final class TransactionStore {
 
         };
     }
+
+    /**
+     * A change in a map.
+     */
+    public static class Change {
+
+        /**
+         * The name of the map where the change occurred.
+         */
+        public final String mapName;
+
+        /**
+         * The key.
+         */
+        public final Object key;
+
+        /**
+         * The value.
+         */
+        public final Object value;
+
+        public Change(String mapName, Object key, Object value) {
+            this.mapName = mapName;
+            this.key = key;
+            this.value = value;
+        }
+    }
+
+    /**
+     * This listener can be registered with the transaction to be notified of
+     * every compensating change during transaction rollback.
+     * Normally this is not required, if no external resources were modified,
+     * because state of all transactional maps will be restored automatically.
+     * Only state of external resources, possibly modified by triggers
+     * need to be restored.
+     */
+    public interface RollbackListener {
+
+        RollbackListener NONE = new RollbackListener() {
+            @Override
+            public void onRollback(MVMap<Object, VersionedValue> map, Object key,
+                                    VersionedValue existingValue, VersionedValue restoredValue) {
+                // do nothing
+            }
+        };
+
+        /**
+         * Notified of a single map change (add/update/remove)
+         * @param map modified
+         * @param key of the modified entry
+         * @param existingValue value in the map (null if delete is rolled back)
+         * @param restoredValue value to be restored (null if add is rolled back)
+         */
+        void onRollback(MVMap<Object,VersionedValue> map, Object key,
+                        VersionedValue existingValue, VersionedValue restoredValue);
+    }
+
 
     private static final class TxMapBuilder<K,V> extends MVMap.Builder<K,V> {
 
@@ -761,61 +823,5 @@ public final class TransactionStore {
                 return buff.toString();
             }
         }
-    }
-
-    /**
-     * A change in a map.
-     */
-    public static final class Change {
-
-        /**
-         * The name of the map where the change occurred.
-         */
-        public final String mapName;
-
-        /**
-         * The key.
-         */
-        public final Object key;
-
-        /**
-         * The value.
-         */
-        public final Object value;
-
-        public Change(String mapName, Object key, Object value) {
-            this.mapName = mapName;
-            this.key = key;
-            this.value = value;
-        }
-    }
-
-    /**
-     * This listener can be registered with the transaction to be notified of
-     * every compensating change during transaction rollback.
-     * Normally this is not required, if no external resources were modified,
-     * because state of all transactional maps will be restored automatically.
-     * Only state of external resources, possibly modified by triggers
-     * need to be restored.
-     */
-    public interface RollbackListener {
-
-        RollbackListener NONE = new RollbackListener() {
-            @Override
-            public void onRollback(MVMap<Object, VersionedValue> map, Object key,
-                                    VersionedValue existingValue, VersionedValue restoredValue) {
-                // do nothing
-            }
-        };
-
-        /**
-         * Notified of a single map change (add/update/remove)
-         * @param map modified
-         * @param key of the modified entry
-         * @param existingValue value in the map (null if delete is rolled back)
-         * @param restoredValue value to be restored (null if add is rolled back)
-         */
-        void onRollback(MVMap<Object,VersionedValue> map, Object key,
-                        VersionedValue existingValue, VersionedValue restoredValue);
     }
 }

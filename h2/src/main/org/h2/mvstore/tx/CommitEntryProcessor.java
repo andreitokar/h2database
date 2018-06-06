@@ -86,18 +86,19 @@ final class CommitEntryProcessor extends MVMap.DecisionMaker<VersionedValue>
     @Override
     public MVMap.Decision decide(VersionedValue existingValue, VersionedValue providedValue) {
         assert decision == null;
-        if (existingValue == null) {
+        if (existingValue == null ||
+            // map entry was treated as already committed, and then
+            // it has been removed by another transaction (commited and closed  by now )
+            existingValue.getOperationId() != undoKey) {
+            // this is not a final undo log entry for this key,
+            // or map entry was treated as already committed and then
+            // overwritten by another transaction
+            // see TxDecisionMaker.decide()
             decision = MVMap.Decision.ABORT;
+        } else /* this is final undo log entry for this key */ if (existingValue.value == null) {
+            decision = MVMap.Decision.REMOVE;
         } else {
-            if (existingValue.getOperationId() == undoKey) {
-                if (existingValue.value == null) {
-                    decision = MVMap.Decision.REMOVE;
-                } else {
-                    decision = MVMap.Decision.PUT;
-                }
-            } else {
-                decision = MVMap.Decision.ABORT;
-            }
+            decision = MVMap.Decision.PUT;
         }
         return decision;
     }
@@ -117,7 +118,7 @@ final class CommitEntryProcessor extends MVMap.DecisionMaker<VersionedValue>
 
     @Override
     public String toString() {
-        return "final_commit " + TransactionStore.getTransactionId(undoKey);
+        return "commit " + TransactionStore.getTransactionId(undoKey);
     }
 
     @Override
