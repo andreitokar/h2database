@@ -165,8 +165,8 @@ public class CreateTable extends CommandWithColumns {
                 if (!transactional) {
                     session.commit(true);
                 }
-            } catch (Throwable ignore) {
-                e.addSuppressed(ignore);
+            } catch (Throwable ex) {
+                e.addSuppressed(ex);
             }
             throw e;
         }

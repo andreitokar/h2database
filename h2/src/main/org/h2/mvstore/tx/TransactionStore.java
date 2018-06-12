@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceArray;
+import org.h2.mvstore.Cursor;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.MVMap;
 import org.h2.mvstore.MVStore;
@@ -27,7 +28,7 @@ import org.h2.mvstore.type.StringDataType;
 /**
  * A store that supports concurrent MVCC read-committed transactions.
  */
-public final class TransactionStore {
+public class TransactionStore {
 
     /**
      * The store.
@@ -97,7 +98,10 @@ public final class TransactionStore {
 
 
     private static final String TYPE_REGISTRY_NAME = "_";
-    private static final String UNDO_LOG_NAME_PEFIX = "undoLog-";
+
+    private static final String UNDO_LOG_NAME_PEFIX = "undoLog";
+    private static final char UNDO_LOG_COMMITTED = '-'; // must come before open in lexicographical order
+    private static final char UNDO_LOG_OPEN = '.';
 
     /**
      * Hard limit on the number of concurrently opened transactions
@@ -106,6 +110,11 @@ public final class TransactionStore {
     private static final int MAX_OPEN_TRANSACTIONS = 65535;
 
 
+    public static String getUndoLogName(boolean committed, int transactionId) {
+        return UNDO_LOG_NAME_PEFIX +
+                (committed ? UNDO_LOG_COMMITTED : UNDO_LOG_OPEN) +
+                (transactionId > 0 ? String.valueOf(transactionId) : "");
+    }
 
     /**
      * Create a new transaction store.
@@ -147,32 +156,32 @@ public final class TransactionStore {
      * in which case the store can only be used for reading.
      */
     public void init() {
-        init(RollbackListener.NONE);
-    }
-
-    public synchronized void init(RollbackListener listener) {
-        if(!init) {
+        if (!init) {
             for (String mapName : store.getMapNames()) {
                 if (mapName.startsWith(UNDO_LOG_NAME_PEFIX)) {
                     if (store.hasData(mapName)) {
-                        int transactionId = Integer.parseInt(mapName.substring(UNDO_LOG_NAME_PEFIX.length()));
-                        Object[] data = preparedTransactions.get(transactionId);
-                        int status;
-                        String name;
-                        if (data == null) {
-                            status = Transaction.STATUS_OPEN;
-                            name = null;
-                        } else {
-                            status = (Integer) data[0];
-                            name = (String) data[1];
+                        int transactionId = Integer.parseInt(mapName.substring(UNDO_LOG_NAME_PEFIX.length() + 1));
+                        VersionedBitSet openTxBitSet = openTransactions.get();
+                        if (!openTxBitSet.get(transactionId)) {
+                            Object[] data = preparedTransactions.get(transactionId);
+                            int status;
+                            String name;
+                            if (data == null) {
+                                status = mapName.charAt(UNDO_LOG_NAME_PEFIX.length()) == UNDO_LOG_OPEN ?
+                                        Transaction.STATUS_OPEN : Transaction.STATUS_COMMITTED;
+                                name = null;
+                            } else {
+                                status = (Integer) data[0];
+                                name = (String) data[1];
+                            }
+                            MVMap<Long, Record> undoLog = store.openMap(mapName, undoLogBuilder);
+                            undoLogs[transactionId] = undoLog;
+                            Long lastUndoKey = undoLog.lastKey();
+                            assert lastUndoKey != null;
+                            assert getTransactionId(lastUndoKey) == transactionId;
+                            long logId = getLogId(lastUndoKey) + 1;
+                            registerTransaction(transactionId, status, name, logId, timeoutMillis, 0, RollbackListener.NONE);
                         }
-                        MVMap<Long,Record> undoLog = store.openMap(mapName, undoLogBuilder);
-                        undoLogs[transactionId] = undoLog;
-                        Long lastUndoKey = undoLog.lastKey();
-                        assert lastUndoKey != null;
-                        assert getTransactionId(lastUndoKey) == transactionId;
-                        long logId = getLogId(lastUndoKey) + 1;
-                        registerTransaction(transactionId, status, name, logId, timeoutMillis, 0, listener);
                     }
                 }
             }
@@ -371,8 +380,9 @@ public final class TransactionStore {
         transactions.set(transactionId, transaction);
 
         if (undoLogs[transactionId] == null) {
-            String undoName = UNDO_LOG_NAME_PEFIX + transactionId;
-            undoLogs[transactionId] = store.openMap(undoName, undoLogBuilder);
+            String undoName = getUndoLogName(status == Transaction.STATUS_COMMITTED, transactionId);
+            MVMap<Long, Object[]> undoLog = store.openMap(undoName, undoLogBuilder);
+            undoLogs[transactionId] = undoLog;
         }
         return transaction;
     }
@@ -426,8 +436,10 @@ public final class TransactionStore {
     /**
      * Commit a transaction.
      *  @param t transaction to commit
+     *  @param recovery if called during initial transaction recovery procedure
+     *                  therefore undo log is stored under "committed" name already
      */
-    void commit(Transaction t) {
+    void commit(Transaction t, boolean recovery) {
         if (!store.isClosed()) {
             int transactionId = t.transactionId;
             // this is an atomic action that causes all changes
@@ -435,15 +447,21 @@ public final class TransactionStore {
             flipCommittingTransactionsBit(transactionId, true);
 
             try {
-                t.setStatus(Transaction.STATUS_COMMITTED);
                 MVMap<Long, Record> undoLog = undoLogs[transactionId];
-                MVMap.RootReference rootReference = undoLog.flushAppendBuffer();
-                Page rootPage = rootReference.root;
-                CommitEntryProcessor committProcessor = new CommitEntryProcessor(this, transactionId,
-                        rootPage.getTotalCount() > 32);
-                MVMap.process(rootPage, null, committProcessor);
-                committProcessor.flush();
-                undoLog.clear();
+                if(!recovery) {
+                    store.renameMap(undoLog, getUndoLogName(true, transactionId));
+                }
+                try {
+                    MVMap.RootReference rootReference = undoLog.flushAppendBuffer();
+                    Page rootPage = rootReference.root;
+                    CommitEntryProcessor committProcessor = new CommitEntryProcessor(this, transactionId,
+                            rootPage.getTotalCount() > 32);
+                    MVMap.process(rootPage, null, committProcessor);
+                    committProcessor.flush();
+                    undoLog.clear();
+                } finally {
+                    store.renameMap(undoLog, getUndoLogName(false, transactionId));
+                }
             } finally {
                 flipCommittingTransactionsBit(transactionId, false);
             }
@@ -537,15 +555,7 @@ public final class TransactionStore {
             if (wasStored || store.getAutoCommitDelay() == 0) {
                 store.tryCommit();
             } else {
-                boolean empty = true;
-                BitSet openTrans = openTransactions.get();
-                for (int i = openTrans.nextSetBit(0); empty && i >= 0; i = openTrans.nextSetBit(i + 1)) {
-                    MVMap<Long, Record> undoLog = undoLogs[i];
-                    if (undoLog != null) {
-                        empty = undoLog.isEmpty();
-                    }
-                }
-                if (empty) {
+                if (isUndoEmpty()) {
                     // to avoid having to store the transaction log,
                     // if there is no open transaction,
                     // and if there have been many changes, store them now
@@ -558,6 +568,17 @@ public final class TransactionStore {
                 }
             }
         }
+    }
+
+    private boolean isUndoEmpty() {
+        BitSet openTrans = openTransactions.get();
+        for (int i = openTrans.nextSetBit(0); i >= 0; i = openTrans.nextSetBit(i + 1)) {
+            MVMap<Long, Record> undoLog = undoLogs[i];
+            if (undoLog != null && !undoLog.isEmpty()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     Transaction getTransaction(int transactionId) {

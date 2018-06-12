@@ -70,14 +70,19 @@ public class TransactionMap<K, V> {
     public long sizeAsLong() {
         TransactionStore store = transaction.store;
 
+        // The purpose of the following loop is to get a coherent picture
+        // of a state of three independent volatile / atomic variables,
+        // which they had at some recent moment in time.
+        // In order to get such a "snapshot", we wait for a moment of silence,
+        // when none of the variables concurrently changes it's value.
         BitSet committingTransactions;
         MVMap.RootReference mapRootReference;
-        MVMap.RootReference undoLogRootReferences[];
+        MVMap.RootReference[] undoLogRootReferences;
         long undoLogSize;
         do {
             committingTransactions = store.committingTransactions.get();
-            BitSet opentransactions = store.openTransactions.get();
             mapRootReference = map.getRoot();
+            BitSet opentransactions = store.openTransactions.get();
             undoLogRootReferences = new MVMap.RootReference[opentransactions.length()];
             undoLogSize = 0;
             for (int i = opentransactions.nextSetBit(0); i >= 0; i = opentransactions.nextSetBit(i+1)) {
@@ -88,111 +93,75 @@ public class TransactionMap<K, V> {
                     undoLogSize += rootReference.root.getTotalCount() + rootReference.appendCounter;
                 }
             }
-        } while(committingTransactions != store.committingTransactions.get());
-
+        } while(committingTransactions != store.committingTransactions.get() ||
+                mapRootReference != map.getRoot());
+        // Now we have a snapshot, where mapRootReference points to state of the map,
+        // undoLogRootReference captures the state of undo log
+        // and committingTransactions mask tells us which of seemingly uncommitted changes
+        // should be considered as committed.
+        // Subsequent processing uses this snapshot info only.
         Page mapRootPage = mapRootReference.root;
         long size = mapRootPage.getTotalCount();
+        // if we are looking at the map without any uncommitted values
         if (undoLogSize == 0) {
             return size;
         }
-        AbstractMapSizeAdjuster adjuster;
-        if (undoLogSize > size) {
-            // the undo log is larger than the map -
-            // count the entries of the map
-            MapSizeAdjuster processor = new MapSizeAdjuster(committingTransactions, transaction.transactionId);
-            MVMap.process(mapRootPage, null, processor);
-            adjuster = processor;
-        } else {
-            // The undo log is smaller than the map -
-            // scan the undo log, find appropriate map entries and decrement counter for each irrelevant entry.
-            // Entry is irrelevant if it was newly added by the uncommitted transaction, other than the curent one.
-            // Also irrelevalnt are entries with value of null, if they are modified (not created)
-            // by the current transaction or some committed transaction, which is not closed yet.
-            UndoLogMapSizeAdjuster processor = new UndoLogMapSizeAdjuster(committingTransactions, mapRootPage,
-                                                            map, transaction.transactionId);
-            for (MVMap.RootReference undoLogRootReference : undoLogRootReferences) {
-                if (undoLogRootReference != null) {
-                    MVMap.process(undoLogRootReference.root, null, processor);
-                }
-            }
-            adjuster = processor;
-        }
-        size += adjuster.getAdjustment();
-        return size;
-    }
 
-    private static class AbstractMapSizeAdjuster {
-        private final BitSet committingTransactions;
-        private final int    transactionId;
-        private       long   adjustment;
-
-        protected AbstractMapSizeAdjuster(BitSet committingTransactions, int transactionId) {
-            this.committingTransactions = committingTransactions;
-            this.transactionId = transactionId;
-        }
-
-        protected final void decrement() {
-            --adjustment;
-        }
-
-        protected final boolean isVisible(int txId) {
-            return committingTransactions.get(txId) || txId == transactionId;
-        }
-
-        protected final long getAdjustment() {
-            return adjustment;
-        }
-    }
-
-    private static final class MapSizeAdjuster extends AbstractMapSizeAdjuster
-                                               implements MVMap.EntryProcessor<Object,VersionedValue> {
-
-        private MapSizeAdjuster(BitSet committingTransactions, int transactionId) {
-            super(committingTransactions, transactionId);
-        }
-
-        @Override
-        public boolean process(Object key, VersionedValue value) {
-            assert value != null;
-            long id = value.getOperationId();
-            if (id != 0) {  // skip committed entries
-                Object v = isVisible(TransactionStore.getTransactionId(id)) ? value.value : value.getCommittedValue();
-                if (v == null) {
-                    decrement();
-                }
-            }
-            return false;
-        }
-    }
-
-    private static final class UndoLogMapSizeAdjuster extends AbstractMapSizeAdjuster
-                                                      implements MVMap.EntryProcessor<Long,Record> {
-        private final Page root;
-        private final MVMap<?, VersionedValue> map;
-
-        private UndoLogMapSizeAdjuster(BitSet committingTransactions, Page root, MVMap<?, VersionedValue> map, int transactionId) {
-            super(committingTransactions, transactionId);
-            this.root = root;
-            this.map = map;
-        }
-
-        @Override
-        public boolean process(Long undoKey, Record op) {
-            if (op.mapId == map.getId()) {
-                assert undoKey != null;
-                int txId = TransactionStore.getTransactionId(undoKey);
-                boolean isVisible = isVisible(txId);
-                if (isVisible ? op.oldValue != null && op.oldValue.getOperationId() == 0 && op.oldValue.value != null
-                              : op.oldValue == null) {
-                    VersionedValue currentValue = map.get(root, op.key);
-                    if (isVisible ? (currentValue == null || currentValue.value == null)
-                                  : currentValue != null) {
-                        decrement();
+        // Entries describing removals from the map by this transaction and all transactions,
+        // which are committed but not closed yet,
+        // and antries about additions to the map by other uncommitted transactions were counted,
+        // but they should not contribute into total count.
+        if (2 * undoLogSize > size) {
+            // the undo log is larger than half of the map - scan the entries of the map directly
+            Cursor<K, VersionedValue> cursor = new Cursor<>(mapRootPage, null);
+            while(cursor.hasNext()) {
+                cursor.next();
+                VersionedValue currentValue = cursor.getValue();
+                assert currentValue != null;
+                long operationId = currentValue.getOperationId();
+                if (operationId != 0) {  // skip committed entries
+                    int txId = TransactionStore.getTransactionId(operationId);
+                    boolean isVisible = txId == transaction.transactionId ||
+                                            committingTransactions.get(txId);
+                    Object v = isVisible ? currentValue.value : currentValue.getCommittedValue();
+                    if (v == null) {
+                        --size;
                     }
                 }
             }
-            return false;
+        } else {
+            // The undo logs are much smaller than the map - scan all undo logs, and then lookup relevant map entry.
+            for (MVMap.RootReference undoLogRootReference : undoLogRootReferences) {
+                if (undoLogRootReference != null) {
+                    Cursor<Long, Record> cursor = new Cursor<>(undoLogRootReference.root, null);
+                    while (cursor.hasNext()) {
+                        cursor.next();
+                        Record op = cursor.getValue();
+                        if (op.mapId == map.getId()) {
+                            VersionedValue currentValue = map.get(mapRootPage, op.key);
+                            // If map entry is not there, then we never counted it, in the first place, so skip it.
+                            // This is possible when undo entry exists because it belongs
+                            // to a committed but not yet closed transaction,
+                            // and it was later deleted by some other already committed and closed transaction.
+                            if (currentValue != null) {
+                                // only the last undo entry for any given map key should be considered
+                                long operationId = cursor.getKey();
+                                if (currentValue.getOperationId() == operationId) {
+                                    int txId = TransactionStore.getTransactionId(operationId);
+                                    boolean isVisible = txId == transaction.transactionId ||
+                                            committingTransactions.get(txId);
+                                    Object v = isVisible ? currentValue.value : currentValue.getCommittedValue();
+                                    if (v == null) {
+                                        --size;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
+        return size;
     }
 
     /**
@@ -612,7 +581,6 @@ public class TransactionMap<K, V> {
                 return result;
             }
 
-
             @Override
             public void remove() {
                 throw DataUtils.newUnsupportedOperationException(
@@ -671,10 +639,10 @@ public class TransactionMap<K, V> {
             TransactionStore store = transactionMap.transaction.store;
             MVMap<K, VersionedValue> map = transactionMap.map;
             // The purpose of the following loop is to get a coherent picture
-            // of a state of two independent volatile / atomic variables
+            // of a state of two independent volatile / atomic variables,
             // which they had at some recent moment in time.
-            // In order to get such a "snapshot", we wait for a moment of silence
-            // when neither of the variables concurrently chenges it's value.
+            // In order to get such a "snapshot", we wait for a moment of silence,
+            // when neither of the variables concurrently changes it's value.
             BitSet committingTransactions;
             MVMap.RootReference mapRootReference;
             do {
