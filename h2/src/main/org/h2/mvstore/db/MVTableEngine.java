@@ -110,10 +110,7 @@ public class MVTableEngine implements TableEngine {
     public TableBase createTable(CreateTableData data) {
         Database db = data.session.getDatabase();
         Store store = init(db);
-        MVTable table = new MVTable(data, store);
-        table.init(data.session);
-        store.tableMap.put(table.getMapName(), table);
-        return table;
+        return store.createTable(data);
     }
 
     /**
@@ -222,6 +219,19 @@ public class MVTableEngine implements TableEngine {
         }
 
         /**
+         * Create a table.
+         *
+         * @param data CreateTableData
+         * @return table created
+         */
+        public MVTable createTable(CreateTableData data) {
+            MVTable table = new MVTable(data, this);
+            table.init(data.session);
+            tableMap.put(table.getMapName(), table);
+            return table;
+        }
+
+        /**
          * Remove a table.
          *
          * @param table the table
@@ -251,21 +261,6 @@ public class MVTableEngine implements TableEngine {
                 return;
             }
             store.closeImmediately();
-        }
-
-        /**
-         * Commit all transactions that are in the committing state, and
-         * rollback all open transactions.
-         */
-        public void initTransactions() {
-            List<Transaction> list = transactionStore.getOpenTransactions();
-            for (Transaction t : list) {
-                if (t.getStatus() == Transaction.STATUS_COMMITTED) {
-                    t.commit();
-                } else if (t.getStatus() != Transaction.STATUS_PREPARED) {
-                    t.rollback();
-                }
-            }
         }
 
         /**

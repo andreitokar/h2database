@@ -167,12 +167,14 @@ public class TransactionStore {
                             int status;
                             String name;
                             if (data == null) {
-                                status = mapName.charAt(UNDO_LOG_NAME_PEFIX.length()) == UNDO_LOG_OPEN ?
-                                        Transaction.STATUS_OPEN : Transaction.STATUS_COMMITTED;
+                                status = Transaction.STATUS_OPEN;
                                 name = null;
                             } else {
                                 status = (Integer) data[0];
                                 name = (String) data[1];
+                            }
+                            if (mapName.charAt(UNDO_LOG_NAME_PEFIX.length()) == UNDO_LOG_COMMITTED) {
+                                status = Transaction.STATUS_COMMITTED;
                             }
                             MVMap<Long, Record> undoLog = store.openMap(mapName, undoLogBuilder);
                             undoLogs[transactionId] = undoLog;
@@ -194,37 +196,17 @@ public class TransactionStore {
     }
 
     /**
-     * Commit all transactions that are in the committing state, and
+     * Commit all transactions that are in the committed state, and
      * rollback all open transactions.
      */
     public void endLeftoverTransactions() {
         List<Transaction> list = getOpenTransactions();
-        for (Transaction tx : list) {
-            int transactionId = tx.transactionId;
-            int status = tx.getStatus();
-            if (status == Transaction.STATUS_OPEN) {
-                // TODO: implement more sophisticated full undoLog analysis for Tx status determination
-                MVMap<Long, Record> undoLog = undoLogs[transactionId];
-                Long undoKey = undoLog.firstKey();
-                if (undoKey == null || getLogId(undoKey) != 0) {
-                    status = Transaction.STATUS_COMMITTING;
-                } else {
-                    Record record = undoLog.get(undoKey);
-                    MVMap<Object, VersionedValue> map = openMap(record.mapId);
-                    if (map != null && !map.isClosed()) {
-                        Object key = record.key;
-                        VersionedValue versionedValue = map.get(key);
-                        if (versionedValue == null || versionedValue.getOperationId() == 0) {
-                            status = Transaction.STATUS_COMMITTING;
-                        }
-                    }
-                }
-            }
-
-            if(status == Transaction.STATUS_COMMITTING) {
-                tx.commit();
+        for (Transaction t : list) {
+            int status = t.getStatus();
+            if(status == Transaction.STATUS_COMMITTED) {
+                t.commit();
             } else if(status != Transaction.STATUS_PREPARED) {
-                tx.rollback();
+                t.rollback();
             }
         }
     }
