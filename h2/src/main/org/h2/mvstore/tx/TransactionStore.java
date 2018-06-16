@@ -364,7 +364,7 @@ public class TransactionStore {
 
         if (undoLogs[transactionId] == null) {
             String undoName = getUndoLogName(status == Transaction.STATUS_COMMITTED, transactionId);
-            MVMap<Long, Object[]> undoLog = store.openMap(undoName, undoLogBuilder);
+            MVMap<Long, Record> undoLog = store.openMap(undoName, undoLogBuilder);
             undoLogs[transactionId] = undoLog;
         }
         return transaction;

@@ -9,7 +9,6 @@ import java.lang.reflect.Array;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import org.h2.compress.Compressor;
-import org.h2.engine.Constants;
 import org.h2.mvstore.type.ExtendedDataType;
 import org.h2.util.Utils;
 import static org.h2.engine.Constants.MEMORY_ARRAY;
