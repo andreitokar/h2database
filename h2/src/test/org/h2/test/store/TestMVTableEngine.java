@@ -509,7 +509,7 @@ public class TestMVTableEngine extends TestBase {
         Statement stat;
         Statement stat2;
         deleteDb(getTestName());
-        String url = getTestName() + ";MV_STORE=TRUE;MVCC=TRUE";
+        String url = getTestName() + ";MV_STORE=TRUE";
         url = getURL(url, true);
         conn = getConnection(url);
         stat = conn.createStatement();
@@ -566,7 +566,7 @@ public class TestMVTableEngine extends TestBase {
         Statement stat;
         Statement stat2;
         deleteDb(getTestName());
-        String url = getTestName() + ";MV_STORE=TRUE;MVCC=TRUE";
+        String url = getTestName() + ";MV_STORE=TRUE";
         url = getURL(url, true);
         conn = getConnection(url);
         stat = conn.createStatement();
@@ -596,7 +596,7 @@ public class TestMVTableEngine extends TestBase {
         Statement stat;
         Statement stat2;
         deleteDb(getTestName());
-        String url = getTestName() + ";MV_STORE=TRUE;MVCC=TRUE";
+        String url = getTestName() + ";MV_STORE=TRUE";
         url = getURL(url, true);
         conn = getConnection(url);
         stat = conn.createStatement();

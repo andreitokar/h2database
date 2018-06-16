@@ -309,11 +309,6 @@ java org.h2.test.TestAll timer
     public boolean codeCoverage;
 
     /**
-     * If the multi version concurrency control mode should be used.
-     */
-    public boolean mvcc = mvStore;
-
-    /**
      * If the multi-threaded mode should be used.
      */
     public boolean multiThreaded;
@@ -657,12 +652,10 @@ kill -9 `jps -l | grep "org.h2.test." | cut -d " " -f 1`
         memory = false;
         multiThreaded = false;
         mvStore = false;
-        mvcc = false;
         test();
         testUnit();
 
         mvStore = true;
-        mvcc = true;
         memory = true;
         multiThreaded = false;
         networked = true;
@@ -726,7 +719,6 @@ kill -9 `jps -l | grep "org.h2.test." | cut -d " " -f 1`
 
         multiThreaded = false;
         mvStore = false;
-        mvcc = false;
         test();
         // testUnit();
     }
@@ -1145,7 +1137,6 @@ kill -9 `jps -l | grep "org.h2.test." | cut -d " " -f 1`
         appendIf(buff, networked, "net");
         appendIf(buff, memory, "memory");
         appendIf(buff, codeCoverage, "codeCoverage");
-        appendIf(buff, mvcc, "mvcc");
         appendIf(buff, multiThreaded, "multiThreaded");
         appendIf(buff, cipher != null, cipher);
         appendIf(buff, cacheType != null, cacheType);

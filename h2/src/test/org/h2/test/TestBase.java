@@ -314,12 +314,7 @@ public abstract class TestBase {
             // force operations to disk
             url = addOption(url, "MAX_OPERATION_MEMORY", "1");
         }
-        if (config.mvcc) {
-            url = addOption(url, "MVCC", "TRUE");
-        }
-        if (config.multiThreaded) {
-            url = addOption(url, "MULTI_THREADED", "TRUE");
-        }
+        url = addOption(url, "MULTI_THREADED", config.multiThreaded ? "TRUE" : "FALSE");
         if (config.lazy) {
             url = addOption(url, "LAZY_QUERY_EXECUTION", "1");
         }
