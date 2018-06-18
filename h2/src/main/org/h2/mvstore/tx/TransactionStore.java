@@ -13,7 +13,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceArray;
-import org.h2.mvstore.Cursor;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.MVMap;
 import org.h2.mvstore.MVStore;
@@ -99,7 +98,7 @@ public class TransactionStore {
 
     private static final String TYPE_REGISTRY_NAME = "_";
 
-    private static final String UNDO_LOG_NAME_PEFIX = "undoLog";
+    private static final String UNDO_LOG_NAME_PREFIX = "undoLog";
     private static final char UNDO_LOG_COMMITTED = '-'; // must come before open in lexicographical order
     private static final char UNDO_LOG_OPEN = '.';
 
@@ -111,7 +110,7 @@ public class TransactionStore {
 
 
     public static String getUndoLogName(boolean committed, int transactionId) {
-        return UNDO_LOG_NAME_PEFIX +
+        return UNDO_LOG_NAME_PREFIX +
                 (committed ? UNDO_LOG_COMMITTED : UNDO_LOG_OPEN) +
                 (transactionId > 0 ? String.valueOf(transactionId) : "");
     }
@@ -158,10 +157,10 @@ public class TransactionStore {
     public void init() {
         if (!init) {
             for (String mapName : store.getMapNames()) {
-                if (mapName.startsWith(UNDO_LOG_NAME_PEFIX)) {
-                    boolean committed = mapName.charAt(UNDO_LOG_NAME_PEFIX.length()) == UNDO_LOG_COMMITTED;
+                if (mapName.startsWith(UNDO_LOG_NAME_PREFIX)) {
+                    boolean committed = mapName.charAt(UNDO_LOG_NAME_PREFIX.length()) == UNDO_LOG_COMMITTED;
                     if (store.hasData(mapName) || committed) {
-                        int transactionId = Integer.parseInt(mapName.substring(UNDO_LOG_NAME_PEFIX.length() + 1));
+                        int transactionId = Integer.parseInt(mapName.substring(UNDO_LOG_NAME_PREFIX.length() + 1));
                         VersionedBitSet openTxBitSet = openTransactions.get();
                         if (!openTxBitSet.get(transactionId)) {
                             Object[] data = preparedTransactions.get(transactionId);
