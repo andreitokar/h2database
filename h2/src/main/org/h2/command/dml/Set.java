@@ -354,13 +354,6 @@ public class Set extends Prepared {
             }
             break;
         }
-        case SetTypes.MVCC: {
-            if (database.isMultiVersion() != (getIntValue() == 1)) {
-                throw DbException.get(
-                        ErrorCode.CANNOT_CHANGE_SETTING_WHEN_OPEN_1, "MVCC");
-            }
-            break;
-        }
         case SetTypes.OPTIMIZE_REUSE_RESULTS: {
             session.getUser().checkAdmin();
             database.setOptimizeReuseResults(getIntValue() != 0);
@@ -556,9 +549,10 @@ public class Set extends Prepared {
                 }
                 addOrUpdateSetting(name,expression.getValue(session).getString(),0);
             } catch (Exception e) {
-                //Errors during start are ignored to allow to open the database
+                // Errors during start are ignored to allow to open the database
                 if (database.isStarting()) {
-                    database.getTrace(Trace.DATABASE).error(e, "{0}: failed to set authenticator during database start ",expression.toString());
+                    database.getTrace(Trace.DATABASE).error(e,
+                            "{0}: failed to set authenticator during database start ", expression.toString());
                 } else {
                     throw DbException.convert(e);
                 }

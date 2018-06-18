@@ -1310,7 +1310,7 @@ public class Select extends Query {
     public void setForUpdate(boolean b) {
         this.isForUpdate = b;
         if (session.getDatabase().getSettings().selectForUpdateMvcc &&
-                session.getDatabase().isMultiVersion()) {
+                session.getDatabase().isMVStore()) {
             isForUpdateMvcc = b;
         }
     }

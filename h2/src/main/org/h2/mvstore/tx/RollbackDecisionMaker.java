@@ -31,8 +31,8 @@ final class RollbackDecisionMaker extends MVMap.DecisionMaker<Record> {
     public MVMap.Decision decide(Record existingValue, Record providedValue) {
         assert decision == null;
         if (existingValue == null) {
-            // normaly existingValue will always be there except of db initialization
-            // where some undo log enty was captured on disk but actual map entry was not
+            // normally existingValue will always be there except of db initialization
+            // where some undo log entry was captured on disk but actual map entry was not
             decision = MVMap.Decision.ABORT;
         } else {
             VersionedValue valueToRestore = existingValue.oldValue;

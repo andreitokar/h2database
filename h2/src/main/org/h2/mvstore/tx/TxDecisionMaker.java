@@ -15,9 +15,9 @@ import org.h2.mvstore.MVMap;
 public abstract class TxDecisionMaker extends MVMap.DecisionMaker<VersionedValue> {
     private final int            mapId;
     private final Object         key;
-            final Object         value;
+    final Object                 value;
     private final Transaction    transaction;
-                  long           undoKey;
+    long                         undoKey;
     private       Transaction    blockingTransaction;
     private       MVMap.Decision decision;
 

@@ -109,7 +109,7 @@ public class TransactionMap<K, V> {
 
         // Entries describing removals from the map by this transaction and all transactions,
         // which are committed but not closed yet,
-        // and antries about additions to the map by other uncommitted transactions were counted,
+        // and entries about additions to the map by other uncommitted transactions were counted,
         // but they should not contribute into total count.
         if (2 * undoLogSize > size) {
             // the undo log is larger than half of the map - scan the entries of the map directly
@@ -204,7 +204,8 @@ public class TransactionMap<K, V> {
      */
     public V putIfAbsent(K key, V value) {
         DataUtils.checkArgument(value != null, "The value may not be null");
-        TxDecisionMaker decisionMaker = new TxDecisionMaker.PutIfAbsentDecisionMaker(map.getId(), key, value, transaction);
+        TxDecisionMaker decisionMaker = new TxDecisionMaker.PutIfAbsentDecisionMaker(map.getId(), key, value,
+                transaction);
         return set(key, decisionMaker);
     }
 
@@ -273,8 +274,10 @@ public class TransactionMap<K, V> {
         } while (blockingTransaction.sequenceNum > sequenceNumWhenStarted || transaction.waitFor(blockingTransaction));
 
         throw DataUtils.newIllegalStateException(DataUtils.ERROR_TRANSACTION_LOCKED,
-                "Map entry <{0}> with key <{1}> and value {2} is locked by tx {3} and can not be updated by tx {4} within allocated time interval {5} ms.",
-                map.getName(), key, result, blockingTransaction.transactionId, transaction.transactionId, transaction.timeoutMillis);
+                "Map entry <{0}> with key <{1}> and value {2} is locked by tx {3} and can not be updated by tx {4}"
+                        + " within allocated time interval {5} ms.",
+                map.getName(), key, result, blockingTransaction.transactionId, transaction.transactionId,
+                transaction.timeoutMillis);
     }
 
     /**
@@ -317,7 +320,8 @@ public class TransactionMap<K, V> {
      */
     public boolean trySet(K key, V value) {
         try {
-            // TODO: effective transaction.timeoutMillis should be set to 0 here and restored before return
+            // TODO: effective transaction.timeoutMillis should be set to 0 here
+            // and restored before return
             // TODO: eliminate exception usage as part of normal control flaw
             set(key, value);
             return true;
