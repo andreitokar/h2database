@@ -5,9 +5,6 @@
  */
 package org.h2.engine;
 
-import java.util.Collections;
-import java.util.Map;
-
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
