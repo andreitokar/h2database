@@ -156,13 +156,8 @@ public abstract class Command implements CommandInterface {
             session.commit(true);
         } else if (session.getAutoCommit()) {
             session.commit(false);
-        } else if (session.getDatabase().isMultiThreaded()) {
-            Database db = session.getDatabase();
-            if (db != null) {
-                if (db.getLockMode() == Constants.LOCK_MODE_READ_COMMITTED) {
-                    session.unlockReadLocks();
-                }
-            }
+        } else {
+            session.unlockReadLocks();
         }
         session.endStatement();
         if (trace.isInfoEnabled() && startTimeNanos > 0) {

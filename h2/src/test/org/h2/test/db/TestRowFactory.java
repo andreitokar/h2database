@@ -28,6 +28,7 @@ import org.h2.table.CompactRowFactory;
 import org.h2.table.IndexColumn;
 import org.h2.test.TestBase;
 import org.h2.value.CompareMode;
+import org.h2.test.TestDb;
 import org.h2.value.Value;
 import org.h2.value.ValueDate;
 import org.h2.value.ValueDecimal;
@@ -43,7 +44,7 @@ import org.h2.value.ValueString;
  *
  * @author Sergi Vladykin
  */
-public class TestRowFactory extends TestBase {
+public class TestRowFactory extends TestDb {
 
     private int[] valueTypes = { Value.INT, Value.STRING, Value.UNKNOWN, Value.LONG, Value.DOUBLE,
                          Value.FLOAT, Value.DECIMAL, Value.STRING_FIXED };

@@ -5,7 +5,6 @@
  */
 package org.h2.mvstore.db;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
@@ -234,11 +233,24 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
 
     @Override
     public void update(Session session, Row oldRow, Row newRow) {
-        SearchRow searchRowOld = convertToKey(oldRow, null);
-        SearchRow searchRowNew = convertToKey(newRow, null);
-        if (compareRows(searchRowOld, searchRowNew) != 0) {
+
+        if (!rowsAreEqual(oldRow, newRow)) {
             super.update(session, oldRow, newRow);
         }
+    }
+
+    private boolean rowsAreEqual(SearchRow rowOne, SearchRow rowTwo) {
+        if (rowOne == rowTwo) {
+            return true;
+        }
+        for (int index : columnIds) {
+            Value v1 = rowOne.getValue(index);
+            Value v2 = rowTwo.getValue(index);
+            if (v1 == null ? v2 != null : !v1.equals(v2)) {
+                return false;
+            }
+        }
+        return rowOne.getKey() == rowTwo.getKey();
     }
 
     @Override
@@ -330,8 +342,8 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
             }
             key = first ? map.higherKey(key) : map.lowerKey(key);
         }
-        List<SearchRow> list = Collections.singletonList(key);
-        MVStoreCursor cursor = new MVStoreCursor(session, list.iterator(), mvTable);
+        MVStoreCursor cursor = new MVStoreCursor(session,
+                                Collections.singletonList(key).iterator(), mvTable);
         cursor.next();
         return cursor;
     }

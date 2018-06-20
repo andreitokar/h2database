@@ -786,12 +786,12 @@ public class Database implements DataHandler {
         data.session = systemSession;
         meta = mainSchema.createTable(data);
         IndexColumn[] pkCols = IndexColumn.wrap(new Column[] { columnId });
+        starting = true;
         metaIdIndex = meta.addIndex(systemSession, "SYS_ID",
                 0, pkCols, IndexType.createPrimaryKey(
                 false, false), true, null);
         systemSession.commit(true);
         objectIds.set(0);
-        starting = true;
         Cursor cursor = metaIdIndex.find(systemSession, null, null);
         ArrayList<MetaRecord> records = new ArrayList<>((int) metaIdIndex.getRowCountApproximation());
         while (cursor.next()) {
@@ -908,18 +908,12 @@ public class Database implements DataHandler {
         int id = obj.getId();
         if (id > 0 && !starting && !obj.isTemporary()) {
             Row r = meta.getTemplateRow();
-            MetaRecord rec = new MetaRecord(obj);
-            rec.setRecord(r);
+            MetaRecord.populateRowFromDBObject(obj, r);
             objectIds.set(id);
             if (SysProperties.CHECK) {
                 verifyMetaLocked(session);
             }
             meta.addRow(session, r);
-            if (isMVStore()) {
-                // TODO this should work without MVCC, but avoid risks at the
-                // moment
-                session.log(meta, UndoLogRecord.INSERT, r);
-            }
         }
     }
 
@@ -1034,11 +1028,6 @@ public class Database implements DataHandler {
                     }
                     Row found = cursor.get();
                     meta.removeRow(session, found);
-                    if (isMVStore()) {
-                        // TODO this should work without MVCC, but avoid risks at
-                        // the moment
-                        session.log(meta, UndoLogRecord.DELETE, found);
-                    }
                     if (SysProperties.CHECK) {
                         checkMetaFree(session, id);
                     }
@@ -1543,7 +1532,7 @@ public class Database implements DataHandler {
         r.setValue(0, ValueInt.get(id));
         Cursor cursor = metaIdIndex.find(session, r, r);
         if (cursor.next()) {
-            throw DbException.throwInternalError();
+            DbException.throwInternalError();
         }
     }
 
@@ -1740,20 +1729,33 @@ public class Database implements DataHandler {
      * @param session the session
      * @param obj the database object
      */
-    public synchronized void updateMeta(Session session, DbObject obj) {
-        assert !starting;
-        int id = obj.getId();
-        if(!obj.isTemporary() && id > 0) {
-            Row newRow = meta.getTemplateRow();
-            MetaRecord.populateRowFromDBObject(obj, newRow);
-            objectIds.set(id);
-
-            SearchRow r = meta.getRowFactory().createRow();
-            r.setValue(0, ValueInt.get(id));
-            Cursor cursor = metaIdIndex.find(session, r, r);
-            if (cursor.next()) {
-                Row oldRow = cursor.get();
-                meta.updateRow(session, oldRow, newRow);
+    public void updateMeta(Session session, DbObject obj) {
+        if (isMVStore()) {
+            synchronized (this) {
+                int id = obj.getId();
+                if (id > 0) {
+                    if (!starting && !obj.isTemporary()) {
+                        Row newRow = meta.getTemplateRow();
+                        MetaRecord.populateRowFromDBObject(obj, newRow);
+                        Row oldRow = metaIdIndex.getRow(session, id);
+                        if (oldRow != null) {
+                            meta.updateRow(session, oldRow, newRow);
+                        }
+                    }
+                    // for temporary objects
+                    objectIds.set(id);
+                }
+            }
+        } else {
+            lockMeta(session);
+            synchronized (this) {
+                int id = obj.getId();
+                removeMeta(session, id);
+                addMeta(session, obj);
+                // for temporary objects
+                if(id > 0) {
+                    objectIds.set(id);
+                }
             }
         }
     }
@@ -1810,7 +1812,6 @@ public class Database implements DataHandler {
             }
         }
         obj.checkRename();
-        lockMeta(session);
         map.remove(obj.getName());
         obj.rename(newName);
         map.put(newName, obj);
