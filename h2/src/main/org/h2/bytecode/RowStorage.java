@@ -1,6 +1,7 @@
 package org.h2.bytecode;
 
 import org.h2.engine.Database;
+import org.h2.engine.Mode;
 import org.h2.mvstore.BasicDataType;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.WriteBuffer;
@@ -571,8 +572,8 @@ public class RowStorage extends Value implements Row, Cloneable {
         private final int[]         indexes;
 
 
-        public Type(CompareMode compareMode, DataHandler handler, int[] sortTypes, int[] indexes) {
-            this.valueDataType = new ValueDataType(compareMode, handler, sortTypes);
+        public Type(CompareMode compareMode, Mode mode, DataHandler handler, int[] sortTypes, int[] indexes) {
+            this.valueDataType = new ValueDataType(compareMode, mode, handler, sortTypes);
             this.compareMode = compareMode;
             this.sortTypes = sortTypes;
             this.indexes = indexes;
@@ -825,7 +826,8 @@ public class RowStorage extends Value implements Row, Cloneable {
                 int[] sortTypes = readIntArray(buff);
                 int[] indexes = readIntArray(buff);
                 CompareMode compareMode = database == null ? CompareMode.getInstance(null, 0) : database.getCompareMode();
-                return new Type(compareMode, database, sortTypes, indexes);
+                Mode mode = database == null ? Mode.getRegular() : database.getMode();
+                return new Type(compareMode, mode, database, sortTypes, indexes);
             }
 
             private static int[] readIntArray(ByteBuffer buff) {

@@ -211,7 +211,7 @@ public class ValueLobDb extends Value implements Value.ValueClob,
                 return ValueLobDb.createSmallLob(t, small);
             }
         }
-        return super.convertTo(t, precision, mode, column, null);
+        return super.convertTo(t, precision, mode, column, enumerators);
     }
 
     @Override

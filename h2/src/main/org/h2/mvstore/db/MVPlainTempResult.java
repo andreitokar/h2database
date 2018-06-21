@@ -73,7 +73,8 @@ class MVPlainTempResult extends MVTempResult {
     MVPlainTempResult(Database database, Expression[] expressions) {
         super(database);
         DataType keyType = LongDataType.INSTANCE;
-        valueType = new ValueDataType(database.getCompareMode(), database, new int[expressions.length]);
+        valueType = new ValueDataType(database.getCompareMode(), database.getMode(),
+                                        database, new int[expressions.length]);
         Builder<Long, ValueArray> builder = new MVMap.Builder<Long, ValueArray>().keyType(keyType)
                 .valueType(valueType);
         map = store.openMap("tmp", builder);

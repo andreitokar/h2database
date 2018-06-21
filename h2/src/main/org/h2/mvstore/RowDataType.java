@@ -8,6 +8,7 @@ package org.h2.mvstore;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import org.h2.engine.Database;
+import org.h2.engine.Mode;
 import org.h2.mvstore.db.StatefulDataType;
 import org.h2.mvstore.db.ValueDataType;
 import org.h2.mvstore.type.DataType;
@@ -31,8 +32,8 @@ public final class RowDataType extends BasicDataType<SearchRow> implements State
     private final int[]         sortTypes;
     private final int[]         indexes;
 
-    public RowDataType(CompareMode compareMode, DataHandler handler, int[] sortTypes, int[] indexes) {
-        this.valueDataType = new ValueDataType(compareMode, handler, sortTypes);
+    public RowDataType(CompareMode compareMode, Mode mode, DataHandler handler, int[] sortTypes, int[] indexes) {
+        this.valueDataType = new ValueDataType(compareMode, mode, handler, sortTypes);
         this.sortTypes = sortTypes;
         this.indexes = indexes;
     }
@@ -226,7 +227,8 @@ public final class RowDataType extends BasicDataType<SearchRow> implements State
             int[] sortTypes = readIntArray(buff);
             int[] indexes = readIntArray(buff);
             CompareMode compareMode = database == null ? CompareMode.getInstance(null, 0) : database.getCompareMode();
-            return new RowDataType(compareMode, database, sortTypes, indexes);
+            Mode mode = database == null ? Mode.getRegular() : database.getMode();
+            return new RowDataType(compareMode, mode, database, sortTypes, indexes);
         }
 
         private static int[] readIntArray(ByteBuffer buff) {

@@ -9,7 +9,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -471,7 +470,8 @@ public abstract class Table extends SchemaObjectBase {
             }
             columnMap.put(columnName, col);
         }
-        rowFactory = database.getRowFactory().createRowFactory(database.getCompareMode(), database, columns, null);
+        rowFactory = database.getRowFactory().createRowFactory(database.getCompareMode(), database.getMode(),
+                                                                database, columns, null);
     }
 
     /**

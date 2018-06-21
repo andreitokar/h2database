@@ -210,7 +210,14 @@ public class Comparison extends Condition {
                     // once.
                     if (constType != resType) {
                         Column column = ((ExpressionColumn) left).getColumn();
+//*
+                        assert resType == colType : resType + " != " + colType;
                         right = ValueExpression.get(column.convert(r, session.getDatabase().getMode()));
+/*/
+                        right = ValueExpression.get(r.convertTo(resType,
+                                MathUtils.convertLongToInt(left.getPrecision()),
+                                session.getDatabase().getMode(), column, column.getEnumerators()));
+//*/
                     }
                 } else if (right instanceof Parameter) {
                     ((Parameter) right).setColumn(

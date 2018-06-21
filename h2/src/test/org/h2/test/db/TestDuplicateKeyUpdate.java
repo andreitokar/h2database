@@ -33,14 +33,14 @@ public class TestDuplicateKeyUpdate extends TestDb {
     public void test() throws SQLException {
         deleteDb("duplicateKeyUpdate");
         Connection conn = getConnection("duplicateKeyUpdate;MODE=MySQL");
-        testDuplicateOnPrimary(conn);
-        testDuplicateOnUnique(conn);
-        testDuplicateCache(conn);
-        testDuplicateExpression(conn);
-        testOnDuplicateKeyInsertBatch(conn);
-        testOnDuplicateKeyInsertMultiValue(conn);
-        testPrimaryKeyAndUniqueKey(conn);
-        testUpdateCountAndQualifiedNames(conn);
+//        testDuplicateOnPrimary(conn);
+//        testDuplicateOnUnique(conn);
+//        testDuplicateCache(conn);
+//        testDuplicateExpression(conn);
+//        testOnDuplicateKeyInsertBatch(conn);
+//        testOnDuplicateKeyInsertMultiValue(conn);
+//        testPrimaryKeyAndUniqueKey(conn);
+//        testUpdateCountAndQualifiedNames(conn);
         testEnum(conn);
         conn.close();
         deleteDb("duplicateKeyUpdate");

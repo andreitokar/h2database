@@ -18,7 +18,7 @@ public abstract class TxDecisionMaker extends MVMap.DecisionMaker<VersionedValue
     final Object                 value;
     private final Transaction    transaction;
     long                         undoKey;
-    private       long           lastOperationId;
+    protected     long           lastOperationId;
     private       Transaction    blockingTransaction;
     private       MVMap.Decision decision;
 
@@ -54,16 +54,18 @@ public abstract class TxDecisionMaker extends MVMap.DecisionMaker<VersionedValue
             // should wait on blockingTransaction that was determined earlier
             decision = MVMap.Decision.ABORT;
         } else if(id == lastOperationId) {
-            // There is no transaction with that id, so we've retried it just before,
+            // There is no transaction with that id, and we've tried it just before,
             // but map root has not changed (which must be the case if we just missed a closed transaction),
             // therefore we came back here again.
             // Now we assume it's a leftover after unclean shutdown (map update was written but not undo log),
-            // and will effectively roll it back (just overwrite).
+            // and will effectively roll it back (just assume committed value and overwrite).
             Object committedValue = existingValue.getCommittedValue();
             logIt(committedValue == null ? null : VersionedValue.getInstance(committedValue));
             decision = MVMap.Decision.PUT;
         } else {
-            // condition above means transaction has been committed/rolled back and closed by now
+            // transaction has been committed/rolled back and is closed by now, so
+            // we can retry immediately and either that entry become committed
+            // or we'll hit case above
             decision = MVMap.Decision.ABORT;
             lastOperationId = id;
         }
@@ -158,16 +160,31 @@ public abstract class TxDecisionMaker extends MVMap.DecisionMaker<VersionedValue
                     logIt(existingValue);
                     return setDecision(MVMap.Decision.PUT);
                 } else if (isCommitted(blockingId) && existingValue.value == null) {
-                        // entry belongs to a committing transaction
-                        // and therefore will be committed soon
+                    // entry belongs to a committing transaction
+                    // and therefore will be committed soon
+                    logIt(null);
+                    return setDecision(MVMap.Decision.PUT);
+                } else if(fetchTransaction(blockingId) != null) {
+                    // this entry comes from a different transaction, and this transaction is not committed yet
+                    // should wait on blockingTransaction that was determined earlier
+                    return setDecision(MVMap.Decision.ABORT);
+                } else if(id == lastOperationId) {
+                    // There is no transaction with that id, and we've tried it just before,
+                    // but map root has not changed (which must be the case if we just missed a closed transaction),
+                    // therefore we came back here again.
+                    // Now we assume it's a leftover after unclean shutdown (map update was written but not undo log),
+                    // and will effectively roll it back (just assume committed value and overwrite).
+                    Object committedValue = existingValue.getCommittedValue();
+                    if(committedValue != null) {
+                        return setDecision(MVMap.Decision.ABORT);
+                    }
                     logIt(null);
                     return setDecision(MVMap.Decision.PUT);
                 } else {
-                    // map already has specified key from uncommitted
-                    // at the time transaction.
-                    fetchTransaction(blockingId);
-                    // If it's closed by now, we can retry right away,
-                    // otherwise we need to wait for it to close and then try again
+                    // transaction has been committed/rolled back and is closed by now, so
+                    // we can retry immediately and either that entry become committed
+                    // or we'll hit case above
+                    lastOperationId = id;
                     return setDecision(MVMap.Decision.ABORT);
                 }
             }

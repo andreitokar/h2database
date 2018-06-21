@@ -17,6 +17,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.h2.bytecode.RowStorage;
 import org.h2.bytecode.RowStorageGenerator;
 import java.util.Arrays;
+import org.h2.engine.Mode;
 import org.h2.mvstore.type.DataType;
 import org.h2.result.Row;
 import org.h2.result.RowFactory;
@@ -124,7 +125,7 @@ public class TestRowFactory extends TestDb {
 
 
             CompareMode compareMode = CompareMode.getInstance(null, 0);
-            RowStorage.Type type = new RowStorage.Type(compareMode, null, null, null);
+            RowStorage.Type type = new RowStorage.Type(compareMode, Mode.getRegular(), null, null, null);
             assertEquals(-1, type.compare(row, rowTwo));
             assertEquals(1, type.compare(rowTwo, row));
 
@@ -147,7 +148,7 @@ public class TestRowFactory extends TestDb {
             } catch(Throwable ignore) {/**/}
             irowTwo.setKey(987);
             assertEquals("Row{987/0 5, 'World', null, 999, null, null, null, null}", irowTwo.toString());
-            RowStorage.Type itype = new RowStorage.Type(compareMode, null, new int[]{SortOrder.ASCENDING, SortOrder.ASCENDING, SortOrder.ASCENDING}, columnIndexes);
+            RowStorage.Type itype = new RowStorage.Type(compareMode, Mode.getRegular(), null, new int[]{SortOrder.ASCENDING, SortOrder.ASCENDING, SortOrder.ASCENDING}, columnIndexes);
             assertEquals(0, itype.compare(irowTwo, irowTwo));
             assertEquals(-1, itype.compare(irowTwo, rowTwo));
             irowTwo.setKey(12345);
@@ -200,8 +201,8 @@ public class TestRowFactory extends TestDb {
             indexColumns = IndexColumn.wrap(columnsInIndex);
         }
 
-        RowFactory drf = RowFactory.DefaultRowFactory.getRowFactory().createRowFactory(compareMode, null, columns, indexColumns);
-        RowFactory crf = CompactRowFactory.getRowFactory().createRowFactory(compareMode, null, columns, indexColumns);
+        RowFactory drf = RowFactory.DefaultRowFactory.getRowFactory().createRowFactory(compareMode, Mode.getRegular(), null, columns, indexColumns);
+        RowFactory crf = CompactRowFactory.getRowFactory().createRowFactory(compareMode, Mode.getRegular(), null, columns, indexColumns);
 
         compareImplementations(drf, crf, null);
         Value[] initargs = {

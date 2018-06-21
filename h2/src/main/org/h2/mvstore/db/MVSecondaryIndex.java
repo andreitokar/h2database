@@ -5,6 +5,7 @@
  */
 package org.h2.mvstore.db;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
@@ -18,7 +19,6 @@ import org.h2.engine.Session;
 import org.h2.index.BaseIndex;
 import org.h2.index.Cursor;
 import org.h2.index.IndexType;
-import org.h2.index.SingleRowCursor;
 import org.h2.message.DbException;
 import org.h2.mvstore.MVMap;
 import org.h2.mvstore.tx.Transaction;
@@ -29,10 +29,8 @@ import org.h2.result.Row;
 import org.h2.result.RowFactory;
 import org.h2.result.SearchRow;
 import org.h2.result.SortOrder;
-import org.h2.table.Column;
 import org.h2.table.IndexColumn;
 import org.h2.table.TableFilter;
-import org.h2.value.CompareMode;
 import org.h2.value.Value;
 import org.h2.value.ValueNull;
 
@@ -57,7 +55,8 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
         }
         // always store the row key in the map key,
         // even for unique indexes, as some of the index columns could be null
-        rowFactory = database.getRowFactory().createRowFactory(db.getCompareMode(), db, table.getColumns(), columns);
+        rowFactory = database.getRowFactory().createRowFactory(db.getCompareMode(), db.getMode(), db,
+                                                                table.getColumns(), columns);
         DataType keyType = rowFactory.getDataType();
         DataType valueType = ObjectDataType.NoneType.INSTANCE;
         String mapName = "index." + getId();
@@ -233,8 +232,9 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
 
     @Override
     public void update(Session session, Row oldRow, Row newRow) {
-
-        if (!rowsAreEqual(oldRow, newRow)) {
+        SearchRow searchRowOld = convertToKey(oldRow, null);
+        SearchRow searchRowNew = convertToKey(newRow, null);
+        if (!rowsAreEqual(searchRowOld, searchRowNew)) {
             super.update(session, oldRow, newRow);
         }
     }

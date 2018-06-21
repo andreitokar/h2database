@@ -10,7 +10,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -53,7 +52,6 @@ import org.h2.value.Value;
  * A table stored in a MVStore.
  */
 public class MVTable extends TableBase {
-
     /**
      * The table name this thread is waiting to lock.
      */
@@ -112,7 +110,8 @@ public class MVTable extends TableBase {
     private volatile Session lockExclusiveSession;
 
     // using a ConcurrentHashMap as a set
-    private final ConcurrentHashMap<Session,Session> lockSharedSessions = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Session, Session> lockSharedSessions =
+            new ConcurrentHashMap<>();
 
     /**
      * The queue of sessions waiting to lock the table. It is a FIFO queue to
@@ -615,7 +614,7 @@ public class MVTable extends TableBase {
             addRowsToIndex(session, buffer, index);
         }
         if (SysProperties.CHECK && remaining != 0) {
-            throw DbException.throwInternalError("rowcount remaining=" + remaining +
+            DbException.throwInternalError("rowcount remaining=" + remaining +
                     " " + getName());
         }
     }
@@ -642,7 +641,7 @@ public class MVTable extends TableBase {
         }
         addRowsToIndex(session, buffer, index);
         if (SysProperties.CHECK && remaining != 0) {
-            throw DbException.throwInternalError("rowcount remaining=" + remaining +
+            DbException.throwInternalError("rowcount remaining=" + remaining +
                     " " + getName());
         }
     }
@@ -696,7 +695,7 @@ public class MVTable extends TableBase {
         try {
             for (int i = indexes.size() - 1; i >= 0; i--) {
                 Index index = indexes.get(i);
-                index.removeRow(session, row);
+                index.remove(session, row);
             }
         } catch (Throwable e) {
             try {
@@ -853,7 +852,7 @@ public class MVTable extends TableBase {
                     .getAllSchemaObjects(DbObject.INDEX)) {
                 Index index = (Index) obj;
                 if (index.getTable() == this) {
-                    throw DbException.throwInternalError("index not dropped: " +
+                    DbException.throwInternalError("index not dropped: " +
                             index.getName());
                 }
             }

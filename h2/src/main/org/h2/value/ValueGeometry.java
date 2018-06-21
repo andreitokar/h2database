@@ -330,7 +330,7 @@ public class ValueGeometry extends Value {
         if (targetType == Value.JAVA_OBJECT) {
             return this;
         }
-        return super.convertTo(targetType, precision, mode, column, null);
+        return super.convertTo(targetType, precision, mode, column, enumerators);
     }
 
     /**

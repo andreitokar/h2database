@@ -5,11 +5,11 @@
  */
 package org.h2.result;
 
+import org.h2.engine.Mode;
 import org.h2.mvstore.RowDataType;
 import org.h2.mvstore.type.DataType;
 import org.h2.store.DataHandler;
 import org.h2.table.Column;
-import org.h2.table.CompactRowFactory;
 import org.h2.table.IndexColumn;
 import org.h2.value.CompareMode;
 import org.h2.value.Value;
@@ -35,7 +35,7 @@ public abstract class RowFactory {
     }
 
 
-    public RowFactory createRowFactory(CompareMode compareMode, DataHandler handler,
+    public RowFactory createRowFactory(CompareMode compareMode, Mode mode, DataHandler handler,
                                        Column[] columns, IndexColumn[] indexColumns) {
         return this;
     }
@@ -64,7 +64,7 @@ public abstract class RowFactory {
         public static final DefaultRowFactory INSTANCE = new DefaultRowFactory();
 
         protected DefaultRowFactory() {
-            this(new RowDataType(null, null, null, null), 0, null);
+            this(new RowDataType(CompareMode.getInstance(null, 0), Mode.getRegular(), null, null, null), 0, null);
         }
 
         private DefaultRowFactory(RowDataType dataType, int columnCount, int indexes[]) {
@@ -79,7 +79,7 @@ public abstract class RowFactory {
         }
 
         @Override
-        public RowFactory createRowFactory(CompareMode compareMode, DataHandler handler,
+        public RowFactory createRowFactory(CompareMode compareMode, Mode mode, DataHandler handler,
                                            Column[] columns, IndexColumn[] indexColumns) {
             int indexes[] = null;
             int sortTypes[];
@@ -99,12 +99,12 @@ public abstract class RowFactory {
                     sortTypes[i] = indexColumn.sortType;
                 }
             }
-            return createRowFactory(compareMode, handler, sortTypes, indexes, columnCount);
+            return createRowFactory(compareMode, mode, handler, sortTypes, indexes, columnCount);
         }
 
-        public RowFactory createRowFactory(CompareMode compareMode, DataHandler handler,
+        public RowFactory createRowFactory(CompareMode compareMode, Mode mode, DataHandler handler,
                                            int[] sortTypes, int[] indexes, int columnCount) {
-            RowDataType dataType = new RowDataType(compareMode, handler, sortTypes, indexes);
+            RowDataType dataType = new RowDataType(compareMode, mode, handler, sortTypes, indexes);
             DefaultRowFactory defaultRowFactory = new DefaultRowFactory(dataType, columnCount, indexes);
             dataType.setRowFactory(defaultRowFactory);
             return defaultRowFactory;

@@ -514,7 +514,7 @@ public class ValueLob extends Value {
         } else if (t == Value.BLOB) {
             return ValueLob.createBlob(getInputStream(), -1, handler);
         }
-        return super.convertTo(t, precision, mode, column, null);
+        return super.convertTo(t, precision, mode, column, enumerators);
     }
 
     @Override
