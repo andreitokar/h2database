@@ -85,7 +85,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
     private final User user;
     private final int id;
     private final ArrayList<Table> locks = Utils.newSmallArrayList();
-    private final UndoLog undoLog;
+    private UndoLog undoLog;
     private boolean autoCommit = true;
     private Random random;
     private int lockTimeout;
@@ -168,7 +168,6 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
         this.database = database;
         this.queryTimeout = database.getSettings().maxQueryTimeout;
         this.queryCacheSize = database.getSettings().queryCacheSize;
-        this.undoLog = new UndoLog(this);
         this.user = user;
         this.id = id;
         this.lockTimeout = database.getLockTimeout();
@@ -691,22 +690,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
             database.commit(this);
         }
         removeTemporaryLobs(true);
-        if (undoLog.size() > 0) {
-            // commit the rows when using MVCC
-            if (database.isMVStore()) {
-                synchronized (database) {
-                    ArrayList<Row> rows = new ArrayList<>(undoLog.size());
-                    while (undoLog.size() > 0) {
-                        UndoLogRecord entry = undoLog.getLast();
-                        entry.commit();
-                        rows.add(entry.getRow());
-                        undoLog.removeLast(false);
-                    }
-                    for (Row r : rows) {
-                        r.commit();
-                    }
-                }
-            }
+        if (undoLog != null && undoLog.size() > 0) {
             undoLog.clear();
         }
         if (!ddl) {
@@ -776,9 +760,9 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
         checkCommitRollback();
         currentTransactionName = null;
         transactionStart = null;
-        boolean needCommit = undoLog.size() > 0 || transaction != null;
-        if(needCommit) {
-            rollbackTo(null, false);
+        boolean needCommit = undoLog != null && undoLog.size() > 0 || transaction != null;
+        if (needCommit) {
+            rollbackTo(null);
         }
         if (!locks.isEmpty() || needCommit) {
             database.commit(this);
@@ -795,14 +779,15 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
      * Partially roll back the current transaction.
      *
      * @param savepoint the savepoint to which should be rolled back
-     * @param trimToSize if the list should be trimmed
      */
-    public void rollbackTo(Savepoint savepoint, boolean trimToSize) {
+    public void rollbackTo(Savepoint savepoint) {
         int index = savepoint == null ? 0 : savepoint.logIndex;
-        while (undoLog.size() > index) {
-            UndoLogRecord entry = undoLog.getLast();
-            entry.undo(this);
-            undoLog.removeLast(trimToSize);
+        if (undoLog != null) {
+            while (undoLog.size() > index) {
+                UndoLogRecord entry = undoLog.getLast();
+                entry.undo(this);
+                undoLog.removeLast();
+            }
         }
         if (transaction != null) {
             if (savepoint == null) {
@@ -833,7 +818,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
 
     @Override
     public boolean hasPendingTransaction() {
-        return undoLog.size() > 0;
+        return undoLog != null && undoLog.size() > 0;
     }
 
     /**
@@ -843,7 +828,9 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
      */
     public Savepoint setSavepoint() {
         Savepoint sp = new Savepoint();
-        sp.logIndex = undoLog.size();
+        if (undoLog != null) {
+            sp.logIndex = undoLog.size();
+        }
         if (database.getMvStore() != null) {
             sp.transactionSavepoint = getStatementSavepoint();
         }
@@ -871,7 +858,9 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
 
                 removeTemporaryLobs(false);
                 cleanTempTables(true);
-                undoLog.clear();
+                if (undoLog != null) {
+                    undoLog.clear();
+                }
                 // Table#removeChildrenAndResources can take the meta lock,
                 // and we need to unlock before we call removeSession(), which might
                 // want to take the meta lock using the system session.
@@ -925,16 +914,10 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
                     }
                 }
             }
-            undoLog.add(log);
-        } else {
-            if (database.isMVStore()) {
-                // see also UndoLogRecord.commit
-                ArrayList<Index> indexes = table.getIndexes();
-                for (Index index : indexes) {
-                    index.commit(operation, row);
-                }
-                row.commit();
+            if (undoLog == null) {
+                undoLog = new UndoLog(database);
             }
+            undoLog.add(log);
         }
     }
 
@@ -966,7 +949,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
 
     private void unlockAll() {
         if (SysProperties.CHECK) {
-            if (undoLog.size() > 0) {
+            if (undoLog != null && undoLog.size() > 0) {
                 DbException.throwInternalError();
             }
         }
@@ -1109,12 +1092,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
         if (savepoints == null) {
             savepoints = database.newStringMap();
         }
-        Savepoint sp = new Savepoint();
-        sp.logIndex = undoLog.size();
-        if (database.getMvStore() != null) {
-            sp.transactionSavepoint = getStatementSavepoint();
-        }
-        savepoints.put(name, sp);
+        savepoints.put(name, setSavepoint());
     }
 
     /**
@@ -1133,7 +1111,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
         if (savepoint == null) {
             throw DbException.get(ErrorCode.SAVEPOINT_IS_INVALID_1, name);
         }
-        rollbackTo(savepoint, false);
+        rollbackTo(savepoint);
     }
 
     /**
@@ -1643,7 +1621,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
         if (!database.isPersistent()) {
             return ValueNull.INSTANCE;
         }
-        if (undoLog.size() == 0) {
+        if (undoLog == null || undoLog.size() == 0) {
             return ValueNull.INSTANCE;
         }
         return ValueString.get(firstUncommittedLog + "-" + firstUncommittedPos +
