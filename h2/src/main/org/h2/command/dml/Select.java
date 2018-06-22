@@ -593,11 +593,7 @@ public class Select extends Query {
                 limitRows += offset;
             }
         }
-        ArrayList<Row> forUpdateRows = null;
-        boolean lockRows = this.isForUpdateMvcc;
-        if (lockRows) {
-            forUpdateRows = Utils.newSmallArrayList();
-        }
+        ArrayList<Row> forUpdateRows = this.isForUpdateMvcc ? Utils.<Row>newSmallArrayList() : null;
         int sampleSize = getSampleSizeValue(session);
         LazyResultQueryFlat lazyResult = new LazyResultQueryFlat(expressionArray,
                 sampleSize, columnCount);
@@ -607,16 +603,13 @@ public class Select extends Query {
         if (sort != null && !sortUsingIndex || limitRows <= 0) {
             limitRows = Long.MAX_VALUE;
         }
-        while (lazyResult.next()) {
-            if (lockRows) {
+        while (result.getRowCount() < limitRows && lazyResult.next()) {
+            if (forUpdateRows != null) {
                 topTableFilter.lockRowAdd(forUpdateRows);
             }
             result.addRow(lazyResult.currentRow());
-            if (result.getRowCount() >= limitRows) {
-                break;
-            }
         }
-        if (lockRows) {
+        if (forUpdateRows != null) {
             topTableFilter.lockRows(forUpdateRows);
         }
         return null;

@@ -69,12 +69,12 @@ public class TestScalability implements Database.DatabaseTest {
     private void test() throws Exception {
         FileUtils.deleteRecursive("data", true);
         final String out = "benchmark.html";
-        final int size = 1000;
+        final int size = 400;
 
         ArrayList<Database> dbs = new ArrayList<>();
         int id = 1;
         final String h2Url = "jdbc:h2:./data/test;" +
-                "LOCK_TIMEOUT=10000;MV_STORE=FALSE;LOCK_MODE=3";
+                "LOCK_TIMEOUT=10000;MV_STORE=FALSE";
         dbs.add(createDbEntry(id++, "H2", 1, h2Url));
         dbs.add(createDbEntry(id++, "H2", 2, h2Url));
         dbs.add(createDbEntry(id++, "H2", 4, h2Url));
