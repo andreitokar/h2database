@@ -11,7 +11,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.PriorityQueue;
 import java.util.Queue;
-
 import org.h2.api.ErrorCode;
 import org.h2.command.dml.AllColumnsForPlan;
 import org.h2.engine.Database;
@@ -66,7 +65,9 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
         t.commit();
         assert mapName.equals(dataMap.getName()) : mapName + " != " + dataMap.getName();
         if (!keyType.equals(dataMap.getKeyType())) {
-            throw DbException.throwInternalError("Incompatible key types for '" + mapName + "': " + keyType + " and " + dataMap.getKeyType());
+            throw DbException.throwInternalError(
+                    "Incompatible key type, expected " + keyType + " but got "
+                            + dataMap.getKeyType() + " for index " + indexName);
         }
     }
 
@@ -172,7 +173,9 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
         MVMap<SearchRow, Value> map = database.getMvStore().getStore()
                 .openMap(mapName, builder);
         if (!keyType.equals(map.getKeyType())) {
-            throw DbException.throwInternalError("Incompatible key type");
+            throw DbException.throwInternalError(
+                    "Incompatible key type, expected " + keyType + " but got "
+                            + map.getKeyType() + " for map " + mapName);
         }
         return map;
     }

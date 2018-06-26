@@ -2196,7 +2196,7 @@ public class Database implements DataHandler {
         } else {
             try {
                 eventListener = (DatabaseEventListener)
-                        JdbcUtils.loadUserClass(className).newInstance();
+                        JdbcUtils.loadUserClass(className).getDeclaredConstructor().newInstance();
                 String url = databaseURL;
                 if (cipher != null) {
                     url += ";CIPHER=" + cipher;
@@ -2956,7 +2956,7 @@ public class Database implements DataHandler {
                         !serializerName.equals("null")) {
                     try {
                         javaObjectSerializer = (JavaObjectSerializer)
-                                JdbcUtils.loadUserClass(serializerName).newInstance();
+                                JdbcUtils.loadUserClass(serializerName).getDeclaredConstructor().newInstance();
                     } catch (Exception e) {
                         throw DbException.convert(e);
                     }
@@ -2985,7 +2985,7 @@ public class Database implements DataHandler {
         TableEngine engine = tableEngines.get(tableEngine);
         if (engine == null) {
             try {
-                engine = (TableEngine) JdbcUtils.loadUserClass(tableEngine).newInstance();
+                engine = (TableEngine) JdbcUtils.loadUserClass(tableEngine).getDeclaredConstructor().newInstance();
             } catch (Exception e) {
                 throw DbException.convert(e);
             }
