@@ -255,22 +255,6 @@ public class RowStorage extends Value implements Row, Cloneable {
     }
 
     @Override
-    public final void setSessionId(int sessionId) {
-        if((sessionId & DELETED_BIT_MASK) != 0) throw new IllegalArgumentException("negative session id");
-        this.sessionId = this.sessionId & DELETED_BIT_MASK | sessionId;
-    }
-
-    @Override
-    public final int getSessionId() {
-        return sessionId & ~DELETED_BIT_MASK;
-    }
-
-    @Override
-    public final void commit() {
-        sessionId &= DELETED_BIT_MASK;
-    }
-
-    @Override
     public final boolean isDeleted() {
         return (sessionId & DELETED_BIT_MASK) != 0;
     }

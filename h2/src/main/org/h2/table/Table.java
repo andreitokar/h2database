@@ -569,9 +569,9 @@ public abstract class Table extends SchemaObjectBase {
                 removeRow(session, row);
             } catch (DbException e) {
                 if (e.getErrorCode() == ErrorCode.CONCURRENT_UPDATE_1) {
-                    session.rollbackTo(rollback, false);
+                    session.rollbackTo(rollback);
                     session.startStatementWithinTransaction();
-                    rollback = session.setSavepoint();
+//                    rollback = session.setSavepoint();
                 }
                 throw e;
             }

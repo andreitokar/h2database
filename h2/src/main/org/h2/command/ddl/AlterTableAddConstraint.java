@@ -79,7 +79,7 @@ public class AlterTableAddConstraint extends SchemaCommand {
             return tryUpdate();
         } catch (DbException e) {
             try {
-                session.rollbackTo(rollback, false);
+                session.rollbackTo(rollback);
                 for (Index index : createdIndexes) {
                     session.getDatabase().removeSchemaObject(session, index);
                 }
