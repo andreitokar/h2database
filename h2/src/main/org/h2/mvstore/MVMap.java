@@ -994,13 +994,15 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @return the number of entries
      */
     public final long sizeAsLong() {
-        return getRootPage().getTotalCount();
+        RootReference rootReference = getRoot();
+        return rootReference.root.getTotalCount() + rootReference.getAppendCounter();
     }
 
     @Override
     public boolean isEmpty() {
-        Page rootPage = getRootPage();
-        return rootPage.isLeaf() && rootPage.getKeyCount() == 0;
+        RootReference rootReference = getRoot();
+        Page rootPage = rootReference.root;
+        return rootPage.isLeaf() && rootPage.getKeyCount() == 0 && rootReference.getAppendCounter() == 0;
     }
 
     public final long getCreateVersion() {
@@ -1220,7 +1222,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             if (rootReference == null) {
                 rootReference = getRoot();
             }
-            byte keyCount = rootReference.appendCounter;
+            int keyCount = rootReference.getAppendCounter();
             if (keyCount == 0) {
                 break;
             }
@@ -1233,11 +1235,11 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                 break;
             }
         }
-        assert rootReference.appendCounter == 0;
+        assert rootReference.getAppendCounter() == 0;
         return rootReference;
     }
 
-    RootReference appendLeafPage(RootReference rootReference, Page split, int attempt) {
+    private RootReference appendLeafPage(RootReference rootReference, Page split, int attempt) {
         CursorPos pos = rootReference.root.getAppendCursorPos(null);
         assert split.map == this;
         assert pos != null;
@@ -1303,29 +1305,45 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         return null;
     }
 
+    /**
+     * Appends entry to this map. this method is NOT thread safe and can not be used
+     * neither concurrently, nor in combination with any method that updates this map.
+     * Non-updating method may be used concurrently, but latest appended values
+     * are not guaranteed to be visible.
+     * @param key should be higher in map's order than any existing key
+     * @param value to be appended
+     */
     public void append(K key, V value) {
         int attempt = 0;
         boolean success = false;
         while(!success) {
             RootReference rootReference = getRoot();
-            if (rootReference.appendCounter >= keysPerPage) {
+            int appendCounter = rootReference.getAppendCounter();
+            if (appendCounter >= keysPerPage) {
                 rootReference = flushAppendBuffer(rootReference);
-                assert rootReference.appendCounter < keysPerPage;
+                appendCounter = rootReference.getAppendCounter();
+                assert appendCounter < keysPerPage;
             }
-            keysBuffer[rootReference.appendCounter] = key;
-            valuesBuffer[rootReference.appendCounter] = value;
+            keysBuffer[appendCounter] = key;
+            valuesBuffer[appendCounter] = value;
 
             RootReference updatedRootReference = new RootReference(rootReference, (byte) (rootReference.appendCounter + 1), ++attempt);
             success = root.compareAndSet(rootReference, updatedRootReference);
         }
     }
 
+    /**
+     * Removes last entry from this map. this method is NOT thread safe and can not be used
+     * neither concurrently, nor in combination with any method that updates this map.
+     * Non-updating method may be used concurrently, but latest removal may not be visible.
+     */
     public void trimLast() {
         int attempt = 0;
         boolean success;
         do {
             RootReference rootReference = getRoot();
-            if (rootReference.appendCounter > 0) {
+            int appendCounter = rootReference.getAppendCounter();
+            if (appendCounter > 0) {
                 RootReference updatedRootReference = new RootReference(rootReference, (byte) (rootReference.appendCounter - 1), ++attempt);
                 success = root.compareAndSet(rootReference, updatedRootReference);
             } else {
@@ -1417,7 +1435,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
          */
         public  final    long          updateAttemptCounter;
         /**
-         * Size of the occupied part of append buffer.
+         * Size of the occupied part of the append buffer.
          */
         public  final    byte          appendCounter;
 
@@ -1483,14 +1501,18 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         }
 
         // This one is used for append buffer maintance
-        RootReference(RootReference r, byte appendCounter, int attempt) {
+        RootReference(RootReference r, int appendCounter, int attempt) {
             this.root = r.root;
             this.version = r.version;
             this.previous = r.previous;
             this.updateCounter = r.updateCounter + 1;
             this.updateAttemptCounter = r.updateAttemptCounter + attempt;
             this.lockedForUpdate = r.lockedForUpdate;
-            this.appendCounter = appendCounter;
+            this.appendCounter = (byte)appendCounter;
+        }
+
+        public int getAppendCounter() {
+            return appendCounter & 0xff;
         }
 
         @Override
@@ -1726,6 +1748,12 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             return this;
         }
 
+        /**
+         * Set up this Builder to produce MVMap, which can be used in append mode
+         * by a single thread.
+         * @see MVMap#append(Object, Object)
+         * @return this Builder for chained execution
+         */
         public Builder<K,V> singleWriter() {
             singleWriter = true;
             return this;

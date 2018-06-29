@@ -20,6 +20,7 @@ import org.h2.index.Cursor;
 import org.h2.index.IndexType;
 import org.h2.message.DbException;
 import org.h2.mvstore.MVMap;
+import org.h2.mvstore.MVStore;
 import org.h2.mvstore.tx.Transaction;
 import org.h2.mvstore.tx.TransactionMap;
 import org.h2.mvstore.type.DataType;
@@ -80,13 +81,12 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
     @Override
     public void addRowsToBuffer(List<Row> rows, String bufferName) {
         MVMap<SearchRow,Value> map = openMap(bufferName);
-        MVMap.BufferingAgent<SearchRow, Value> agent = map.getBufferingAgent();
         for (Row row : rows) {
             SearchRow r = rowFactory.createRow();
             r.copyFrom(row);
-            agent.put(r, ValueNull.INSTANCE);
+            map.append(r, ValueNull.INSTANCE);
         }
-        agent.close();
+        map.flushAppendBuffer();
     }
 
     private static final class Source {
@@ -157,9 +157,9 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
             }
         } finally {
             agent.close();
+            MVStore store = database.getMvStore().getStore();
             for (String tempMapName : mapNames) {
-                MVMap<SearchRow,Value> map = openMap(tempMapName);
-                map.getStore().removeMap(map);
+                store.removeMap(tempMapName);
             }
         }
     }
@@ -168,6 +168,7 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
         DataType keyType = rowFactory.getDataType();
         DataType valueType = ObjectDataType.NoneType.INSTANCE;
         MVMap.Builder<SearchRow,Value> builder = new MVMap.Builder<SearchRow,Value>()
+                                                .singleWriter()
                                                 .keyType(keyType)
                                                 .valueType(valueType);
         MVMap<SearchRow, Value> map = database.getMvStore().getStore()
