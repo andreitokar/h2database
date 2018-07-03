@@ -590,10 +590,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         return extendedValueType;
     }
 
-    public int getKeysPerPage() {
-        return keysPerPage;
-    }
-
     /**
      * Read a page.
      *
@@ -1085,11 +1081,9 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     public final long getVersion() {
         RootReference rootReference = getRoot();
         RootReference previous = rootReference.previous;
-        return previous == null ||
-               previous.root != rootReference.root ||
+        return previous == null ||previous.root != rootReference.root ||
                previous.appendCounter != rootReference.appendCounter ?
-                    rootReference.version :
-                    /*previous.version == INITIAL_VERSION ? store.getLastStoredVersion() :*/ previous.version;
+                    rootReference.version : previous.version;
     }
 
     final boolean hasChangesSince(long version) {
@@ -1327,7 +1321,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             keysBuffer[appendCounter] = key;
             valuesBuffer[appendCounter] = value;
 
-            RootReference updatedRootReference = new RootReference(rootReference, (byte) (rootReference.appendCounter + 1), ++attempt);
+            RootReference updatedRootReference = new RootReference(rootReference, appendCounter + 1, ++attempt);
             success = root.compareAndSet(rootReference, updatedRootReference);
         }
     }
@@ -1344,7 +1338,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             RootReference rootReference = getRoot();
             int appendCounter = rootReference.getAppendCounter();
             if (appendCounter > 0) {
-                RootReference updatedRootReference = new RootReference(rootReference, (byte) (rootReference.appendCounter - 1), ++attempt);
+                RootReference updatedRootReference = new RootReference(rootReference, appendCounter - 1, ++attempt);
                 success = root.compareAndSet(rootReference, updatedRootReference);
             } else {
                 assert rootReference.root.getKeyCount() > 0;

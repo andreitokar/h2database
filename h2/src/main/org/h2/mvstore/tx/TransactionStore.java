@@ -202,10 +202,6 @@ public class TransactionStore {
         }
     }
 
-    boolean isInitialized() {
-        return init;
-    }
-
     /**
      * Commit all transactions that are in the committed state, and
      * rollback all open transactions.
@@ -214,9 +210,9 @@ public class TransactionStore {
         List<Transaction> list = getOpenTransactions();
         for (Transaction t : list) {
             int status = t.getStatus();
-            if(status == Transaction.STATUS_COMMITTED) {
+            if (status == Transaction.STATUS_COMMITTED) {
                 t.commit();
-            } else if(status != Transaction.STATUS_PREPARED) {
+            } else if (status != Transaction.STATUS_PREPARED) {
                 t.rollback();
             }
         }

@@ -160,10 +160,10 @@ public class MVPrimaryIndex extends BaseIndex
         TransactionMap<Long,Row> map = getMap(session);
         try {
             Row result = map.remove(row.getKey());
-//            if (result == null) {
-//                throw DbException.get(ErrorCode.ROW_NOT_FOUND_WHEN_DELETING_1,
-//                        getSQL() + ": " + row.getKey());
-//            }
+            if (result == null) {
+                throw DbException.get(ErrorCode.ROW_NOT_FOUND_WHEN_DELETING_1,
+                        getSQL() + ": " + row.getKey());
+            }
             return result;
         } catch (IllegalStateException e) {
             throw mvTable.convertException(e);
@@ -178,38 +178,35 @@ public class MVPrimaryIndex extends BaseIndex
         }
         long key = oldRow.getKey();
         assert mainIndexColumn != SearchRow.ROWID_INDEX || key != 0;
-        if(newRow.getKey() != key) {
-            super.update(session, oldRow, newRow);
-        } else {
-            if (mvTable.getContainsLargeObject()) {
-                for (int i = 0, len = oldRow.getColumnCount(); i < len; i++) {
-                    Value oldValue = oldRow.getValue(i);
-                    Value newValue = newRow.getValue(i);
-                    if(oldValue != newValue) {
-                        if (oldValue.isLinkedToTable()) {
-                            session.removeAtCommit(oldValue);
-                        }
-                        Value v2 = newValue.copy(database, getId());
-                        if (v2.isLinkedToTable()) {
-                            session.removeAtCommitStop(v2);
-                        }
-                        if (newValue != v2) {
-                            newRow.setValue(i, v2);
-                        }
+        assert key == newRow.getKey() : key + " != " + newRow.getKey();
+        if (mvTable.getContainsLargeObject()) {
+            for (int i = 0, len = oldRow.getColumnCount(); i < len; i++) {
+                Value oldValue = oldRow.getValue(i);
+                Value newValue = newRow.getValue(i);
+                if(oldValue != newValue) {
+                    if (oldValue.isLinkedToTable()) {
+                        session.removeAtCommit(oldValue);
+                    }
+                    Value v2 = newValue.copy(database, getId());
+                    if (v2.isLinkedToTable()) {
+                        session.removeAtCommitStop(v2);
+                    }
+                    if (newValue != v2) {
+                        newRow.setValue(i, v2);
                     }
                 }
             }
+        }
 
-            TransactionMap<Long,Row> map = getMap(session);
-            try {
-                Row old = map.put(key, newRow);
-                if (old == null) {
-                    throw DbException.get(ErrorCode.ROW_NOT_FOUND_WHEN_DELETING_1,
-                            getSQL() + ": " + key);
-                }
-            } catch (IllegalStateException e) {
-                throw mvTable.convertException(e);
+        TransactionMap<Long,Row> map = getMap(session);
+        try {
+            Row old = map.put(key, newRow);
+            if (old == null) {
+                throw DbException.get(ErrorCode.ROW_NOT_FOUND_WHEN_DELETING_1,
+                        getSQL() + ": " + key);
             }
+        } catch (IllegalStateException e) {
+            throw mvTable.convertException(e);
         }
 
 

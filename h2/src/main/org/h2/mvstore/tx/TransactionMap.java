@@ -130,7 +130,8 @@ public class TransactionMap<K, V> {
                 }
             }
         } else {
-            // The undo logs are much smaller than the map - scan all undo logs, and then lookup relevant map entry.
+            // The undo logs are much smaller than the map - scan all undo logs,
+            // and then lookup relevant map entry.
             for (MVMap.RootReference undoLogRootReference : undoLogRootReferences) {
                 if (undoLogRootReference != null) {
                     Cursor<Long, Record> cursor = new Cursor<>(undoLogRootReference.root, null);
@@ -139,12 +140,15 @@ public class TransactionMap<K, V> {
                         Record op = cursor.getValue();
                         if (op.mapId == map.getId()) {
                             VersionedValue currentValue = map.get(mapRootPage, op.key);
-                            // If map entry is not there, then we never counted it, in the first place, so skip it.
-                            // This is possible when undo entry exists because it belongs
-                            // to a committed but not yet closed transaction,
-                            // and it was later deleted by some other already committed and closed transaction.
+                            // If map entry is not there, then we never counted
+                            // it, in the first place, so skip it.
+                            // This is possible when undo entry exists because
+                            // it belongs to a committed but not yet closed
+                            // transaction, and it was later deleted by some
+                            // other already committed and closed transaction.
                             if (currentValue != null) {
-                                // only the last undo entry for any given map key should be considered
+                                // only the last undo entry for any given map
+                                // key should be considered
                                 long operationId = cursor.getKey();
                                 if (currentValue.getOperationId() == operationId) {
                                     int txId = TransactionStore.getTransactionId(operationId);
