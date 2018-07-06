@@ -53,6 +53,7 @@ public class MVPrimaryIndex extends BaseIndex
         mapName = "table." + getId();
         Transaction t = mvTable.getTransactionBegin();
         dataMap = t.openMap(mapName, LongDataType.INSTANCE, valueType);
+        dataMap.map.setVolatile(!indexType.isPersistent());
         t.commit();
         if (!table.isPersistData() || !indexType.isPersistent()) {
             dataMap.map.setVolatile(true);
