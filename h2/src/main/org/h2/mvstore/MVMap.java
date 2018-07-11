@@ -1074,7 +1074,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
     /**
      * Get version of the map, which is the version of the store,
-     * at which map was modified last time.
+     * at the moment when map was modified last time.
      *
      * @return version
      */
@@ -1172,10 +1172,10 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      */
     final void copyFrom(MVMap<K, V> sourceMap) {
         // We are going to cheat a little bit in the copy()
-        // by setting map's root to an arbitrary nodes
-        // to allow for just created ones to be saved.
+        // by temporary setting map's root to some arbitrary nodes.
+        // This will allow for newly created ones to be saved.
         // That's why it's important to preserve all chunks
-        // created in the process, especially it retention time
+        // created in the process, especially if retention time
         // is set to a lower value, or even 0.
         MVStore.TxCounter txCounter = store.registerVersionUsage();
         try {
@@ -1206,6 +1206,11 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         return target;
     }
 
+    /**
+     * If map was used in append mode, this method will ensure that append buffer
+     * is flushed - emptied with all entries inserted into map as a new leaf.
+     * @return potentially updated RootReference
+     */
     public RootReference flushAppendBuffer() {
         return flushAppendBuffer(null);
     }
@@ -1268,7 +1273,8 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             p.setChild(index, split);
             p.insertNode(index, key, c);
             int keyCount;
-            if ((keyCount = p.getKeyCount()) <= store.getKeysPerPage() && (p.getMemory() < store.getMaxPageSize() || keyCount <= (p.isLeaf() ? 1 : 2))) {
+            if ((keyCount = p.getKeyCount()) <= store.getKeysPerPage() &&
+                    (p.getMemory() < store.getMaxPageSize() || keyCount <= (p.isLeaf() ? 1 : 2))) {
                 break;
             }
             int at = keyCount - 2;

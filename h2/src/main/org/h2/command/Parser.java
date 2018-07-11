@@ -8,12 +8,43 @@
  */
 package org.h2.command;
 
+import static org.h2.util.ParserUtil.ALL;
+import static org.h2.util.ParserUtil.CHECK;
+import static org.h2.util.ParserUtil.CONSTRAINT;
+import static org.h2.util.ParserUtil.CROSS;
+import static org.h2.util.ParserUtil.DISTINCT;
+import static org.h2.util.ParserUtil.EXCEPT;
+import static org.h2.util.ParserUtil.EXISTS;
 import static org.h2.util.ParserUtil.FALSE;
+import static org.h2.util.ParserUtil.FETCH;
+import static org.h2.util.ParserUtil.FOR;
+import static org.h2.util.ParserUtil.FOREIGN;
+import static org.h2.util.ParserUtil.FROM;
+import static org.h2.util.ParserUtil.FULL;
+import static org.h2.util.ParserUtil.GROUP;
+import static org.h2.util.ParserUtil.HAVING;
 import static org.h2.util.ParserUtil.IDENTIFIER;
-import static org.h2.util.ParserUtil.KEYWORD;
+import static org.h2.util.ParserUtil.INNER;
+import static org.h2.util.ParserUtil.INTERSECT;
+import static org.h2.util.ParserUtil.IS;
+import static org.h2.util.ParserUtil.JOIN;
+import static org.h2.util.ParserUtil.LIKE;
+import static org.h2.util.ParserUtil.LIMIT;
+import static org.h2.util.ParserUtil.MINUS;
+import static org.h2.util.ParserUtil.NATURAL;
+import static org.h2.util.ParserUtil.NOT;
 import static org.h2.util.ParserUtil.NULL;
+import static org.h2.util.ParserUtil.OFFSET;
+import static org.h2.util.ParserUtil.ON;
+import static org.h2.util.ParserUtil.ORDER;
+import static org.h2.util.ParserUtil.PRIMARY;
 import static org.h2.util.ParserUtil.ROWNUM;
+import static org.h2.util.ParserUtil.SELECT;
 import static org.h2.util.ParserUtil.TRUE;
+import static org.h2.util.ParserUtil.UNION;
+import static org.h2.util.ParserUtil.UNIQUE;
+import static org.h2.util.ParserUtil.WHERE;
+import static org.h2.util.ParserUtil.WITH;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -197,13 +228,311 @@ public class Parser {
             CHAR_DOLLAR_QUOTED_STRING = 9;
 
     // this are token types, see also types in ParserUtil
-    private static final int PARAMETER = 10, END = 11, VALUE = 12;
-    private static final int EQUAL = 13, BIGGER_EQUAL = 14, BIGGER = 15;
-    private static final int SMALLER = 16, SMALLER_EQUAL = 17, NOT_EQUAL = 18;
-    private static final int AT = 19;
-    private static final int MINUS = 20, PLUS = 21, STRING_CONCAT = 22;
-    private static final int OPEN = 23, CLOSE = 24;
-    private static final int SPATIAL_INTERSECTS = 25;
+
+    /**
+     * Token with parameter.
+     */
+    private static final int PARAMETER = WITH + 1;
+
+    /**
+     * End of input.
+     */
+    private static final int END = PARAMETER + 1;
+
+    /**
+     * Token with value.
+     */
+    private static final int VALUE = END + 1;
+
+    /**
+     * The token "=".
+     */
+    private static final int EQUAL = VALUE + 1;
+
+    /**
+     * The token ">=".
+     */
+    private static final int BIGGER_EQUAL = EQUAL + 1;
+
+    /**
+     * The token ">".
+     */
+    private static final int BIGGER = BIGGER_EQUAL + 1;
+
+    /**
+     * The token "<".
+     */
+    private static final int SMALLER = BIGGER + 1;
+
+    /**
+     * The token "<=".
+     */
+    private static final int SMALLER_EQUAL = SMALLER + 1;
+
+    /**
+     * The token "<>" or "!=".
+     */
+    private static final int NOT_EQUAL = SMALLER_EQUAL + 1;
+
+    /**
+     * The token "@".
+     */
+    private static final int AT = NOT_EQUAL + 1;
+
+    /**
+     * The token "-".
+     */
+    private static final int MINUS_SIGN = AT + 1;
+
+    /**
+     * The token "+".
+     */
+    private static final int PLUS_SIGN = MINUS_SIGN + 1;
+
+    /**
+     * The token "||".
+     */
+    private static final int STRING_CONCAT = PLUS_SIGN + 1;
+
+    /**
+     * The token "(".
+     */
+    private static final int OPEN_PAREN = STRING_CONCAT + 1;
+
+    /**
+     * The token ")".
+     */
+    private static final int CLOSE_PAREN = OPEN_PAREN + 1;
+
+    /**
+     * The token "&amp;&amp;".
+     */
+    private static final int SPATIAL_INTERSECTS = CLOSE_PAREN + 1;
+
+    /**
+     * The token "*".
+     */
+    private static final int ASTERISK = SPATIAL_INTERSECTS + 1;
+
+    /**
+     * The token ",".
+     */
+    private static final int COMMA = ASTERISK + 1;
+
+    /**
+     * The token ".".
+     */
+    private static final int DOT = COMMA + 1;
+
+    /**
+     * The token "{".
+     */
+    private static final int OPEN_BRACE = DOT + 1;
+
+    /**
+     * The token "}".
+     */
+    private static final int CLOSE_BRACE = OPEN_BRACE + 1;
+
+    /**
+     * The token "/".
+     */
+    private static final int SLASH = CLOSE_BRACE + 1;
+
+    /**
+     * The token "%".
+     */
+    private static final int PERCENT = SLASH + 1;
+
+    /**
+     * The token ";".
+     */
+    private static final int SEMICOLON = PERCENT + 1;
+
+    /**
+     * The token ":".
+     */
+    private static final int COLON = SEMICOLON + 1;
+
+    /**
+     * The token "[".
+     */
+    private static final int OPEN_BRACKET = COLON + 1;
+
+    /**
+     * The token "]".
+     */
+    private static final int CLOSE_BRACKET = OPEN_BRACKET + 1;
+
+    /**
+     * The token "~".
+     */
+    private static final int TILDE = CLOSE_BRACKET + 1;
+
+    /**
+     * The token "::".
+     */
+    private static final int COLON_COLON = TILDE + 1;
+
+    /**
+     * The token ":=".
+     */
+    private static final int COLON_EQ = COLON_COLON + 1;
+
+    /**
+     * The token "!~".
+     */
+    private static final int NOT_TILDE = COLON_EQ + 1;
+
+    private static final String[] TOKENS = {
+            // Unused
+            null,
+            // KEYWORD
+            null,
+            // IDENTIFIER
+            null,
+            // ALL
+            "ALL",
+            // CHECK
+            "CHECK",
+            // CONSTRAINT
+            "CONSTRAINT",
+            // CROSS
+            "CROSS",
+            // CURRENT_DATE
+            "CURRENT_DATE",
+            // CURRENT_TIME
+            "CURRENT_TIME",
+            // CURRENT_TIMESTAMP
+            "CURRENT_TIMESTAMP",
+            // DISTINCT
+            "DISTINCT",
+            // EXCEPT
+            "EXCEPT",
+            // EXISTS
+            "EXISTS",
+            // FALSE
+            "FALSE",
+            // FETCH
+            "FETCH",
+            // FOR
+            "FOR",
+            // FOREIGN
+            "FOREIGN",
+            // FROM
+            "FROM",
+            // FULL
+            "FULL",
+            // GROUP
+            "GROUP",
+            // HAVING
+            "HAVING",
+            // INNER
+            "INNER",
+            // INTERSECT
+            "INTERSECT",
+            // IS
+            "IS",
+            // JOIN
+            "JOIN",
+            // LIKE
+            "LIKE",
+            // LIMIT
+            "LIMIT",
+            // MINUS
+            "MINUS",
+            // NATURAL
+            "NATURAL",
+            // NOT
+            "NOT",
+            // NULL
+            "NULL",
+            // OFFSET
+            "OFFSET",
+            // ON
+            "ON",
+            // ORDER
+            "ORDER",
+            // PRIMARY
+            "PRIMARY",
+            // ROWNUM
+            "ROWNUM",
+            // SELECT
+            "SELECT",
+            // TRUE
+            "TRUE",
+            // UNION
+            "UNION",
+            // UNIQUE
+            "UNIQUE",
+            // WHERE
+            "WHERE",
+            // WITH
+            "WITH",
+            // PARAMETER
+            "?",
+            // END
+            null,
+            // VALUE
+            null,
+            // EQUAL
+            "=",
+            // BIGGER_EQUAL
+            ">=",
+            // BIGGER
+            ">",
+            // SMALLER
+            "<",
+            // SMALLER_EQUAL
+            "<=",
+            // NOT_EQUAL
+            "<>",
+            // AT
+            "@",
+            // MINUS_SIGN
+            "-",
+            // PLUS_SIGN
+            "+",
+            // STRING_CONCAT
+            "||",
+            // OPEN_PAREN
+            "(",
+            // CLOSE_PAREN
+            ")",
+            // SPATIAL_INTERSECTS
+            "&&",
+            // ASTERISK
+            "*",
+            // COMMA
+            ",",
+            // DOT
+            ".",
+            // OPEN_BRACE
+            "{",
+            // CLOSE_BRACE
+            "}",
+            // SLASH
+            "/",
+            // PERCENT
+            "%",
+            // SEMICOLON
+            ";",
+            // COLON
+            ":",
+            // OPEN_BRACKET
+            "[",
+            // CLOSE_BRACKET
+            "]",
+            // TILDE
+            "~",
+            // COLON_COLON
+            "::",
+            // COLON_EQ
+            ":=",
+            // NOT_TILDE
+            "!~",
+            // End
+    };
 
     private static final Comparator<TableFilter> TABLE_FILTER_COMPARATOR =
             new Comparator<TableFilter>() {
@@ -281,7 +610,7 @@ public class Parser {
     public Command prepareCommand(String sql) {
         try {
             Prepared p = parse(sql);
-            boolean hasMore = isToken(";");
+            boolean hasMore = isToken(SEMICOLON);
             if (!hasMore && currentTokenType != END) {
                 throw getSyntaxError();
             }
@@ -343,24 +672,35 @@ public class Parser {
     private Prepared parsePrepared() {
         int start = lastParseIndex;
         Prepared c = null;
-        String token = currentToken;
-        if (token.length() == 0) {
+        switch (currentTokenType) {
+        case END:
+        case SEMICOLON:
             c = new NoOperation(session);
-        } else {
-            char first = token.charAt(0);
-            switch (first) {
-            case '?':
-                // read the ? as a parameter
-                readTerm();
-                // this is an 'out' parameter - set a dummy value
-                parameters.get(0).setValue(ValueNull.INSTANCE);
-                read("=");
-                read("CALL");
-                c = parseCall();
+            setSQL(c, null, start);
+            return c;
+        case PARAMETER:
+            // read the ? as a parameter
+            readTerm();
+            // this is an 'out' parameter - set a dummy value
+            parameters.get(0).setValue(ValueNull.INSTANCE);
+            read(EQUAL);
+            read("CALL");
+            c = parseCall();
+            break;
+        case OPEN_PAREN:
+        case FROM:
+        case SELECT:
+            c = parseSelect();
+            break;
+        case WITH:
+            read();
+            c = parseWithStatementOrQuery();
+            break;
+        case IDENTIFIER:
+            if (currentTokenQuoted) {
                 break;
-            case '(':
-                c = parseSelect();
-                break;
+            }
+            switch (currentToken.charAt(0)) {
             case 'a':
             case 'A':
                 if (readIf("ALTER")) {
@@ -412,12 +752,6 @@ public class Parser {
                     c = parseExecute();
                 }
                 break;
-            case 'f':
-            case 'F':
-                if (isToken("FROM")) {
-                    c = parseSelect();
-                }
-                break;
             case 'g':
             case 'G':
                 if (readIf("GRANT")) {
@@ -464,9 +798,7 @@ public class Parser {
                 break;
             case 's':
             case 'S':
-                if (isToken("SELECT")) {
-                    c = parseSelect();
-                } else if (readIf("SET")) {
+                if (readIf("SET")) {
                     c = parseSet();
                 } else if (readIf("SAVEPOINT")) {
                     c = parseSavepoint();
@@ -497,52 +829,40 @@ public class Parser {
                 if (readIf("VALUES")) {
                     c = parseValues();
                 }
-                break;
-            case 'w':
-            case 'W':
-                if (readIf("WITH")) {
-                    c = parseWithStatementOrQuery();
-                }
-                break;
-            case ';':
-                c = new NoOperation(session);
-                break;
-            default:
-                throw getSyntaxError();
-            }
-            if (indexedParameterList != null) {
-                for (int i = 0, size = indexedParameterList.size();
-                        i < size; i++) {
-                    if (indexedParameterList.get(i) == null) {
-                        indexedParameterList.set(i, new Parameter(i));
-                    }
-                }
-                parameters = indexedParameterList;
-            }
-            if (readIf("{")) {
-                do {
-                    int index = (int) readLong() - 1;
-                    if (index < 0 || index >= parameters.size()) {
-                        throw getSyntaxError();
-                    }
-                    Parameter p = parameters.get(index);
-                    if (p == null) {
-                        throw getSyntaxError();
-                    }
-                    read(":");
-                    Expression expr = readExpression();
-                    expr = expr.optimize(session);
-                    p.setValue(expr.getValue(session));
-                } while (readIf(","));
-                read("}");
-                for (Parameter p : parameters) {
-                    p.checkSet();
-                }
-                parameters.clear();
             }
         }
         if (c == null) {
             throw getSyntaxError();
+        }
+        if (indexedParameterList != null) {
+            for (int i = 0, size = indexedParameterList.size();
+                    i < size; i++) {
+                if (indexedParameterList.get(i) == null) {
+                    indexedParameterList.set(i, new Parameter(i));
+                }
+            }
+            parameters = indexedParameterList;
+        }
+        if (readIf(OPEN_BRACE)) {
+            do {
+                int index = (int) readLong() - 1;
+                if (index < 0 || index >= parameters.size()) {
+                    throw getSyntaxError();
+                }
+                Parameter p = parameters.get(index);
+                if (p == null) {
+                    throw getSyntaxError();
+                }
+                read(COLON);
+                Expression expr = readExpression();
+                expr = expr.optimize(session);
+                p.setValue(expr.getValue(session));
+            } while (readIf(COMMA));
+            read(CLOSE_BRACE);
+            for (Parameter p : parameters) {
+                p.checkSet();
+            }
+            parameters.clear();
         }
         setSQL(c, null, start);
         return c;
@@ -646,7 +966,7 @@ public class Parser {
             return command;
         }
         String procedureName = readAliasIdentifier();
-        if (readIf("(")) {
+        if (readIf(OPEN_PAREN)) {
             ArrayList<Column> list = Utils.newSmallArrayList();
             for (int i = 0;; i++) {
                 Column column = parseColumnForTable("C" + i, true, false);
@@ -735,14 +1055,14 @@ public class Parser {
 
     private Column readTableColumn(TableFilter filter) {
         String columnName = readColumnIdentifier();
-        if (readIf(".")) {
+        if (readIf(DOT)) {
             String tableAlias = columnName;
             columnName = readColumnIdentifier();
-            if (readIf(".")) {
+            if (readIf(DOT)) {
                 String schema = tableAlias;
                 tableAlias = columnName;
                 columnName = readColumnIdentifier();
-                if (readIf(".")) {
+                if (readIf(DOT)) {
                     String catalogName = schema;
                     schema = tableAlias;
                     tableAlias = columnName;
@@ -782,13 +1102,13 @@ public class Parser {
 
     private void parseUpdateSetClause(Update command, TableFilter filter, int start) {
         read("SET");
-        if (readIf("(")) {
+        if (readIf(OPEN_PAREN)) {
             ArrayList<Column> columns = Utils.newSmallArrayList();
             do {
                 Column column = readTableColumn(filter);
                 columns.add(column);
             } while (readIfMore(true));
-            read("=");
+            read(EQUAL);
             Expression expression = readExpression();
             if (columns.size() == 1) {
                 // the expression is parsed as a simple value
@@ -806,27 +1126,21 @@ public class Parser {
         } else {
             do {
                 Column column = readTableColumn(filter);
-                read("=");
-                Expression expression;
-                if (readIf("DEFAULT")) {
-                    expression = ValueExpression.getDefault();
-                } else {
-                    expression = readExpression();
-                }
-                command.setAssignment(column, expression);
-            } while (readIf(","));
+                read(EQUAL);
+                command.setAssignment(column, readExpressionOrDefault());
+            } while (readIf(COMMA));
         }
-        if (readIf("WHERE")) {
+        if (readIf(WHERE)) {
             Expression condition = readExpression();
             command.setCondition(condition);
         }
-        if (readIf("ORDER")) {
+        if (readIf(ORDER)) {
             // for MySQL compatibility
             // (this syntax is supported, but ignored)
             read("BY");
             parseSimpleOrderList();
         }
-        if (readIf("LIMIT")) {
+        if (readIf(LIMIT)) {
             Expression limit = readTerm().optimize(session);
             command.setLimit(limit);
         }
@@ -857,9 +1171,9 @@ public class Parser {
         }
         currentPrepared = command;
         int start = lastParseIndex;
-        if (!readIf("FROM") && database.getMode().getEnum() == ModeEnum.MySQL) {
+        if (!readIf(FROM) && database.getMode().getEnum() == ModeEnum.MySQL) {
             readIdentifierWithSchema();
-            read("FROM");
+            read(FROM);
         }
         TableFilter filter = readSimpleTableFilter(0, null);
         command.setTableFilter(filter);
@@ -868,11 +1182,11 @@ public class Parser {
     }
 
     private void parseDeleteGivenTable(Delete command, Expression limit, int start) {
-        if (readIf("WHERE")) {
+        if (readIf(WHERE)) {
             Expression condition = readExpression();
             command.setCondition(condition);
         }
-        if (readIf("LIMIT") && limit == null) {
+        if (readIf(LIMIT) && limit == null) {
             limit = readTerm().optimize(session);
         }
         command.setLimit(limit);
@@ -920,7 +1234,7 @@ public class Parser {
     private Column[] parseColumnList(Table table) {
         ArrayList<Column> columns = Utils.newSmallArrayList();
         HashSet<Column> set = new HashSet<>();
-        if (!readIf(")")) {
+        if (!readIf(CLOSE_PAREN)) {
             do {
                 Column column = parseColumn(table);
                 if (!set.add(column)) {
@@ -949,10 +1263,10 @@ public class Parser {
      * @return {@code true} if comma is read, {@code false} if brace is read
      */
     private boolean readIfMore(boolean strict) {
-        if (readIf(",")) {
-            return strict || !readIf(")");
+        if (readIf(COMMA)) {
+            return strict || !readIf(CLOSE_PAREN);
         }
-        read(")");
+        read(CLOSE_PAREN);
         return false;
     }
 
@@ -1004,7 +1318,7 @@ public class Parser {
         } else if (readIf("TABLES")) {
             // for MySQL compatibility
             String schema = Constants.SCHEMA_MAIN;
-            if (readIf("FROM")) {
+            if (readIf(FROM)) {
                 schema = readUniqueIdentifier();
             }
             buff.append("TABLE_NAME, TABLE_SCHEMA FROM "
@@ -1013,11 +1327,11 @@ public class Parser {
             paramValues.add(ValueString.get(schema));
         } else if (readIf("COLUMNS")) {
             // for MySQL compatibility
-            read("FROM");
+            read(FROM);
             String tableName = readIdentifierWithSchema();
             String schemaName = getSchema().getName();
             paramValues.add(ValueString.get(tableName));
-            if (readIf("FROM")) {
+            if (readIf(FROM)) {
                 schemaName = readUniqueIdentifier();
             }
             buff.append("C.COLUMN_NAME FIELD, "
@@ -1065,11 +1379,11 @@ public class Parser {
 
     private boolean isSelect() {
         int start = lastParseIndex;
-        while (readIf("(")) {
+        while (readIf(OPEN_PAREN)) {
             // need to read ahead, it could be a nested union:
             // ((select 1) union (select 1))
         }
-        boolean select = isToken("SELECT") || isToken("FROM") || isToken("WITH");
+        boolean select = isToken(SELECT) || isToken(FROM) || isToken(WITH);
         parseIndex = start;
         read();
         return select;
@@ -1089,35 +1403,25 @@ public class Parser {
         if (readIf("USING")) {
             return parseMergeUsing(command, start);
         }
-        if (readIf("(")) {
+        if (readIf(OPEN_PAREN)) {
             if (isSelect()) {
                 command.setQuery(parseSelect());
-                read(")");
+                read(CLOSE_PAREN);
                 return command;
             }
             Column[] columns = parseColumnList(table);
             command.setColumns(columns);
         }
         if (readIf("KEY")) {
-            read("(");
+            read(OPEN_PAREN);
             Column[] keys = parseColumnList(table);
             command.setKeys(keys);
         }
         if (readIf("VALUES")) {
             do {
-                ArrayList<Expression> values = Utils.newSmallArrayList();
-                read("(");
-                if (!readIf(")")) {
-                    do {
-                        if (readIf("DEFAULT")) {
-                            values.add(null);
-                        } else {
-                            values.add(readExpression());
-                        }
-                    } while (readIfMore(false));
-                }
-                command.addRow(values.toArray(new Expression[0]));
-            } while (readIf(","));
+                read(OPEN_PAREN);
+                command.addRow(parseValuesForInsert());
+            } while (readIf(COMMA));
         } else {
             command.setQuery(parseSelect());
         }
@@ -1128,13 +1432,13 @@ public class Parser {
         MergeUsing command = new MergeUsing(oldCommand);
         currentPrepared = command;
 
-        if (readIf("(")) {
+        if (readIf(OPEN_PAREN)) {
             /* a select query is supplied */
             if (isSelect()) {
                 command.setQuery(parseSelect());
-                read(")");
+                read(CLOSE_PAREN);
             }
-            String queryAlias = readFromAlias(null, Collections.singletonList("ON"));
+            String queryAlias = readFromAlias(null, null);
             if (queryAlias == null) {
                 queryAlias = Constants.PREFIX_QUERY_ALIAS + parseIndex;
             }
@@ -1155,8 +1459,7 @@ public class Parser {
             command.setSourceTableFilter(sourceTableFilter);
         } else {
             /* Its a table name, simulate a query by building a select query for the table */
-            List<String> excludeIdentifiers = Collections.singletonList("ON");
-            TableFilter sourceTableFilter = readSimpleTableFilter(0, excludeIdentifiers);
+            TableFilter sourceTableFilter = readSimpleTableFilter(0, null);
             command.setSourceTableFilter(sourceTableFilter);
 
             Select preparedQuery = new Select(session);
@@ -1169,7 +1472,7 @@ public class Parser {
             preparedQuery.init();
             command.setQuery(preparedQuery);
         }
-        read("ON");
+        read(ON);
         Expression condition = readExpression();
         command.setOnCondition(condition);
 
@@ -1231,7 +1534,7 @@ public class Parser {
     }
 
     private void parseWhenNotMatched(MergeUsing command) {
-        read("NOT");
+        read(NOT);
         read("MATCHED");
         read("THEN");
         if (readIf("INSERT")) {
@@ -1270,16 +1573,16 @@ public class Parser {
             return returnedCommand;
         }
         if (database.getMode().onDuplicateKeyUpdate) {
-            if (readIf("ON")) {
+            if (readIf(ON)) {
                 read("DUPLICATE");
                 read("KEY");
                 read("UPDATE");
                 do {
                     String columnName = readColumnIdentifier();
-                    if (readIf(".")) {
+                    if (readIf(DOT)) {
                         String schemaOrTableName = columnName;
                         String tableOrColumnName = readColumnIdentifier();
-                        if (readIf(".")) {
+                        if (readIf(DOT)) {
                             if (!table.getSchema().getName().equals(schemaOrTableName)) {
                                 throw DbException.get(ErrorCode.SCHEMA_NAME_MUST_MATCH);
                             }
@@ -1293,15 +1596,9 @@ public class Parser {
                         }
                     }
                     Column column = table.getColumn(columnName);
-                    read("=");
-                    Expression expression;
-                    if (readIf("DEFAULT")) {
-                        expression = ValueExpression.getDefault();
-                    } else {
-                        expression = readExpression();
-                    }
-                    command.addAssignmentForDuplicate(column, expression);
-                } while (readIf(","));
+                    read(EQUAL);
+                    command.addAssignmentForDuplicate(column, readExpressionOrDefault());
+                } while (readIf(COMMA));
             }
         }
         if (database.getMode().isolationLevelInSelectOrInsertStatement) {
@@ -1312,10 +1609,10 @@ public class Parser {
 
     private Insert parseInsertGivenTable(Insert command, Table table) {
         Column[] columns = null;
-        if (readIf("(")) {
+        if (readIf(OPEN_PAREN)) {
             if (isSelect()) {
                 command.setQuery(parseSelect());
-                read(")");
+                read(CLOSE_PAREN);
                 return command;
             }
             columns = parseColumnList(table);
@@ -1332,21 +1629,11 @@ public class Parser {
             Expression[] expr = {};
             command.addRow(expr);
         } else if (readIf("VALUES")) {
-            read("(");
+            read(OPEN_PAREN);
             do {
-                ArrayList<Expression> values = Utils.newSmallArrayList();
-                if (!readIf(")")) {
-                    do {
-                        if (readIf("DEFAULT")) {
-                            values.add(null);
-                        } else {
-                            values.add(readExpression());
-                        }
-                    } while (readIfMore(false));
-                }
-                command.addRow(values.toArray(new Expression[0]));
+                command.addRow(parseValuesForInsert());
                 // the following condition will allow (..),; and (..);
-            } while (readIf(",") && readIf("("));
+            } while (readIf(COMMA) && readIf(OPEN_PAREN));
         } else if (readIf("SET")) {
             if (columns != null) {
                 throw getSyntaxError();
@@ -1355,15 +1642,9 @@ public class Parser {
             ArrayList<Expression> values = Utils.newSmallArrayList();
             do {
                 columnList.add(parseColumn(table));
-                read("=");
-                Expression expression;
-                if (readIf("DEFAULT")) {
-                    expression = ValueExpression.getDefault();
-                } else {
-                    expression = readExpression();
-                }
-                values.add(expression);
-            } while (readIf(","));
+                read(EQUAL);
+                values.add(readExpressionOrDefault());
+            } while (readIf(COMMA));
             command.setColumns(columnList.toArray(new Column[0]));
             command.addRow(values.toArray(new Expression[0]));
         } else {
@@ -1381,10 +1662,10 @@ public class Parser {
         read("INTO");
         Table table = readTableOrView();
         command.setTable(table);
-        if (readIf("(")) {
+        if (readIf(OPEN_PAREN)) {
             if (isSelect()) {
                 command.setQuery(parseSelect());
-                read(")");
+                read(CLOSE_PAREN);
                 return command;
             }
             Column[] columns = parseColumnList(table);
@@ -1392,32 +1673,36 @@ public class Parser {
         }
         if (readIf("VALUES")) {
             do {
-                ArrayList<Expression> values = Utils.newSmallArrayList();
-                read("(");
-                if (!readIf(")")) {
-                    do {
-                        if (readIf("DEFAULT")) {
-                            values.add(null);
-                        } else {
-                            values.add(readExpression());
-                        }
-                    } while (readIfMore(false));
-                }
-                command.addRow(values.toArray(new Expression[0]));
-            } while (readIf(","));
+                read(OPEN_PAREN);
+                command.addRow(parseValuesForInsert());
+            } while (readIf(COMMA));
         } else {
             command.setQuery(parseSelect());
         }
         return command;
     }
 
+    private Expression[] parseValuesForInsert() {
+        ArrayList<Expression> values = Utils.newSmallArrayList();
+        if (!readIf(CLOSE_PAREN)) {
+            do {
+                if (readIf("DEFAULT")) {
+                    values.add(null);
+                } else {
+                    values.add(readExpression());
+                }
+            } while (readIfMore(false));
+        }
+        return values.toArray(new Expression[0]);
+    }
+
     private TableFilter readTableFilter() {
         Table table;
         String alias = null;
-        label: if (readIf("(")) {
+        label: if (readIf(OPEN_PAREN)) {
             if (isSelect()) {
                 Query query = parseSelectUnion();
-                read(")");
+                read(CLOSE_PAREN);
                 query.setParameterList(new ArrayList<>(parameters));
                 query.init();
                 Session s;
@@ -1433,7 +1718,7 @@ public class Parser {
                 TableFilter top;
                 top = readTableFilter();
                 top = readJoin(top);
-                read(")");
+                read(CLOSE_PAREN);
                 alias = readFromAlias(null);
                 if (alias != null) {
                     top.setAlias(alias);
@@ -1461,12 +1746,12 @@ public class Parser {
                     throw DbException.get(ErrorCode.SCHEMA_NOT_FOUND_1, schemaName);
                 }
             }
-            boolean foundLeftBracket = readIf("(");
+            boolean foundLeftBracket = readIf(OPEN_PAREN);
             if (foundLeftBracket && readIf("INDEX")) {
                 // Sybase compatibility with
                 // "select * from test (index table1_index)"
                 readIdentifierWithSchema(null);
-                read(")");
+                read(CLOSE_PAREN);
                 foundLeftBracket = false;
             }
             if (foundLeftBracket) {
@@ -1474,15 +1759,15 @@ public class Parser {
                 if (equalsToken(tableName, RangeTable.NAME)
                         || equalsToken(tableName, RangeTable.ALIAS)) {
                     Expression min = readExpression();
-                    read(",");
+                    read(COMMA);
                     Expression max = readExpression();
-                    if (readIf(",")) {
+                    if (readIf(COMMA)) {
                         Expression step = readExpression();
-                        read(")");
+                        read(CLOSE_PAREN);
                         table = new RangeTable(mainSchema, min, max, step,
                                 false);
                     } else {
-                        read(")");
+                        read(CLOSE_PAREN);
                         table = new RangeTable(mainSchema, min, max, false);
                     }
                 } else {
@@ -1537,9 +1822,9 @@ public class Parser {
         if (table == null) {
             throw getSyntaxError();
         }
-        read("(");
+        read(OPEN_PAREN);
         LinkedHashSet<String> indexNames = new LinkedHashSet<>();
-        if (!readIf(")")) {
+        if (!readIf(CLOSE_PAREN)) {
             do {
                 String indexName = readIdentifierWithSchema();
                 Index index = table.getIndex(indexName);
@@ -1552,7 +1837,8 @@ public class Parser {
     private String readFromAlias(String alias, List<String> excludeIdentifiers) {
         if (readIf("AS")) {
             alias = readAliasIdentifier();
-        } else if (currentTokenType == IDENTIFIER && !isTokenInList(excludeIdentifiers)) {
+        } else if (currentTokenType == IDENTIFIER
+                && (excludeIdentifiers == null || !isTokenInList(excludeIdentifiers))) {
             alias = readAliasIdentifier();
         }
         return alias;
@@ -1561,12 +1847,12 @@ public class Parser {
     private String readFromAlias(String alias) {
         // left and right are not keywords (because they are functions as
         // well)
-        List<String> excludeIdentifiers = Arrays.asList("LEFT", "RIGHT", "FULL");
+        List<String> excludeIdentifiers = Arrays.asList("LEFT", "RIGHT");
         return readFromAlias(alias, excludeIdentifiers);
     }
 
     private ArrayList<String> readDerivedColumnNames() {
-        if (readIf("(")) {
+        if (readIf(OPEN_PAREN)) {
             ArrayList<String> derivedColumnNames = new ArrayList<>();
             do {
                 derivedColumnNames.add(readAliasIdentifier());
@@ -1597,7 +1883,7 @@ public class Parser {
 
     private boolean readIfExists(boolean ifExists) {
         if (readIf("IF")) {
-            read("EXISTS");
+            read(EXISTS);
             ifExists = true;
         }
         return ifExists;
@@ -1605,7 +1891,7 @@ public class Parser {
 
     private Prepared parseComment() {
         int type = 0;
-        read("ON");
+        read(ON);
         boolean column = false;
         if (readIf("TABLE") || readIf("VIEW")) {
             type = DbObject.TABLE_OR_VIEW;
@@ -1614,7 +1900,7 @@ public class Parser {
             type = DbObject.TABLE_OR_VIEW;
         } else if (readIf("CONSTANT")) {
             type = DbObject.CONSTANT;
-        } else if (readIf("CONSTRAINT")) {
+        } else if (readIf(CONSTRAINT)) {
             type = DbObject.CONSTRAINT;
         } else if (readIf("ALIAS")) {
             type = DbObject.FUNCTION_ALIAS;
@@ -1644,7 +1930,7 @@ public class Parser {
             ArrayList<String> list = Utils.newSmallArrayList();
             do {
                 list.add(readUniqueIdentifier());
-            } while (readIf("."));
+            } while (readIf(DOT));
             schemaName = session.getCurrentSchemaName();
             if (list.size() == 4) {
                 if (!equalsToken(database.getShortName(), list.remove(0))) {
@@ -1668,7 +1954,7 @@ public class Parser {
         command.setSchemaName(schemaName);
         command.setObjectName(objectName);
         command.setObjectType(type);
-        read("IS");
+        read(IS);
         command.setCommentExpression(readExpression());
         return command;
     }
@@ -1679,7 +1965,7 @@ public class Parser {
             String tableName = readIdentifierWithSchema();
             DropTable command = new DropTable(session, getSchema());
             command.setTableName(tableName);
-            while (readIf(",")) {
+            while (readIf(COMMA)) {
                 tableName = readIdentifierWithSchema();
                 DropTable next = new DropTable(session, getSchema());
                 next.setTableName(tableName);
@@ -1704,7 +1990,7 @@ public class Parser {
             ifExists = readIfExists(ifExists);
             command.setIfExists(ifExists);
             //Support for MySQL: DROP INDEX index_name ON tbl_name
-            if (readIf("ON")) {
+            if (readIf(ON)) {
                 readIdentifierWithSchema();
             }
             return command;
@@ -1774,13 +2060,12 @@ public class Parser {
             command.setSchemaName(readUniqueIdentifier());
             ifExists = readIfExists(ifExists);
             command.setIfExists(ifExists);
-            if (readIf("CASCADE")) {
-                command.setDropAction(ConstraintActionType.CASCADE);
-            } else if (readIf("RESTRICT")) {
-                command.setDropAction(ConstraintActionType.RESTRICT);
+            ConstraintActionType dropAction = parseCascadeOrRestrict();
+            if (dropAction != null) {
+                command.setDropAction(dropAction);
             }
             return command;
-        } else if (readIf("ALL")) {
+        } else if (readIf(ALL)) {
             read("OBJECTS");
             DropDatabase command = new DropDatabase(session);
             command.setDropAllObjects(true);
@@ -1811,10 +2096,9 @@ public class Parser {
         command.setTypeName(readUniqueIdentifier());
         ifExists = readIfExists(ifExists);
         command.setIfExists(ifExists);
-        if (readIf("CASCADE")) {
-            command.setDropAction(ConstraintActionType.CASCADE);
-        } else if (readIf("RESTRICT")) {
-            command.setDropAction(ConstraintActionType.RESTRICT);
+        ConstraintActionType dropAction = parseCascadeOrRestrict();
+        if (dropAction != null) {
+            command.setDropAction(dropAction);
         }
         return command;
     }
@@ -1834,51 +2118,51 @@ public class Parser {
             TableFilter join;
             if (readIf("RIGHT")) {
                 readIf("OUTER");
-                read("JOIN");
+                read(JOIN);
                 // the right hand side is the 'inner' table usually
                 join = readTableFilter();
                 join = readJoin(join);
                 Expression on = null;
-                if (readIf("ON")) {
+                if (readIf(ON)) {
                     on = readExpression();
                 }
                 addJoin(join, top, true, on);
                 top = join;
             } else if (readIf("LEFT")) {
                 readIf("OUTER");
-                read("JOIN");
+                read(JOIN);
                 join = readTableFilter();
                 join = readJoin(join);
                 Expression on = null;
-                if (readIf("ON")) {
+                if (readIf(ON)) {
                     on = readExpression();
                 }
                 addJoin(top, join, true, on);
-            } else if (readIf("FULL")) {
+            } else if (readIf(FULL)) {
                 throw getSyntaxError();
-            } else if (readIf("INNER")) {
-                read("JOIN");
+            } else if (readIf(INNER)) {
+                read(JOIN);
                 join = readTableFilter();
                 top = readJoin(top);
                 Expression on = null;
-                if (readIf("ON")) {
+                if (readIf(ON)) {
                     on = readExpression();
                 }
                 addJoin(top, join, false, on);
-            } else if (readIf("JOIN")) {
+            } else if (readIf(JOIN)) {
                 join = readTableFilter();
                 top = readJoin(top);
                 Expression on = null;
-                if (readIf("ON")) {
+                if (readIf(ON)) {
                     on = readExpression();
                 }
                 addJoin(top, join, false, on);
-            } else if (readIf("CROSS")) {
-                read("JOIN");
+            } else if (readIf(CROSS)) {
+                read(JOIN);
                 join = readTableFilter();
                 addJoin(top, join, false, null);
-            } else if (readIf("NATURAL")) {
-                read("JOIN");
+            } else if (readIf(NATURAL)) {
+                read(JOIN);
                 join = readTableFilter();
                 Column[] tableCols = last.getTable().getColumns();
                 Column[] joinCols = join.getTable().getColumns();
@@ -1948,13 +2232,12 @@ public class Parser {
                     procedureName);
         }
         command.setProcedure(p);
-        if (readIf("(")) {
+        if (readIf(OPEN_PAREN)) {
             for (int i = 0;; i++) {
                 command.setExpression(i, readExpression());
-                if (readIf(")")) {
+                if (!readIfMore(true)) {
                     break;
                 }
-                read(",");
             }
         }
         return command;
@@ -1974,10 +2257,10 @@ public class Parser {
             command.setExecuteCommand(true);
         } else {
             if (readIf("PLAN")) {
-                readIf("FOR");
+                readIf(FOR);
             }
         }
-        if (isToken("SELECT") || isToken("FROM") || isToken("(") || isToken("WITH")) {
+        if (isToken(SELECT) || isToken(FROM) || isToken(OPEN_PAREN) || isToken(WITH)) {
             Query query = parseSelect();
             query.setNeverLazy(true);
             command.setCommand(query);
@@ -2033,22 +2316,22 @@ public class Parser {
     private Query parseSelectUnionExtension(Query command, int start,
             boolean unionOnly) {
         while (true) {
-            if (readIf("UNION")) {
+            if (readIf(UNION)) {
                 SelectUnion union = new SelectUnion(session, command);
-                if (readIf("ALL")) {
+                if (readIf(ALL)) {
                     union.setUnionType(SelectUnion.UnionType.UNION_ALL);
                 } else {
-                    readIf("DISTINCT");
+                    readIf(DISTINCT);
                     union.setUnionType(SelectUnion.UnionType.UNION);
                 }
                 union.setRight(parseSelectSub());
                 command = union;
-            } else if (readIf("MINUS") || readIf("EXCEPT")) {
+            } else if (readIf(MINUS) || readIf(EXCEPT)) {
                 SelectUnion union = new SelectUnion(session, command);
                 union.setUnionType(SelectUnion.UnionType.EXCEPT);
                 union.setRight(parseSelectSub());
                 command = union;
-            } else if (readIf("INTERSECT")) {
+            } else if (readIf(INTERSECT)) {
                 SelectUnion union = new SelectUnion(session, command);
                 union.setUnionType(SelectUnion.UnionType.INTERSECT);
                 union.setRight(parseSelectSub());
@@ -2065,7 +2348,7 @@ public class Parser {
     }
 
     private void parseEndOfQuery(Query command) {
-        if (readIf("ORDER")) {
+        if (readIf(ORDER)) {
             read("BY");
             Select oldSelect = currentSelect;
             if (command instanceof Select) {
@@ -2073,7 +2356,7 @@ public class Parser {
             }
             ArrayList<SelectOrderBy> orderList = Utils.newSmallArrayList();
             do {
-                boolean canBeNumber = !readIf("=");
+                boolean canBeNumber = !readIf(EQUAL);
                 SelectOrderBy order = new SelectOrderBy();
                 Expression expr = readExpression();
                 if (canBeNumber && expr instanceof ValueExpression &&
@@ -2087,7 +2370,7 @@ public class Parser {
                 }
                 order.sortType = parseSortType();
                 orderList.add(order);
-            } while (readIf(","));
+            } while (readIf(COMMA));
             command.setOrder(orderList);
             currentSelect = oldSelect;
         }
@@ -2095,13 +2378,13 @@ public class Parser {
         Select temp = currentSelect;
         currentSelect = null;
         // http://sqlpro.developpez.com/SQL2008/
-        if (readIf("OFFSET")) {
+        if (readIf(OFFSET)) {
             command.setOffset(readExpression().optimize(session));
             if (!readIf("ROW")) {
                 readIf("ROWS");
             }
         }
-        if (readIf("FETCH")) {
+        if (readIf(FETCH)) {
             if (!readIf("FIRST")) {
                 read("NEXT");
             }
@@ -2117,16 +2400,16 @@ public class Parser {
             read("ONLY");
         }
         currentSelect = temp;
-        if (readIf("LIMIT")) {
+        if (readIf(LIMIT)) {
             temp = currentSelect;
             // make sure aggregate functions will not work here
             currentSelect = null;
             Expression limit = readExpression().optimize(session);
             command.setLimit(limit);
-            if (readIf("OFFSET")) {
+            if (readIf(OFFSET)) {
                 Expression offset = readExpression().optimize(session);
                 command.setOffset(offset);
-            } else if (readIf(",")) {
+            } else if (readIf(COMMA)) {
                 // MySQL: [offset, ] rowcount
                 Expression offset = limit;
                 limit = readExpression().optimize(session);
@@ -2139,17 +2422,17 @@ public class Parser {
             }
             currentSelect = temp;
         }
-        if (readIf("FOR")) {
+        if (readIf(FOR)) {
             if (readIf("UPDATE")) {
                 if (readIf("OF")) {
                     do {
                         readIdentifierWithSchema();
-                    } while (readIf(","));
+                    } while (readIf(COMMA));
                 } else if (readIf("NOWAIT")) {
                     // TODO parser: select for update nowait: should not wait
                 }
                 command.setForUpdate(true);
-            } else if (readIf("READ") || readIf("FETCH")) {
+            } else if (readIf("READ") || readIf(FETCH)) {
                 read("ONLY");
             }
         }
@@ -2162,7 +2445,7 @@ public class Parser {
      * DB2 isolation clause
      */
     private void parseIsolationClause() {
-        if (readIf("WITH")) {
+        if (readIf(WITH)) {
             if (readIf("RR") || readIf("RS")) {
                 // concurrent-access-resolution clause
                 if (readIf("USE")) {
@@ -2181,12 +2464,12 @@ public class Parser {
     }
 
     private Query parseSelectSub() {
-        if (readIf("(")) {
+        if (readIf(OPEN_PAREN)) {
             Query command = parseSelectUnion();
-            read(")");
+            read(CLOSE_PAREN);
             return command;
         }
-        if (readIf("WITH")) {
+        if (readIf(WITH)) {
             Query query;
             try {
                 query = (Query) parseWith();
@@ -2205,7 +2488,7 @@ public class Parser {
         do {
             TableFilter filter = readTableFilter();
             parseJoinTableFilter(filter, command);
-        } while (readIf(","));
+        } while (readIf(COMMA));
 
         // Parser can reorder joined table filters, need to explicitly sort them
         // to get the order as it was in the original query.
@@ -2260,21 +2543,21 @@ public class Parser {
             // SELECT TOP 1 (+?) AS A FROM TEST
             Expression limit = readTerm().optimize(session);
             command.setLimit(limit);
-        } else if (readIf("LIMIT")) {
+        } else if (readIf(LIMIT)) {
             Expression offset = readTerm().optimize(session);
             command.setOffset(offset);
             Expression limit = readTerm().optimize(session);
             command.setLimit(limit);
         }
         currentSelect = temp;
-        if (readIf("DISTINCT")) {
+        if (readIf(DISTINCT)) {
             command.setDistinct(true);
         } else {
-            readIf("ALL");
+            readIf(ALL);
         }
         ArrayList<Expression> expressions = Utils.newSmallArrayList();
         do {
-            if (readIf("*")) {
+            if (readIf(ASTERISK)) {
                 expressions.add(new Wildcard(null, null));
             } else {
                 Expression expr = readExpression();
@@ -2286,15 +2569,15 @@ public class Parser {
                 }
                 expressions.add(expr);
             }
-        } while (readIf(","));
+        } while (readIf(COMMA));
         command.setExpressions(expressions);
     }
 
     private Select parseSelectSimple() {
         boolean fromFirst;
-        if (readIf("SELECT")) {
+        if (readIf(SELECT)) {
             fromFirst = false;
-        } else if (readIf("FROM")) {
+        } else if (readIf(FROM)) {
             fromFirst = true;
         } else {
             throw getSyntaxError();
@@ -2306,11 +2589,11 @@ public class Parser {
         currentPrepared = command;
         if (fromFirst) {
             parseSelectSimpleFromPart(command);
-            read("SELECT");
+            read(SELECT);
             parseSelectSimpleSelectPart(command);
         } else {
             parseSelectSimpleSelectPart(command);
-            if (!readIf("FROM")) {
+            if (!readIf(FROM)) {
                 // select without FROM: convert to SELECT ... FROM
                 // SYSTEM_RANGE(1,1)
                 Table dual = getDualTable(false);
@@ -2322,25 +2605,25 @@ public class Parser {
                 parseSelectSimpleFromPart(command);
             }
         }
-        if (readIf("WHERE")) {
+        if (readIf(WHERE)) {
             Expression condition = readExpression();
             command.addCondition(condition);
         }
         // the group by is read for the outer select (or not a select)
         // so that columns that are not grouped can be used
         currentSelect = oldSelect;
-        if (readIf("GROUP")) {
+        if (readIf(GROUP)) {
             read("BY");
             command.setGroupQuery();
             ArrayList<Expression> list = Utils.newSmallArrayList();
             do {
                 Expression expr = readExpression();
                 list.add(expr);
-            } while (readIf(","));
+            } while (readIf(COMMA));
             command.setGroupBy(list);
         }
         currentSelect = command;
-        if (readIf("HAVING")) {
+        if (readIf(HAVING)) {
             command.setGroupQuery();
             Expression condition = readExpression();
             command.setHaving(condition);
@@ -2365,6 +2648,13 @@ public class Parser {
         command.setSQL(sql);
     }
 
+    private Expression readExpressionOrDefault() {
+        if (readIf("DEFAULT")) {
+            return ValueExpression.getDefault();
+        }
+        return readExpression();
+    }
+
     private Expression readExpression() {
         Expression r = readAnd();
         while (readIf("OR")) {
@@ -2382,23 +2672,23 @@ public class Parser {
     }
 
     private Expression readCondition() {
-        if (readIf("NOT")) {
+        if (readIf(NOT)) {
             return new ConditionNot(readCondition());
         }
-        if (readIf("EXISTS")) {
-            read("(");
+        if (readIf(EXISTS)) {
+            read(OPEN_PAREN);
             Query query = parseSelect();
             // can not reduce expression because it might be a union except
             // query with distinct
-            read(")");
+            read(CLOSE_PAREN);
             return new ConditionExists(query);
         }
         if (readIf("INTERSECTS")) {
-            read("(");
+            read(OPEN_PAREN);
             Expression r1 = readConcat();
-            read(",");
+            read(COMMA);
             Expression r2 = readConcat();
-            read(")");
+            read(CLOSE_PAREN);
             return new Comparison(session, Comparison.SPATIAL_INTERSECTS, r1,
                     r2);
         }
@@ -2408,16 +2698,17 @@ public class Parser {
             // TABLE TEST(ID INT DEFAULT 0 NOT NULL))
             int backup = parseIndex;
             boolean not = false;
-            if (readIf("NOT")) {
+            if (readIf(NOT)) {
                 not = true;
-                if (isToken("NULL")) {
+                if (isToken(NULL)) {
                     // this really only works for NOT NULL!
                     parseIndex = backup;
                     currentToken = "NOT";
+                    currentTokenType = NOT;
                     break;
                 }
             }
-            if (readIf("LIKE")) {
+            if (readIf(LIKE)) {
                 Expression b = readConcat();
                 Expression esc = null;
                 if (readIf("ESCAPE")) {
@@ -2441,23 +2732,23 @@ public class Parser {
                 Expression b = readConcat();
                 recompileAlways = true;
                 r = new CompareLike(database, r, b, null, true);
-            } else if (readIf("IS")) {
-                if (readIf("NOT")) {
-                    if (readIf("NULL")) {
+            } else if (readIf(IS)) {
+                if (readIf(NOT)) {
+                    if (readIf(NULL)) {
                         r = new Comparison(session, Comparison.IS_NOT_NULL, r,
                                 null);
-                    } else if (readIf("DISTINCT")) {
-                        read("FROM");
+                    } else if (readIf(DISTINCT)) {
+                        read(FROM);
                         r = new Comparison(session, Comparison.EQUAL_NULL_SAFE,
                                 r, readConcat());
                     } else {
                         r = new Comparison(session,
                                 Comparison.NOT_EQUAL_NULL_SAFE, r, readConcat());
                     }
-                } else if (readIf("NULL")) {
+                } else if (readIf(NULL)) {
                     r = new Comparison(session, Comparison.IS_NULL, r, null);
-                } else if (readIf("DISTINCT")) {
-                    read("FROM");
+                } else if (readIf(DISTINCT)) {
+                    read(FROM);
                     r = new Comparison(session, Comparison.NOT_EQUAL_NULL_SAFE,
                             r, readConcat());
                 } else {
@@ -2465,8 +2756,8 @@ public class Parser {
                             readConcat());
                 }
             } else if (readIf("IN")) {
-                read("(");
-                if (readIf(")")) {
+                read(OPEN_PAREN);
+                if (readIf(CLOSE_PAREN)) {
                     if (database.getMode().prohibitEmptyInPredicate) {
                         throw getSyntaxError();
                     }
@@ -2486,7 +2777,7 @@ public class Parser {
                         do {
                             last = readExpression();
                             v.add(last);
-                        } while (readIf(","));
+                        } while (readIf(COMMA));
                         if (v.size() == 1 && (last instanceof Subquery)) {
                             Subquery s = (Subquery) last;
                             Query q = s.getQuery();
@@ -2496,7 +2787,7 @@ public class Parser {
                             r = new ConditionIn(database, r, v);
                         }
                     }
-                    read(")");
+                    read(CLOSE_PAREN);
                 }
             } else if (readIf("BETWEEN")) {
                 Expression low = readConcat();
@@ -2513,14 +2804,14 @@ public class Parser {
                     break;
                 }
                 read();
-                if (readIf("ALL")) {
-                    read("(");
+                if (readIf(ALL)) {
+                    read(OPEN_PAREN);
                     Query query = parseSelect();
                     r = new ConditionInSelect(database, r, query, true,
                             compareType);
-                    read(")");
+                    read(CLOSE_PAREN);
                 } else if (readIf("ANY") || readIf("SOME")) {
-                    read("(");
+                    read(OPEN_PAREN);
                     if (currentTokenType == PARAMETER && compareType == 0) {
                         Parameter p = readParameter();
                         r = new ConditionInParameter(database, r, p);
@@ -2529,11 +2820,11 @@ public class Parser {
                         r = new ConditionInSelect(database, r, query, false,
                                 compareType);
                     }
-                    read(")");
+                    read(CLOSE_PAREN);
                 } else {
                     Expression right = readConcat();
                     if (SysProperties.OLD_STYLE_OUTER_JOIN &&
-                            readIf("(") && readIf("+") && readIf(")")) {
+                            readIf(OPEN_PAREN) && readIf(PLUS_SIGN) && readIf(CLOSE_PAREN)) {
                         // support for a subset of old-fashioned Oracle outer
                         // join with (+)
                         if (r instanceof ExpressionColumn &&
@@ -2578,10 +2869,10 @@ public class Parser {
     private Expression readConcat() {
         Expression r = readSum();
         while (true) {
-            if (readIf("||")) {
+            if (readIf(STRING_CONCAT)) {
                 r = new Operation(OpType.CONCAT, r, readSum());
-            } else if (readIf("~")) {
-                if (readIf("*")) {
+            } else if (readIf(TILDE)) {
+                if (readIf(ASTERISK)) {
                     Function function = Function.getFunction(database, "CAST");
                     function.setDataType(new Column("X",
                             Value.STRING_IGNORECASE));
@@ -2589,8 +2880,8 @@ public class Parser {
                     r = function;
                 }
                 r = new CompareLike(database, r, readSum(), null, true);
-            } else if (readIf("!~")) {
-                if (readIf("*")) {
+            } else if (readIf(NOT_TILDE)) {
+                if (readIf(ASTERISK)) {
                     Function function = Function.getFunction(database, "CAST");
                     function.setDataType(new Column("X",
                             Value.STRING_IGNORECASE));
@@ -2608,9 +2899,9 @@ public class Parser {
     private Expression readSum() {
         Expression r = readFactor();
         while (true) {
-            if (readIf("+")) {
+            if (readIf(PLUS_SIGN)) {
                 r = new Operation(OpType.PLUS, r, readFactor());
-            } else if (readIf("-")) {
+            } else if (readIf(MINUS_SIGN)) {
                 r = new Operation(OpType.MINUS, r, readFactor());
             } else {
                 return r;
@@ -2621,11 +2912,11 @@ public class Parser {
     private Expression readFactor() {
         Expression r = readTerm();
         while (true) {
-            if (readIf("*")) {
+            if (readIf(ASTERISK)) {
                 r = new Operation(OpType.MULTIPLY, r, readTerm());
-            } else if (readIf("/")) {
+            } else if (readIf(SLASH)) {
                 r = new Operation(OpType.DIVIDE, r, readTerm());
-            } else if (readIf("%")) {
+            } else if (readIf(PERCENT)) {
                 r = new Operation(OpType.MODULUS, r, readTerm());
             } else {
                 return r;
@@ -2640,11 +2931,11 @@ public class Parser {
         currentSelect.setGroupQuery();
         Aggregate r;
         if (aggregateType == AggregateType.COUNT) {
-            if (readIf("*")) {
+            if (readIf(ASTERISK)) {
                 r = new Aggregate(AggregateType.COUNT_ALL, null, currentSelect,
                         false);
             } else {
-                boolean distinct = readIf("DISTINCT");
+                boolean distinct = readIf(DISTINCT);
                 Expression on = readExpression();
                 if (on instanceof Wildcard && !distinct) {
                     // PostgreSQL compatibility: count(t.*)
@@ -2656,12 +2947,12 @@ public class Parser {
                 }
             }
         } else if (aggregateType == AggregateType.GROUP_CONCAT) {
-            boolean distinct = readIf("DISTINCT");
+            boolean distinct = readIf(DISTINCT);
 
             if (equalsToken("GROUP_CONCAT", aggregateName)) {
                 r = new Aggregate(AggregateType.GROUP_CONCAT,
                     readExpression(), currentSelect, distinct);
-                if (readIf("ORDER")) {
+                if (readIf(ORDER)) {
                     read("BY");
                     r.setOrderByList(parseSimpleOrderList());
                 }
@@ -2673,9 +2964,9 @@ public class Parser {
                 // PostgreSQL compatibility: string_agg(expression, delimiter)
                 r = new Aggregate(AggregateType.GROUP_CONCAT,
                     readExpression(), currentSelect, distinct);
-                read(",");
+                read(COMMA);
                 r.setGroupConcatSeparator(readExpression());
-                if (readIf("ORDER")) {
+                if (readIf(ORDER)) {
                     read("BY");
                     r.setOrderByList(parseSimpleOrderList());
                 }
@@ -2683,26 +2974,22 @@ public class Parser {
                 r = null;
             }
         } else if (aggregateType == AggregateType.ARRAY_AGG) {
-            boolean distinct = readIf("DISTINCT");
+            boolean distinct = readIf(DISTINCT);
 
             r = new Aggregate(AggregateType.ARRAY_AGG,
                 readExpression(), currentSelect, distinct);
-            if (readIf("ORDER")) {
+            if (readIf(ORDER)) {
                 read("BY");
                 r.setOrderByList(parseSimpleOrderList());
             }
         } else {
-            boolean distinct = readIf("DISTINCT");
+            boolean distinct = readIf(DISTINCT);
             r = new Aggregate(aggregateType, readExpression(), currentSelect,
                     distinct);
         }
-        read(")");
-        if (r != null && readIf("FILTER")) {
-            read("(");
-            read("WHERE");
-            Expression condition = readExpression();
-            read(")");
-            r.setFilterCondition(condition);
+        read(CLOSE_PAREN);
+        if (r != null) {
+            r.setFilterCondition(readFilterCondition());
         }
         return r;
     }
@@ -2714,7 +3001,7 @@ public class Parser {
             order.expression = readExpression();
             order.sortType = parseSortType();
             orderList.add(order);
-        } while (readIf(","));
+        } while (readIf(COMMA));
         return orderList;
     }
 
@@ -2735,36 +3022,37 @@ public class Parser {
         }
         Expression[] args;
         ArrayList<Expression> argList = Utils.newSmallArrayList();
-        int numArgs = 0;
-        while (!readIf(")")) {
-            if (numArgs++ > 0) {
-                read(",");
-            }
-            argList.add(readExpression());
+        if (!readIf(CLOSE_PAREN)) {
+            do {
+                argList.add(readExpression());
+            } while (readIfMore(true));
         }
         args = argList.toArray(new Expression[0]);
         return new JavaFunction(functionAlias, args);
     }
 
     private JavaAggregate readJavaAggregate(UserAggregate aggregate) {
-        boolean distinct = readIf("DISTINCT");
+        boolean distinct = readIf(DISTINCT);
         ArrayList<Expression> params = Utils.newSmallArrayList();
         do {
             params.add(readExpression());
         } while (readIfMore(true));
-        Expression filterCondition;
-        if (readIf("FILTER")) {
-            read("(");
-            read("WHERE");
-            filterCondition = readExpression();
-            read(")");
-        } else {
-            filterCondition = null;
-        }
+        Expression filterCondition = readFilterCondition();
         Expression[] list = params.toArray(new Expression[0]);
         JavaAggregate agg = new JavaAggregate(aggregate, list, currentSelect, distinct, filterCondition);
         currentSelect.setGroupQuery();
         return agg;
+    }
+
+    private Expression readFilterCondition() {
+        if (readIf("FILTER")) {
+            read(OPEN_PAREN);
+            read(WHERE);
+            Expression filterCondition = readExpression();
+            read(CLOSE_PAREN);
+            return filterCondition;
+        }
+        return null;
     }
 
     private AggregateType getAggregateType(String name) {
@@ -2807,22 +3095,22 @@ public class Parser {
             read("AS");
             Column type = parseColumnWithType(null, false);
             function.setDataType(type);
-            read(")");
+            read(CLOSE_PAREN);
             break;
         }
         case Function.CONVERT: {
             if (database.getMode().swapConvertFunctionParameters) {
                 Column type = parseColumnWithType(null, false);
                 function.setDataType(type);
-                read(",");
+                read(COMMA);
                 function.setParameter(0, readExpression());
-                read(")");
+                read(CLOSE_PAREN);
             } else {
                 function.setParameter(0, readExpression());
-                read(",");
+                read(COMMA);
                 Column type = parseColumnWithType(null, false);
                 function.setDataType(type);
-                read(")");
+                read(CLOSE_PAREN);
             }
             break;
         }
@@ -2830,9 +3118,9 @@ public class Parser {
             function.setParameter(0,
                     ValueExpression.get(ValueString.get(currentToken)));
             read();
-            read("FROM");
+            read(FROM);
             function.setParameter(1, readExpression());
-            read(")");
+            read(CLOSE_PAREN);
             break;
         }
         case Function.DATE_ADD:
@@ -2844,11 +3132,11 @@ public class Parser {
             } else {
                 function.setParameter(0, readExpression());
             }
-            read(",");
+            read(COMMA);
             function.setParameter(1, readExpression());
-            read(",");
+            read(COMMA);
             function.setParameter(2, readExpression());
-            read(")");
+            read(CLOSE_PAREN);
             break;
         }
         case Function.SUBSTRING: {
@@ -2859,58 +3147,58 @@ public class Parser {
             // SUBSTRING(X FROM 1) -- Postgres
             // SUBSTRING(X FOR 1) -- Postgres
             function.setParameter(0, readExpression());
-            if (readIf("FROM")) {
+            if (readIf(FROM)) {
                 function.setParameter(1, readExpression());
-                if (readIf("FOR")) {
+                if (readIf(FOR)) {
                     function.setParameter(2, readExpression());
                 }
-            } else if (readIf("FOR")) {
+            } else if (readIf(FOR)) {
                 function.setParameter(1, ValueExpression.get(ValueInt.get(0)));
                 function.setParameter(2, readExpression());
             } else {
-                read(",");
+                read(COMMA);
                 function.setParameter(1, readExpression());
-                if (readIf(",")) {
+                if (readIf(COMMA)) {
                     function.setParameter(2, readExpression());
                 }
             }
-            read(")");
+            read(CLOSE_PAREN);
             break;
         }
         case Function.POSITION: {
             // can't read expression because IN would be read too early
             function.setParameter(0, readConcat());
-            if (!readIf(",")) {
+            if (!readIf(COMMA)) {
                 read("IN");
             }
             function.setParameter(1, readExpression());
-            read(")");
+            read(CLOSE_PAREN);
             break;
         }
         case Function.TRIM: {
             Expression space = null;
             if (readIf("LEADING")) {
                 function = Function.getFunction(database, "LTRIM");
-                if (!readIf("FROM")) {
+                if (!readIf(FROM)) {
                     space = readExpression();
-                    read("FROM");
+                    read(FROM);
                 }
             } else if (readIf("TRAILING")) {
                 function = Function.getFunction(database, "RTRIM");
-                if (!readIf("FROM")) {
+                if (!readIf(FROM)) {
                     space = readExpression();
-                    read("FROM");
+                    read(FROM);
                 }
             } else if (readIf("BOTH")) {
-                if (!readIf("FROM")) {
+                if (!readIf(FROM)) {
                     space = readExpression();
-                    read("FROM");
+                    read(FROM);
                 }
             }
             Expression p0 = readExpression();
-            if (readIf(",")) {
+            if (readIf(COMMA)) {
                 space = readExpression();
-            } else if (readIf("FROM")) {
+            } else if (readIf(FROM)) {
                 space = p0;
                 p0 = readExpression();
             }
@@ -2918,7 +3206,7 @@ public class Parser {
             if (space != null) {
                 function.setParameter(1, space);
             }
-            read(")");
+            read(CLOSE_PAREN);
             break;
         }
         case Function.TABLE:
@@ -2929,7 +3217,7 @@ public class Parser {
                 String columnName = readAliasIdentifier();
                 Column column = parseColumnWithType(columnName, false);
                 columns.add(column);
-                read("=");
+                read(EQUAL);
                 function.setParameter(i, readExpression());
                 i++;
             } while (readIfMore(true));
@@ -2938,17 +3226,17 @@ public class Parser {
             break;
         }
         case Function.ROW_NUMBER:
-            read(")");
+            read(CLOSE_PAREN);
             read("OVER");
-            read("(");
-            read(")");
+            read(OPEN_PAREN);
+            read(CLOSE_PAREN);
             if (currentSelect == null && currentPrepared == null) {
                 throw getSyntaxError();
             }
             return new Rownum(currentSelect == null ? currentPrepared
                     : currentSelect);
         default:
-            if (!readIf(")")) {
+            if (!readIf(CLOSE_PAREN)) {
                 int i = 0;
                 do {
                     function.setParameter(i++, readExpression());
@@ -2960,9 +3248,6 @@ public class Parser {
     }
 
     private Expression readFunctionWithoutParameters(String name) {
-        if (readIf("(")) {
-            read(")");
-        }
         if (database.isAllowBuiltinAliasOverride()) {
             FunctionAlias functionAlias = database.getSchema(session.getCurrentSchemaName()).findFunction(name);
             if (functionAlias != null) {
@@ -2976,7 +3261,7 @@ public class Parser {
 
     private Expression readWildcardOrSequenceValue(String schema,
             String objectName) {
-        if (readIf("*")) {
+        if (readIf(ASTERISK)) {
             return new Wildcard(schema, objectName);
         }
         if (schema == null) {
@@ -3009,14 +3294,14 @@ public class Parser {
         }
         String name = readColumnIdentifier();
         Schema s = database.findSchema(objectName);
-        if ((!SysProperties.OLD_STYLE_OUTER_JOIN || s != null) && readIf("(")) {
+        if ((!SysProperties.OLD_STYLE_OUTER_JOIN || s != null) && readIf(OPEN_PAREN)) {
             // only if the token before the dot is a valid schema name,
             // otherwise the old style Oracle outer join doesn't work:
             // t.x = t2.x(+)
             // this additional check is not required
             // if the old style outer joins are not supported
             return readFunction(s, name);
-        } else if (readIf(".")) {
+        } else if (readIf(DOT)) {
             String schema = objectName;
             objectName = name;
             expr = readWildcardOrSequenceValue(schema, objectName);
@@ -3024,7 +3309,7 @@ public class Parser {
                 return expr;
             }
             name = readColumnIdentifier();
-            if (readIf("(")) {
+            if (readIf(OPEN_PAREN)) {
                 String databaseName = schema;
                 if (!equalsToken(database.getShortName(), databaseName)) {
                     throw DbException.get(ErrorCode.DATABASE_NOT_FOUND_1,
@@ -3032,7 +3317,7 @@ public class Parser {
                 }
                 schema = objectName;
                 return readFunction(database.getSchema(schema), name);
-            } else if (readIf(".")) {
+            } else if (readIf(DOT)) {
                 String databaseName = schema;
                 if (!equalsToken(database.getShortName(), databaseName)) {
                     throw DbException.get(ErrorCode.DATABASE_NOT_FOUND_1,
@@ -3105,7 +3390,7 @@ public class Parser {
         case AT:
             read();
             r = new Variable(session, readAliasIdentifier());
-            if (readIf(":=")) {
+            if (readIf(COLON_EQ)) {
                 Expression value = readExpression();
                 Function function = Function.getFunction(database, "SET");
                 function.setParameter(0, r);
@@ -3116,35 +3401,32 @@ public class Parser {
         case PARAMETER:
             r = readParameter();
             break;
-        case KEYWORD:
-            if (isToken("SELECT") || isToken("FROM") || isToken("WITH")) {
-                Query query = parseSelect();
-                r = new Subquery(query);
-            } else {
-                throw getSyntaxError();
-            }
+        case SELECT:
+        case FROM:
+        case WITH:
+            r = new Subquery(parseSelect());
             break;
         case IDENTIFIER:
             String name = currentToken;
             if (currentTokenQuoted) {
                 read();
-                if (readIf("(")) {
+                if (readIf(OPEN_PAREN)) {
                     r = readFunction(null, name);
-                } else if (readIf(".")) {
+                } else if (readIf(DOT)) {
                     r = readTermObjectDot(name);
                 } else {
                     r = new ExpressionColumn(database, null, null, name);
                 }
             } else {
                 read();
-                if (readIf(".")) {
+                if (readIf(DOT)) {
                     r = readTermObjectDot(name);
                 } else if (equalsToken("CASE", name)) {
                     // CASE must be processed before (,
                     // otherwise CASE(3) would be a function call, which it is
                     // not
                     r = readCase();
-                } else if (readIf("(")) {
+                } else if (readIf(OPEN_PAREN)) {
                     r = readFunction(null, name);
                 } else if (equalsToken("CURRENT_USER", name)) {
                     r = readFunctionWithoutParameters("USER");
@@ -3166,18 +3448,10 @@ public class Parser {
                     r = readFunctionWithoutParameters("LOCALTIME");
                 } else if (equalsToken("SYSTIME", name)) {
                     r = readFunctionWithoutParameters("CURRENT_TIME");
-                } else if (equalsToken("CURRENT", name)) {
-                    if (readIf("TIMESTAMP")) {
-                        r = readFunctionWithoutParameters("CURRENT_TIMESTAMP");
-                    } else if (readIf("TIME")) {
-                        r = readFunctionWithoutParameters("CURRENT_TIME");
-                    } else if (readIf("DATE")) {
-                        r = readFunctionWithoutParameters("CURRENT_DATE");
-                    } else {
-                        r = new ExpressionColumn(database, null, null, name);
-                    }
+                } else if (database.getMode().getEnum() == ModeEnum.DB2 && equalsToken("CURRENT", name)) {
+                    r = parseDB2SpecialRegisters(name);
                 } else if (equalsToken("NEXT", name) && readIf("VALUE")) {
-                    read("FOR");
+                    read(FOR);
                     Sequence sequence = readSequence();
                     r = new SequenceValue(sequence);
                 } else if (equalsToken("TIME", name)) {
@@ -3198,7 +3472,7 @@ public class Parser {
                         r = ValueExpression.get(ValueTime.parse(time));
                     }
                 } else if (equalsToken("TIMESTAMP", name)) {
-                    if (readIf("WITH")) {
+                    if (readIf(WITH)) {
                         read("TIME");
                         read("ZONE");
                         if (currentTokenType != VALUE
@@ -3269,7 +3543,7 @@ public class Parser {
                 }
             }
             break;
-        case MINUS:
+        case MINUS_SIGN:
             read();
             if (currentTokenType == VALUE) {
                 r = ValueExpression.get(currentValue.negate());
@@ -3290,25 +3564,23 @@ public class Parser {
                 r = new Operation(OpType.NEGATE, readTerm(), null);
             }
             break;
-        case PLUS:
+        case PLUS_SIGN:
             read();
             r = readTerm();
             break;
-        case OPEN:
+        case OPEN_PAREN:
             read();
-            if (readIf(")")) {
+            if (readIf(CLOSE_PAREN)) {
                 r = new ExpressionList(new Expression[0]);
             } else {
                 r = readExpression();
                 if (readIfMore(true)) {
                     ArrayList<Expression> list = Utils.newSmallArrayList();
                     list.add(r);
-                    while (!readIf(")")) {
-                        r = readExpression();
-                        list.add(r);
-                        if (!readIfMore(true)) {
-                            break;
-                        }
+                    if (!readIf(CLOSE_PAREN)) {
+                        do {
+                            list.add(readExpression());
+                        } while (readIfMore(false));
                     }
                     r = new ExpressionList(list.toArray(new Expression[0]));
                 }
@@ -3324,8 +3596,8 @@ public class Parser {
             break;
         case ROWNUM:
             read();
-            if (readIf("(")) {
-                read(")");
+            if (readIf(OPEN_PAREN)) {
+                read(CLOSE_PAREN);
             }
             if (currentSelect == null && currentPrepared == null) {
                 throw getSyntaxError();
@@ -3344,7 +3616,7 @@ public class Parser {
         default:
             throw getSyntaxError();
         }
-        if (readIf("[")) {
+        if (readIf(OPEN_BRACKET)) {
             Function function = Function.getFunction(database, "ARRAY_GET");
             function.setParameter(0, r);
             r = readExpression();
@@ -3352,13 +3624,13 @@ public class Parser {
                     .get(1)));
             function.setParameter(1, r);
             r = function;
-            read("]");
+            read(CLOSE_BRACKET);
         }
-        if (readIf("::")) {
+        if (readIf(COLON_COLON)) {
             // PostgreSQL compatibility
             if (isToken("PG_CATALOG")) {
                 read("PG_CATALOG");
-                read(".");
+                read(DOT);
             }
             if (readIf("REGCLASS")) {
                 FunctionAlias f = findFunctionAlias(Constants.SCHEMA_MAIN,
@@ -3377,6 +3649,24 @@ public class Parser {
             }
         }
         return r;
+    }
+
+    private Expression parseDB2SpecialRegisters(String name) {
+        // Only "CURRENT" name is supported
+        if (readIf("TIMESTAMP")) {
+            if (readIf(WITH)) {
+                read("TIME");
+                read("ZONE");
+                return readFunctionWithoutParameters("CURRENT_TIMESTAMP");
+            }
+            return readFunctionWithoutParameters("LOCALTIMESTAMP");
+        } else if (readIf("TIME")) {
+            return readFunctionWithoutParameters("CURRENT_TIME");
+        } else if (readIf("DATE")) {
+            return readFunctionWithoutParameters("CURRENT_DATE");
+        }
+        // No match, parse CURRENT as a column
+        return new ExpressionColumn(database, null, null, name);
     }
 
     private Expression readCase() {
@@ -3442,10 +3732,10 @@ public class Parser {
 
     private int readInt() {
         boolean minus = false;
-        if (currentTokenType == MINUS) {
+        if (currentTokenType == MINUS_SIGN) {
             minus = true;
             read();
-        } else if (currentTokenType == PLUS) {
+        } else if (currentTokenType == PLUS_SIGN) {
             read();
         }
         if (currentTokenType != VALUE) {
@@ -3462,10 +3752,10 @@ public class Parser {
 
     private long readLong() {
         boolean minus = false;
-        if (currentTokenType == MINUS) {
+        if (currentTokenType == MINUS_SIGN) {
             minus = true;
             read();
-        } else if (currentTokenType == PLUS) {
+        } else if (currentTokenType == PLUS_SIGN) {
             read();
         }
         if (currentTokenType != VALUE) {
@@ -3482,6 +3772,7 @@ public class Parser {
 
     private boolean readBooleanSetting() {
         switch (currentTokenType) {
+        case ON:
         case TRUE:
             read();
             return true;
@@ -3493,9 +3784,7 @@ public class Parser {
             read();
             return result;
         }
-        if (readIf("ON")) {
-            return true;
-        } else if (readIf("OFF")) {
+        if (readIf("OFF")) {
             return false;
         } else {
             throw getSyntaxError();
@@ -3520,7 +3809,7 @@ public class Parser {
         String s = currentToken;
         read();
         schemaName = defaultSchemaName;
-        if (readIf(".")) {
+        if (readIf(DOT)) {
             schemaName = s;
             if (currentTokenType != IDENTIFIER) {
                 throw DbException.getSyntaxError(sqlCommand, parseIndex,
@@ -3529,9 +3818,9 @@ public class Parser {
             s = currentToken;
             read();
         }
-        if (equalsToken(".", currentToken)) {
+        if (currentTokenType == DOT) {
             if (equalsToken(schemaName, database.getShortName())) {
-                read(".");
+                read();
                 schemaName = s;
                 if (currentTokenType != IDENTIFIER) {
                     throw DbException.getSyntaxError(sqlCommand, parseIndex,
@@ -3574,6 +3863,14 @@ public class Parser {
         read();
     }
 
+    private void read(int tokenType) {
+        if (tokenType != currentTokenType) {
+            addExpected(tokenType);
+            throw getSyntaxError();
+        }
+        read();
+    }
+
     private boolean readIf(String token) {
         if (!currentTokenQuoted && equalsToken(token, currentToken)) {
             read();
@@ -3583,13 +3880,28 @@ public class Parser {
         return false;
     }
 
+    private boolean readIf(int tokenType) {
+        if (tokenType == currentTokenType) {
+            read();
+            return true;
+        }
+        addExpected(tokenType);
+        return false;
+    }
+
     private boolean isToken(String token) {
-        boolean result = equalsToken(token, currentToken) &&
-                !currentTokenQuoted;
-        if (result) {
+        if (!currentTokenQuoted && equalsToken(token, currentToken)) {
             return true;
         }
         addExpected(token);
+        return false;
+    }
+
+    private boolean isToken(int tokenType) {
+        if (tokenType == currentTokenType) {
+            return true;
+        }
+        addExpected(tokenType);
         return false;
     }
 
@@ -3615,6 +3927,12 @@ public class Parser {
     private void addExpected(String token) {
         if (expectedList != null) {
             expectedList.add(token);
+        }
+    }
+
+    private void addExpected(int tokenType) {
+        if (expectedList != null) {
+            expectedList.add(TOKENS[tokenType]);
         }
     }
 
@@ -3674,15 +3992,15 @@ public class Parser {
         }
         case CHAR_SPECIAL_2:
             if (types[i] == CHAR_SPECIAL_2) {
-                i++;
+                char c1 = chars[i++];
+                currentTokenType = getSpecialType2(c, c1);
+            } else {
+                currentTokenType = getSpecialType1(c);
             }
-            currentToken = sqlCommand.substring(start, i);
-            currentTokenType = getSpecialType(currentToken);
             parseIndex = i;
             return;
         case CHAR_SPECIAL_1:
-            currentToken = sqlCommand.substring(start, i);
-            currentTokenType = getSpecialType(currentToken);
+            currentTokenType = getSpecialType1(c);
             parseIndex = i;
             return;
         case CHAR_VALUE:
@@ -3735,7 +4053,7 @@ public class Parser {
             return;
         case CHAR_DOT:
             if (types[i] != CHAR_VALUE) {
-                currentTokenType = KEYWORD;
+                currentTokenType = DOT;
                 currentToken = ".";
                 parseIndex = i;
                 return;
@@ -3783,7 +4101,6 @@ public class Parser {
             return;
         }
         case CHAR_END:
-            currentToken = "";
             currentTokenType = END;
             parseIndex = i;
             return;
@@ -4112,82 +4429,92 @@ public class Parser {
         }
     }
 
-    private int getSpecialType(String s) {
-        char c0 = s.charAt(0);
-        if (s.length() == 1) {
-            switch (c0) {
-            case '?':
-            case '$':
-                return PARAMETER;
-            case '@':
-                return AT;
-            case '+':
-                return PLUS;
-            case '-':
-                return MINUS;
-            case '{':
-            case '}':
-            case '*':
-            case '/':
-            case '%':
-            case ';':
-            case ',':
-            case ':':
-            case '[':
-            case ']':
-            case '~':
-                return KEYWORD;
-            case '(':
-                return OPEN;
-            case ')':
-                return CLOSE;
-            case '<':
-                return SMALLER;
-            case '>':
-                return BIGGER;
-            case '=':
-                return EQUAL;
-            default:
-                break;
+    private int getSpecialType1(char c0) {
+        switch (c0) {
+        case '?':
+        case '$':
+            return PARAMETER;
+        case '@':
+            return AT;
+        case '+':
+            return PLUS_SIGN;
+        case '-':
+            return MINUS_SIGN;
+        case '*':
+            return ASTERISK;
+        case ',':
+            return COMMA;
+        case '{':
+            return OPEN_BRACE;
+        case '}':
+            return CLOSE_BRACE;
+        case '/':
+            return SLASH;
+        case '%':
+            return PERCENT;
+        case ';':
+            return SEMICOLON;
+        case ':':
+            return COLON;
+        case '[':
+            return OPEN_BRACKET;
+        case ']':
+            return CLOSE_BRACKET;
+        case '~':
+            return TILDE;
+        case '(':
+            return OPEN_PAREN;
+        case ')':
+            return CLOSE_PAREN;
+        case '<':
+            return SMALLER;
+        case '>':
+            return BIGGER;
+        case '=':
+            return EQUAL;
+        default:
+            throw getSyntaxError();
+        }
+    }
+
+    private int getSpecialType2(char c0, char c1) {
+        switch (c0) {
+        case ':':
+            if (c1 == ':') {
+                return COLON_COLON;
+            } else if (c1 == '=') {
+                return COLON_EQ;
             }
-        } else if (s.length() == 2) {
-            char c1 = s.charAt(1);
-            switch (c0) {
-            case ':':
-                if (c1 == ':' || c1 == '=') {
-                    return KEYWORD;
-                }
-                break;
-            case '>':
-                if (c1 == '=') {
-                    return BIGGER_EQUAL;
-                }
-                break;
-            case '<':
-                if (c1 == '=') {
-                    return SMALLER_EQUAL;
-                } else if (c1 == '>') {
-                    return NOT_EQUAL;
-                }
-                break;
-            case '!':
-                if (c1 == '=') {
-                    return NOT_EQUAL;
-                } else if (c1 == '~') {
-                    return KEYWORD;
-                }
-                break;
-            case '|':
-                if (c1 == '|') {
-                    return STRING_CONCAT;
-                }
-                break;
-            case '&':
-                if (c1 == '&') {
-                    return SPATIAL_INTERSECTS;
-                }
-                break;
+            break;
+        case '>':
+            if (c1 == '=') {
+                return BIGGER_EQUAL;
             }
+            break;
+        case '<':
+            if (c1 == '=') {
+                return SMALLER_EQUAL;
+            } else if (c1 == '>') {
+                return NOT_EQUAL;
+            }
+            break;
+        case '!':
+            if (c1 == '=') {
+                return NOT_EQUAL;
+            } else if (c1 == '~') {
+                return NOT_TILDE;
+            }
+            break;
+        case '|':
+            if (c1 == '|') {
+                return STRING_CONCAT;
+            }
+            break;
+        case '&':
+            if (c1 == '&') {
+                return SPATIAL_INTERSECTS;
+            }
+            break;
         }
         throw getSyntaxError();
     }
@@ -4279,21 +4606,21 @@ public class Parser {
             read("AS");
             read("IDENTITY");
             long start = 1, increment = 1;
-            if (readIf("(")) {
+            if (readIf(OPEN_PAREN)) {
                 read("START");
-                readIf("WITH");
+                readIf(WITH);
                 start = readLong();
-                readIf(",");
+                readIf(COMMA);
                 if (readIf("INCREMENT")) {
                     readIf("BY");
                     increment = readLong();
                 }
-                read(")");
+                read(CLOSE_PAREN);
             }
             column.setPrimaryKey(true);
             column.setAutoIncrement(true, start, increment);
         }
-        if (readIf("ON")) {
+        if (readIf(ON)) {
             read("UPDATE");
             Expression onUpdateExpression = readExpression();
             column.setOnUpdateExpression(session, onUpdateExpression);
@@ -4329,19 +4656,19 @@ public class Parser {
 
     private void parseAutoIncrement(Column column) {
         long start = 1, increment = 1;
-        if (readIf("(")) {
+        if (readIf(OPEN_PAREN)) {
             start = readLong();
-            if (readIf(",")) {
+            if (readIf(COMMA)) {
                 increment = readLong();
             }
-            read(")");
+            read(CLOSE_PAREN);
         }
         column.setAutoIncrement(true, start, increment);
     }
 
     private String readCommentIf() {
         if (readIf("COMMENT")) {
-            readIf("IS");
+            readIf(IS);
             return readString();
         }
         return null;
@@ -4364,12 +4691,12 @@ public class Parser {
                 original += " VARYING";
             }
         } else if (readIf("TIME")) {
-            if (readIf("(")) {
+            if (readIf(OPEN_PAREN)) {
                 originalScale = readNonNegativeInt();
                 if (originalScale > ValueTime.MAXIMUM_SCALE) {
                     throw DbException.get(ErrorCode.INVALID_VALUE_SCALE_PRECISION, Integer.toString(originalScale));
                 }
-                read(")");
+                read(CLOSE_PAREN);
             }
             if (readIf("WITHOUT")) {
                 read("TIME");
@@ -4377,18 +4704,18 @@ public class Parser {
                 original += " WITHOUT TIME ZONE";
             }
         } else if (readIf("TIMESTAMP")) {
-            if (readIf("(")) {
+            if (readIf(OPEN_PAREN)) {
                 originalScale = readNonNegativeInt();
                 // Allow non-standard TIMESTAMP(..., ...) syntax
-                if (readIf(",")) {
+                if (readIf(COMMA)) {
                     originalScale = readNonNegativeInt();
                 }
                 if (originalScale > ValueTimestamp.MAXIMUM_SCALE) {
                     throw DbException.get(ErrorCode.INVALID_VALUE_SCALE_PRECISION, Integer.toString(originalScale));
                 }
-                read(")");
+                read(CLOSE_PAREN);
             }
-            if (readIf("WITH")) {
+            if (readIf(WITH)) {
                 read("TIME");
                 read("ZONE");
                 original += " WITH TIME ZONE";
@@ -4468,13 +4795,13 @@ public class Parser {
                         break;
                     }
                 } else if (original.equals("DATETIME") || original.equals("DATETIME2")) {
-                    if (readIf("(")) {
+                    if (readIf(OPEN_PAREN)) {
                         originalScale = readNonNegativeInt();
                         if (originalScale > ValueTime.MAXIMUM_SCALE) {
                             throw DbException.get(ErrorCode.INVALID_VALUE_SCALE_PRECISION,
                                     Integer.toString(originalScale));
                         }
-                        read(")");
+                        read(CLOSE_PAREN);
                         scale = originalScale;
                         original = original + '(' + originalScale + ')';
                         precision = displaySize = ValueTimestamp.getDisplaySize(originalScale);
@@ -4483,7 +4810,7 @@ public class Parser {
                     scale = 0;
                     precision = displaySize = ValueTimestamp.getDisplaySize(0);
                 }
-            } else if (readIf("(")) {
+            } else if (readIf(OPEN_PAREN)) {
                 if (!readIf("MAX")) {
                     long p = readLong();
                     if (readIf("K")) {
@@ -4502,7 +4829,7 @@ public class Parser {
                         readIf("BYTE");
                     }
                     if (dataType.supportsScale) {
-                        if (readIf(",")) {
+                        if (readIf(COMMA)) {
                             scale = readInt();
                             original += ", " + scale;
                         } else {
@@ -4513,12 +4840,12 @@ public class Parser {
                     displaySize = MathUtils.convertLongToInt(precision);
                     original += ")";
                 }
-                read(")");
+                read(CLOSE_PAREN);
             }
         } else if (dataType.type == Value.DOUBLE && original.equals("FLOAT")) {
-            if (readIf("(")) {
+            if (readIf(OPEN_PAREN)) {
                 int p = readNonNegativeInt();
-                read(")");
+                read(CLOSE_PAREN);
                 if (p > 53) {
                     throw DbException.get(ErrorCode.INVALID_VALUE_SCALE_PRECISION, Integer.toString(p));
                 }
@@ -4528,7 +4855,7 @@ public class Parser {
                 original = original + '(' + p + ')';
             }
         } else if (dataType.type == Value.ENUM) {
-            if (readIf("(")) {
+            if (readIf(OPEN_PAREN)) {
                 java.util.List<String> enumeratorList = new ArrayList<>();
                 original += '(';
                 String enumerator0 = readString();
@@ -4548,13 +4875,13 @@ public class Parser {
             } catch (DbException e) {
                 throw e.addSQL(original);
             }
-        } else if (readIf("(")) {
+        } else if (readIf(OPEN_PAREN)) {
             // Support for MySQL: INT(11), MEDIUMINT(8) and so on.
             // Just ignore the precision.
             readNonNegativeInt();
-            read(")");
+            read(CLOSE_PAREN);
         }
-        if (readIf("FOR")) {
+        if (readIf(FOR)) {
             read("BIT");
             read("DATA");
             if (dataType.type == Value.STRING) {
@@ -4661,19 +4988,19 @@ public class Parser {
             String indexName = null;
             Schema oldSchema = null;
             boolean ifNotExists = false;
-            if (readIf("PRIMARY")) {
+            if (readIf(PRIMARY)) {
                 read("KEY");
                 if (readIf("HASH")) {
                     hash = true;
                 }
                 primaryKey = true;
-                if (!isToken("ON")) {
+                if (!isToken(ON)) {
                     ifNotExists = readIfNotExists();
                     indexName = readIdentifierWithSchema(null);
                     oldSchema = getSchema();
                 }
             } else {
-                if (readIf("UNIQUE")) {
+                if (readIf(UNIQUE)) {
                     unique = true;
                 }
                 if (readIf("HASH")) {
@@ -4683,7 +5010,7 @@ public class Parser {
                     spatial = true;
                 }
                 if (readIf("INDEX")) {
-                    if (!isToken("ON")) {
+                    if (!isToken(ON)) {
                         ifNotExists = readIfNotExists();
                         indexName = readIdentifierWithSchema(null);
                         oldSchema = getSchema();
@@ -4692,7 +5019,7 @@ public class Parser {
                     throw getSyntaxError();
                 }
             }
-            read("ON");
+            read(ON);
             String tableName = readIdentifierWithSchema();
             checkSchema(oldSchema);
             CreateIndex command = new CreateIndex(session, getSchema());
@@ -4702,7 +5029,7 @@ public class Parser {
             command.setUnique(unique);
             command.setIndexName(indexName);
             command.setComment(readCommentIf());
-            read("(");
+            read(OPEN_PAREN);
             command.setIndexColumns(parseIndexColumnList());
 
             if (readIf("USING")) {
@@ -4733,7 +5060,7 @@ public class Parser {
      * @return true if we expect to see a TABLE clause
      */
     private boolean addRoleOrRight(GrantRevoke command) {
-        if (readIf("SELECT")) {
+        if (readIf(SELECT)) {
             command.addRight(Right.SELECT);
             return true;
         } else if (readIf("DELETE")) {
@@ -4745,7 +5072,7 @@ public class Parser {
         } else if (readIf("UPDATE")) {
             command.addRight(Right.UPDATE);
             return true;
-        } else if (readIf("ALL")) {
+        } else if (readIf(ALL)) {
             command.addRight(Right.ALL);
             return true;
         } else if (readIf("ALTER")) {
@@ -4770,7 +5097,7 @@ public class Parser {
         GrantRevoke command = new GrantRevoke(session);
         command.setOperationType(operationType);
         boolean tableClauseExpected = addRoleOrRight(command);
-        while (readIf(",")) {
+        while (readIf(COMMA)) {
             addRoleOrRight(command);
             if (command.isRightMode() && command.isRoleMode()) {
                 throw DbException
@@ -4778,7 +5105,7 @@ public class Parser {
             }
         }
         if (tableClauseExpected) {
-            if (readIf("ON")) {
+            if (readIf(ON)) {
                 if (readIf("SCHEMA")) {
                     Schema schema = database.getSchema(readAliasIdentifier());
                     command.setSchema(schema);
@@ -4786,14 +5113,14 @@ public class Parser {
                     do {
                         Table table = readTableOrView();
                         command.addTable(table);
-                    } while (readIf(","));
+                    } while (readIf(COMMA));
                 }
             }
         }
         if (operationType == CommandInterface.GRANT) {
             read("TO");
         } else {
-            read("FROM");
+            read(FROM);
         }
         command.setGranteeName(readUniqueIdentifier());
         return command;
@@ -4820,7 +5147,7 @@ public class Parser {
         do {
             int i = 0;
             ArrayList<Expression> row = Utils.newSmallArrayList();
-            boolean multiColumn = readIf("(");
+            boolean multiColumn = readIf(OPEN_PAREN);
             do {
                 Expression expr = readExpression();
                 expr = expr.optimize(session);
@@ -4859,7 +5186,7 @@ public class Parser {
                 i++;
             } while (multiColumn && readIfMore(true));
             rows.add(row);
-        } while (readIf(","));
+        } while (readIf(COMMA));
         int columnCount = columns.size();
         int rowCount = rows.size();
         for (ArrayList<Expression> row : rows) {
@@ -4911,7 +5238,7 @@ public class Parser {
         } else {
             command.setAuthorization(session.getUser().getName());
         }
-        if (readIf("WITH")) {
+        if (readIf(WITH)) {
             command.setTableEngineParams(readTableEngineParams());
         }
         return command;
@@ -4921,7 +5248,7 @@ public class Parser {
         ArrayList<String> tableEngineParams = Utils.newSmallArrayList();
         do {
             tableEngineParams.add(readUniqueIdentifier());
-        } while (readIf(","));
+        } while (readIf(COMMA));
         return tableEngineParams;
     }
 
@@ -4933,7 +5260,7 @@ public class Parser {
         command.setSequenceName(sequenceName);
         while (true) {
             if (readIf("START")) {
-                readIf("WITH");
+                readIf(WITH);
                 command.setStartWith(readExpression());
             } else if (readIf("INCREMENT")) {
                 readIf("BY");
@@ -4968,7 +5295,7 @@ public class Parser {
                 command.setCacheSize(ValueExpression.get(ValueLong.get(1)));
             } else if (readIf("BELONGS_TO_TABLE")) {
                 command.setBelongsToTable(true);
-            } else if (readIf("ORDER")) {
+            } else if (readIf(ORDER)) {
                 // Oracle compatibility
             } else {
                 break;
@@ -4979,8 +5306,8 @@ public class Parser {
 
     private boolean readIfNotExists() {
         if (readIf("IF")) {
-            read("NOT");
-            read("EXISTS");
+            read(NOT);
+            read(EXISTS);
             return true;
         }
         return false;
@@ -5020,7 +5347,7 @@ public class Parser {
         command.setName(name);
         command.setSchema(getSchema());
         command.setIfNotExists(ifNotExists);
-        read("FOR");
+        read(FOR);
         command.setJavaClassMethod(readUniqueIdentifier());
         return command;
     }
@@ -5031,7 +5358,7 @@ public class Parser {
         command.setTypeName(readUniqueIdentifier());
         read("AS");
         Column col = parseColumnForTable("VALUE", true, false);
-        if (readIf("CHECK")) {
+        if (readIf(CHECK)) {
             Expression expr = readExpression();
             col.addCheckConstraint(session, expr);
         }
@@ -5067,17 +5394,17 @@ public class Parser {
                 typeMask |= Trigger.UPDATE;
             } else if (readIf("DELETE")) {
                 typeMask |= Trigger.DELETE;
-            } else if (readIf("SELECT")) {
+            } else if (readIf(SELECT)) {
                 typeMask |= Trigger.SELECT;
             } else if (readIf("ROLLBACK")) {
                 onRollback = true;
             } else {
                 throw getSyntaxError();
             }
-        } while (readIf(",")
+        } while (readIf(COMMA)
                 || (database.getMode().getEnum() == ModeEnum.PostgreSQL
                         && readIf("OR")));
-        read("ON");
+        read(ON);
         String tableName = readIdentifierWithSchema();
         checkSchema(schema);
         CreateTrigger command = new CreateTrigger(session, getSchema());
@@ -5089,7 +5416,7 @@ public class Parser {
         command.setOnRollback(onRollback);
         command.setTypeMask(typeMask);
         command.setTableName(tableName);
-        if (readIf("FOR")) {
+        if (readIf(FOR)) {
             read("EACH");
             read("ROW");
             command.setRowBased(true);
@@ -5156,7 +5483,7 @@ public class Parser {
         if (readIf("AS")) {
             command.setSource(readString());
         } else {
-            read("FOR");
+            read(FOR);
             command.setJavaClassMethod(readUniqueIdentifier());
         }
         return command;
@@ -5172,7 +5499,7 @@ public class Parser {
 
         do {
             viewsCreated.add(parseSingleCommonTableExpression(isTemporary));
-        } while (readIf(","));
+        } while (readIf(COMMA));
 
         Prepared p;
         // Reverse the order of constructed CTE views - as the destruction order
@@ -5181,7 +5508,11 @@ public class Parser {
         // used in setCteCleanups.
         Collections.reverse(viewsCreated);
 
-        if (isToken("SELECT")) {
+        int parentheses = 0;
+        while (readIf(OPEN_PAREN)) {
+            parentheses++;
+        }
+        if (isToken(SELECT)) {
             Query query = parseSelectUnion();
             query.setPrepareAlways(true);
             query.setNeverLazy(true);
@@ -5210,6 +5541,9 @@ public class Parser {
             throw DbException.get(ErrorCode.SYNTAX_ERROR_1,
                     WITH_STATEMENT_SUPPORTS_LIMITED_SUB_STATEMENTS);
         }
+        for (; parentheses > 0; parentheses--) {
+            read(CLOSE_PAREN);
+        }
 
         // Clean up temporary views starting with last to first (in case of
         // dependencies) - but only if they are not persistent.
@@ -5227,7 +5561,7 @@ public class Parser {
 
         // column names are now optional - they can be inferred from the named
         // query, if not supplied by user
-        if (readIf("(")) {
+        if (readIf(OPEN_PAREN)) {
             cols = parseColumnList();
             for (String c : cols) {
                 // we don't really know the type of the column, so STRING will
@@ -5274,12 +5608,12 @@ public class Parser {
         String[] querySQLOutput = {null};
         try {
             read("AS");
-            read("(");
+            read(OPEN_PAREN);
             Query withQuery = parseSelect();
             if (!isTemporary) {
                 withQuery.session = session;
             }
-            read(")");
+            read(CLOSE_PAREN);
             columnTemplateList = TableView.createQueryColumnTemplateList(cols, withQuery, querySQLOutput);
 
         } finally {
@@ -5354,7 +5688,7 @@ public class Parser {
         command.setOrReplace(orReplace);
         command.setForce(force);
         command.setTableExpression(isTableExpression);
-        if (readIf("(")) {
+        if (readIf(OPEN_PAREN)) {
             String[] cols = parseColumnList();
             command.setColumnNames(cols);
         }
@@ -5479,7 +5813,7 @@ public class Parser {
         command.setIfExists(ifExists);
         while (true) {
             if (readIf("RESTART")) {
-                read("WITH");
+                read(WITH);
                 command.setStartWith(readExpression());
             } else if (readIf("INCREMENT")) {
                 read("BY");
@@ -5548,9 +5882,9 @@ public class Parser {
             command.setType(CommandInterface.ALTER_USER_ADMIN);
             User user = database.getUser(userName);
             command.setUser(user);
-            if (readIf("TRUE")) {
+            if (readIf(TRUE)) {
                 command.setAdmin(true);
-            } else if (readIf("FALSE")) {
+            } else if (readIf(FALSE)) {
                 command.setAdmin(false);
             } else {
                 throw getSyntaxError();
@@ -5561,13 +5895,13 @@ public class Parser {
     }
 
     private void readIfEqualOrTo() {
-        if (!readIf("=")) {
+        if (!readIf(EQUAL)) {
             readIf("TO");
         }
     }
 
     private Prepared parseSet() {
-        if (readIf("@")) {
+        if (readIf(AT)) {
             Set command = new Set(session, SetTypes.VARIABLE);
             command.setString(readAliasIdentifier());
             readIfEqualOrTo();
@@ -5649,7 +5983,7 @@ public class Parser {
             Set command = new Set(session, SetTypes.ALLOW_LITERALS);
             if (readIf("NONE")) {
                 command.setInt(Constants.ALLOW_LITERALS_NONE);
-            } else if (readIf("ALL")) {
+            } else if (readIf(ALL)) {
                 command.setInt(Constants.ALLOW_LITERALS_ALL);
             } else if (readIf("NUMBERS")) {
                 command.setInt(Constants.ALLOW_LITERALS_NUMBERS);
@@ -5760,7 +6094,7 @@ public class Parser {
             ArrayList<String> list = Utils.newSmallArrayList();
             do {
                 list.add(readAliasIdentifier());
-            } while (readIf(","));
+            } while (readIf(COMMA));
             command.setStringArray(list.toArray(new String[0]));
             return command;
         } else if (readIf("JAVA_OBJECT_SERIALIZER")) {
@@ -5807,7 +6141,7 @@ public class Parser {
             throw DbException.getInvalidValueException("collation", name);
         }
         if (readIf("STRENGTH")) {
-            if (readIf("PRIMARY")) {
+            if (readIf(PRIMARY)) {
                 command.setInt(Collator.PRIMARY);
             } else if (readIf("SECONDARY")) {
                 command.setInt(Collator.SECONDARY);
@@ -5841,7 +6175,7 @@ public class Parser {
 
     private RunScriptCommand parseRunScript() {
         RunScriptCommand command = new RunScriptCommand(session);
-        read("FROM");
+        read(FROM);
         command.setFileNameExpr(readExpression());
         if (readIf("COMPRESSION")) {
             command.setCompressionAlgorithm(readUniqueIdentifier());
@@ -5905,13 +6239,13 @@ public class Parser {
             HashSet<String> schemaNames = new HashSet<>();
             do {
                 schemaNames.add(readUniqueIdentifier());
-            } while (readIf(","));
+            } while (readIf(COMMA));
             command.setSchemaNames(schemaNames);
         } else if (readIf("TABLE")) {
             ArrayList<Table> tables = Utils.newSmallArrayList();
             do {
                 tables.add(readTableOrView());
-            } while (readIf(","));
+            } while (readIf(COMMA));
             command.setTables(tables);
         }
         return command;
@@ -6025,7 +6359,7 @@ public class Parser {
                     schema, type, value);
             command.setTableName(tableName);
             command.setIfTableExists(ifTableExists);
-            if (readIf("CHECK")) {
+            if (readIf(CHECK)) {
                 command.setCheckExisting(true);
             } else if (readIf("NOCHECK")) {
                 command.setCheckExisting(false);
@@ -6044,7 +6378,7 @@ public class Parser {
                 String newName = readColumnIdentifier();
                 command.setNewColumnName(newName);
                 return command;
-            } else if (readIf("CONSTRAINT")) {
+            } else if (readIf(CONSTRAINT)) {
                 String constraintName = readIdentifierWithSchema(schema.getName());
                 checkSchema(schema);
                 read("TO");
@@ -6067,7 +6401,7 @@ public class Parser {
                 return command;
             }
         } else if (readIf("DROP")) {
-            if (readIf("CONSTRAINT")) {
+            if (readIf(CONSTRAINT)) {
                 boolean ifExists = readIfExists(false);
                 String constraintName = readIdentifierWithSchema(schema.getName());
                 ifExists = readIfExists(ifExists);
@@ -6076,7 +6410,7 @@ public class Parser {
                         session, getSchema(), ifExists);
                 command.setConstraintName(constraintName);
                 return commandIfTableExists(schema, tableName, ifTableExists, command);
-            } else if (readIf("FOREIGN")) {
+            } else if (readIf(FOREIGN)) {
                 // MySQL compatibility
                 read("KEY");
                 String constraintName = readIdentifierWithSchema(schema.getName());
@@ -6100,7 +6434,7 @@ public class Parser {
                     command = dropCommand;
                 }
                 return commandIfTableExists(schema, tableName, ifTableExists, command);
-            } else if (readIf("PRIMARY")) {
+            } else if (readIf(PRIMARY)) {
                 read("KEY");
                 Table table = tableIfTableExists(schema, tableName, ifTableExists);
                 if (table == null) {
@@ -6116,7 +6450,7 @@ public class Parser {
                 ArrayList<Column> columnsToRemove = new ArrayList<>();
                 Table table = tableIfTableExists(schema, tableName, ifTableExists);
                 // For Oracle compatibility - open bracket required
-                boolean openingBracketDetected = readIf("(");
+                boolean openingBracketDetected = readIf(OPEN_PAREN);
                 do {
                     String columnName = readColumnIdentifier();
                     if (table != null) {
@@ -6125,10 +6459,10 @@ public class Parser {
                             columnsToRemove.add(column);
                         }
                     }
-                } while (readIf(","));
+                } while (readIf(COMMA));
                 if (openingBracketDetected) {
                     // For Oracle compatibility - close bracket
-                    read(")");
+                    read(CLOSE_PAREN);
                 }
                 if (table == null || columnsToRemove.isEmpty()) {
                     return new NoOperation(session);
@@ -6160,7 +6494,7 @@ public class Parser {
             // MySQL compatibility (optional)
             readIf("COLUMN");
             // Oracle specifies (but will not require) an opening parenthesis
-            boolean hasOpeningBracket = readIf("(");
+            boolean hasOpeningBracket = readIf(OPEN_PAREN);
             String columnName = readColumnIdentifier();
             AlterTableAlterColumn command;
             NullConstraintType nullConstraint = parseNotNullConstraint();
@@ -6186,7 +6520,7 @@ public class Parser {
                         "Internal Error - unhandled case: " + nullConstraint.name());
             }
             if(hasOpeningBracket) {
-                read(")");
+                read(CLOSE_PAREN);
             }
             return command;
         } else if (readIf("ALTER")) {
@@ -6215,7 +6549,7 @@ public class Parser {
                     command.setDefaultExpression(null);
                     return command;
                 }
-                if (readIf("ON")) {
+                if (readIf(ON)) {
                     read("UPDATE");
                     AlterTableAlterColumn command = new AlterTableAlterColumn(session, schema);
                     command.setTableName(tableName);
@@ -6225,8 +6559,8 @@ public class Parser {
                     command.setDefaultExpression(null);
                     return command;
                 }
-                read("NOT");
-                read("NULL");
+                read(NOT);
+                read(NULL);
                 AlterTableAlterColumn command = new AlterTableAlterColumn(
                         session, schema);
                 command.setTableName(tableName);
@@ -6263,7 +6597,7 @@ public class Parser {
                         Expression defaultExpression = readExpression();
                         command.setType(CommandInterface.ALTER_TABLE_ALTER_COLUMN_DEFAULT);
                         command.setDefaultExpression(defaultExpression);
-                    } else if (readIf("ON")) {
+                    } else if (readIf(ON)) {
                         read("UPDATE");
                         Expression onUpdateExpression = readExpression();
                         command.setType(CommandInterface.ALTER_TABLE_ALTER_COLUMN_ON_UPDATE);
@@ -6282,7 +6616,7 @@ public class Parser {
                 }
                 return command;
             } else if (readIf("RESTART")) {
-                readIf("WITH");
+                readIf(WITH);
                 Expression start = readExpression();
                 AlterSequence command = new AlterSequence(session, schema);
                 command.setColumn(column);
@@ -6349,7 +6683,7 @@ public class Parser {
         command.setType(CommandInterface.ALTER_TABLE_ADD_COLUMN);
         command.setTableName(tableName);
         command.setIfTableExists(ifTableExists);
-        if (readIf("(")) {
+        if (readIf(OPEN_PAREN)) {
             command.setIfNotExists(false);
             do {
                 parseTableColumnDefinition(command, schema, tableName);
@@ -6379,7 +6713,7 @@ public class Parser {
             return ConstraintActionType.RESTRICT;
         }
         read("SET");
-        if (readIf("NULL")) {
+        if (readIf(NULL)) {
             return ConstraintActionType.SET_NULL;
         }
         read("DEFAULT");
@@ -6402,14 +6736,14 @@ public class Parser {
         boolean ifNotExists = false;
         boolean allowIndexDefinition = database.getMode().indexDefinitionInCreateTable;
         boolean allowAffinityKey = database.getMode().allowAffinityKey;
-        if (readIf("CONSTRAINT")) {
+        if (readIf(CONSTRAINT)) {
             ifNotExists = readIfNotExists();
             constraintName = readIdentifierWithSchema(schema.getName());
             checkSchema(schema);
             comment = readCommentIf();
             allowIndexDefinition = true;
         }
-        if (readIf("PRIMARY")) {
+        if (readIf(PRIMARY)) {
             read("KEY");
             AlterTableAddConstraint command = new AlterTableAddConstraint(
                     session, schema, ifNotExists);
@@ -6421,7 +6755,7 @@ public class Parser {
             if (readIf("HASH")) {
                 command.setPrimaryKeyHash(true);
             }
-            read("(");
+            read(OPEN_PAREN);
             command.setIndexColumns(parseIndexColumnList());
             if (readIf("INDEX")) {
                 String indexName = readIdentifierWithSchema();
@@ -6443,9 +6777,9 @@ public class Parser {
             command.setComment(comment);
             command.setTableName(tableName);
             command.setIfTableExists(ifTableExists);
-            if (!readIf("(")) {
+            if (!readIf(OPEN_PAREN)) {
                 command.setIndexName(readUniqueIdentifier());
-                read("(");
+                read(OPEN_PAREN);
             }
             command.setIndexColumns(parseIndexColumnList());
             // MySQL compatibility
@@ -6455,24 +6789,24 @@ public class Parser {
             return command;
         } else if (allowAffinityKey && readIfAffinity()) {
             read("KEY");
-            read("(");
+            read(OPEN_PAREN);
             CreateIndex command = createAffinityIndex(schema, tableName, parseIndexColumnList());
             command.setIfTableExists(ifTableExists);
             return command;
         }
         AlterTableAddConstraint command;
-        if (readIf("CHECK")) {
+        if (readIf(CHECK)) {
             command = new AlterTableAddConstraint(session, schema, ifNotExists);
             command.setType(CommandInterface.ALTER_TABLE_ADD_CONSTRAINT_CHECK);
             command.setCheckExpression(readExpression());
-        } else if (readIf("UNIQUE")) {
+        } else if (readIf(UNIQUE)) {
             readIf("KEY");
             readIf("INDEX");
             command = new AlterTableAddConstraint(session, schema, ifNotExists);
             command.setType(CommandInterface.ALTER_TABLE_ADD_CONSTRAINT_UNIQUE);
-            if (!readIf("(")) {
+            if (!readIf(OPEN_PAREN)) {
                 constraintName = readUniqueIdentifier();
-                read("(");
+                read(OPEN_PAREN);
             }
             command.setIndexColumns(parseIndexColumnList());
             if (readIf("INDEX")) {
@@ -6483,11 +6817,11 @@ public class Parser {
             if (readIf("USING")) {
                 read("BTREE");
             }
-        } else if (readIf("FOREIGN")) {
+        } else if (readIf(FOREIGN)) {
             command = new AlterTableAddConstraint(session, schema, ifNotExists);
             command.setType(CommandInterface.ALTER_TABLE_ADD_CONSTRAINT_REFERENTIAL);
             read("KEY");
-            read("(");
+            read(OPEN_PAREN);
             command.setIndexColumns(parseIndexColumnList());
             if (readIf("INDEX")) {
                 String indexName = readIdentifierWithSchema();
@@ -6504,7 +6838,7 @@ public class Parser {
         if (readIf("NOCHECK")) {
             command.setCheckExisting(false);
         } else {
-            readIf("CHECK");
+            readIf(CHECK);
             command.setCheckExisting(true);
         }
         command.setTableName(tableName);
@@ -6516,13 +6850,13 @@ public class Parser {
 
     private void parseReferences(AlterTableAddConstraint command,
             Schema schema, String tableName) {
-        if (readIf("(")) {
+        if (readIf(OPEN_PAREN)) {
             command.setRefTableName(schema, tableName);
             command.setRefIndexColumns(parseIndexColumnList());
         } else {
             String refTableName = readIdentifierWithSchema(schema.getName());
             command.setRefTableName(getSchema(), refTableName);
-            if (readIf("(")) {
+            if (readIf(OPEN_PAREN)) {
                 command.setRefIndexColumns(parseIndexColumnList());
             }
         }
@@ -6530,7 +6864,7 @@ public class Parser {
             String indexName = readIdentifierWithSchema();
             command.setRefIndex(getSchema().findIndex(session, indexName));
         }
-        while (readIf("ON")) {
+        while (readIf(ON)) {
             if (readIf("DELETE")) {
                 command.setDeleteAction(parseAction());
             } else {
@@ -6538,7 +6872,7 @@ public class Parser {
                 command.setUpdateAction(parseAction());
             }
         }
-        if (readIf("NOT")) {
+        if (readIf(NOT)) {
             read("DEFERRABLE");
         } else {
             readIf("DEFERRABLE");
@@ -6557,22 +6891,22 @@ public class Parser {
         command.setIfNotExists(ifNotExists);
         command.setTableName(tableName);
         command.setComment(readCommentIf());
-        read("(");
+        read(OPEN_PAREN);
         command.setDriver(readString());
-        read(",");
+        read(COMMA);
         command.setUrl(readString());
-        read(",");
+        read(COMMA);
         command.setUser(readString());
-        read(",");
+        read(COMMA);
         command.setPassword(readString());
-        read(",");
+        read(COMMA);
         String originalTable = readString();
-        if (readIf(",")) {
+        if (readIf(COMMA)) {
             command.setOriginalSchema(originalTable);
             originalTable = readString();
         }
         command.setOriginalTable(originalTable);
-        read(")");
+        read(CLOSE_PAREN);
         if (readIf("EMIT")) {
             read("UPDATES");
             command.setEmitUpdates(true);
@@ -6600,8 +6934,8 @@ public class Parser {
         command.setIfNotExists(ifNotExists);
         command.setTableName(tableName);
         command.setComment(readCommentIf());
-        if (readIf("(")) {
-            if (!readIf(")")) {
+        if (readIf(OPEN_PAREN)) {
+            if (!readIf(CLOSE_PAREN)) {
                 do {
                     parseTableColumnDefinition(command, schema, tableName);
                 } while (readIfMore(false));
@@ -6609,13 +6943,13 @@ public class Parser {
         }
         // Allows "COMMENT='comment'" in DDL statements (MySQL syntax)
         if (readIf("COMMENT")) {
-            if (readIf("=")) {
+            if (readIf(EQUAL)) {
                 // read the complete string comment, but nothing with it for now
                 readString();
             }
         }
         if (readIf("ENGINE")) {
-            if (readIf("=")) {
+            if (readIf(EQUAL)) {
                 // map MySQL engine types onto H2 behavior
                 String tableEngine = readUniqueIdentifier();
                 if ("InnoDb".equalsIgnoreCase(tableEngine)) {
@@ -6627,12 +6961,12 @@ public class Parser {
                 command.setTableEngine(readUniqueIdentifier());
             }
         }
-        if (readIf("WITH")) {
+        if (readIf(WITH)) {
             command.setTableEngineParams(readTableEngineParams());
         }
         // MySQL compatibility
         if (readIf("AUTO_INCREMENT")) {
-            read("=");
+            read(EQUAL);
             if (currentTokenType != VALUE ||
                     currentValue.getType() != Value.INT) {
                 throw DbException.getSyntaxError(sqlCommand, parseIndex,
@@ -6642,13 +6976,13 @@ public class Parser {
         }
         readIf("DEFAULT");
         if (readIf("CHARSET")) {
-            read("=");
+            read(EQUAL);
             if (!readIf("UTF8")) {
                 read("UTF8MB4");
             }
         }
         if (temp) {
-            if (readIf("ON")) {
+            if (readIf(ON)) {
                 read("COMMIT");
                 if (readIf("DROP")) {
                     command.setOnCommitDrop();
@@ -6656,7 +6990,7 @@ public class Parser {
                     read("ROWS");
                     command.setOnCommitTruncate();
                 }
-            } else if (readIf("NOT")) {
+            } else if (readIf(NOT)) {
                 if (readIf("PERSISTENT")) {
                     command.setPersistData(false);
                 } else {
@@ -6666,7 +7000,7 @@ public class Parser {
             if (readIf("TRANSACTIONAL")) {
                 command.setTransactional(true);
             }
-        } else if (!persistIndexes && readIf("NOT")) {
+        } else if (!persistIndexes && readIf(NOT)) {
             read("PERSISTENT");
             command.setPersistData(false);
         }
@@ -6678,14 +7012,14 @@ public class Parser {
                 command.setSortedInsertMode(true);
             }
             command.setQuery(parseSelect());
-            if (readIf("WITH")) {
+            if (readIf(WITH)) {
                 command.setWithNoData(readIf("NO"));
                 read("DATA");
             }
         }
         // for MySQL compatibility
         if (readIf("ROW_FORMAT")) {
-            if (readIf("=")) {
+            if (readIf(EQUAL)) {
                 readColumnIdentifier();
             }
         }
@@ -6713,13 +7047,13 @@ public class Parser {
             }
             command.addColumn(column);
             String constraintName = null;
-            if (readIf("CONSTRAINT")) {
+            if (readIf(CONSTRAINT)) {
                 constraintName = readColumnIdentifier();
             }
             // For compatibility with Apache Ignite.
             boolean allowAffinityKey = database.getMode().allowAffinityKey;
             boolean affinity = allowAffinityKey && readIfAffinity();
-            if (readIf("PRIMARY")) {
+            if (readIf(PRIMARY)) {
                 read("KEY");
                 boolean hash = readIf("HASH");
                 IndexColumn[] cols = { new IndexColumn() };
@@ -6745,7 +7079,7 @@ public class Parser {
                 cols[0].columnName = column.getName();
                 CreateIndex idx = createAffinityIndex(schema, tableName, cols);
                 command.addConstraintCommand(idx);
-            } else if (readIf("UNIQUE")) {
+            } else if (readIf(UNIQUE)) {
                 AlterTableAddConstraint unique = new AlterTableAddConstraint(
                         session, schema, false);
                 unique.setConstraintName(constraintName);
@@ -6759,7 +7093,7 @@ public class Parser {
             if (NullConstraintType.NULL_IS_NOT_ALLOWED == parseNotNullConstraint()) {
                 column.setNullable(false);
             }
-            if (readIf("CHECK")) {
+            if (readIf(CHECK)) {
                 Expression expr = readExpression();
                 column.addCheckConstraint(session, expr);
             }
@@ -6787,12 +7121,12 @@ public class Parser {
 
     private NullConstraintType parseNotNullConstraint() {
         NullConstraintType nullConstraint = NullConstraintType.NO_NULL_CONSTRAINT_FOUND;
-        if (isToken("NOT") || isToken("NULL")) {
-            if (readIf("NOT")) {
-                read("NULL");
+        if (isToken(NOT) || isToken(NULL)) {
+            if (readIf(NOT)) {
+                read(NULL);
                 nullConstraint = NullConstraintType.NULL_IS_NOT_ALLOWED;
             } else {
-                read("NULL");
+                read(NULL);
                 nullConstraint = NullConstraintType.NULL_IS_ALLOWED;
             }
             if (database.getMode().getEnum() == ModeEnum.Oracle) {
@@ -6821,7 +7155,7 @@ public class Parser {
         boolean ifNotExists = readIfNotExists();
         String name = readIdentifierWithSchema();
         Schema synonymSchema = getSchema();
-        read("FOR");
+        read(FOR);
         String tableName = readIdentifierWithSchema();
 
         Schema targetSchema = getSchema();
