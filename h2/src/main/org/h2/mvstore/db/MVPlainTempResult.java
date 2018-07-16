@@ -5,6 +5,8 @@
  */
 package org.h2.mvstore.db;
 
+import java.util.Arrays;
+
 import org.h2.engine.Database;
 import org.h2.expression.Expression;
 import org.h2.message.DbException;
@@ -23,9 +25,9 @@ import org.h2.value.ValueArray;
 class MVPlainTempResult extends MVTempResult {
 
     /**
-     * The type of the values in the main map and keys in the index.
+     * The type of the distinct values.
      */
-    private final ValueDataType valueType;
+    private final ValueDataType distinctType;
 
     /**
      * Map with identities of rows as keys rows as values.
@@ -58,7 +60,7 @@ class MVPlainTempResult extends MVTempResult {
      */
     private MVPlainTempResult(MVPlainTempResult parent) {
         super(parent);
-        this.valueType = null;
+        this.distinctType = null;
         this.map = parent.map;
     }
 
@@ -66,15 +68,22 @@ class MVPlainTempResult extends MVTempResult {
      * Creates a new plain temporary result.
      *
      * @param database
-     *                        database
+     *            database
      * @param expressions
-     *                        column expressions
+     *            column expressions
+     * @param visibleColumnCount
+     *            count of visible columns
      */
-    MVPlainTempResult(Database database, Expression[] expressions) {
-        super(database);
+    MVPlainTempResult(Database database, Expression[] expressions, int visibleColumnCount) {
+        super(database, expressions.length, visibleColumnCount);
         DataType keyType = LongDataType.INSTANCE;
         valueType = new ValueDataType(database.getCompareMode(), database.getMode(),
                                         database, new int[expressions.length]);
+        if (columnCount == visibleColumnCount) {
+            distinctType = valueType;
+        } else {
+            distinctType = new ValueDataType(database.getCompareMode(), database, new int[visibleColumnCount]);
+        }
         Builder<Long, ValueArray> builder = new MVMap.Builder<Long, ValueArray>().keyType(keyType)
                 .valueType(valueType);
         map = store.openMap("tmp", builder);
@@ -100,12 +109,16 @@ class MVPlainTempResult extends MVTempResult {
     }
 
     private void createIndex() {
-        Builder<ValueArray, Boolean> builder = new MVMap.Builder<ValueArray, Boolean>().keyType(valueType);
+        Builder<ValueArray, Boolean> builder = new MVMap.Builder<ValueArray, Boolean>().keyType(distinctType);
         index = store.openMap("idx", builder);
         Cursor<Long, ValueArray> c = map.cursor(null);
         while (c.hasNext()) {
             c.next();
-            index.putIfAbsent(c.getValue(), true);
+            ValueArray row = c.getValue();
+            if (columnCount != visibleColumnCount) {
+                row = ValueArray.get(Arrays.copyOf(row.getList(), visibleColumnCount));
+            }
+            index.putIfAbsent(row, true);
         }
     }
 
