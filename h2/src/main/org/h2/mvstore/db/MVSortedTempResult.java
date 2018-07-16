@@ -170,7 +170,7 @@ class MVSortedTempResult extends MVTempResult {
         if (length == visibleColumnCount) {
             distinctType = null;
         } else {
-            distinctType = new ValueDataType(database.getCompareMode(), database, new int[visibleColumnCount]);
+            distinctType = new ValueDataType(database.getCompareMode(), database.getMode(), database, new int[visibleColumnCount]);
             if (distinct) {
                 createIndex(false);
             }

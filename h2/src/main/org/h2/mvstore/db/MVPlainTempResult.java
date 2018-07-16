@@ -30,6 +30,11 @@ class MVPlainTempResult extends MVTempResult {
     private final ValueDataType distinctType;
 
     /**
+     * The type of the values in the main map and keys in the index.
+     */
+    private final ValueDataType valueType;
+
+    /**
      * Map with identities of rows as keys rows as values.
      */
     private final MVMap<Long, ValueArray> map;
@@ -61,6 +66,7 @@ class MVPlainTempResult extends MVTempResult {
     private MVPlainTempResult(MVPlainTempResult parent) {
         super(parent);
         this.distinctType = null;
+        this.valueType = null;
         this.map = parent.map;
     }
 
@@ -82,7 +88,7 @@ class MVPlainTempResult extends MVTempResult {
         if (columnCount == visibleColumnCount) {
             distinctType = valueType;
         } else {
-            distinctType = new ValueDataType(database.getCompareMode(), database, new int[visibleColumnCount]);
+            distinctType = new ValueDataType(database.getCompareMode(), database.getMode(), database, new int[visibleColumnCount]);
         }
         Builder<Long, ValueArray> builder = new MVMap.Builder<Long, ValueArray>().keyType(keyType)
                 .valueType(valueType);
