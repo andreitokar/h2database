@@ -3,14 +3,17 @@
 # Initial Developer: H2 Group
 "SECTION","TOPIC","SYNTAX","TEXT","EXAMPLE"
 "Commands (DML)","SELECT","
-SELECT [ TOP term ] [ DISTINCT | ALL ] selectExpression [,...]
+SELECT [ TOP term [ WITH TIES ] ]
+[ DISTINCT [ ON ( expression [,...] ) ] | ALL ]
+selectExpression [,...]
 FROM tableExpression [,...] [ WHERE expression ]
 [ GROUP BY expression [,...] ] [ HAVING expression ]
 [ { UNION [ ALL ] | MINUS | EXCEPT | INTERSECT } select ]
 [ ORDER BY order [,...] ]
 [ { LIMIT expression [ OFFSET expression ] [ SAMPLE_SIZE rowCountInt ] }
     | { [ OFFSET expression { ROW | ROWS } ]
-    [ { FETCH { FIRST | NEXT } expression { ROW | ROWS } ONLY } ] } ]
+    [ FETCH { FIRST | NEXT } expression { ROW | ROWS }
+        { ONLY | WITH TIES } ] } ]
 [ FOR UPDATE ]
 ","
 Selects data from a table or multiple tables.
@@ -42,6 +45,8 @@ SELECT * FROM TEST LIMIT 1000;
 SELECT * FROM (SELECT ID, COUNT(*) FROM TEST
     GROUP BY ID UNION SELECT NULL, COUNT(*) FROM TEST)
     ORDER BY 1 NULLS LAST;
+SELECT DISTINCT C1, C2 FROM TEST;
+SELECT DISTINCT ON(C1) C1, C2 FROM TEST ORDER BY C1;
 "
 
 "Commands (DML)","INSERT","
@@ -463,7 +468,7 @@ This command commits an open transaction in this connection.
 ALTER USER SA SET PASSWORD 'rioyxlgt'
 "
 
-"Commands (DDL)","ALTER VIEW","
+"Commands (DDL)","ALTER VIEW RECOMPILE","
 ALTER VIEW [ IF EXISTS ] viewName RECOMPILE
 ","
 Recompiles a view after the underlying tables have been changed or created.
@@ -471,6 +476,15 @@ This command is used for views created using CREATE FORCE VIEW.
 This command commits an open transaction in this connection.
 ","
 ALTER VIEW ADDRESS_VIEW RECOMPILE
+"
+
+"Commands (DDL)","ALTER VIEW RENAME","
+ALTER VIEW [ IF EXISTS ] viewName RENAME TO newName
+","
+Renames a view.
+This command commits an open transaction in this connection.
+","
+ALTER VIEW TEST RENAME TO MY_VIEW
 "
 
 "Commands (DDL)","ANALYZE","

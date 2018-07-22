@@ -2308,39 +2308,25 @@ public class Parser {
     private Query parseSelectUnion() {
         int start = lastParseIndex;
         Query command = parseSelectSub();
-        return parseSelectUnionExtension(command, start, false);
-    }
-
-    private Query parseSelectUnionExtension(Query command, int start,
-            boolean unionOnly) {
-        while (true) {
+        for (;;) {
+            SelectUnion.UnionType type;
             if (readIf(UNION)) {
-                SelectUnion union = new SelectUnion(session, command);
                 if (readIf(ALL)) {
-                    union.setUnionType(SelectUnion.UnionType.UNION_ALL);
+                    type = SelectUnion.UnionType.UNION_ALL;
                 } else {
                     readIf(DISTINCT);
-                    union.setUnionType(SelectUnion.UnionType.UNION);
+                    type = SelectUnion.UnionType.UNION;
                 }
-                union.setRight(parseSelectSub());
-                command = union;
-            } else if (readIf(MINUS) || readIf(EXCEPT)) {
-                SelectUnion union = new SelectUnion(session, command);
-                union.setUnionType(SelectUnion.UnionType.EXCEPT);
-                union.setRight(parseSelectSub());
-                command = union;
+            } else if (readIf(EXCEPT) || readIf(MINUS)) {
+                type = SelectUnion.UnionType.EXCEPT;
             } else if (readIf(INTERSECT)) {
-                SelectUnion union = new SelectUnion(session, command);
-                union.setUnionType(SelectUnion.UnionType.INTERSECT);
-                union.setRight(parseSelectSub());
-                command = union;
+                type = SelectUnion.UnionType.INTERSECT;
             } else {
                 break;
             }
+            command = new SelectUnion(session, type, command, parseSelectSub());
         }
-        if (!unionOnly) {
-            parseEndOfQuery(command);
-        }
+        parseEndOfQuery(command);
         setSQL(command, null, start);
         return command;
     }
@@ -2395,7 +2381,12 @@ public class Parser {
                     read("ROWS");
                 }
             }
-            read("ONLY");
+            if (readIf(WITH)) {
+                read("TIES");
+                command.setWithTies(true);
+            } else {
+                read("ONLY");
+            }
         }
         currentSelect = temp;
         if (readIf(LIMIT)) {
@@ -2541,6 +2532,10 @@ public class Parser {
             // SELECT TOP 1 (+?) AS A FROM TEST
             Expression limit = readTerm().optimize(session);
             command.setLimit(limit);
+            if (readIf(WITH)) {
+                read("TIES");
+                command.setWithTies(true);
+            }
         } else if (readIf(LIMIT)) {
             Expression offset = readTerm().optimize(session);
             command.setOffset(offset);
@@ -2549,7 +2544,16 @@ public class Parser {
         }
         currentSelect = temp;
         if (readIf(DISTINCT)) {
-            command.setDistinct(true);
+            if (readIf(ON)) {
+                read(OPEN_PAREN);
+                ArrayList<Expression> distinctExpressions = Utils.newSmallArrayList();
+                do {
+                    distinctExpressions.add(readExpression());
+                } while (readIfMore(true));
+                command.setDistinct(distinctExpressions.toArray(new Expression[0]));
+            } else {
+                command.setDistinct();
+            }
         } else {
             readIf(ALL);
         }
@@ -2763,9 +2767,7 @@ public class Parser {
                 } else {
                     if (isSelect()) {
                         Query query = parseSelect();
-                        // can not be lazy because we have to call
-                        // method ResultInterface.containsDistinct
-                        // which is not supported for lazy execution
+                        // TODO lazy result causes timeout in TestFuzzOptimizations
                         query.setNeverLazy(true);
                         r = new ConditionInSelect(database, r, query, false,
                                 Comparison.EQUAL);
@@ -5599,7 +5601,7 @@ public class Parser {
          * data and table if we don't have a working CTE already.
          */
         Table recursiveTable = TableView.createShadowTableForRecursiveTableExpression(
-        		isTemporary, session, cteViewName, schema, columns, database);
+                isTemporary, session, cteViewName, schema, columns, database);
         List<Column> columnTemplateList;
         String[] querySQLOutput = {null};
         try {
@@ -5765,19 +5767,31 @@ public class Parser {
         return command;
     }
 
-    private AlterView parseAlterView() {
-        AlterView command = new AlterView(session);
+    private DefineCommand parseAlterView() {
         boolean ifExists = readIfExists(false);
-        command.setIfExists(ifExists);
         String viewName = readIdentifierWithSchema();
-        Table tableView = getSchema().findTableOrView(session, viewName);
+        Schema schema = getSchema();
+        Table tableView = schema.findTableOrView(session, viewName);
         if (!(tableView instanceof TableView) && !ifExists) {
             throw DbException.get(ErrorCode.VIEW_NOT_FOUND_1, viewName);
         }
-        TableView view = (TableView) tableView;
-        command.setView(view);
-        read("RECOMPILE");
-        return command;
+        if (readIf("RENAME")) {
+            read("TO");
+            String newName = readIdentifierWithSchema(schema.getName());
+            checkSchema(schema);
+            AlterTableRename command = new AlterTableRename(session, getSchema());
+            command.setOldTableName(viewName);
+            command.setNewTableName(newName);
+            command.setIfTableExists(ifExists);
+            return command;
+        } else {
+            read("RECOMPILE");
+            TableView view = (TableView) tableView;
+            AlterView command = new AlterView(session);
+            command.setIfExists(ifExists);
+            command.setView(view);
+            return command;
+        }
     }
 
     private Prepared parseAlterSchema() {

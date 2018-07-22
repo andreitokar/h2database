@@ -123,13 +123,13 @@ public class TestScript extends TestDb {
                 "uuid", "varchar", "varchar-ignorecase" }) {
             testScript("datatypes/" + s + ".sql");
         }
-        for (String s : new String[] { "alterTableAdd", "alterTableDropColumn",
-                "createAlias", "createSynonym", "createView", "createTable", "createTrigger",
+        for (String s : new String[] { "alterTableAdd", "alterTableDropColumn", "alterTableRename",
+                "createAlias", "createSynonym", "createTable", "createTrigger", "createView",
                 "dropDomain", "dropIndex", "dropSchema", "truncateTable" }) {
             testScript("ddl/" + s + ".sql");
         }
         for (String s : new String[] { "error_reporting", "insertIgnore", "merge", "mergeUsing", "replace",
-                "script", "show", "with" }) {
+                "script", "select", "show", "with" }) {
             testScript("dml/" + s + ".sql");
         }
         for (String s : new String[] { "help" }) {
