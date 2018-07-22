@@ -921,6 +921,10 @@ public final class CacheLongKeyLIRS<V> {
                 if (maxQueue2Size >= 0) {
                     while (queue2Size > maxQueue2Size) {
                         e = queue2.queuePrev;
+                        WeakReference<V> reference = e.reference;
+                        if (reference != null && reference.get() != null) {
+                            break;  // stop trimming if entry holds a value
+                        }
                         int hash = getHash(e.key);
                         remove(e.key, hash);
                     }
