@@ -1850,8 +1850,9 @@ public class MVStore {
         int length = c.len * BLOCK_SIZE;
         buff.limit(length);
         ByteBuffer readBuff = fileStore.readFully(start, length);
+        int startPos = readBuff.position();
         Chunk.readChunkHeader(readBuff, start);
-        int chunkHeaderLen = readBuff.position();
+        int chunkHeaderLen = readBuff.position() - startPos;
         buff.position(chunkHeaderLen);
         buff.put(readBuff);
         long pos = allocateFileSpace(length, toTheEnd);

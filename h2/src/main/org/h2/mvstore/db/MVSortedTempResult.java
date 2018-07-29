@@ -172,7 +172,8 @@ class MVSortedTempResult extends MVTempResult {
         map = store.openMap("tmp", builder);
         if (distinct && length != visibleColumnCount || distinctIndexes != null) {
             int count = distinctIndexes != null ? distinctIndexes.length : visibleColumnCount;
-            ValueDataType distinctType = new ValueDataType(database.getCompareMode(), database, new int[count]);
+            ValueDataType distinctType = new ValueDataType(database.getCompareMode(), database.getMode(),
+                                                            database, new int[count]);
             Builder<ValueArray, Boolean> indexBuilder = new MVMap.Builder<ValueArray, Boolean>().keyType(distinctType);
             index = store.openMap("idx", indexBuilder);
         }
