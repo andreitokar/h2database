@@ -95,7 +95,7 @@ public class ValueDataType extends BasicDataType<Value> {
         this(database.getCompareMode(), database.getMode(), database, sortTypes);
     }
 
-    private ValueDataType(CompareMode compareMode, Mode mode, DataHandler handler,
+    public ValueDataType(CompareMode compareMode, Mode mode, DataHandler handler,
             int[] sortTypes) {
         this.compareMode = compareMode;
         this.mode = mode;

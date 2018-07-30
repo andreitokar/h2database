@@ -357,7 +357,7 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
             if (searchRow == null) {
                 if (current != null) {
                     SearchRow searchRow = mvTable.getTemplateRow();
-                    searchRow.setKey(key.getId());
+                    searchRow.setKey(current.getId());
                 }
             }
             return searchRow;

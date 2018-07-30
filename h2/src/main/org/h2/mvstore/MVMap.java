@@ -1212,51 +1212,45 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     private RootReference flushAppendBuffer(RootReference rootReference) {
         beforeWrite();
         int attempt = 0;
-        while(true) {
-            if (rootReference == null) {
-                rootReference = getRoot();
-            }
-            int keyCount = rootReference.getAppendCounter();
-            if (keyCount == 0) {
-                break;
-            }
+        int keyCount;
+        while((keyCount = rootReference.getAppendCounter()) > 0) {
             Page page = Page.create(this, keyCount,
                     createAndFillStorage(getExtendedKeyType(), keyCount, keysBuffer),
                     createAndFillStorage(getExtendedValueType(), keyCount, valuesBuffer),
                     null, keyCount, 0);
             rootReference = appendLeafPage(rootReference, page, ++attempt);
-            if (rootReference != null) {
-                break;
+            if (rootReference == null) {
+                rootReference = getRootInternal();
             }
         }
         assert rootReference.getAppendCounter() == 0;
         return rootReference;
     }
 
-    private RootReference appendLeafPage(RootReference rootReference, Page split, int attempt) {
+    private RootReference appendLeafPage(RootReference rootReference, Page page, int attempt) {
         CursorPos pos = rootReference.root.getAppendCursorPos(null);
-        assert split.map == this;
+        assert page.map == this;
         assert pos != null;
-        assert split.getKeyCount() > 0;
-        Object key = split.getKey(0);
+        assert page.getKeyCount() > 0;
+        Object key = page.getKey(0);
         assert pos.index < 0 : pos.index;
         int index = -pos.index - 1;
         assert index == pos.page.getKeyCount() : index + " != " + pos.page.getKeyCount();
         Page p = pos.page;
         pos = pos.parent;
         CursorPos tip = pos;
-        int unsavedMemory = 0;
+        int unsavedMemory = page.getMemory();
         while (true) {
             if (pos == null) {
                 if (p.getKeyCount() == 0) {
-                    p = split;
+                    p = page;
                 } else {
                     Object keys = getExtendedKeyType().createStorage(store.getKeysPerPage());
                     getExtendedKeyType().setValue(keys, 0, key);
                     Page.PageReference children[] = new Page.PageReference[store.getKeysPerPage() + 1];
                     children[0] = new Page.PageReference(p);
-                    children[1] = new Page.PageReference(split);
-                    p = Page.create(this, 1, keys, null, children, p.getTotalCount() + split.getTotalCount(), 0);
+                    children[1] = new Page.PageReference(page);
+                    p = Page.create(this, 1, keys, null, children, p.getTotalCount() + page.getTotalCount(), 0);
                 }
                 break;
             }
@@ -1265,7 +1259,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             index = pos.index;
             pos = pos.parent;
             p = p.copy();
-            p.setChild(index, split);
+            p.setChild(index, page);
             p.insertNode(index, key, c);
             int keyCount;
             if ((keyCount = p.getKeyCount()) <= store.getKeysPerPage() &&
@@ -1274,8 +1268,8 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             }
             int at = keyCount - 2;
             key = p.getKey(at);
-            split = p.split(at);
-            unsavedMemory += p.getMemory() + split.getMemory();
+            page = p.split(at);
+            unsavedMemory += p.getMemory() + page.getMemory();
         }
         unsavedMemory += p.getMemory();
         while (pos != null) {
@@ -1295,9 +1289,10 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             if (store.getFileStore() != null) {
                 store.registerUnsavedPage(unsavedMemory);
             }
+            assert updatedRootReference.getAppendCounter() == 0;
             return updatedRootReference;
         }
-        return rootReference;
+        return null;
     }
 
     /**

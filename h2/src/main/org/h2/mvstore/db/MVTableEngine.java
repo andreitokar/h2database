@@ -395,11 +395,11 @@ public class MVTableEngine implements TableEngine {
                     } else if (errorCode == DataUtils.ERROR_FILE_CORRUPT) {
                         // wrong encryption key - ok
                     }
-                    store.closeImmediately();
+                    mvStore.closeImmediately();
                     throw DbException.get(ErrorCode.IO_EXCEPTION_1, e, "Closing");
                 } finally {
                     transactionStore = null;
-                    store = null;
+                    mvStore = null;
                 }
             }
         }
@@ -432,12 +432,12 @@ public class MVTableEngine implements TableEngine {
      */
     private static class MVInDoubtTransaction implements InDoubtTransaction {
 
-        private final MVStore store;
+        private final MVStore mvStore;
         private final Transaction transaction;
         private int state = InDoubtTransaction.IN_DOUBT;
 
-        MVInDoubtTransaction(MVStore store, Transaction transaction) {
-            this.store = store;
+        MVInDoubtTransaction(MVStore mvStore, Transaction transaction) {
+            this.mvStore = mvStore;
             this.transaction = transaction;
         }
 
@@ -448,7 +448,7 @@ public class MVTableEngine implements TableEngine {
             } else {
                 transaction.rollback();
             }
-            store.commit();
+            mvStore.commit();
             this.state = state;
         }
 

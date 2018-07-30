@@ -276,7 +276,7 @@ public abstract class Command implements CommandInterface {
                         throw DbException.convert(e);
                     } catch (Throwable e) {
                         database.unlockMetaDebug(session);
-                        if (database.getMvStore() != null && database.getMvStore().isClosed()) {
+                        if (database.getStore() != null && database.getStore().isClosed()) {
                             database.shutdownImmediately();
                         }
                         throw DbException.convert(e);
@@ -305,7 +305,7 @@ public abstract class Command implements CommandInterface {
                 throw e;
             } finally {
                 if (!database.isClosing() &&
-                        (database.getMvStore() == null || !database.getMvStore().isClosed())) {
+                        (database.getStore() == null || !database.getStore().isClosed())) {
                     try {
                         if (callStop) {
                             stop();

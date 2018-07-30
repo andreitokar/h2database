@@ -171,7 +171,7 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
                                                 .singleWriter()
                                                 .keyType(keyType)
                                                 .valueType(valueType);
-        MVMap<SearchRow, Value> map = database.getMvStore().getStore()
+        MVMap<SearchRow, Value> map = database.getStore().getMvStore()
                 .openMap(mapName, builder);
         if (!keyType.equals(map.getKeyType())) {
             throw DbException.throwInternalError(
@@ -212,7 +212,7 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
             if (newKey != k.getKey()) {
                 if (map.get(k) != null) {
                     // committed
-                    throw getDuplicateKeyException(rowKey.toString());
+                    throw getDuplicateKeyException(k.toString());
                 }
                 throw DbException.get(ErrorCode.CONCURRENT_UPDATE_1, table.getName());
             }
@@ -402,7 +402,7 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
      */
     static final class MVStoreCursor implements Cursor {
 
-        private final Session session;
+        private final Session             session;
         private final Iterator<SearchRow> it;
         private final MVTable             mvTable;
         private       SearchRow           current;

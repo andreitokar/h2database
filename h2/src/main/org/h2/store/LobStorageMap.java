@@ -289,7 +289,7 @@ public class LobStorageMap implements LobStorageInterface {
     @Override
     public void removeAllForTable(int tableId) {
         init();
-        if (database.getMvStore().isClosed()) {
+        if (database.getStore().isClosed()) {
             return;
         }
         // this might not be very efficient -
