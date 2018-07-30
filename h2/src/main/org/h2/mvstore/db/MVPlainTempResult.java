@@ -72,14 +72,14 @@ class MVPlainTempResult extends MVTempResult {
         valueType = new ValueDataType(database.getCompareMode(), database.getMode(),
                                         database, new int[expressions.length]);
         Builder<Long, ValueArray> builder = new MVMap.Builder<Long, ValueArray>().keyType(keyType)
-                .valueType(valueType);
+                .valueType(valueType).singleWriter();
         map = store.openMap("tmp", builder);
     }
 
     @Override
     public int addRow(Value[] values) {
         assert parent == null;
-        map.put(counter++, ValueArray.get(values));
+        map.append(counter++, ValueArray.get(values));
         return ++rowCount;
     }
 

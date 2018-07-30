@@ -113,8 +113,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         this.singleWriter = singleWriter;
     }
 
-    protected MVMap<K,V> cloneIt() {
-        assert !isSingleWriter();
+    protected MVMap<K, V> cloneIt() {
         return new MVMap<>(this);
     }
 
@@ -194,7 +193,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @return the key
      */
     public final K getKey(long index) {
-        assert !isSingleWriter();
         if (index < 0 || index >= sizeAsLong()) {
             return null;
         }
@@ -233,7 +231,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @return the key list
      */
     public final List<K> keyList() {
-        assert !isSingleWriter();
         return new AbstractList<K>() {
 
             @Override
@@ -483,7 +480,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     @SuppressWarnings("unchecked")
     @Override
     public boolean remove(Object key, Object value) {
-        assert !isSingleWriter();
         EqualsDecisionMaker<V> decisionMaker = new EqualsDecisionMaker<>(valueType, (V)value);
         operate((K)key, null, decisionMaker);
         return decisionMaker.getDecision() != Decision.ABORT;
@@ -539,7 +535,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      */
     @Override
     public final V replace(K key, V value) {
-        assert !isSingleWriter();
         return put(key, value, DecisionMaker.IF_PRESENT);
     }
 
@@ -808,6 +803,12 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     }
 
     public final RootReference getRoot() {
+        RootReference rootReference = getRootInternal();
+        return singleWriter && rootReference.getAppendCounter() > 0 ?
+                flushAppendBuffer(rootReference) : rootReference;
+    }
+
+    private RootReference getRootInternal() {
         return root.get();
     }
 
@@ -1026,7 +1027,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @return the map
      */
     public final MVMap<K, V> openVersion(long version) {
-        assert !isSingleWriter();
         if (readOnly) {
             throw DataUtils.newUnsupportedOperationException(
                     "This map is read-only; need to call " +
@@ -1059,13 +1059,11 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @return the opened map
      */
     final MVMap<K, V> openReadOnly(long rootPos, long version) {
-        assert !isSingleWriter();
         Page root = readOrCreateRootPage(rootPos);
         return openReadOnly(root, version);
     }
 
     private MVMap<K, V> openReadOnly(Page root, long version) {
-        assert !isSingleWriter();
         MVMap<K, V> m = cloneIt();
         m.readOnly = true;
         m.setInitialRoot(root, version);
@@ -1148,7 +1146,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                 }
                 return rootReference;
             }
-            rootReference = flushAppendBuffer(rootReference);
             RootReference updatedRootReference = new RootReference(rootReference, writeVersion, ++attempt);
             if(root.compareAndSet(rootReference, updatedRootReference)) {
                 removeUnusedOldVersions(updatedRootReference);
@@ -1209,13 +1206,11 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     /**
      * If map was used in append mode, this method will ensure that append buffer
      * is flushed - emptied with all entries inserted into map as a new leaf.
+     * @param rootReference current RootReference
      * @return potentially updated RootReference
      */
-    public RootReference flushAppendBuffer() {
-        return flushAppendBuffer(null);
-    }
-
     private RootReference flushAppendBuffer(RootReference rootReference) {
+        beforeWrite();
         int attempt = 0;
         while(true) {
             if (rootReference == null) {
@@ -1302,7 +1297,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             }
             return updatedRootReference;
         }
-        return null;
+        return rootReference;
     }
 
     /**
@@ -1317,7 +1312,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         int attempt = 0;
         boolean success = false;
         while(!success) {
-            RootReference rootReference = getRoot();
+            RootReference rootReference = getRootInternal();
             int appendCounter = rootReference.getAppendCounter();
             if (appendCounter >= keysPerPage) {
                 rootReference = flushAppendBuffer(rootReference);

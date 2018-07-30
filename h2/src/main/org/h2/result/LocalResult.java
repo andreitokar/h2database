@@ -41,7 +41,9 @@ public class LocalResult implements ResultInterface, ResultTarget {
     private Value[] currentRow;
     private int offset;
     private int limit = -1;
+    private boolean fetchPercent;
     private boolean withTies;
+    private boolean limitsWereApplied;
     private ResultExternal external;
     private boolean distinct;
     private int[] distinctIndexes;
@@ -381,10 +383,20 @@ public class LocalResult implements ResultInterface, ResultTarget {
     }
 
     private void applyOffsetAndLimit() {
+        if (limitsWereApplied) {
+            return;
+        }
         int offset = Math.max(this.offset, 0);
         int limit = this.limit;
-        if (offset == 0 && limit < 0 || rowCount == 0) {
+        if (offset == 0 && limit < 0 && !fetchPercent || rowCount == 0) {
             return;
+        }
+        if (fetchPercent) {
+            if (limit < 0 || limit > 100) {
+                throw DbException.getInvalidValueException("FETCH PERCENT", limit);
+            }
+            // Oracle rounds percent up, do the same for now
+            limit = (int) (((long) limit * rowCount + 99) / 100);
         }
         boolean clearAll = offset >= rowCount || limit == 0;
         if (!clearAll) {
@@ -411,8 +423,10 @@ public class LocalResult implements ResultInterface, ResultTarget {
                     rowCount++;
                 }
             }
-            // avoid copying the whole array for each row
-            rows = new ArrayList<>(rows.subList(offset, to));
+            if (offset != 0 || to != rows.size()) {
+                // avoid copying the whole array for each row
+                rows = new ArrayList<>(rows.subList(offset, to));
+            }
         } else {
             if (clearAll) {
                 external.close();
@@ -460,6 +474,11 @@ public class LocalResult implements ResultInterface, ResultTarget {
     }
 
     @Override
+    public void limitsWereApplied() {
+        this.limitsWereApplied = true;
+    }
+
+    @Override
     public boolean hasNext() {
         return !closed && rowId < rowCount - 1;
     }
@@ -471,6 +490,13 @@ public class LocalResult implements ResultInterface, ResultTarget {
      */
     public void setLimit(int limit) {
         this.limit = limit;
+    }
+
+    /**
+     * @param fetchPercent whether limit expression specifies percentage of rows
+     */
+    public void setFetchPercent(boolean fetchPercent) {
+        this.fetchPercent = fetchPercent;
     }
 
     /**

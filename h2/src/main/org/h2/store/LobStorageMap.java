@@ -72,13 +72,13 @@ public class LobStorageMap implements LobStorageInterface {
             return;
         }
         init = true;
-        Store s = database.getMvStore();
+        Store s = database.getStore();
         MVStore mvStore;
         if (s == null) {
             // in-memory database
             mvStore = MVStore.open(null);
         } else {
-            mvStore = s.getStore();
+            mvStore = s.getMvStore();
         }
         lobMap = mvStore.openMap("lobMap");
         refMap = mvStore.openMap("lobRef");

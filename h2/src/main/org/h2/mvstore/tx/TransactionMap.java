@@ -88,7 +88,7 @@ public class TransactionMap<K, V> {
             for (int i = opentransactions.nextSetBit(0); i >= 0; i = opentransactions.nextSetBit(i+1)) {
                 MVMap<Long, Record> undoLog = store.undoLogs[i];
                 if (undoLog != null) {
-                    MVMap.RootReference rootReference = undoLog.flushAppendBuffer();
+                    MVMap.RootReference rootReference = undoLog.getRoot();
                     undoLogRootReferences[i] = rootReference;
                     undoLogSize += rootReference.root.getTotalCount() + rootReference.getAppendCounter();
                 }
@@ -389,32 +389,6 @@ public class TransactionMap<K, V> {
     }
 
     /**
-     * Get the versioned value from the raw versioned value (possibly uncommitted),
-     * as visible by the current transaction.
-     *
-     * @param data the value stored in the main map
-     * @param committingTransactions set of transactions being committed
-     *                               at the time when snapshot was taken
-     * @return the value
-     */
-    VersionedValue getValue(VersionedValue data, BitSet committingTransactions) {
-        long id;
-        int tx;
-        // If value doesn't exist or it was deleted by a committed transaction,
-        // or if value is a committed one, just return it.
-        if (data != null &&
-                (id = data.getOperationId()) != 0 &&
-                ((tx = TransactionStore.getTransactionId(id)) != transaction.transactionId &&
-                    !committingTransactions.get(tx))) {
-            // current value comes from another uncommitted transaction
-            // take committed value instead
-            Object committedValue = data.getCommittedValue();
-            data = committedValue == null ? null : VersionedValue.getInstance(committedValue);
-        }
-        return data;
-    }
-
-    /**
      * Check whether this map is closed.
      *
      * @return true if closed
@@ -636,15 +610,16 @@ public class TransactionMap<K, V> {
     }
 
     private abstract static class TMIterator<K,X> implements Iterator<X> {
-        private final TransactionMap<K,?> transactionMap;
+        private final int transactionId;
         private final BitSet committingTransactions;
         private final Cursor<K,VersionedValue> cursor;
         private final boolean includeAllUncommitted;
         private X current;
 
         protected TMIterator(TransactionMap<K,?> transactionMap, K from, K to, boolean includeAllUncommitted) {
-            this.transactionMap = transactionMap;
-            TransactionStore store = transactionMap.transaction.store;
+            Transaction transaction = transactionMap.transaction;
+            this.transactionId = transaction.transactionId;
+            TransactionStore store = transaction.store;
             MVMap<K, VersionedValue> map = transactionMap.map;
             // The purpose of the following loop is to get a coherent picture
             // of a state of two independent volatile / atomic variables,
@@ -674,10 +649,23 @@ public class TransactionMap<K, V> {
                 K key = cursor.next();
                 VersionedValue data = cursor.getValue();
                 if (!includeAllUncommitted) {
-                    data = transactionMap.getValue(data, committingTransactions);
+                    // If value doesn't exist or it was deleted by a committed transaction,
+                    // or if value is a committed one, just return it.
+                    if (data != null) {
+                        long id = data.getOperationId();
+                        if (id != 0) {
+                            int tx = TransactionStore.getTransactionId(id);
+                            if (tx != transactionId && !committingTransactions.get(tx)) {
+                                // current value comes from another uncommitted transaction
+                                // take committed value instead
+                                Object committedValue = data.getCommittedValue();
+                                data = committedValue == null ? null : VersionedValue.getInstance(committedValue);
+                            }
+                        }
+                    }
                 }
                 if (data != null && (data.value != null ||
-                        includeAllUncommitted && transactionMap.transaction.transactionId !=
+                        includeAllUncommitted && transactionId !=
                                                     TransactionStore.getTransactionId(data.getOperationId()))) {
                     current = registerCurrent(key, data);
                     return;

@@ -96,15 +96,15 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
             checkIndexColumnTypes(columns);
         }
         String mapName = "index." + getId();
-        ValueDataType vt = new ValueDataType(db.getCompareMode(), db.getMode(), null, null);
-        DataType valueType = new VersionedValue.Type(vt);
+        ValueDataType vt = new ValueDataType(db, null);
+        VersionedValue.Type valueType = new VersionedValue.Type(vt);
         MVRTreeMap.Builder<VersionedValue> mapBuilder =
                 new MVRTreeMap.Builder<VersionedValue>().
                 valueType(valueType);
-        spatialMap = db.getMvStore().getStore().openMap(mapName, mapBuilder);
+        spatialMap = db.getStore().getMvStore().openMap(mapName, mapBuilder);
         Transaction t = mvTable.getTransactionBegin();
         dataMap = t.openMap(spatialMap);
-        dataMap.map.setVolatile(!indexType.isPersistent());
+        dataMap.map.setVolatile(!table.isPersistData() || !indexType.isPersistent());
         t.commit();
     }
 
@@ -204,7 +204,7 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
         Iterator<SpatialKey> cursor = spatialMap.keyIterator(null);
         TransactionMap<SpatialKey, Value> map = getMap(session);
         Iterator<SpatialKey> it = map.wrapIterator(cursor, false);
-        return new MVStoreCursor(session, it);
+        return new MVStoreCursor(session, it, mvTable);
     }
 
     @Override
@@ -218,7 +218,7 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
                 spatialMap.findIntersectingKeys(getKey(intersection));
         TransactionMap<SpatialKey, Value> map = getMap(session);
         Iterator<SpatialKey> it = map.wrapIterator(cursor, false);
-        return new MVStoreCursor(session, it);
+        return new MVStoreCursor(session, it, mvTable);
     }
 
     private SpatialKey getKey(SearchRow row) {
@@ -231,18 +231,6 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
         return new SpatialKey(row.getKey(),
                 (float) env.getMinX(), (float) env.getMaxX(),
                 (float) env.getMinY(), (float) env.getMaxY());
-    }
-
-    /**
-     * Get the row with the given index key.
-     *
-     * @param key the index key
-     * @return the row
-     */
-    SearchRow getRow(SpatialKey key) {
-        SearchRow searchRow = mvTable.getTemplateRow();
-        searchRow.setKey(key.getId());
-        return searchRow;
     }
 
     @Override
@@ -327,7 +315,7 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
      * @param session the session
      * @return the map
      */
-    TransactionMap<SpatialKey, Value> getMap(Session session) {
+    private TransactionMap<SpatialKey, Value> getMap(Session session) {
         if (session == null) {
             return dataMap;
         }
@@ -338,17 +326,19 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
     /**
      * A cursor.
      */
-    class MVStoreCursor implements Cursor {
+    private static class MVStoreCursor implements Cursor {
 
         private final Session session;
         private final Iterator<SpatialKey> it;
+        private final MVTable mvTable;
         private SpatialKey current;
         private SearchRow searchRow;
         private Row row;
 
-        public MVStoreCursor(Session session, Iterator<SpatialKey> it) {
+        public MVStoreCursor(Session session, Iterator<SpatialKey> it, MVTable mvTable) {
             this.session = session;
             this.it = it;
+            this.mvTable = mvTable;
         }
 
         @Override
@@ -366,7 +356,8 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
         public SearchRow getSearchRow() {
             if (searchRow == null) {
                 if (current != null) {
-                    searchRow = getRow(current);
+                    SearchRow searchRow = mvTable.getTemplateRow();
+                    searchRow.setKey(key.getId());
                 }
             }
             return searchRow;

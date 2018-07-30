@@ -14,6 +14,8 @@ import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.Objects;
 import org.h2.api.ErrorCode;
+import org.h2.engine.Database;
+import org.h2.engine.Mode;
 import org.h2.bytecode.RowStorage;
 import org.h2.engine.Mode;
 import org.h2.message.DbException;
@@ -85,8 +87,16 @@ public class ValueDataType extends BasicDataType<Value> {
     private SpatialDataType spatialType;
     private RowFactory rowFactory;
 
-    public ValueDataType(CompareMode compareMode, Mode mode, DataHandler handler,
-                         int[] sortTypes) {
+    public ValueDataType() {
+        this(CompareMode.getInstance(null, 0), Mode.getRegular(), null, null);
+    }
+
+    public ValueDataType(Database database, int[] sortTypes) {
+        this(database.getCompareMode(), database.getMode(), database, sortTypes);
+    }
+
+    private ValueDataType(CompareMode compareMode, Mode mode, DataHandler handler,
+            int[] sortTypes) {
         this.compareMode = compareMode;
         this.mode = mode;
         this.handler = handler;
@@ -128,8 +138,14 @@ public class ValueDataType extends BasicDataType<Value> {
             int bl = bx.length;
             int len = Math.min(al, bl);
             for (int i = 0; i < len; i++) {
-                int sortType = /*sortTypes == null ? SortOrder.ASCENDING : */sortTypes[i];
-                int comp = compareValues(ax[i], bx[i], sortType);
+                int sortType = sortTypes[i];
+                Value one = ax[i];
+                Value two = bx[i];
+                if (one == null || two == null) {
+                    return compareValues(ax[len - 1], bx[len - 1], SortOrder.ASCENDING);
+                }
+
+                int comp = compareValues(one, two, sortType);
                 if (comp != 0) {
                     return comp;
                 }
@@ -162,10 +178,18 @@ public class ValueDataType extends BasicDataType<Value> {
         if (aNull || bNull) {
             return SortOrder.compareNull(aNull, sortType);
         }
+
         int t2 = Value.getHigherOrder(a.getType(), b.getType());
-        String[] enumerators = ValueEnum.getEnumeratorsForBinaryOperation(a, b);
-        int comp = a.convertTo(t2, -1, mode, null, enumerators)
-                .compareTypeSafe(b.convertTo(t2, -1, mode, null, enumerators), compareMode);
+        if (t2 == Value.ENUM) {
+            String[] enumerators = ValueEnum.getEnumeratorsForBinaryOperation(a, b);
+            a = a.convertToEnum(enumerators);
+            b = b.convertToEnum(enumerators);
+        } else {
+            a = a.convertTo(t2, -1, mode);
+            b = b.convertTo(t2, -1, mode);
+        }
+        int comp = a.compareTypeSafe(b, compareMode);
+
         if ((sortType & SortOrder.DESCENDING) != 0) {
             comp = -comp;
         }
@@ -734,4 +758,5 @@ public class ValueDataType extends BasicDataType<Value> {
         }
         return Arrays.equals(sortTypes, v.sortTypes);
     }
+
 }

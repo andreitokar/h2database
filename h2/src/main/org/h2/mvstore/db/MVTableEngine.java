@@ -47,7 +47,7 @@ public class MVTableEngine implements TableEngine {
      * @return the store
      */
     public static Store init(final Database db) {
-        Store store = db.getMvStore();
+        Store store = db.getStore();
         if (store != null) {
             return store;
         }
@@ -93,7 +93,7 @@ public class MVTableEngine implements TableEngine {
             builder.autoCommitDisabled().autoCommitBufferSize(1024);
         }
         store.open(db, builder, encrypted);
-        db.setMvStore(store);
+        db.setStore(store);
         return store;
     }
 
@@ -128,7 +128,7 @@ public class MVTableEngine implements TableEngine {
         /**
          * The store.
          */
-        private MVStore store;
+        private MVStore mvStore;
 
         /**
          * The transaction store.
@@ -153,17 +153,17 @@ public class MVTableEngine implements TableEngine {
         void open(Database db, MVStore.Builder builder, boolean encrypted) {
             this.encrypted = encrypted;
             try {
-                this.store = builder.open();
-                FileStore fs = store.getFileStore();
+                this.mvStore = builder.open();
+                FileStore fs = mvStore.getFileStore();
                 if (fs != null) {
                     this.fileName = fs.getFileName();
                 }
                 if (!db.getSettings().reuseSpace) {
-                    store.setReuseSpace(false);
+                    mvStore.setReuseSpace(false);
                 }
-                this.transactionStore = new TransactionStore(store,
-                                                new DBMetaType(db, store.backgroundExceptionHandler),
-                                                new ValueDataType(db.getCompareMode(), db.getMode(), db, null),
+                this.transactionStore = new TransactionStore(mvStore,
+                                                new DBMetaType(db, mvStore.backgroundExceptionHandler),
+                                                new ValueDataType(db, null),
                                                 db.getLockTimeout());
             } catch (IllegalStateException e) {
                 throw convertIllegalStateException(e);
@@ -171,7 +171,7 @@ public class MVTableEngine implements TableEngine {
         }
 
         public boolean isClosed() {
-            return store == null || store.isClosed();
+            return mvStore == null || mvStore.isClosed();
         }
 
         /**
@@ -208,8 +208,8 @@ public class MVTableEngine implements TableEngine {
 
         }
 
-        public MVStore getStore() {
-            return store;
+        public MVStore getMvStore() {
+            return mvStore;
         }
 
         public TransactionStore getTransactionStore() {
@@ -228,7 +228,6 @@ public class MVTableEngine implements TableEngine {
          */
         public MVTable createTable(CreateTableData data) {
             MVTable table = new MVTable(data, this);
-            table.init(data.session);
             tableMap.put(table.getMapName(), table);
             return table;
         }
@@ -246,12 +245,12 @@ public class MVTableEngine implements TableEngine {
          * Store all pending changes.
          */
         public void flush() {
-            FileStore s = store.getFileStore();
+            FileStore s = mvStore.getFileStore();
             if (s == null || s.isReadOnly()) {
                 return;
             }
-            if (!store.compact(50, 4 * 1024 * 1024)) {
-                store.commit();
+            if (!mvStore.compact(50, 4 * 1024 * 1024)) {
+                mvStore.commit();
             }
         }
 
@@ -262,7 +261,7 @@ public class MVTableEngine implements TableEngine {
             if (isClosed()) {
                 return;
             }
-            store.closeImmediately();
+            mvStore.closeImmediately();
         }
 
         /**
@@ -271,13 +270,13 @@ public class MVTableEngine implements TableEngine {
          * @param objectIds the ids of the objects to keep
          */
         public void removeTemporaryMaps(BitSet objectIds) {
-            for (String mapName : store.getMapNames()) {
+            for (String mapName : mvStore.getMapNames()) {
                 if (mapName.startsWith("temp.")) {
-                    store.removeMap(mapName);
+                    mvStore.removeMap(mapName);
                 } else if (mapName.startsWith("table.") || mapName.startsWith("index.")) {
                     int id = Integer.parseInt(mapName.substring(1 + mapName.indexOf('.')));
                     if (!objectIds.get(id)) {
-                        store.removeMap(mapName);
+                        mvStore.removeMap(mapName);
                     }
                 }
             }
@@ -302,7 +301,7 @@ public class MVTableEngine implements TableEngine {
             Transaction t = session.getTransaction();
             t.setName(transactionName);
             t.prepare();
-            store.commit();
+            mvStore.commit();
         }
 
         public ArrayList<InDoubtTransaction> getInDoubtTransactions() {
@@ -310,7 +309,7 @@ public class MVTableEngine implements TableEngine {
             ArrayList<InDoubtTransaction> result = Utils.newSmallArrayList();
             for (Transaction t : list) {
                 if (t.getStatus() == Transaction.STATUS_PREPARED) {
-                    result.add(new MVInDoubtTransaction(store, t));
+                    result.add(new MVInDoubtTransaction(mvStore, t));
                 }
             }
             return result;
@@ -322,13 +321,13 @@ public class MVTableEngine implements TableEngine {
          * @param kb the maximum size in KB
          */
         public void setCacheSize(int kb) {
-            store.setCacheSize(Math.max(1, kb / 1024));
+            mvStore.setCacheSize(Math.max(1, kb / 1024));
         }
 
         public InputStream getInputStream() {
-            FileChannel fc = store.getFileStore().getEncryptedFile();
+            FileChannel fc = mvStore.getFileStore().getEncryptedFile();
             if (fc == null) {
-                fc = store.getFileStore().getFile();
+                fc = mvStore.getFileStore().getFile();
             }
             return new FileChannelInputStream(fc, false);
         }
@@ -338,7 +337,7 @@ public class MVTableEngine implements TableEngine {
          */
         public void sync() {
             flush();
-            store.sync();
+            mvStore.sync();
         }
 
         /**
@@ -350,11 +349,11 @@ public class MVTableEngine implements TableEngine {
          * @param maxCompactTime the maximum time in milliseconds to compact
          */
         public void compactFile(long maxCompactTime) {
-            store.setRetentionTime(0);
+            mvStore.setRetentionTime(0);
             long start = System.nanoTime();
-            while (store.compact(95, 16 * 1024 * 1024)) {
-                store.sync();
-                store.compactMoveChunks(95, 16 * 1024 * 1024);
+            while (mvStore.compact(95, 16 * 1024 * 1024)) {
+                mvStore.sync();
+                mvStore.compactMoveChunks(95, 16 * 1024 * 1024);
                 long time = System.nanoTime() - start;
                 if (time > TimeUnit.MILLISECONDS.toNanos(maxCompactTime)) {
                     break;
@@ -372,7 +371,7 @@ public class MVTableEngine implements TableEngine {
         public void close(long maxCompactTime) {
             if (!isClosed()) {
                 try {
-                    FileStore fileStore = store.getFileStore();
+                    FileStore fileStore = mvStore.getFileStore();
                     if (fileStore != null) {
                         boolean compactFully = false;
                         if (!fileStore.isReadOnly()) {
@@ -380,14 +379,14 @@ public class MVTableEngine implements TableEngine {
                             compactFully = maxCompactTime == Long.MAX_VALUE;
                         }
                         String fileName = fileStore.getFileName();
-                        store.close();
+                        mvStore.close();
                         if (compactFully && FileUtils.exists(fileName)) {
                             // the file could have been deleted concurrently,
                             // so only compact if the file still exists
                             MVStoreTool.compact(fileName, true);
                         }
                     } else {
-                        store.close();
+                        mvStore.close();
                     }
                 } catch (IllegalStateException e) {
                     int errorCode = DataUtils.getErrorCode(e.getMessage());
@@ -409,7 +408,7 @@ public class MVTableEngine implements TableEngine {
          * Start collecting statistics.
          */
         public void statisticsStart() {
-            FileStore fs = store.getFileStore();
+            FileStore fs = mvStore.getFileStore();
             statisticsStart = fs == null ? 0 : fs.getReadCount();
         }
 
@@ -420,7 +419,7 @@ public class MVTableEngine implements TableEngine {
          */
         public Map<String, Integer> statisticsEnd() {
             HashMap<String, Integer> map = new HashMap<>();
-            FileStore fs = store.getFileStore();
+            FileStore fs = mvStore.getFileStore();
             int reads = fs == null ? 0 : (int) (fs.getReadCount() - statisticsStart);
             map.put("reads", reads);
             return map;

@@ -62,7 +62,7 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
         String mapName = "index." + getId();
         Transaction t = mvTable.getTransactionBegin();
         dataMap = t.openMap(mapName, keyType, valueType);
-        dataMap.map.setVolatile(!indexType.isPersistent());
+        dataMap.map.setVolatile(!table.isPersistData() || !indexType.isPersistent());
         t.commit();
         assert mapName.equals(dataMap.getName()) : mapName + " != " + dataMap.getName();
         if (!keyType.equals(dataMap.getKeyType())) {
@@ -86,7 +86,6 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
             r.copyFrom(row);
             map.append(r, ValueNull.INSTANCE);
         }
-        map.flushAppendBuffer();
     }
 
     private static final class Source {
@@ -140,6 +139,7 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
                 queue.offer(new Source(iter));
             }
         }
+
         try {
             while (!queue.isEmpty()) {
                 Source s = queue.poll();
@@ -157,9 +157,9 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
             }
         } finally {
             agent.close();
-            MVStore store = database.getMvStore().getStore();
+            MVStore mvStore = database.getStore().getMvStore();
             for (String tempMapName : mapNames) {
-                store.removeMap(tempMapName);
+                mvStore.removeMap(tempMapName);
             }
         }
     }
@@ -194,7 +194,6 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
         if (checkRequired) {
             checkUnique(map, row, Long.MIN_VALUE);
         }
-
         try {
             map.put(key, ValueNull.INSTANCE);
         } catch (IllegalStateException e) {
@@ -213,7 +212,7 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
             if (newKey != k.getKey()) {
                 if (map.get(k) != null) {
                     // committed
-                    throw getDuplicateKeyException(k.toString());
+                    throw getDuplicateKeyException(rowKey.toString());
                 }
                 throw DbException.get(ErrorCode.CONCURRENT_UPDATE_1, table.getName());
             }
@@ -265,19 +264,6 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
     private Cursor find(Session session, SearchRow first, boolean bigger, SearchRow last) {
         SearchRow min = convertToKey(first, bigger);
         TransactionMap<SearchRow,Value> map = getMap(session);
-/*
-        if (!bigger && indexType.isUnique() && first != null && !mayHaveNullDuplicates(first) && compareRows(first, last) == 0) {
-            SearchRow searchRow = map.higherKey(min);
-            Row row = null;
-            if (searchRow != null) {
-                min.setKey(SearchRow.MATCH_ALL_ROW_KEY);
-                if (compareRows(searchRow, min) == 0) {
-                    row = mvTable.getRow(session, searchRow.getKey());
-                }
-            }
-            return new SingleRowCursor(row);
-        }
-//*/
         SearchRow max = convertToKey(last, Boolean.TRUE);
         return new MVStoreCursor(session, map.keyIterator(min, max, false), mvTable);
     }
@@ -414,9 +400,9 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
     /**
      * A cursor.
      */
-    static final class MVStoreCursor implements Cursor
-    {
-        private final Session             session;
+    static final class MVStoreCursor implements Cursor {
+
+        private final Session session;
         private final Iterator<SearchRow> it;
         private final MVTable             mvTable;
         private       SearchRow           current;

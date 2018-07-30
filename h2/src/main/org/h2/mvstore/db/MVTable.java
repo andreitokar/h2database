@@ -35,7 +35,6 @@ import org.h2.mvstore.tx.Transaction;
 import org.h2.mvstore.tx.TransactionStore;
 import org.h2.result.Row;
 import org.h2.result.SearchRow;
-import org.h2.result.SortOrder;
 import org.h2.schema.SchemaObject;
 import org.h2.table.Column;
 import org.h2.table.IndexColumn;
@@ -143,15 +142,8 @@ public class MVTable extends TableBase {
         }
         containsLargeObject = b;
         traceLock = database.getTrace(Trace.LOCK);
-    }
 
-    /**
-     * Initialize the table.
-     *
-     * @param session the session
-     */
-    void init(Session session) {
-        primaryIndex = new MVPrimaryIndex(session.getDatabase(), this, getId(),
+        primaryIndex = new MVPrimaryIndex(database, this, getId(),
                 IndexColumn.wrap(getColumns()), IndexType.createScan(true));
         indexes.add(primaryIndex);
     }
@@ -504,15 +496,18 @@ public class MVTable extends TableBase {
             database.lockMeta(session);
         }
         MVIndex index;
-        int mainIndexColumn;
-        mainIndexColumn = getMainIndexColumn(indexType, cols);
+        int mainIndexColumn = primaryIndex.getMainIndexColumn() != SearchRow.ROWID_INDEX
+                ? SearchRow.ROWID_INDEX : getMainIndexColumn(indexType, cols);
         if (database.isStarting()) {
+            // if index does exists as a separate map it can't be a delegate
             if (transactionStore.hasMap("index." + indexId)) {
+                // we can not reuse primary index
                 mainIndexColumn = SearchRow.ROWID_INDEX;
             }
         } else if (primaryIndex.getRowCountMax() != 0) {
             mainIndexColumn = SearchRow.ROWID_INDEX;
         }
+
         if (mainIndexColumn != SearchRow.ROWID_INDEX) {
             primaryIndex.setMainIndexColumn(mainIndexColumn);
             index = new MVDelegateIndex(this, indexId, indexName, primaryIndex,
@@ -543,7 +538,7 @@ public class MVTable extends TableBase {
 
     private void rebuildIndex(Session session, MVIndex index, String indexName) {
         try {
-            if (session.getDatabase().getMvStore() == null ||
+            if (session.getDatabase().getStore() == null ||
                     index instanceof MVSpatialIndex) {
                 // in-memory
                 rebuildIndexBuffered(session, index);
@@ -582,7 +577,7 @@ public class MVTable extends TableBase {
         long total = remaining;
         Cursor cursor = scan.find(session, null, null);
         long i = 0;
-        Store store = session.getDatabase().getMvStore();
+        Store store = session.getDatabase().getStore();
 
         int bufferSize = database.getMaxMemoryRows() / 2;
         ArrayList<Row> buffer = new ArrayList<>(bufferSize);
@@ -644,29 +639,6 @@ public class MVTable extends TableBase {
             DbException.throwInternalError("rowcount remaining=" + remaining +
                     " " + getName());
         }
-    }
-
-    private int getMainIndexColumn(IndexType indexType, IndexColumn[] cols) {
-        if (primaryIndex.getMainIndexColumn() != SearchRow.ROWID_INDEX) {
-            return SearchRow.ROWID_INDEX;
-        }
-        if (!indexType.isPrimaryKey() || cols.length != 1) {
-            return SearchRow.ROWID_INDEX;
-        }
-        IndexColumn first = cols[0];
-        if (first.sortType != SortOrder.ASCENDING) {
-            return SearchRow.ROWID_INDEX;
-        }
-        switch (first.column.getType()) {
-        case Value.BYTE:
-        case Value.SHORT:
-        case Value.INT:
-        case Value.LONG:
-            break;
-        default:
-            return SearchRow.ROWID_INDEX;
-        }
-        return first.column.getColumnId();
     }
 
     private static void addRowsToIndex(Session session, ArrayList<Row> list,
@@ -835,7 +807,7 @@ public class MVTable extends TableBase {
             database.getLobStorage().removeAllForTable(getId());
             database.lockMeta(session);
         }
-        database.getMvStore().removeTable(this);
+        database.getStore().removeTable(this);
         super.removeChildrenAndResources(session);
         // go backwards because database.removeIndex will
         // call table.removeIndex

@@ -395,6 +395,10 @@ public class AlterTableAddConstraint extends SchemaCommand {
         this.constraintName = constraintName;
     }
 
+    public String getConstraintName() {
+        return constraintName;
+    }
+
     public void setType(int type) {
         this.type = type;
     }

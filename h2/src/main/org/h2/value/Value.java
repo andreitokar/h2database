@@ -965,7 +965,10 @@ public abstract class Value {
             case STRING: {
                 String s;
                 if (getType() == BYTES && mode != null && mode.charToBinaryInUtf8) {
-                    s = new String(getBytesNoCopy());
+                    // Bugfix - Can't use the locale encoding when enabling charToBinaryInUtf8 in mode.
+                    // The following two target types also are the same issue.
+                    // @since 2018-07-19 little-pan
+                    s = new String(getBytesNoCopy(), StandardCharsets.UTF_8);
                 } else {
                     s = getString();
                 }
@@ -974,7 +977,7 @@ public abstract class Value {
             case STRING_IGNORECASE: {
                 String s;
                 if (getType() == BYTES && mode != null && mode.charToBinaryInUtf8) {
-                    s = new String(getBytesNoCopy());
+                    s = new String(getBytesNoCopy(), StandardCharsets.UTF_8);
                 } else {
                     s = getString();
                 }
@@ -983,7 +986,7 @@ public abstract class Value {
             case STRING_FIXED: {
                 String s;
                 if (getType() == BYTES && mode != null && mode.charToBinaryInUtf8) {
-                    s = new String(getBytesNoCopy());
+                    s = new String(getBytesNoCopy(), StandardCharsets.UTF_8);
                 } else {
                     s = getString();
                 }

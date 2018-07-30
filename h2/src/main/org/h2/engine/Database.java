@@ -8,10 +8,13 @@ package org.h2.engine;
 import java.io.IOException;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.BitSet;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
@@ -36,6 +39,7 @@ import org.h2.jdbc.JdbcConnection;
 import org.h2.message.DbException;
 import org.h2.message.Trace;
 import org.h2.message.TraceSystem;
+import org.h2.mvstore.MVStore;
 import org.h2.mvstore.db.MVTableEngine;
 import org.h2.result.Row;
 import org.h2.result.RowFactory;
@@ -214,7 +218,7 @@ public class Database implements DataHandler {
     private final DbSettings dbSettings;
     private final long reconnectCheckDelayNs;
     private int logMode;
-    private MVTableEngine.Store mvStore;
+    private MVTableEngine.Store store;
     private int retentionTime;
     private boolean allowBuiltinAliasOverride;
     private final AtomicReference<DbException> backgroundException = new AtomicReference<>();
@@ -374,13 +378,13 @@ public class Database implements DataHandler {
         powerOffCount = count;
     }
 
-    public MVTableEngine.Store getMvStore() {
-        return mvStore;
+    public MVTableEngine.Store getStore() {
+        return store;
     }
 
-    public void setMvStore(MVTableEngine.Store mvStore) {
-        this.mvStore = mvStore;
-        this.retentionTime = mvStore.getStore().getRetentionTime();
+    public void setStore(MVTableEngine.Store store) {
+        this.store = store;
+        this.retentionTime = store.getMvStore().getRetentionTime();
     }
 
     /**
@@ -530,8 +534,8 @@ public class Database implements DataHandler {
             try {
                 powerOffCount = -1;
                 stopWriter();
-                if (mvStore != null) {
-                    mvStore.closeImmediately();
+                if (store != null) {
+                    store.closeImmediately();
                 }
                 if (pageStore != null) {
                     try {
@@ -735,7 +739,7 @@ public class Database implements DataHandler {
                 getPageStore();
             }
             starting = false;
-            if (mvStore == null) {
+            if (store == null) {
                 writer = WriterThread.create(this, writeDelay);
             } else {
                 setWriteDelay(writeDelay);
@@ -751,8 +755,8 @@ public class Database implements DataHandler {
                 getPageStore();
             }
         }
-        if(mvStore != null) {
-            mvStore.getTransactionStore().init();
+        if(store != null) {
+            store.getTransactionStore().init();
         }
         systemUser = new User(this, 0, SYSTEM_USER_NAME, true);
         mainSchema = new Schema(this, 0, Constants.SCHEMA_MAIN, systemUser, true);
@@ -785,6 +789,7 @@ public class Database implements DataHandler {
         data.isHidden = true;
         data.session = systemSession;
         meta = mainSchema.createTable(data);
+        handleUpgradeIssues();
         IndexColumn[] pkCols = IndexColumn.wrap(new Column[] { columnId });
         starting = true;
         metaIdIndex = meta.addIndex(systemSession, "SYS_ID",
@@ -804,9 +809,9 @@ public class Database implements DataHandler {
             rec.execute(this, systemSession, eventListener);
         }
         systemSession.commit(true);
-        if (mvStore != null) {
-            mvStore.getTransactionStore().endLeftoverTransactions();
-            mvStore.removeTemporaryMaps(objectIds);
+        if (store != null) {
+            store.getTransactionStore().endLeftoverTransactions();
+            store.removeTemporaryMaps(objectIds);
         }
         recompileInvalidViews(systemSession);
         starting = false;
@@ -836,6 +841,50 @@ public class Database implements DataHandler {
         trace.info("opened {0}", databaseName);
         if (checkpointAllowed > 0) {
             afterWriting();
+        }
+    }
+
+
+    private void handleUpgradeIssues() {
+        if (store != null && !isReadOnly()) {
+            MVStore mvStore = store.getMvStore();
+            // Version 1.4.197 erroneously handles index on SYS_ID.ID as secondary
+            // and does not delegate to scan index as it should.
+            // This code will try to fix that by converging ROW_ID and ID,
+            // since they may have got out of sync, and by removing map "index.0",
+            // which corresponds to a secondary index.
+            if (mvStore.hasMap("index.0")) {
+                Index scanIndex = meta.getScanIndex(systemSession);
+                Cursor curs = scanIndex.find(systemSession, null, null);
+                List<Row> allMetaRows = new ArrayList<>();
+                boolean needRepair = false;
+                while (curs.next()) {
+                    Row row = curs.get();
+                    allMetaRows.add(row);
+                    long rowId = row.getKey();
+                    int id = row.getValue(0).getInt();
+                    if (id != rowId) {
+                        needRepair = true;
+                        row.setKey(id);
+                    }
+                }
+                if (needRepair) {
+                    Row[] array = allMetaRows.toArray(new Row[0]);
+                    Arrays.sort(array, new Comparator<Row>() {
+                        @Override
+                        public int compare(Row o1, Row o2) {
+                            return Integer.compare(o1.getValue(0).getInt(), o2.getValue(0).getInt());
+                        }
+                    });
+                    meta.truncate(systemSession);
+                    for (Row row : array) {
+                        meta.addRow(systemSession, row);
+                    }
+                    systemSession.commit(true);
+                }
+                mvStore.removeMap("index.0");
+                mvStore.commit();
+            }
         }
     }
 
@@ -1406,7 +1455,7 @@ public class Database implements DataHandler {
         }
         boolean lobStorageIsUsed = infoSchema.findTableOrView(
                 systemSession, LobStorageBackend.LOB_DATA_TABLE) != null;
-        lobStorageIsUsed |= mvStore != null;
+        lobStorageIsUsed |= store != null;
         if (!lobStorageIsUsed) {
             return;
         }
@@ -1462,16 +1511,16 @@ public class Database implements DataHandler {
                 }
             }
             reconnectModified(false);
-            if (mvStore != null && mvStore.getStore() != null && !mvStore.getStore().isClosed()) {
+            if (store != null && store.getMvStore() != null && !store.getMvStore().isClosed()) {
                 long maxCompactTime = dbSettings.maxCompactTime;
                 if (compactMode == CommandInterface.SHUTDOWN_COMPACT) {
-                    mvStore.compactFile(dbSettings.maxCompactTime);
+                    store.compactFile(dbSettings.maxCompactTime);
                 } else if (compactMode == CommandInterface.SHUTDOWN_DEFRAG) {
                     maxCompactTime = Long.MAX_VALUE;
                 } else if (getSettings().defragAlways) {
                     maxCompactTime = Long.MAX_VALUE;
                 }
-                mvStore.close(maxCompactTime);
+                store.close(maxCompactTime);
             }
             if (systemSession != null) {
                 systemSession.close();
@@ -1515,8 +1564,8 @@ public class Database implements DataHandler {
 
     private synchronized void closeFiles() {
         try {
-            if (mvStore != null) {
-                mvStore.closeImmediately();
+            if (store != null) {
+                store.closeImmediately();
             }
             if (pageStore != null) {
                 pageStore.close();
@@ -1996,8 +2045,8 @@ public class Database implements DataHandler {
         if (pageStore != null) {
             pageStore.getCache().setMaxMemory(kb);
         }
-        if (mvStore != null) {
-            mvStore.setCacheSize(Math.max(1, kb));
+        if (store != null) {
+            store.setCacheSize(Math.max(1, kb));
         }
     }
 
@@ -2058,9 +2107,9 @@ public class Database implements DataHandler {
             // TODO check if MIN_WRITE_DELAY is a good value
             flushOnEachCommit = writeDelay < Constants.MIN_WRITE_DELAY;
         }
-        if (mvStore != null) {
+        if (store != null) {
             int millis = value < 0 ? 0 : value;
-            mvStore.getStore().setAutoCommitDelay(millis);
+            store.getMvStore().setAutoCommitDelay(millis);
         }
     }
 
@@ -2070,8 +2119,8 @@ public class Database implements DataHandler {
 
     public void setRetentionTime(int value) {
         retentionTime = value;
-        if (mvStore != null) {
-            mvStore.getStore().setRetentionTime(value);
+        if (store != null) {
+            store.getMvStore().setRetentionTime(value);
         }
     }
 
@@ -2098,8 +2147,8 @@ public class Database implements DataHandler {
      * @return the list
      */
     public ArrayList<InDoubtTransaction> getInDoubtTransactions() {
-        if (mvStore != null) {
-            return mvStore.getInDoubtTransactions();
+        if (store != null) {
+            return store.getInDoubtTransactions();
         }
         return pageStore == null ? null : pageStore.getInDoubtTransactions();
     }
@@ -2114,8 +2163,8 @@ public class Database implements DataHandler {
         if (readOnly) {
             return;
         }
-        if (mvStore != null) {
-            mvStore.prepareCommit(session, transaction);
+        if (store != null) {
+            store.prepareCommit(session, transaction);
             return;
         }
         if (pageStore != null) {
@@ -2158,7 +2207,7 @@ public class Database implements DataHandler {
     }
 
     public Throwable getBackgroundException() {
-        IllegalStateException exception = mvStore.getStore().getPanicException();
+        IllegalStateException exception = store.getMvStore().getPanicException();
         if(exception != null) {
             return exception;
         }
@@ -2176,9 +2225,9 @@ public class Database implements DataHandler {
         if (pageStore != null) {
             pageStore.flushLog();
         }
-        if (mvStore != null) {
+        if (store != null) {
             try {
-                mvStore.flush();
+                store.flush();
             } catch (RuntimeException e) {
                 backgroundException.compareAndSet(null, DbException.convert(e));
                 throw e;
@@ -2254,8 +2303,8 @@ public class Database implements DataHandler {
         if (readOnly) {
             return;
         }
-        if (mvStore != null) {
-            mvStore.sync();
+        if (store != null) {
+            store.sync();
         }
         if (pageStore != null) {
             pageStore.sync();
@@ -2582,8 +2631,8 @@ public class Database implements DataHandler {
 
     public PageStore getPageStore() {
         if (dbSettings.mvStore) {
-            if (mvStore == null) {
-                mvStore = MVTableEngine.init(this);
+            if (store == null) {
+                store = MVTableEngine.init(this);
             }
             return null;
         }
@@ -2738,8 +2787,8 @@ public class Database implements DataHandler {
                     pageStore.checkpoint();
                 }
             }
-            if (mvStore != null) {
-                mvStore.flush();
+            if (store != null) {
+                store.flush();
             }
         }
         getTempFileDeleter().deleteUnused();
@@ -2858,7 +2907,7 @@ public class Database implements DataHandler {
             this.logMode = log;
             pageStore.setLogMode(log);
         }
-        if (mvStore != null) {
+        if (store != null) {
             this.logMode = log;
         }
     }
@@ -2867,7 +2916,7 @@ public class Database implements DataHandler {
         if (pageStore != null) {
             return pageStore.getLogMode();
         }
-        if (mvStore != null) {
+        if (store != null) {
             return logMode;
         }
         return PageStore.LOG_MODE_OFF;
