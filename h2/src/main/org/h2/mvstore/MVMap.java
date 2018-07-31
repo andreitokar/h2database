@@ -1280,7 +1280,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             unsavedMemory += p.getMemory();
             pos = pos.parent;
         }
-        RootReference updatedRootReference = new RootReference(rootReference, p, ++attempt);
+        RootReference updatedRootReference = new RootReference(rootReference, p, attempt);
         if(root.compareAndSet(rootReference, updatedRootReference)) {
             while (tip != null) {
                 tip.page.removePage();
