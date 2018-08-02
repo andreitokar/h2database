@@ -97,8 +97,8 @@ public abstract class Table extends SchemaObjectBase {
 
     public Table(Schema schema, int id, String name, boolean persistIndexes,
             boolean persistData) {
+        super(schema, id, name, Trace.TABLE);
         columnMap = schema.getDatabase().newStringMap();
-        initSchemaObjectBase(schema, id, name, Trace.TABLE);
         this.persistIndexes = persistIndexes;
         this.persistData = persistData;
         compareMode = schema.getDatabase().getCompareMode();
@@ -1252,15 +1252,19 @@ public abstract class Table extends SchemaObjectBase {
         if (a == b) {
             return 0;
         }
-        int dataType = Value.getHigherOrder(a.getType(), b.getType());
-        if (dataType == Value.ENUM) {
-            String[] enumerators = ValueEnum.getEnumeratorsForBinaryOperation(a, b);
-            a = a.convertToEnum(enumerators);
-            b = b.convertToEnum(enumerators);
-        } else {
-            Mode mode = database.getMode();
-            a = a.convertTo(dataType, -1, mode);
-            b = b.convertTo(dataType, -1, mode);
+        int aType = a.getType();
+        int bType = b.getType();
+        if (aType != bType || aType == Value.ENUM) {
+            int dataType = Value.getHigherOrder(aType, bType);
+            if (dataType == Value.ENUM) {
+                String[] enumerators = ValueEnum.getEnumeratorsForBinaryOperation(a, b);
+                a = a.convertToEnum(enumerators);
+                b = b.convertToEnum(enumerators);
+            } else {
+                Mode mode = database.getMode();
+                a = a.convertTo(dataType, -1, mode);
+                b = b.convertTo(dataType, -1, mode);
+            }
         }
         return a.compareTypeSafe(b, compareMode);
     }

@@ -68,6 +68,7 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
     public MVSpatialIndex(
             Database db, MVTable table, int id, String indexName,
             IndexColumn[] columns, IndexType indexType) {
+        super(table, id, indexName, columns, indexType);
         if (columns.length != 1) {
             throw DbException.getUnsupportedException(
                     "Can only index one column");
@@ -91,7 +92,6 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
                     + col.column.getCreateSQL());
         }
         this.mvTable = table;
-        initBaseIndex(table, id, indexName, columns, indexType);
         if (!database.isStarting()) {
             checkIndexColumnTypes(columns);
         }
@@ -365,7 +365,7 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
 
         @Override
         public boolean next() {
-            current = it.next();
+            current = it.hasNext() ? it.next() : null;
             searchRow = null;
             row = null;
             return current != null;
@@ -377,6 +377,5 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
         }
 
     }
-
 }
 

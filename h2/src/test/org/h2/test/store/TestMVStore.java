@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.NoSuchElementException;
 import java.util.Random;
 import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
@@ -2010,7 +2011,7 @@ public class TestMVStore extends TestBase {
             assertEquals(i, it.next().intValue());
         }
         assertFalse(it.hasNext());
-        assertNull(it.next());
+        assertThrows(NoSuchElementException.class, it).next();
         for (int j = 0; j < 10; j++) {
             it = m.keyIterator(j);
             for (int i = j; i < 10; i++) {

@@ -47,8 +47,8 @@ public class MVPrimaryIndex extends BaseIndex
 
     public MVPrimaryIndex(Database db, MVTable table, int id,
             IndexColumn[] columns, IndexType indexType) {
+        super(table, id, table.getName() + "_DATA", columns, indexType);
         this.mvTable = table;
-        initBaseIndex(table, id, table.getName() + "_DATA", columns, indexType);
         DataType valueType = table.getRowFactory().getDataType();
         mapName = "table." + getId();
         Transaction t = mvTable.getTransactionBegin();
