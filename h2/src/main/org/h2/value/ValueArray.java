@@ -98,7 +98,7 @@ public class ValueArray extends Value {
     }
 
     @Override
-    protected int compareSecure(Value o, CompareMode mode) {
+    public int compareTypeSafe(Value o, CompareMode mode) {
         ValueArray v = (ValueArray) o;
         if (values == v.values) {
             return 0;
@@ -109,7 +109,7 @@ public class ValueArray extends Value {
         for (int i = 0; i < len; i++) {
             Value v1 = values[i];
             Value v2 = v.values[i];
-            int comp = v1.compareTo(v2, mode);
+            int comp = v1.compareTo(v2, /* TODO */ null, mode);
             if (comp != 0) {
                 return comp;
             }

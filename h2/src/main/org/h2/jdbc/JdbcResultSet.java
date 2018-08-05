@@ -32,6 +32,7 @@ import java.util.UUID;
 import org.h2.api.ErrorCode;
 import org.h2.api.TimestampWithTimeZone;
 import org.h2.command.CommandInterface;
+import org.h2.engine.Mode;
 import org.h2.engine.SysProperties;
 import org.h2.message.DbException;
 import org.h2.message.TraceObject;
@@ -58,6 +59,7 @@ import org.h2.value.ValueShort;
 import org.h2.value.ValueString;
 import org.h2.value.ValueTime;
 import org.h2.value.ValueTimestamp;
+import org.h2.value.ValueTimestampTimeZone;
 
 /**
  * <p>
@@ -1065,7 +1067,7 @@ public class JdbcResultSet extends TraceObject implements ResultSet, JdbcResultS
     public byte[] getBytes(int columnIndex) throws SQLException {
         try {
             debugCodeCall("getBytes", columnIndex);
-            return get(columnIndex).convertTo(Value.BYTES, -1, conn.getMode()).getBytes();
+            return get(columnIndex).convertTo(Value.BYTES, conn.getMode()).getBytes();
         } catch (Exception e) {
             throw logAndConvert(e);
         }
@@ -3914,21 +3916,19 @@ public class JdbcResultSet extends TraceObject implements ResultSet, JdbcResultS
             return type.cast(value.getBytes());
         } else if (type == java.sql.Array.class) {
             int id = getNextId(TraceObject.ARRAY);
-            return type.cast(value == ValueNull.INSTANCE ? null : new JdbcArray(conn, value, id));
+            return type.cast(new JdbcArray(conn, value, id));
         } else if (type == Blob.class) {
             int id = getNextId(TraceObject.BLOB);
-            return type.cast(value == ValueNull.INSTANCE
-                    ? null : new JdbcBlob(conn, value, JdbcLob.State.WITH_VALUE, id));
+            return type.cast(new JdbcBlob(conn, value, JdbcLob.State.WITH_VALUE, id));
         } else if (type == Clob.class) {
             int id = getNextId(TraceObject.CLOB);
-            return type.cast(value == ValueNull.INSTANCE
-                    ? null : new JdbcClob(conn, value, JdbcLob.State.WITH_VALUE, id));
+            return type.cast(new JdbcClob(conn, value, JdbcLob.State.WITH_VALUE, id));
         } else if (type == SQLXML.class) {
             int id = getNextId(TraceObject.SQLXML);
-            return type.cast(value == ValueNull.INSTANCE
-                    ? null : new JdbcSQLXML(conn, value, JdbcLob.State.WITH_VALUE, id));
+            return type.cast(new JdbcSQLXML(conn, value, JdbcLob.State.WITH_VALUE, id));
         } else if (type == TimestampWithTimeZone.class) {
-            return type.cast(value.convertTo(Value.TIMESTAMP_TZ).getObject());
+            ValueTimestampTimeZone v = (ValueTimestampTimeZone) value.convertTo(Value.TIMESTAMP_TZ);
+            return type.cast(new TimestampWithTimeZone(v.getDateValue(), v.getTimeNanos(), v.getTimeZoneOffsetMins()));
         } else if (DataType.isGeometryClass(type)) {
             return type.cast(value.convertTo(Value.GEOMETRY).getObject());
         } else if (type == LocalDateTimeUtils.LOCAL_DATE) {
@@ -3954,12 +3954,13 @@ public class JdbcResultSet extends TraceObject implements ResultSet, JdbcResultS
         return getTraceObjectName() + ": " + result;
     }
 
-    private void patchCurrentRow(Value[] row) {
+    private void patchCurrentRow(Value[] row) throws SQLException {
         boolean changed = false;
         Value[] current = result.currentRow();
-        CompareMode mode = conn.getCompareMode();
+        Mode databaseMode = conn.getMode();
+        CompareMode compareMode = conn.getCompareMode();
         for (int i = 0; i < row.length; i++) {
-            if (row[i].compareTo(current[i], mode) != 0) {
+            if (row[i].compareTo(current[i], databaseMode, compareMode) != 0) {
                 changed = true;
                 break;
             }

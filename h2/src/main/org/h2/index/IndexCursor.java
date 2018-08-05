@@ -7,6 +7,7 @@ package org.h2.index;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+
 import org.h2.engine.Session;
 import org.h2.expression.Comparison;
 import org.h2.message.DbException;
@@ -254,7 +255,8 @@ public class IndexCursor implements Cursor {
                 return a;
             }
         }
-        int comp = a.compareTo(b, table.getDatabase().getCompareMode());
+        int comp = table.getDatabase().compare(a, b);
+        assert comp == 0 || a != ValueNull.INSTANCE && b != ValueNull.INSTANCE;
         return (comp > 0) == bigger ? a : b;
     }
 

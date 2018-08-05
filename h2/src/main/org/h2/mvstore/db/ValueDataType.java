@@ -12,7 +12,6 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.util.Arrays;
-import java.util.Objects;
 import org.h2.api.ErrorCode;
 import org.h2.engine.Database;
 import org.h2.engine.Mode;
@@ -41,7 +40,6 @@ import org.h2.value.ValueBytes;
 import org.h2.value.ValueDate;
 import org.h2.value.ValueDecimal;
 import org.h2.value.ValueDouble;
-import org.h2.value.ValueEnum;
 import org.h2.value.ValueFloat;
 import org.h2.value.ValueGeometry;
 import org.h2.value.ValueInt;
@@ -88,7 +86,7 @@ public class ValueDataType extends BasicDataType<Value> {
     private RowFactory rowFactory;
 
     public ValueDataType() {
-        this(CompareMode.getInstance(null, 0), Mode.getRegular(), null, null);
+        this(CompareMode.getInstance(null, 0), null, null, null);
     }
 
     public ValueDataType(Database database, int[] sortTypes) {
@@ -169,20 +167,7 @@ public class ValueDataType extends BasicDataType<Value> {
             return SortOrder.compareNull(aNull, sortType);
         }
 
-        int aType = a.getType();
-        int bType = b.getType();
-        if (aType != bType || aType == Value.ENUM) {
-            int t2 = Value.getHigherOrder(aType, bType);
-            if (t2 == Value.ENUM) {
-                String[] enumerators = ValueEnum.getEnumeratorsForBinaryOperation(a, b);
-                a = a.convertToEnum(enumerators);
-                b = b.convertToEnum(enumerators);
-            } else {
-                a = a.convertTo(t2, -1, mode);
-                b = b.convertTo(t2, -1, mode);
-            }
-        }
-        int comp = a.compareTypeSafe(b, compareMode);
+        int comp = a.compareTo(b, mode, compareMode);
 
         if ((sortType & SortOrder.DESCENDING) != 0) {
             comp = -comp;

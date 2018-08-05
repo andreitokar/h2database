@@ -270,16 +270,6 @@ public abstract class Value {
     public abstract void set(PreparedStatement prep, int parameterIndex)
             throws SQLException;
 
-    /**
-     * Compare the value with another value of the same type.
-     *
-     * @param v the other value
-     * @param mode the compare mode
-     * @return 0 if both values are equal, -1 if the other value is smaller, and
-     *         1 otherwise
-     */
-    protected abstract int compareSecure(Value v, CompareMode mode);
-
     @Override
     public abstract int hashCode();
 
@@ -529,11 +519,11 @@ public abstract class Value {
      * @return the result
      */
     public Value add(@SuppressWarnings("unused") Value v) {
-        throw throwUnsupportedExceptionForType("+");
+        throw getUnsupportedExceptionForOperation("+");
     }
 
     public int getSignum() {
-        throw throwUnsupportedExceptionForType("SIGNUM");
+        throw getUnsupportedExceptionForOperation("SIGNUM");
     }
 
     /**
@@ -542,7 +532,7 @@ public abstract class Value {
      * @return the negative
      */
     public Value negate() {
-        throw throwUnsupportedExceptionForType("NEG");
+        throw getUnsupportedExceptionForOperation("NEG");
     }
 
     /**
@@ -552,7 +542,7 @@ public abstract class Value {
      * @return the result
      */
     public Value subtract(@SuppressWarnings("unused") Value v) {
-        throw throwUnsupportedExceptionForType("-");
+        throw getUnsupportedExceptionForOperation("-");
     }
 
     /**
@@ -562,7 +552,7 @@ public abstract class Value {
      * @return the result
      */
     public Value divide(@SuppressWarnings("unused") Value v) {
-        throw throwUnsupportedExceptionForType("/");
+        throw getUnsupportedExceptionForOperation("/");
     }
 
     /**
@@ -572,7 +562,7 @@ public abstract class Value {
      * @return the result
      */
     public Value multiply(@SuppressWarnings("unused") Value v) {
-        throw throwUnsupportedExceptionForType("*");
+        throw getUnsupportedExceptionForOperation("*");
     }
 
     /**
@@ -582,7 +572,7 @@ public abstract class Value {
      * @return the result
      */
     public Value modulus(@SuppressWarnings("unused") Value v) {
-        throw throwUnsupportedExceptionForType("%");
+        throw getUnsupportedExceptionForOperation("%");
     }
 
     /**
@@ -591,10 +581,10 @@ public abstract class Value {
      * @param targetType the type of the returned value
      * @return the converted value
      */
-    public Value convertTo(int targetType) {
+    public final Value convertTo(int targetType) {
         // Use -1 to indicate "default behaviour" where value conversion should not
         // depend on any datatype precision.
-        return convertTo(targetType, -1, null);
+        return convertTo(targetType, null);
     }
 
     /**
@@ -602,7 +592,7 @@ public abstract class Value {
      * @param enumerators allowed values for the ENUM to which the value is converted
      * @return value represented as ENUM
      */
-    public Value convertToEnum(String[] enumerators) {
+    public final Value convertToEnum(String[] enumerators) {
         // Use -1 to indicate "default behaviour" where value conversion should not
         // depend on any datatype precision.
         return convertTo(ENUM, -1, null, null, enumerators);
@@ -612,14 +602,11 @@ public abstract class Value {
      * Compare a value to the specified type.
      *
      * @param targetType the type of the returned value
-     * @param precision the precision of the column to convert this value to.
-     *        The special constant <code>-1</code> is used to indicate that
-     *        the precision plays no role when converting the value
      * @param mode the mode
      * @return the converted value
      */
-    public final Value convertTo(int targetType, int precision, Mode mode) {
-        return convertTo(targetType, precision, mode, null, null);
+    public final Value convertTo(int targetType, Mode mode) {
+        return convertTo(targetType, -1, mode, null, null);
     }
 
     /**
@@ -772,7 +759,7 @@ public abstract class Value {
             case DECIMAL: {
                 switch (getType()) {
                 case BOOLEAN:
-                    return ValueDecimal.get(BigDecimal.valueOf(getBoolean() ? 1 : 0));
+                    return (ValueDecimal) (getBoolean() ? ValueDecimal.ONE : ValueDecimal.ZERO);
                 case BYTE:
                 case SHORT:
                 case ENUM:
@@ -1165,20 +1152,19 @@ public abstract class Value {
      * @return 0 if both values are equal, -1 if the other value is smaller, and
      *         1 otherwise
      */
-    public final int compareTypeSafe(Value v, CompareMode mode) {
-        return compareSecure(v, mode);
-    }
+    public abstract int compareTypeSafe(Value v, CompareMode mode);
 
     /**
      * Compare this value against another value using the specified compare
      * mode.
      *
      * @param v the other value
-     * @param mode the compare mode
+     * @param databaseMode the database mode
+     * @param compareMode the compare mode
      * @return 0 if both values are equal, -1 if the other value is smaller, and
      *         1 otherwise
      */
-    public final int compareTo(Value v, CompareMode mode) {
+    public final int compareTo(Value v, Mode databaseMode, CompareMode compareMode) {
         if (this == v) {
             return 0;
         }
@@ -1187,11 +1173,21 @@ public abstract class Value {
         } else if (v == ValueNull.INSTANCE) {
             return 1;
         }
-        if (getType() == v.getType()) {
-            return compareSecure(v, mode);
+        Value l = this;
+        int leftType = l.getType();
+        int rightType = v.getType();
+        if (leftType != rightType || leftType == Value.ENUM) {
+            int dataType = Value.getHigherOrder(leftType, rightType);
+            if (dataType == Value.ENUM) {
+                String[] enumerators = ValueEnum.getEnumeratorsForBinaryOperation(l, v);
+                l = l.convertToEnum(enumerators);
+                v = v.convertToEnum(enumerators);
+            } else {
+                l = l.convertTo(dataType, databaseMode);
+                v = v.convertTo(dataType, databaseMode);
+            }
         }
-        int t2 = Value.getHigherOrder(getType(), v.getType());
-        return convertTo(t2).compareSecure(v.convertTo(t2), mode);
+        return l.compareTypeSafe(v, compareMode);
     }
 
     public int getScale() {
@@ -1329,15 +1325,14 @@ public abstract class Value {
     }
 
     /**
-     * Throw the exception that the feature is not support for the given data
-     * type.
+     * Create an exception meaning the specified operation is not supported for
+     * this data type.
      *
      * @param op the operation
-     * @return never returns normally
-     * @throws DbException the exception
+     * @return the exception
      */
-    protected DbException throwUnsupportedExceptionForType(String op) {
-        throw DbException.getUnsupportedException(
+    protected final DbException getUnsupportedExceptionForOperation(String op) {
+        return DbException.getUnsupportedException(
                 DataType.getDataType(getType()).name + " " + op);
     }
 
