@@ -101,7 +101,7 @@ public class ValueDouble extends Value {
     }
 
     @Override
-    protected int compareTypeSafe(Value o, CompareMode mode) {
+    public int compareTypeSafe(Value o, CompareMode mode) {
         return Double.compare(value, ((ValueDouble) o).value);
     }
 

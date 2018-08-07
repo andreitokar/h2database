@@ -759,7 +759,7 @@ public abstract class Value {
             case DECIMAL: {
                 switch (getType()) {
                 case BOOLEAN:
-                    return (ValueDecimal) (getBoolean() ? ValueDecimal.ONE : ValueDecimal.ZERO);
+                    return (getBoolean() ? ValueDecimal.ONE : ValueDecimal.ZERO);
                 case BYTE:
                 case SHORT:
                 case ENUM:

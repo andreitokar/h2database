@@ -10,7 +10,6 @@ import java.util.List;
 import org.h2.api.ErrorCode;
 import org.h2.command.dml.AllColumnsForPlan;
 import org.h2.engine.Database;
-import org.h2.engine.Mode;
 import org.h2.engine.Session;
 import org.h2.index.BaseIndex;
 import org.h2.index.Cursor;
@@ -21,7 +20,6 @@ import org.h2.message.DbException;
 import org.h2.mvstore.rtree.MVRTreeMap;
 import org.h2.mvstore.rtree.MVRTreeMap.RTreeCursor;
 import org.h2.mvstore.rtree.SpatialKey;
-import org.h2.mvstore.type.DataType;
 import org.h2.mvstore.tx.Transaction;
 import org.h2.mvstore.tx.TransactionMap;
 import org.h2.mvstore.tx.VersionedValue;
@@ -30,7 +28,6 @@ import org.h2.result.SearchRow;
 import org.h2.result.SortOrder;
 import org.h2.table.IndexColumn;
 import org.h2.table.TableFilter;
-import org.h2.value.CompareMode;
 import org.h2.value.Value;
 import org.h2.value.ValueGeometry;
 import org.h2.value.ValueLong;
@@ -356,7 +353,7 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
         public SearchRow getSearchRow() {
             if (searchRow == null) {
                 if (current != null) {
-                    SearchRow searchRow = mvTable.getTemplateRow();
+                    searchRow = mvTable.getTemplateRow();
                     searchRow.setKey(current.getId());
                 }
             }

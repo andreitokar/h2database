@@ -12,6 +12,7 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.util.Arrays;
+import java.util.Objects;
 import org.h2.api.ErrorCode;
 import org.h2.engine.Database;
 import org.h2.engine.Mode;
