@@ -117,8 +117,8 @@ public class TestCacheLongKeyLIRS extends TestBase {
             test.put(j, j);
         }
         // for a cache of size 1000,
-        // there are 63 cold entries (about 6.25%).
-        assertEquals(63, test.size() - test.sizeHot());
+        // there are 32 cold entries (about 1/32).
+        assertEquals(32, test.size() - test.sizeHot());
         // at most as many non-resident elements
         // as there are entries in the stack
         assertEquals(1000, test.size());
@@ -178,16 +178,16 @@ public class TestCacheLongKeyLIRS extends TestBase {
         assertEquals(10, test.get(1).intValue());
         assertEquals(20, test.get(2).intValue());
         assertEquals(30, test.get(3).intValue());
-        verify(test, "mem: 4 stack: 3 2 1 cold: 5 non-resident: 4");
+        verify(test, "mem: 5 stack: 3 2 1 cold: 4 5 non-resident:");
         assertEquals(50, test.get(5).intValue());
-        verify(test, "mem: 4 stack: 5 3 2 1 cold: 5 non-resident: 4");
+        verify(test, "mem: 5 stack: 5 3 2 1 cold: 5 4 non-resident:");
         assertEquals(50, test.get(5).intValue());
-        verify(test, "mem: 4 stack: 5 3 2 cold: 1 non-resident: 4");
+        verify(test, "mem: 5 stack: 5 3 2 cold: 1 4 non-resident:");
 
         // remove
         assertEquals(50, test.remove(5).intValue());
         assertNull(test.remove(5));
-        verify(test, "mem: 3 stack: 3 2 1 cold: non-resident: 4");
+        verify(test, "mem: 4 stack: 3 2 1 cold: 4 non-resident:");
         assertNotNull(test.remove(4));
         verify(test, "mem: 3 stack: 3 2 1 cold: non-resident:");
         assertNull(test.remove(4));
@@ -333,7 +333,7 @@ public class TestCacheLongKeyLIRS extends TestBase {
         }
         assertEquals(100, test.size());
         assertEquals(200, test.sizeNonResident());
-        assertEquals(90, test.sizeHot());
+        assertEquals(96, test.sizeHot());
     }
 
     private void testLimitNonResident() {
@@ -341,8 +341,8 @@ public class TestCacheLongKeyLIRS extends TestBase {
         for (int i = 0; i < 20; i++) {
             test.put(i, 10 * i);
         }
-        verify(test, "mem: 4 stack: 19 18 17 16 15 14 13 12 11 10 3 2 1 " +
-                "cold: 19 non-resident: 18 17 16 15 14 13 12 11 10");
+        verify(test, "mem: 4 stack: 19 18 17 16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1 " +
+                     "cold: 19 non-resident: 18 17 16 15 14 13 12 11 10 9 8 7 6 5 4 0");
     }
 
     private void testLimitMemory() {
@@ -353,10 +353,10 @@ public class TestCacheLongKeyLIRS extends TestBase {
         verify(test, "mem: 4 stack: 4 3 2 1 cold: 4 non-resident: 0");
         assertTrue("" + test.getUsedMemory(), test.getUsedMemory() <= 4);
         test.put(6, 60, 3);
-        verify(test, "mem: 4 stack: 6 4 3 cold: 6 non-resident: 2 1 4");
+        verify(test, "mem: 4 stack: 6 4 3 cold: 6 non-resident: 2 1 4 0");
         assertTrue("" + test.getUsedMemory(), test.getUsedMemory() <= 4);
         test.put(7, 70, 3);
-        verify(test, "mem: 4 stack: 7 6 3 cold: 7 non-resident: 6 2 1");
+        verify(test, "mem: 4 stack: 7 6 4 3 cold: 7 non-resident: 6 2 1 4 0");
         assertTrue("" + test.getUsedMemory(), test.getUsedMemory() <= 4);
         test.put(8, 80, 4);
         verify(test, "mem: 4 stack: 8 cold: non-resident:");
@@ -403,15 +403,14 @@ public class TestCacheLongKeyLIRS extends TestBase {
             }
             verify(test, null);
         }
+
         // ensure 0..9 are hot, 10..17 are not resident, 18..19 are cold
         for (int i = 0; i < size; i++) {
             Integer x = test.get(i);
-//            if (i < size / 2 || i == size - 1 || i == size - 2) {
+            if (i < size / 2 || i == size - 1 || i == size - 2) {
                 assertNotNull("i: " + i, x);
                 assertEquals(i * 10, x.intValue());
-//            } else {
-//                assertNull(x);
-//            }
+            }
             verify(test, null);
         }
     }
@@ -481,12 +480,10 @@ public class TestCacheLongKeyLIRS extends TestBase {
     }
 
     private <V> void verify(CacheLongKeyLIRS<V> cache, String expected) {
-/*
         if (expected != null) {
             String got = toString(cache);
             assertEquals(expected, got);
         }
-*/
         int mem = 0;
         for (long k : cache.keySet()) {
             mem += cache.getMemory(k);
