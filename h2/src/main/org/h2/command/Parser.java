@@ -2358,55 +2358,57 @@ public class Parser {
             command.setOrder(orderList);
             currentSelect = oldSelect;
         }
-        // make sure aggregate functions will not work here
-        Select temp = currentSelect;
-        currentSelect = null;
-        // http://sqlpro.developpez.com/SQL2008/
-        if (readIf(OFFSET)) {
-            command.setOffset(readExpression().optimize(session));
-            if (!readIf("ROW")) {
-                readIf("ROWS");
+        if (command.getLimit() == null) {
+            // make sure aggregate functions will not work here
+            Select temp = currentSelect;
+            currentSelect = null;
+            boolean hasOffsetOrFetch = false;
+            // Standard SQL OFFSET / FETCH
+            if (readIf(OFFSET)) {
+                hasOffsetOrFetch = true;
+                command.setOffset(readExpression().optimize(session));
+                if (!readIf("ROW")) {
+                    readIf("ROWS");
+                }
             }
-        }
-        if (readIf(FETCH)) {
-            if (!readIf("FIRST")) {
-                read("NEXT");
+            if (readIf(FETCH)) {
+                hasOffsetOrFetch = true;
+                if (!readIf("FIRST")) {
+                    read("NEXT");
+                }
+                if (readIf("ROW") || readIf("ROWS")) {
+                    command.setLimit(ValueExpression.get(ValueInt.get(1)));
+                } else {
+                    Expression limit = readExpression().optimize(session);
+                    command.setLimit(limit);
+                    if (readIf("PERCENT")) {
+                        command.setFetchPercent(true);
+                    }
+                    if (!readIf("ROW")) {
+                        read("ROWS");
+                    }
+                }
+                if (readIf(WITH)) {
+                    read("TIES");
+                    command.setWithTies(true);
+                } else {
+                    read("ONLY");
+                }
             }
-            if (readIf("ROW") || readIf("ROWS")) {
-                command.setLimit(ValueExpression.get(ValueInt.get(1)));
-            } else {
+            // MySQL-style LIMIT / OFFSET
+            if (!hasOffsetOrFetch && readIf(LIMIT)) {
                 Expression limit = readExpression().optimize(session);
                 command.setLimit(limit);
-                if (readIf("PERCENT")) {
-                    command.setFetchPercent(true);
+                if (readIf(OFFSET)) {
+                    Expression offset = readExpression().optimize(session);
+                    command.setOffset(offset);
+                } else if (readIf(COMMA)) {
+                    // MySQL: [offset, ] rowcount
+                    Expression offset = limit;
+                    limit = readExpression().optimize(session);
+                    command.setOffset(offset);
+                    command.setLimit(limit);
                 }
-                if (!readIf("ROW")) {
-                    read("ROWS");
-                }
-            }
-            if (readIf(WITH)) {
-                read("TIES");
-                command.setWithTies(true);
-            } else {
-                read("ONLY");
-            }
-        }
-        currentSelect = temp;
-        if (readIf(LIMIT)) {
-            temp = currentSelect;
-            // make sure aggregate functions will not work here
-            currentSelect = null;
-            Expression limit = readExpression().optimize(session);
-            command.setLimit(limit);
-            if (readIf(OFFSET)) {
-                Expression offset = readExpression().optimize(session);
-                command.setOffset(offset);
-            } else if (readIf(COMMA)) {
-                // MySQL: [offset, ] rowcount
-                Expression offset = limit;
-                limit = readExpression().optimize(session);
-                command.setOffset(offset);
-                command.setLimit(limit);
             }
             if (readIf("SAMPLE_SIZE")) {
                 Expression sampleSize = readExpression().optimize(session);
@@ -4686,15 +4688,25 @@ public class Parser {
         int originalScale = -1;
         if (readIf("LONG")) {
             if (readIf("RAW")) {
-                original += " RAW";
+                original = "LONG RAW";
             }
         } else if (readIf("DOUBLE")) {
             if (readIf("PRECISION")) {
-                original += " PRECISION";
+                original = "DOUBLE PRECISION";
             }
         } else if (readIf("CHARACTER")) {
             if (readIf("VARYING")) {
-                original += " VARYING";
+                original = "CHARACTER VARYING";
+            } else if (readIf("LARGE")) {
+                read("OBJECT");
+                original = "CHARACTER LARGE OBJECT";
+            }
+        } else if (readIf("BINARY")) {
+            if (readIf("VARYING")) {
+                original = "BINARY VARYING";
+            } else if (readIf("LARGE")) {
+                read("OBJECT");
+                original = "BINARY LARGE OBJECT";
             }
         } else if (readIf("TIME")) {
             if (readIf(OPEN_PAREN)) {
@@ -4707,7 +4719,7 @@ public class Parser {
             if (readIf("WITHOUT")) {
                 read("TIME");
                 read("ZONE");
-                original += " WITHOUT TIME ZONE";
+                original = "TIME WITHOUT TIME ZONE";
             }
         } else if (readIf("TIMESTAMP")) {
             if (readIf(OPEN_PAREN)) {
@@ -4724,11 +4736,11 @@ public class Parser {
             if (readIf(WITH)) {
                 read("TIME");
                 read("ZONE");
-                original += " WITH TIME ZONE";
+                original = "TIMESTAMP WITH TIME ZONE";
             } else if (readIf("WITHOUT")) {
                 read("TIME");
                 read("ZONE");
-                original += " WITHOUT TIME ZONE";
+                original = "TIMESTAMP WITHOUT TIME ZONE";
             }
         } else {
             regular = true;

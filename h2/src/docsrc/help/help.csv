@@ -10,10 +10,10 @@ FROM tableExpression [,...] [ WHERE expression ]
 [ GROUP BY expression [,...] ] [ HAVING expression ]
 [ { UNION [ ALL ] | MINUS | EXCEPT | INTERSECT } select ]
 [ ORDER BY order [,...] ]
-[ { LIMIT expression [ OFFSET expression ] [ SAMPLE_SIZE rowCountInt ] }
-    | { [ OFFSET expression { ROW | ROWS } ]
-    [ FETCH { FIRST | NEXT } [ [ expression ] PERCENT ] { ROW | ROWS }
-        { ONLY | WITH TIES } ] } ]
+[ { { LIMIT expression [ OFFSET expression ] }
+| { [ OFFSET expression { ROW | ROWS } ]
+    [ FETCH { FIRST | NEXT } [ expression [ PERCENT ] ] { ROW | ROWS }
+        { ONLY | WITH TIES } ] } } [ SAMPLE_SIZE rowCountInt ] ]
 [ FOR UPDATE ]
 ","
 Selects data from a table or multiple tables.
@@ -22,9 +22,16 @@ HAVING filter rows after grouping.
 ORDER BY sorts the result by the given column(s) or expression(s).
 UNION combines the result of this query with the results of another query.
 
+Number of rows in output can be limited either with standard OFFSET / FETCH,
+with non-standard LIMIT / OFFSET, or with non-standard TOP clauses.
+Different clauses cannot be used together.
 FETCH FIRST/NEXT, LIMIT or TOP limits the number of rows returned by the query (no limit if null or smaller than zero).
-OFFSET specified how many rows to skip.
-Please note using high offset values should be avoided because it can cause performance problems.
+If PERCENT is specified number of rows is specified as a percent of the total number of rows
+and should be an integer value between 0 and 100 inclusive.
+WITH TIES can be used only together with ORDER BY and means that all additional rows that have the same sorting position
+as the last row will be also returned.
+OFFSET specifies how many rows to skip.
+Please note that queries with high offset values can be slow.
 SAMPLE_SIZE limits the number of rows read for aggregate queries.
 
 Multiple set operators (UNION, INTERSECT, MINUS, EXCEPT) are evaluated
@@ -41,7 +48,8 @@ SELECT * FROM TEST ORDER BY NAME;
 SELECT ID, COUNT(*) FROM TEST GROUP BY ID;
 SELECT NAME, COUNT(*) FROM TEST GROUP BY NAME HAVING COUNT(*) > 2;
 SELECT 'ID' COL, MAX(ID) AS MAX FROM TEST UNION SELECT 'NAME', MAX(NAME) FROM TEST;
-SELECT * FROM TEST LIMIT 1000;
+SELECT * FROM TEST OFFSET 1000 ROWS FETCH NEXT 1000 ROWS ONLY;
+SELECT A, B FROM TEST ORDER BY A FETCH NEXT 10 ROWS WITH TIES;
 SELECT * FROM (SELECT ID, COUNT(*) FROM TEST
     GROUP BY ID UNION SELECT NULL, COUNT(*) FROM TEST)
     ORDER BY 1 NULLS LAST;
@@ -2749,7 +2757,8 @@ TIMESTAMP WITH TIME ZONE
 "
 
 "Data Types","BINARY Type","
-{ BINARY | VARBINARY | LONGVARBINARY | RAW | BYTEA }
+{ BINARY | VARBINARY | BINARY VARYING
+    | LONGVARBINARY | RAW | BYTEA }
 [ ( precisionInt ) ]
 ","
 Represents a byte array. For very long arrays, use BLOB.
@@ -2778,7 +2787,7 @@ OTHER
 "
 
 "Data Types","VARCHAR Type","
-{ VARCHAR | LONGVARCHAR | VARCHAR2 | NVARCHAR
+{ VARCHAR | CHARACTER VARYING | LONGVARCHAR | VARCHAR2 | NVARCHAR
     | NVARCHAR2 | VARCHAR_CASESENSITIVE} [ ( precisionInt ) ]
 ","
 A Unicode String.
@@ -2831,7 +2840,8 @@ CHAR(10)
 "
 
 "Data Types","BLOB Type","
-{ BLOB | TINYBLOB | MEDIUMBLOB | LONGBLOB | IMAGE | OID }
+{ BLOB | BINARY LARGE OBJECT
+    | TINYBLOB | MEDIUMBLOB | LONGBLOB | IMAGE | OID }
 [ ( precisionInt ) ]
 ","
 Like BINARY, but intended for very large values such as files or images. Unlike
@@ -2845,7 +2855,8 @@ BLOB
 "
 
 "Data Types","CLOB Type","
-{ CLOB | TINYTEXT | TEXT | MEDIUMTEXT | LONGTEXT | NTEXT | NCLOB }
+{ CLOB | CHARACTER LARGE OBJECT
+    | TINYTEXT | TEXT | MEDIUMTEXT | LONGTEXT | NTEXT | NCLOB }
 [ ( precisionInt ) ]
 ","
 CLOB is like VARCHAR, but intended for very large values. Unlike when using
