@@ -354,7 +354,7 @@ public class SysProperties {
      * unless {@code h2.preview} is enabled.
      * <p>
      * If {@code true} map {@code BigDecimal} to {@code DECIMAL} type.
-     * <p>
+     * </p>
      * <p>
      * If {@code false} map {@code BigDecimal} to {@code NUMERIC} as specified
      * in JDBC specification (see Mapping from Java Object Types to JDBC Types).
@@ -382,38 +382,6 @@ public class SysProperties {
      * </p>
      */
     public static final boolean RETURN_OFFSET_DATE_TIME = Utils.getProperty("h2.returnOffsetDateTime", PREVIEW);
-
-    /**
-     * System property {@code h2.unlimitedTimeRange}, {@code false} by default.
-     *
-     * <p>
-     * Controls limits of TIME data type.
-     * </p>
-     *
-     * <table>
-     * <thead>
-     * <tr>
-     * <th>h2.unlimitedTimeRange</th>
-     * <th>Minimum TIME value</th>
-     * <th>Maximum TIME value</th>
-     * </tr>
-     * </thead>
-     * <tbody>
-     * <tr>
-     * <td>false</td>
-     * <td>00:00:00.000000000</td>
-     * <td>23:59:59.999999999</td>
-     * </tr>
-     * <tr>
-     * <td>true</td>
-     * <td>-2562047:47:16.854775808</td>
-     * <td>2562047:47:16.854775807</td>
-     * </tr>
-     * </tbody>
-     * </table>
-     */
-    public static final boolean UNLIMITED_TIME_RANGE =
-            Utils.getProperty("h2.unlimitedTimeRange", false);
 
     /**
      * System property <code>h2.pgClientEncoding</code> (default: UTF-8).<br />

@@ -6,15 +6,20 @@
  */
 package org.h2.util;
 
+import java.math.BigInteger;
 import java.sql.Date;
 import java.sql.Time;
 import java.sql.Timestamp;
 import java.util.Calendar;
 import java.util.GregorianCalendar;
 import java.util.TimeZone;
+import org.h2.api.ErrorCode;
+import org.h2.api.IntervalQualifier;
 import org.h2.engine.Mode;
+import org.h2.message.DbException;
 import org.h2.value.Value;
 import org.h2.value.ValueDate;
+import org.h2.value.ValueInterval;
 import org.h2.value.ValueNull;
 import org.h2.value.ValueTime;
 import org.h2.value.ValueTimestamp;
@@ -42,6 +47,21 @@ public class DateTimeUtils {
      * UTC time zone.
      */
     public static final TimeZone UTC = TimeZone.getTimeZone("UTC");
+
+    /**
+     * The number of nanoseconds per second.
+     */
+    public static final long NANOS_PER_SECOND = 1_000_000_000;
+
+    /**
+     * The number of nanoseconds per minute.
+     */
+    public static final long NANOS_PER_MINUTE = 60 * NANOS_PER_SECOND;
+
+    /**
+     * The number of nanoseconds per hour.
+     */
+    public static final long NANOS_PER_HOUR = 60 * NANOS_PER_MINUTE;
 
     /**
      * The number of nanoseconds per day.
@@ -316,6 +336,7 @@ public class DateTimeUtils {
 
     /**
      * Parse a date string. The format is: [+|-]year-month-day
+     * or [+|-]yyyyMMdd.
      *
      * @param s the string to parse
      * @param start the parse index start
@@ -329,14 +350,28 @@ public class DateTimeUtils {
             start++;
         }
         // start at position 1 to support "-year"
-        int s1 = s.indexOf('-', start + 1);
-        int s2 = s.indexOf('-', s1 + 1);
-        if (s1 <= 0 || s2 <= s1) {
-            throw new IllegalArgumentException(s);
+        int yEnd = s.indexOf('-', start + 1);
+        int mStart, mEnd, dStart;
+        if (yEnd > 0) {
+            // Standard [+|-]year-month-day format
+            mStart = yEnd + 1;
+            mEnd = s.indexOf('-', mStart);
+            if (mEnd <= mStart) {
+                throw new IllegalArgumentException(s);
+            }
+            dStart = mEnd + 1;
+        } else {
+            // Additional [+|-]yyyyMMdd format for compatibility
+            mEnd = dStart = end - 2;
+            yEnd = mStart = mEnd - 2;
+            // Accept only 3 or more digits in year for now
+            if (yEnd < start + 3) {
+                throw new IllegalArgumentException(s);
+            }
         }
-        int year = Integer.parseInt(s.substring(start, s1));
-        int month = Integer.parseInt(s.substring(s1 + 1, s2));
-        int day = Integer.parseInt(s.substring(s2 + 1, end));
+        int year = Integer.parseInt(s.substring(start, yEnd));
+        int month = StringUtils.parseUInt31(s, mStart, mEnd);
+        int day = StringUtils.parseUInt31(s, dStart, end);
         if (!isValidDate(year, month, day)) {
             throw new IllegalArgumentException(year + "-" + month + "-" + day);
         }
@@ -344,66 +379,104 @@ public class DateTimeUtils {
     }
 
     /**
-     * Parse a time string. The format is: [-]hour:minute:second[.nanos] or
-     * alternatively [-]hour.minute.second[.nanos].
+     * Parse a time string. The format is: hour:minute[:second[.nanos]],
+     * hhmm[ss[.nanos]], or hour.minute.second[.nanos].
      *
      * @param s the string to parse
      * @param start the parse index start
      * @param end the parse index end
-     * @param timeOfDay whether the result need to be within 0 (inclusive) and 1
-     *            day (exclusive)
      * @return the time in nanoseconds
      * @throws IllegalArgumentException if there is a problem
      */
-    public static long parseTimeNanos(String s, int start, int end,
-            boolean timeOfDay) {
-        int hour = 0, minute = 0, second = 0;
-        long nanos = 0;
-        int s1 = s.indexOf(':', start);
-        int s2 = s.indexOf(':', s1 + 1);
-        int s3 = s.indexOf('.', s2 + 1);
-        if (s1 <= 0 || s2 <= s1) {
-            // if first try fails try to use IBM DB2 time format
-            // [-]hour.minute.second[.nanos]
-            s1 = s.indexOf('.', start);
-            s2 = s.indexOf('.', s1 + 1);
-            s3 = s.indexOf('.', s2 + 1);
+    public static long parseTimeNanos(String s, int start, int end) {
+        int hour, minute, second, nanos;
+        int hEnd = s.indexOf(':', start);
+        int mStart, mEnd, sStart, sEnd;
+        if (hEnd > 0) {
+            mStart = hEnd + 1;
+            mEnd = s.indexOf(':', mStart);
+            if (mEnd >= mStart) {
+                // Standard hour:minute:second[.nanos] format
+                sStart = mEnd + 1;
+                sEnd = s.indexOf('.', sStart);
+            } else {
+                // Additional hour:minute format for compatibility
+                mEnd = end;
+                sStart = sEnd = -1;
+            }
+        } else {
+            int t = s.indexOf('.', start);
+            if (t < 0) {
+                // Additional hhmm[ss] format for compatibility
+                hEnd = mStart = start + 2;
+                mEnd = mStart + 2;
+                int len = end - start;
+                if (len == 6) {
+                    sStart = mEnd;
+                    sEnd = -1;
+                } else if (len == 4) {
+                    sStart = sEnd = -1;
+                } else {
+                    throw new IllegalArgumentException(s);
+                }
+            } else if (t >= start + 6) {
+                // Additional hhmmss.nanos format for compatibility
+                if (t - start != 6) {
+                    throw new IllegalArgumentException(s);
+                }
+                hEnd = mStart = start + 2;
+                mEnd = sStart = mStart + 2;
+                sEnd = t;
+            } else {
+                // Additional hour.minute.second[.nanos] IBM DB2 time format
+                hEnd = t;
+                mStart = hEnd + 1;
+                mEnd = s.indexOf('.', mStart);
+                if (mEnd <= mStart) {
+                    throw new IllegalArgumentException(s);
+                }
+                sStart = mEnd + 1;
+                sEnd = s.indexOf('.', sStart);
+            }
+        }
+        hour = StringUtils.parseUInt31(s, start, hEnd);
+        if (hour >= 24) {
+            throw new IllegalArgumentException(s);
+        }
+        minute = StringUtils.parseUInt31(s, mStart, mEnd);
+        if (sStart > 0) {
+            if (sEnd < 0) {
+                second = StringUtils.parseUInt31(s, sStart, end);
+                nanos = 0;
+            } else {
+                second = StringUtils.parseUInt31(s, sStart, sEnd);
+                nanos = parseNanos(s, sEnd + 1, end);
+            }
+        } else {
+            second = nanos = 0;
+        }
+        if (minute >= 60 || second >= 60) {
+            throw new IllegalArgumentException(s);
+        }
+        return ((((hour * 60L) + minute) * 60) + second) * NANOS_PER_SECOND + nanos;
+    }
 
-            if (s1 <= 0 || s2 <= s1) {
-                throw new IllegalArgumentException(s);
-            }
-        }
-        boolean negative;
-        hour = Integer.parseInt(s.substring(start, s1));
-        if (hour < 0 || hour == 0 && s.charAt(0) == '-') {
-            if (timeOfDay) {
-                /*
-                 * This also forbids -00:00:00 and similar values.
-                 */
-                throw new IllegalArgumentException(s);
-            }
-            negative = true;
-            hour = -hour;
-        } else {
-            negative = false;
-        }
-        minute = Integer.parseInt(s.substring(s1 + 1, s2));
-        if (s3 < 0) {
-            second = Integer.parseInt(s.substring(s2 + 1, end));
-        } else {
-            second = Integer.parseInt(s.substring(s2 + 1, s3));
-            String n = (s.substring(s3 + 1, end) + "000000000").substring(0, 9);
-            nanos = Integer.parseInt(n);
-        }
-        if (hour >= 2_000_000 || minute < 0 || minute >= 60 || second < 0
-                || second >= 60) {
+    private static int parseNanos(String s, int start, int end) {
+        if (start >= end) {
             throw new IllegalArgumentException(s);
         }
-        if (timeOfDay && hour >= 24) {
-            throw new IllegalArgumentException(s);
-        }
-        nanos += ((((hour * 60L) + minute) * 60) + second) * 1_000_000_000;
-        return negative ? -nanos : nanos;
+        int nanos = 0, mul = 100_000_000;
+        do {
+            char c = s.charAt(start);
+            if (c < '0' || c > '9') {
+                throw new IllegalArgumentException(s);
+            }
+            nanos += mul * (c - '0');
+            // mul can become 0, but continue loop anyway to ensure that all
+            // remaining digits are valid
+            mul /= 10;
+        } while (++start < end);
+        return nanos;
     }
 
     /**
@@ -491,7 +564,7 @@ public class DateTimeUtils {
                     }
                 }
             }
-            nanos = parseTimeNanos(s, dateEnd + 1, timeEnd, true);
+            nanos = parseTimeNanos(s, dateEnd + 1, timeEnd);
             if (tz != null) {
                 if (withTimeZone) {
                     if (tz != UTC) {
@@ -938,7 +1011,7 @@ public class DateTimeUtils {
             long timeNanos) {
         Timestamp ts = new Timestamp(convertDateTimeValueToMillis(null, dateValue, timeNanos / 1_000_000));
         // This method expects the complete nanoseconds value including milliseconds
-        ts.setNanos((int) (timeNanos % 1_000_000_000));
+        ts.setNanos((int) (timeNanos % NANOS_PER_SECOND));
         return ts;
     }
 
@@ -953,7 +1026,7 @@ public class DateTimeUtils {
      */
     public static Timestamp convertTimestampTimeZoneToTimestamp(long dateValue, long timeNanos, short offsetMins) {
         Timestamp ts = new Timestamp(getMillis(dateValue, timeNanos, offsetMins));
-        ts.setNanos((int) (timeNanos % 1_000_000_000));
+        ts.setNanos((int) (timeNanos % NANOS_PER_SECOND));
         return ts;
     }
 
@@ -1399,17 +1472,21 @@ public class DateTimeUtils {
         StringUtils.appendZeroPadded(buff, 2, s);
         if (ms > 0 || nanos > 0) {
             buff.append('.');
-            int start = buff.length();
             StringUtils.appendZeroPadded(buff, 3, ms);
             if (nanos > 0) {
                 StringUtils.appendZeroPadded(buff, 6, nanos);
             }
-            for (int i = buff.length() - 1; i > start; i--) {
-                if (buff.charAt(i) != '0') {
-                    break;
-                }
-                buff.deleteCharAt(i);
+            stripTrailingZeroes(buff);
+        }
+    }
+
+    private static void stripTrailingZeroes(StringBuilder buff) {
+        int i = buff.length() - 1;
+        if (buff.charAt(i) == '0') {
+            while (buff.charAt(--i) == '0') {
+                // do nothing
             }
+            buff.setLength(i + 1);
         }
     }
 
@@ -1479,6 +1556,414 @@ public class DateTimeUtils {
     }
 
     /**
+     * Parses the specified string as {@code INTERVAL} value.
+     *
+     * @param qualifier the default qualifier to use if string does not have one
+     * @param s the string with type information to parse
+     * @return the interval value.
+     *         Type of value can be different from the specified qualifier.
+     */
+    public static ValueInterval parseFormattedInterval(IntervalQualifier qualifier, String s) {
+        int i = 0;
+        i = skipWS(s, i);
+        if (!s.regionMatches(true, i, "INTERVAL", 0, 8)) {
+            return parseInterval(qualifier, false, s);
+        }
+        i = skipWS(s, i + 8);
+        boolean negative = false;
+        char ch = s.charAt(i);
+        if (ch == '-') {
+            negative = true;
+            i = skipWS(s, i + 1);
+            ch = s.charAt(i);
+        } else if (ch == '+') {
+            i = skipWS(s, i + 1);
+            ch = s.charAt(i);
+        }
+        if (ch != '\'') {
+            throw new IllegalArgumentException(s);
+        }
+        int start = ++i;
+        int l = s.length();
+        for (;;) {
+            if (i == l) {
+                throw new IllegalArgumentException(s);
+            }
+            if (s.charAt(i) == '\'') {
+                break;
+            }
+            i++;
+        }
+        String v = s.substring(start, i);
+        i = skipWS(s, i + 1);
+        if (s.regionMatches(true, i, "YEAR", 0, 4)) {
+            i += 4;
+            int j = skipWSEnd(s, i);
+            if (j == l) {
+                return parseInterval(IntervalQualifier.YEAR, negative, v);
+            }
+            if (j > i && s.regionMatches(true, j, "TO", 0, 2)) {
+                j += 2;
+                i = skipWS(s, j);
+                if (i > j && s.regionMatches(true, i, "MONTH", 0, 5)) {
+                    if (skipWSEnd(s, i + 5) == l) {
+                        return parseInterval(IntervalQualifier.YEAR_TO_MONTH, negative, v);
+                    }
+                }
+            }
+        } else if (s.regionMatches(true, i, "MONTH", 0, 5)) {
+            if (skipWSEnd(s, i + 5) == l) {
+                return parseInterval(IntervalQualifier.MONTH, negative, v);
+            }
+        } if (s.regionMatches(true, i, "DAY", 0, 3)) {
+            i += 3;
+            int j = skipWSEnd(s, i);
+            if (j == l) {
+                return parseInterval(IntervalQualifier.DAY, negative, v);
+            }
+            if (j > i && s.regionMatches(true, j, "TO", 0, 2)) {
+                j += 2;
+                i = skipWS(s, j);
+                if (i > j) {
+                    if (s.regionMatches(true, i, "HOUR", 0, 4)) {
+                        if (skipWSEnd(s, i + 4) == l) {
+                            return parseInterval(IntervalQualifier.DAY_TO_HOUR, negative, v);
+                        }
+                    } else if (s.regionMatches(true, i, "MINUTE", 0, 6)) {
+                        if (skipWSEnd(s, i + 6) == l) {
+                            return parseInterval(IntervalQualifier.DAY_TO_MINUTE, negative, v);
+                        }
+                    } else if (s.regionMatches(true, i, "SECOND", 0, 6)) {
+                        if (skipWSEnd(s, i + 6) == l) {
+                            return parseInterval(IntervalQualifier.DAY_TO_SECOND, negative, v);
+                        }
+                    }
+                }
+            }
+        } if (s.regionMatches(true, i, "HOUR", 0, 4)) {
+            i += 4;
+            int j = skipWSEnd(s, i);
+            if (j == l) {
+                return parseInterval(IntervalQualifier.HOUR, negative, v);
+            }
+            if (j > i && s.regionMatches(true, j, "TO", 0, 2)) {
+                j += 2;
+                i = skipWS(s, j);
+                if (i > j) {
+                    if (s.regionMatches(true, i, "MINUTE", 0, 6)) {
+                        if (skipWSEnd(s, i + 6) == l) {
+                            return parseInterval(IntervalQualifier.HOUR_TO_MINUTE, negative, v);
+                        }
+                    } else if (s.regionMatches(true, i, "SECOND", 0, 6)) {
+                        if (skipWSEnd(s, i + 6) == l) {
+                            return parseInterval(IntervalQualifier.HOUR_TO_SECOND, negative, v);
+                        }
+                    }
+                }
+            }
+        } if (s.regionMatches(true, i, "MINUTE", 0, 6)) {
+            i += 6;
+            int j = skipWSEnd(s, i);
+            if (j == l) {
+                return parseInterval(IntervalQualifier.MINUTE, negative, v);
+            }
+            if (j > i && s.regionMatches(true, j, "TO", 0, 2)) {
+                j += 2;
+                i = skipWS(s, j);
+                if (i > j && s.regionMatches(true, i, "SECOND", 0, 6)) {
+                    if (skipWSEnd(s, i + 6) == l) {
+                        return parseInterval(IntervalQualifier.MINUTE_TO_SECOND, negative, v);
+                    }
+                }
+            }
+        } if (s.regionMatches(true, i, "SECOND", 0, 6)) {
+            if (skipWSEnd(s, i + 6) == l) {
+                return parseInterval(IntervalQualifier.SECOND, negative, v);
+            }
+        }
+        throw new IllegalArgumentException(s);
+    }
+
+    private static int skipWS(String s, int i) {
+        for (int l = s.length(); ; i++) {
+            if (i == l) {
+                throw new IllegalArgumentException(s);
+            }
+            if (!Character.isWhitespace(s.charAt(i))) {
+                return i;
+            }
+        }
+    }
+
+    private static int skipWSEnd(String s, int i) {
+        for (int l = s.length(); ; i++) {
+            if (i == l) {
+                return i;
+            }
+            if (!Character.isWhitespace(s.charAt(i))) {
+                return i;
+            }
+        }
+    }
+
+    /**
+     * Parses the specified string as {@code INTERVAL} value.
+     *
+     * @param qualifier the qualifier of interval
+     * @param negative whether the interval is negative
+     * @param s the string to parse
+     * @return the interval value
+     */
+    public static ValueInterval parseInterval(IntervalQualifier qualifier, boolean negative, String s) {
+        long leading, remaining;
+        switch (qualifier) {
+        case YEAR:
+        case MONTH:
+        case DAY:
+        case HOUR:
+        case MINUTE:
+            leading = parseIntervalLeading(s, 0, s.length(), negative);
+            remaining = 0;
+            break;
+        case SECOND: {
+            int dot = s.indexOf('.');
+            if (dot < 0) {
+                leading = parseIntervalLeading(s, 0, s.length(), negative);
+                remaining = 0;
+            } else {
+                leading = parseIntervalLeading(s, 0, dot, negative);
+                remaining = parseNanos(s, dot + 1, s.length());
+            }
+            break;
+        }
+        case YEAR_TO_MONTH:
+            return parseInterval2(qualifier, s, '-', 11, negative);
+        case DAY_TO_HOUR:
+            return parseInterval2(qualifier, s, ' ', 23, negative);
+        case DAY_TO_MINUTE: {
+            int space = s.indexOf(' ');
+            if (space < 0) {
+                leading = parseIntervalLeading(s, 0, s.length(), negative);
+                remaining = 0;
+            } else {
+                leading = parseIntervalLeading(s, 0, space, negative);
+                int colon = s.indexOf(':', space + 1);
+                if (colon < 0) {
+                    remaining = parseIntervalRemaining(s, space + 1, s.length(), 23) * 60;
+                } else {
+                    remaining = parseIntervalRemaining(s, space + 1, colon, 23) * 60
+                            + parseIntervalRemaining(s, colon + 1, s.length(), 59);
+                }
+            }
+            break;
+        }
+        case DAY_TO_SECOND: {
+            int space = s.indexOf(' ');
+            if (space < 0) {
+                leading = parseIntervalLeading(s, 0, s.length(), negative);
+                remaining = 0;
+            } else {
+                leading = parseIntervalLeading(s, 0, space, negative);
+                int colon = s.indexOf(':', space + 1);
+                if (colon < 0) {
+                    remaining = parseIntervalRemaining(s, space + 1, s.length(), 23) * NANOS_PER_HOUR;
+                } else {
+                    int colon2 = s.indexOf(':', colon + 1);
+                    if (colon2 < 0) {
+                        remaining = parseIntervalRemaining(s, space + 1, colon, 23) * NANOS_PER_HOUR
+                                + parseIntervalRemaining(s, colon + 1, s.length(), 59) * NANOS_PER_MINUTE;
+                    } else {
+                        remaining = parseIntervalRemaining(s, space + 1, colon, 23) * NANOS_PER_HOUR
+                                + parseIntervalRemaining(s, colon + 1, colon2, 59) * NANOS_PER_MINUTE
+                                + parseIntervalRemainingSeconds(s, colon2 + 1);
+                    }
+                }
+            }
+            break;
+        }
+        case HOUR_TO_MINUTE:
+            return parseInterval2(qualifier, s, ':', 59, negative);
+        case HOUR_TO_SECOND: {
+            int colon = s.indexOf(':');
+            if (colon < 0) {
+                leading = parseIntervalLeading(s, 0, s.length(), negative);
+                remaining = 0;
+            } else {
+                leading = parseIntervalLeading(s, 0, colon, negative);
+                int colon2 = s.indexOf(':', colon + 1);
+                if (colon2 < 0) {
+                    remaining = parseIntervalRemaining(s, colon + 1, s.length(), 59) * NANOS_PER_MINUTE;
+                } else {
+                    remaining = parseIntervalRemaining(s, colon + 1, colon2, 59) * NANOS_PER_MINUTE
+                            + parseIntervalRemainingSeconds(s, colon2 + 1);
+                }
+            }
+            break;
+        }
+        case MINUTE_TO_SECOND: {
+            int dash = s.indexOf(':');
+            if (dash < 0) {
+                leading = parseIntervalLeading(s, 0, s.length(), negative);
+                remaining = 0;
+            } else {
+                leading = parseIntervalLeading(s, 0, dash, negative);
+                remaining = parseIntervalRemainingSeconds(s, dash + 1);
+            }
+            break;
+        }
+        default:
+            throw new IllegalArgumentException();
+        }
+        negative = leading < 0;
+        if (negative) {
+            if (leading != Long.MIN_VALUE) {
+                leading = -leading;
+            } else {
+                leading = 0;
+            }
+        }
+        return ValueInterval.from(qualifier, negative, leading, remaining);
+    }
+
+    static ValueInterval parseInterval2(IntervalQualifier qualifier, String s, char ch, int max, boolean negative) {
+        long leading;
+        long remaining;
+        int dash = s.indexOf(ch, 1);
+        if (dash < 0) {
+            leading = parseIntervalLeading(s, 0, s.length(), negative);
+            remaining = 0;
+        } else {
+            leading = parseIntervalLeading(s, 0, dash, negative);
+            remaining = parseIntervalRemaining(s, dash + 1, s.length(), max);
+        }
+        negative = leading < 0;
+        if (negative) {
+            if (leading != Long.MIN_VALUE) {
+                leading = -leading;
+            } else {
+                leading = 0;
+            }
+        }
+        return ValueInterval.from(qualifier, negative, leading, remaining);
+    }
+
+    private static long parseIntervalLeading(String s, int start, int end, boolean negative) {
+        long leading = Long.parseLong(s.substring(start, end));
+        if (leading == 0) {
+            return negative ^ s.charAt(start) == '-' ? Long.MIN_VALUE : 0;
+        }
+        return negative ? -leading : leading;
+    }
+
+    private static long parseIntervalRemaining(String s, int start, int end, int max) {
+        int v = StringUtils.parseUInt31(s, start, end);
+        if (v > max) {
+            throw new IllegalArgumentException(s);
+        }
+        return v;
+    }
+
+    private static long parseIntervalRemainingSeconds(String s, int start) {
+        int seconds, nanos;
+        int dot = s.indexOf('.', start + 1);
+        if (dot < 0) {
+            seconds = StringUtils.parseUInt31(s, start, s.length());
+            nanos = 0;
+        } else {
+            seconds = StringUtils.parseUInt31(s, start, dot);
+            nanos = parseNanos(s, dot + 1, s.length());
+        }
+        if (seconds > 59) {
+            throw new IllegalArgumentException(s);
+        }
+        return seconds * NANOS_PER_SECOND + nanos;
+    }
+
+    /**
+     * Formats interval as a string.
+     *
+     * @param qualifier qualifier of the interval
+     * @param negative whether interval is negative
+     * @param leading the value of leading field
+     * @param remaining the value of all remaining fields
+     * @return string representation of the specified interval
+     */
+    public static String intervalToString(IntervalQualifier qualifier, boolean negative, long leading, long remaining)
+    {
+        StringBuilder buff = new StringBuilder().append("INTERVAL ");
+        buff.append('\'');
+        if (negative) {
+            buff.append('-');
+        }
+        switch (qualifier) {
+        case YEAR:
+        case MONTH:
+        case DAY:
+        case HOUR:
+        case MINUTE:
+            buff.append(leading);
+            break;
+        case SECOND:
+            buff.append(leading);
+            appendNanos(buff, remaining);
+            break;
+        case YEAR_TO_MONTH:
+            buff.append(leading).append('-').append(remaining);
+            break;
+        case DAY_TO_HOUR:
+            buff.append(leading).append(' ');
+            StringUtils.appendZeroPadded(buff, 2, remaining);
+            break;
+        case DAY_TO_MINUTE:
+            buff.append(leading).append(' ');
+            StringUtils.appendZeroPadded(buff, 2, remaining / 60);
+            buff.append(':');
+            StringUtils.appendZeroPadded(buff, 2, remaining % 60);
+            break;
+        case DAY_TO_SECOND: {
+            long nanos = remaining % NANOS_PER_MINUTE;
+            remaining /= NANOS_PER_MINUTE;
+            buff.append(leading).append(' ');
+            StringUtils.appendZeroPadded(buff, 2, remaining / 60);
+            buff.append(':');
+            StringUtils.appendZeroPadded(buff, 2, remaining % 60);
+            buff.append(':');
+            appendSecondsWithNanos(buff, nanos);
+            break;
+        }
+        case HOUR_TO_MINUTE:
+            buff.append(leading).append(':');
+            StringUtils.appendZeroPadded(buff, 2, remaining);
+            break;
+        case HOUR_TO_SECOND:
+            buff.append(leading).append(':');
+            StringUtils.appendZeroPadded(buff, 2, remaining / NANOS_PER_MINUTE);
+            buff.append(':');
+            appendSecondsWithNanos(buff, remaining % NANOS_PER_MINUTE);
+            break;
+        case MINUTE_TO_SECOND:
+            buff.append(leading).append(':');
+            appendSecondsWithNanos(buff, remaining);
+            break;
+        }
+        buff.append("' ").append(qualifier);
+        return buff.toString();
+    }
+
+    private static void appendSecondsWithNanos(StringBuilder buff, long nanos) {
+        StringUtils.appendZeroPadded(buff, 2, nanos / NANOS_PER_SECOND);
+        appendNanos(buff, nanos % NANOS_PER_SECOND);
+    }
+
+    private static void appendNanos(StringBuilder buff, long nanos) {
+        if (nanos > 0) {
+            buff.append('.');
+            StringUtils.appendZeroPadded(buff, 9, nanos);
+            stripTrailingZeroes(buff);
+        }
+    }
+
+    /**
      * Converts scale of nanoseconds.
      *
      * @param nanosOfDay nanoseconds of day
@@ -1495,6 +1980,382 @@ public class DateTimeUtils {
             nanosOfDay += m;
         }
         return nanosOfDay - mod;
+    }
+
+    /**
+     * Converts interval value to an absolute value.
+     *
+     * @param interval the interval value
+     * @return absolute value in months for year-month intervals,
+     *         in nanoseconds for day-time intervals
+     */
+    public static BigInteger intervalToAbsolute(ValueInterval interval) {
+        BigInteger r;
+        switch (interval.getQualifier()) {
+        case YEAR:
+            r = BigInteger.valueOf(interval.getLeading()).multiply(BigInteger.valueOf(12));
+            break;
+        case MONTH:
+            r = BigInteger.valueOf(interval.getLeading());
+            break;
+        case DAY:
+            r = BigInteger.valueOf(interval.getLeading()).multiply(BigInteger.valueOf(NANOS_PER_DAY));
+            break;
+        case HOUR:
+            r = BigInteger.valueOf(interval.getLeading()).multiply(BigInteger.valueOf(NANOS_PER_HOUR));
+            break;
+        case MINUTE:
+            r = BigInteger.valueOf(interval.getLeading()).multiply(BigInteger.valueOf(NANOS_PER_MINUTE));
+            break;
+        case SECOND:
+            r = intervalToAbsolute(interval, NANOS_PER_SECOND);
+            break;
+        case YEAR_TO_MONTH:
+            r = intervalToAbsolute(interval, 12);
+            break;
+        case DAY_TO_HOUR:
+            r = intervalToAbsolute(interval, 24, NANOS_PER_HOUR);
+            break;
+        case DAY_TO_MINUTE:
+            r = intervalToAbsolute(interval, 24 * 60, NANOS_PER_MINUTE);
+            break;
+        case DAY_TO_SECOND:
+            r = intervalToAbsolute(interval, NANOS_PER_DAY);
+            break;
+        case HOUR_TO_MINUTE:
+            r = intervalToAbsolute(interval, 60, NANOS_PER_MINUTE);
+            break;
+        case HOUR_TO_SECOND:
+            r = intervalToAbsolute(interval, NANOS_PER_HOUR);
+            break;
+        case MINUTE_TO_SECOND:
+            r = intervalToAbsolute(interval, NANOS_PER_MINUTE);
+            break;
+        default:
+            throw new IllegalArgumentException();
+        }
+        return interval.isNegative() ? r.negate() : r;
+    }
+
+    private static BigInteger intervalToAbsolute(ValueInterval interval, long multiplier, long totalMultiplier) {
+        return intervalToAbsolute(interval, multiplier).multiply(BigInteger.valueOf(totalMultiplier));
+    }
+
+    private static BigInteger intervalToAbsolute(ValueInterval interval, long multiplier) {
+        return BigInteger.valueOf(interval.getLeading()).multiply(BigInteger.valueOf(multiplier))
+                .add(BigInteger.valueOf(interval.getRemaining()));
+    }
+
+    /**
+     * Converts absolute value to an interval value.
+     *
+     * @param qualifier the qualifier of interval
+     * @param absolute absolute value in months for year-month intervals,
+     *                 in nanoseconds for day-time intervals
+     * @return the interval value
+     */
+    public static ValueInterval intervalFromAbsolute(IntervalQualifier qualifier, BigInteger absolute) {
+        switch (qualifier) {
+        case YEAR:
+            return ValueInterval.from(qualifier, absolute.signum() < 0,
+                    leadingExact(absolute.divide(BigInteger.valueOf(12))), 0);
+        case MONTH:
+            return ValueInterval.from(qualifier, absolute.signum() < 0, leadingExact(absolute), 0);
+        case DAY:
+            return ValueInterval.from(qualifier, absolute.signum() < 0,
+                    leadingExact(absolute.divide(BigInteger.valueOf(NANOS_PER_DAY))), 0);
+        case HOUR:
+            return ValueInterval.from(qualifier, absolute.signum() < 0,
+                    leadingExact(absolute.divide(BigInteger.valueOf(NANOS_PER_HOUR))), 0);
+        case MINUTE:
+            return ValueInterval.from(qualifier, absolute.signum() < 0,
+                    leadingExact(absolute.divide(BigInteger.valueOf(NANOS_PER_MINUTE))), 0);
+        case SECOND:
+            return intervalFromAbsolute(qualifier, absolute, NANOS_PER_SECOND);
+        case YEAR_TO_MONTH:
+            return intervalFromAbsolute(qualifier, absolute, 12);
+        case DAY_TO_HOUR:
+            return intervalFromAbsolute(qualifier, absolute.divide(BigInteger.valueOf(NANOS_PER_HOUR)), 24);
+        case DAY_TO_MINUTE:
+            return intervalFromAbsolute(qualifier, absolute.divide(BigInteger.valueOf(NANOS_PER_MINUTE)), 24 * 60);
+        case DAY_TO_SECOND:
+            return intervalFromAbsolute(qualifier, absolute, NANOS_PER_DAY);
+        case HOUR_TO_MINUTE:
+            return intervalFromAbsolute(qualifier, absolute.divide(BigInteger.valueOf(NANOS_PER_MINUTE)), 60);
+        case HOUR_TO_SECOND:
+            return intervalFromAbsolute(qualifier, absolute, NANOS_PER_HOUR);
+        case MINUTE_TO_SECOND:
+            return intervalFromAbsolute(qualifier, absolute, NANOS_PER_MINUTE);
+        default:
+            throw new IllegalArgumentException();
+        }
+    }
+
+    private static ValueInterval intervalFromAbsolute(IntervalQualifier qualifier, BigInteger absolute, long divisor) {
+        BigInteger[] dr = absolute.divideAndRemainder(BigInteger.valueOf(divisor));
+        return ValueInterval.from(qualifier, absolute.signum() < 0, leadingExact(dr[0]), Math.abs(dr[1].longValue()));
+    }
+
+    private static long leadingExact(BigInteger absolute) {
+        if (absolute.compareTo(BigInteger.valueOf(999_999_999_999_999_999L)) > 0
+                || absolute.compareTo(BigInteger.valueOf(-999_999_999_999_999_999L)) < 0) {
+            throw DbException.get(ErrorCode.NUMERIC_VALUE_OUT_OF_RANGE_1, absolute.toString());
+        }
+        return Math.abs(absolute.longValue());
+    }
+
+    /**
+     * Ensures that all fields in interval are valid.
+     *
+     * @param qualifier
+     *            qualifier
+     * @param negative
+     *            whether interval is negative
+     * @param leading
+     *            value of leading field
+     * @param remaining
+     *            values of all remaining fields
+     * @return fixed value of negative field
+     */
+    public static boolean validateInterval(IntervalQualifier qualifier, boolean negative, long leading, long remaining)
+    {
+        if (qualifier == null) {
+            throw new NullPointerException();
+        }
+        if (leading == 0L && remaining == 0L) {
+            return false;
+        }
+        // Upper bound for remaining value (exclusive)
+        long bound;
+        switch (qualifier) {
+        case YEAR:
+        case MONTH:
+        case DAY:
+        case HOUR:
+        case MINUTE:
+            bound = 1;
+            break;
+        case SECOND:
+            bound = NANOS_PER_SECOND;
+            break;
+        case YEAR_TO_MONTH:
+            bound = 12;
+            break;
+        case DAY_TO_HOUR:
+            bound = 24;
+            break;
+        case DAY_TO_MINUTE:
+            bound = 24 * 60;
+            break;
+        case DAY_TO_SECOND:
+            bound = NANOS_PER_DAY;
+            break;
+        case HOUR_TO_MINUTE:
+            bound = 60;
+            break;
+        case HOUR_TO_SECOND:
+            bound = NANOS_PER_HOUR;
+            break;
+        case MINUTE_TO_SECOND:
+            bound = NANOS_PER_MINUTE;
+            break;
+        default:
+            throw DbException.getInvalidValueException("interval", qualifier);
+        }
+        if (leading < 0L || leading >= 1_000_000_000_000_000_000L) {
+            throw DbException.getInvalidValueException("interval", Long.toString(leading));
+        }
+        if (remaining < 0L || remaining >= bound) {
+            throw DbException.getInvalidValueException("interval", Long.toString(remaining));
+        }
+        return negative;
+    }
+
+    /**
+     * @param qualifier
+     *            qualifier
+     * @param negative
+     *            whether interval is negative
+     * @param leading
+     *            value of leading field
+     * @param remaining
+     *            values of all remaining fields
+     * @return years, or 0
+     */
+    public static long yearsFromInterval(IntervalQualifier qualifier, boolean negative, long leading, long remaining) {
+        if (qualifier == IntervalQualifier.YEAR || qualifier == IntervalQualifier.YEAR_TO_MONTH) {
+            long v = leading;
+            if (negative) {
+                v = -v;
+            }
+            return v;
+        } else {
+            return 0;
+        }
+    }
+
+    /**
+     * @param qualifier
+     *            qualifier
+     * @param negative
+     *            whether interval is negative
+     * @param leading
+     *            value of leading field
+     * @param remaining
+     *            values of all remaining fields
+     * @return months, or 0
+     */
+    public static long monthsFromInterval(IntervalQualifier qualifier, boolean negative, long leading, long remaining)
+    {
+        long v;
+        if (qualifier == IntervalQualifier.MONTH) {
+            v = leading;
+        } else if (qualifier == IntervalQualifier.YEAR_TO_MONTH){
+            v = remaining;
+        } else {
+            return 0;
+        }
+        if (negative) {
+            v = -v;
+        }
+        return v;
+    }
+
+    /**
+     * @param qualifier
+     *            qualifier
+     * @param negative
+     *            whether interval is negative
+     * @param leading
+     *            value of leading field
+     * @param remaining
+     *            values of all remaining fields
+     * @return months, or 0
+     */
+    public static long daysFromInterval(IntervalQualifier qualifier, boolean negative, long leading, long remaining) {
+        switch (qualifier) {
+        case DAY:
+        case DAY_TO_HOUR:
+        case DAY_TO_MINUTE:
+        case DAY_TO_SECOND:
+            long v = leading;
+            if (negative) {
+                v = -v;
+            }
+            return v;
+        default:
+            return 0;
+        }
+    }
+
+    /**
+     * @param qualifier
+     *            qualifier
+     * @param negative
+     *            whether interval is negative
+     * @param leading
+     *            value of leading field
+     * @param remaining
+     *            values of all remaining fields
+     * @return hours, or 0
+     */
+    public static long hoursFromInterval(IntervalQualifier qualifier, boolean negative, long leading, long remaining) {
+        long v;
+        switch (qualifier) {
+        case HOUR:
+        case HOUR_TO_MINUTE:
+        case HOUR_TO_SECOND:
+            v = leading;
+            break;
+        case DAY_TO_HOUR:
+            v = remaining;
+            break;
+        case DAY_TO_MINUTE:
+            v = remaining / 60;
+            break;
+        case DAY_TO_SECOND:
+            v = remaining / NANOS_PER_HOUR;
+            break;
+        default:
+            return 0;
+        }
+        if (negative) {
+            v = -v;
+        }
+        return v;
+    }
+
+    /**
+     * @param qualifier
+     *            qualifier
+     * @param negative
+     *            whether interval is negative
+     * @param leading
+     *            value of leading field
+     * @param remaining
+     *            values of all remaining fields
+     * @return minutes, or 0
+     */
+    public static long minutesFromInterval(IntervalQualifier qualifier, boolean negative, long leading, long remaining)
+    {
+        long v;
+        switch (qualifier) {
+        case MINUTE:
+        case MINUTE_TO_SECOND:
+            v = leading;
+            break;
+        case DAY_TO_MINUTE:
+            v = remaining % 60;
+            break;
+        case DAY_TO_SECOND:
+            v = remaining / NANOS_PER_MINUTE % 60;
+            break;
+        case HOUR_TO_MINUTE:
+            v = remaining;
+            break;
+        case HOUR_TO_SECOND:
+            v = remaining / NANOS_PER_MINUTE;
+            break;
+        default:
+            return 0;
+        }
+        if (negative) {
+            v = -v;
+        }
+        return v;
+    }
+
+    /**
+     * @param qualifier
+     *            qualifier
+     * @param negative
+     *            whether interval is negative
+     * @param leading
+     *            value of leading field
+     * @param remaining
+     *            values of all remaining fields
+     * @return nanoseconds, or 0
+     */
+    public static long nanosFromInterval(IntervalQualifier qualifier, boolean negative, long leading, long remaining) {
+        long v;
+        switch (qualifier) {
+        case SECOND:
+            v = leading * NANOS_PER_SECOND + remaining;
+            break;
+        case DAY_TO_SECOND:
+        case HOUR_TO_SECOND:
+            v = remaining % NANOS_PER_MINUTE;
+            break;
+        case MINUTE_TO_SECOND:
+            v = remaining;
+            break;
+        default:
+            return 0;
+        }
+        if (negative) {
+            v = -v;
+        }
+        return v;
     }
 
 }

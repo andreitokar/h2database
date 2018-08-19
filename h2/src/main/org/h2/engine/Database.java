@@ -102,6 +102,7 @@ public class Database implements DataHandler {
     private static final ThreadLocal<Session> META_LOCK_DEBUGGING;
     private static final ThreadLocal<Database> META_LOCK_DEBUGGING_DB;
     private static final ThreadLocal<Throwable> META_LOCK_DEBUGGING_STACK;
+    private static final Session[] EMPTY_SESSION_ARRAY = new Session[0];
 
     static {
         boolean a = false;
@@ -160,7 +161,7 @@ public class Database implements DataHandler {
     private Index metaIdIndex;
     private FileLock lock;
     private WriterThread writer;
-    private boolean starting;
+    private volatile boolean starting;
     private TraceSystem traceSystem;
     private Trace trace;
     private final FileLockMethod fileLockMethod;
@@ -179,7 +180,7 @@ public class Database implements DataHandler {
     private int allowLiterals = Constants.ALLOW_LITERALS_ALL;
 
     private int powerOffCount = initialPowerOffCount;
-    private int closeDelay;
+    private volatile int closeDelay;
     private DelayedDatabaseCloser delayedCloser;
     private volatile boolean closing;
     private boolean ignoreCase;
@@ -284,7 +285,10 @@ public class Database implements DataHandler {
         }
         String modeName = ci.removeProperty("MODE", null);
         if (modeName != null) {
-            this.mode = Mode.getInstance(modeName);
+            mode = Mode.getInstance(modeName);
+            if (mode == null) {
+                throw DbException.get(ErrorCode.UNKNOWN_MODE_1, modeName);
+            }
         }
         this.logMode =
                 ci.getProperty("LOG", PageStore.LOG_MODE_SYNC);
@@ -788,10 +792,10 @@ public class Database implements DataHandler {
         data.create = create;
         data.isHidden = true;
         data.session = systemSession;
+        starting = true;
         meta = mainSchema.createTable(data);
         handleUpgradeIssues();
         IndexColumn[] pkCols = IndexColumn.wrap(new Column[] { columnId });
-        starting = true;
         metaIdIndex = meta.addIndex(systemSession, "SYS_ID",
                 0, pkCols, IndexType.createPrimaryKey(
                 false, false), true, null);
@@ -953,12 +957,15 @@ public class Database implements DataHandler {
         }
     }
 
-    private synchronized void addMeta(Session session, DbObject obj) {
+    private void addMeta(Session session, DbObject obj) {
+        assert Thread.holdsLock(this);
         int id = obj.getId();
         if (id > 0 && !starting && !obj.isTemporary()) {
             Row r = meta.getTemplateRow();
             MetaRecord.populateRowFromDBObject(obj, r);
-            objectIds.set(id);
+            synchronized (objectIds) {
+                objectIds.set(id);
+            }
             if (SysProperties.CHECK) {
                 verifyMetaLocked(session);
             }
@@ -1062,7 +1069,7 @@ public class Database implements DataHandler {
      * @param session the session
      * @param id the id of the object to remove
      */
-    public synchronized void removeMeta(Session session, int id) {
+    public void removeMeta(Session session, int id) {
         if (id > 0 && !starting) {
             SearchRow r = meta.getRowFactory().createRow();
             r.setValue(0, ValueInt.get(id));
@@ -1088,7 +1095,25 @@ public class Database implements DataHandler {
                     unlockMeta(session);
                 }
             }
-            objectIds.clear(id);
+            if (isMVStore()) {
+                // release of the object id has to be postponed until the end of the transaction,
+                // otherwise it might be re-used prematurely, and it would make
+                // rollback impossible or lead to MVMaps name collision,
+                // so until then ids are accumulated within session
+                session.scheduleDatabaseObjectIdForRelease(id);
+            } else {
+                // but PageStore, on the other hand, for reasons unknown to me,
+                // requires immediate id release
+                synchronized (this) {
+                    objectIds.clear(id);
+                }
+            }
+        }
+    }
+
+    void releaseDatabaseObjectIds(BitSet idsToRelease) {
+        synchronized (objectIds) {
+            objectIds.andNot(idsToRelease);
         }
     }
 
@@ -1324,7 +1349,7 @@ public class Database implements DataHandler {
     }
 
     private synchronized void closeAllSessionsException(Session except) {
-        Session[] all = userSessions.toArray(new Session[userSessions.size()]);
+        Session[] all = userSessions.toArray(EMPTY_SESSION_ARRAY);
         for (Session s : all) {
             if (s != except) {
                 try {
@@ -1590,9 +1615,13 @@ public class Database implements DataHandler {
      *
      * @return the id
      */
-    public synchronized int allocateObjectId() {
-        int i = objectIds.nextClearBit(0);
-        objectIds.set(i);
+    public int allocateObjectId() {
+        Object lock = isMVStore() ? objectIds : this;
+        int i;
+        synchronized (lock) {
+            i = objectIds.nextClearBit(0);
+            objectIds.set(i);
+        }
         return i;
     }
 
@@ -1780,18 +1809,18 @@ public class Database implements DataHandler {
      */
     public void updateMeta(Session session, DbObject obj) {
         if (isMVStore()) {
-            synchronized (this) {
-                int id = obj.getId();
-                if (id > 0) {
-                    if (!starting && !obj.isTemporary()) {
-                        Row newRow = meta.getTemplateRow();
-                        MetaRecord.populateRowFromDBObject(obj, newRow);
-                        Row oldRow = metaIdIndex.getRow(session, id);
-                        if (oldRow != null) {
-                            meta.updateRow(session, oldRow, newRow);
-                        }
+            int id = obj.getId();
+            if (id > 0) {
+                if (!starting && !obj.isTemporary()) {
+                    Row newRow = meta.getTemplateRow();
+                    MetaRecord.populateRowFromDBObject(obj, newRow);
+                    Row oldRow = metaIdIndex.getRow(session, id);
+                    if (oldRow != null) {
+                        meta.updateRow(session, oldRow, newRow);
                     }
-                    // for temporary objects
+                }
+                // for temporary objects
+                synchronized (objectIds) {
                     objectIds.set(id);
                 }
             }
@@ -2353,7 +2382,7 @@ public class Database implements DataHandler {
         return lockMode;
     }
 
-    public synchronized void setCloseDelay(int value) {
+    public void setCloseDelay(int value) {
         this.closeDelay = value;
     }
 

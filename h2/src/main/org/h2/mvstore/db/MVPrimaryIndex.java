@@ -51,6 +51,7 @@ public class MVPrimaryIndex extends BaseIndex
         this.mvTable = table;
         DataType valueType = table.getRowFactory().getDataType();
         mapName = "table." + getId();
+        assert db.isStarting() || !db.getStore().getMvStore().getMetaMap().containsKey("name." + mapName);
         Transaction t = mvTable.getTransactionBegin();
         dataMap = t.openMap(mapName, LongDataType.INSTANCE, valueType);
         dataMap.map.setVolatile(!table.isPersistData() || !indexType.isPersistent());
@@ -360,8 +361,7 @@ public class MVPrimaryIndex extends BaseIndex
 
     @Override
     public long getDiskSpaceUsed() {
-        // TODO estimate disk space usage
-        return 0;
+        return dataMap.map.getRootPage().getDiskSpaceUsed();
     }
 
     public String getMapName() {

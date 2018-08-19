@@ -14,6 +14,7 @@ import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.Objects;
 import org.h2.api.ErrorCode;
+import org.h2.api.IntervalQualifier;
 import org.h2.engine.Database;
 import org.h2.engine.Mode;
 import org.h2.bytecode.RowStorage;
@@ -44,6 +45,7 @@ import org.h2.value.ValueDouble;
 import org.h2.value.ValueFloat;
 import org.h2.value.ValueGeometry;
 import org.h2.value.ValueInt;
+import org.h2.value.ValueInterval;
 import org.h2.value.ValueJavaObject;
 import org.h2.value.ValueLobDb;
 import org.h2.value.ValueLong;
@@ -443,6 +445,39 @@ public class ValueDataType extends BasicDataType<Value> {
                 put(b);
             break;
         }
+        case Value.INTERVAL_YEAR:
+        case Value.INTERVAL_MONTH:
+        case Value.INTERVAL_DAY:
+        case Value.INTERVAL_HOUR:
+        case Value.INTERVAL_MINUTE: {
+            ValueInterval interval = (ValueInterval) v;
+            int ordinal = type - Value.INTERVAL_YEAR;
+            if (interval.isNegative()) {
+                ordinal = ~ordinal;
+            }
+            buff.put((byte) Value.INTERVAL_YEAR).
+                put((byte) ordinal).
+                putVarLong(interval.getLeading());
+            break;
+        }
+        case Value.INTERVAL_SECOND:
+        case Value.INTERVAL_YEAR_TO_MONTH:
+        case Value.INTERVAL_DAY_TO_HOUR:
+        case Value.INTERVAL_DAY_TO_MINUTE:
+        case Value.INTERVAL_DAY_TO_SECOND:
+        case Value.INTERVAL_HOUR_TO_MINUTE:
+        case Value.INTERVAL_HOUR_TO_SECOND:
+        case Value.INTERVAL_MINUTE_TO_SECOND: {
+            ValueInterval interval = (ValueInterval) v;
+            int ordinal = type - Value.INTERVAL_YEAR;
+            if (interval.isNegative()) {
+                ordinal = ~ordinal;
+            }
+            buff.put((byte) Value.INTERVAL_YEAR).
+                put((byte) (ordinal)).
+                putVarLong(interval.getLeading()).
+                putVarLong(interval.getRemaining());
+            break;
         case Value.ROW: {
 /*
             DataType dataType = getRowFactory().getDataType();
@@ -587,6 +622,15 @@ public class ValueDataType extends BasicDataType<Value> {
             return ValueStringIgnoreCase.get(readString(buff));
         case Value.STRING_FIXED:
             return ValueStringFixed.get(readString(buff));
+        case Value.INTERVAL_YEAR: {
+            int ordinal = buff.get();
+            boolean negative = ordinal < 0;
+            if (negative) {
+                ordinal = ~ordinal;
+            }
+            return ValueInterval.from(IntervalQualifier.valueOf(ordinal), negative, readVarLong(buff),
+                    ordinal < 5 ? 0 : readVarLong(buff));
+        }
         case FLOAT_0_1:
             return ValueFloat.get(0);
         case FLOAT_0_1 + 1:
