@@ -326,7 +326,7 @@ public class RegularTable extends TableBase {
         try {
             for (; i >= 0; i--) {
                 Index index = indexes.get(i);
-                index.removeRow(session, row);
+                index.remove(session, row);
                 checkRowCount(session, index, -1);
             }
             rowCount--;

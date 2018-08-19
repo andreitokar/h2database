@@ -294,13 +294,10 @@ public class Sequence extends SchemaObjectBase {
             // other threads can not access the sys table.
 //            Session sysSession = database.getSystemSession();
             Session sysSession = database.createTempSystemSession();
-
-//            synchronized (sysSession) {
-                synchronized (database.isMultiThreaded() ? sysSession : database) {
-                    flushInternal(sysSession);
-                    sysSession.commit(false);
-                }
-//            }
+            synchronized (database.isMultiThreaded() ? sysSession : database) {
+                flushInternal(sysSession);
+                sysSession.commit(false);
+            }
         } else {
             synchronized (database.isMultiThreaded() ? session : database) {
                 flushInternal(session);

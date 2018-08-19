@@ -50,7 +50,6 @@ public interface Index extends SchemaObject {
      * @param row the row
      */
     void remove(Session session, Row row);
-    Row removeRow(Session session, Row row);
 
     /**
      * Update index after row change.

@@ -1820,8 +1820,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
         if (value != null) {
             if(value instanceof Row) {
                 result = (Row) value;
-                assert result.getKey() == recKey
-                     : result.getKey() + " != " + recKey;
+                assert result.getKey() == recKey : result.getKey() + " != " + recKey;
             } else {
                 ValueArray array = (ValueArray) value;
                 result = table.createRow(array.getList(), 0);

@@ -1404,10 +1404,10 @@ public class TestTableEngines extends TestDb {
         public void removeRow(Session session, Row row) {
             if (indexes != null) {
                 for (Index index : indexes) {
-                    index.removeRow(session, row);
+                    index.remove(session, row);
                 }
             } else {
-                scan.removeRow(session, row);
+                scan.remove(session, row);
             }
             dataModificationId++;
         }

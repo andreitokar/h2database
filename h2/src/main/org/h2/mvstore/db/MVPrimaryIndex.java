@@ -143,11 +143,6 @@ public class MVPrimaryIndex extends BaseIndex
 
     @Override
     public void remove(Session session, Row row) {
-        removeRow(session, row);
-    }
-
-    @Override
-    public Row removeRow(Session session, Row row) {
         if (mvTable.getContainsLargeObject()) {
             for (int i = 0, len = row.getColumnCount(); i < len; i++) {
                 Value v = row.getValue(i);
@@ -163,7 +158,6 @@ public class MVPrimaryIndex extends BaseIndex
                 throw DbException.get(ErrorCode.ROW_NOT_FOUND_WHEN_DELETING_1,
                         getSQL() + ": " + row.getKey());
             }
-            return result;
         } catch (IllegalStateException e) {
             throw mvTable.convertException(e);
         }

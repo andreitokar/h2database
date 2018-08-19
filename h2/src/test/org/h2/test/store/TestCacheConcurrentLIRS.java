@@ -23,7 +23,22 @@ public class TestCacheConcurrentLIRS extends TestBase {
      * @param a ignored
      */
     public static void main(String... a) throws Exception {
-        TestBase.createCaller().init().test();
+        org.h2.test.TestAll config = new org.h2.test.TestAll();
+//        config.memory = true;
+//        config.multiThreaded = true;
+//        config.defrag = true;
+//        config.traceLevelFile = 1;
+//        config.mvStore = false;
+        config.traceTest = true;
+        System.out.println(config);
+        TestBase test = createCaller().init(config);
+        for (int i = 0; i < 10; i++) {
+            System.out.println("Pass #" + i);
+            test.config.beforeTest();
+            test.test();
+            test.config.afterTest();
+        }
+//        TestBase.createCaller().init().test();
     }
 
     @Override
@@ -48,9 +63,9 @@ public class TestCacheConcurrentLIRS extends TestBase {
         Random random = new Random(1);
         for (int i = 0; i < keys.length; i++) {
             int key;
-            do {
+//            do {
                 key = (int) Math.abs(random.nextGaussian() * 50);
-            } while (key > 100);
+//            } while (key > 100);
             keys[i] = key;
         }
         for (int i = 0; i < threadCount; i++) {
@@ -88,7 +103,9 @@ public class TestCacheConcurrentLIRS extends TestBase {
         for (int x : getCounts) {
             totalCount += x;
         }
-        trace("requests: " + totalCount);
+        long hits = test.getHits();
+        long misses = test.getMisses();
+        trace("requests: " + totalCount + ", hit rate: " + (100 * hits / (hits + misses)) + " %");
     }
 
 }

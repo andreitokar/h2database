@@ -474,10 +474,11 @@ public class ValueDataType extends BasicDataType<Value> {
                 ordinal = ~ordinal;
             }
             buff.put((byte) Value.INTERVAL_YEAR).
-                put((byte) (ordinal)).
-                putVarLong(interval.getLeading()).
-                putVarLong(interval.getRemaining());
+                    put((byte) (ordinal)).
+                    putVarLong(interval.getLeading()).
+                    putVarLong(interval.getRemaining());
             break;
+        }
         case Value.ROW: {
 /*
             DataType dataType = getRowFactory().getDataType();
