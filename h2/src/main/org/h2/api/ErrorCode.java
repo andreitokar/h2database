@@ -402,6 +402,17 @@ public class ErrorCode {
      */
     public static final int COLUMN_NOT_FOUND_1 = 42122;
 
+    /**
+     * The error with code <code>42123</code> is thrown when
+     * identical expressions should be used, but different
+     * exceptions were found.
+     * Example:
+     * <pre>
+     * SELECT MODE(A ORDER BY B) FROM TEST;
+     * </pre>
+     */
+    public static final int IDENTICAL_EXPRESSIONS_SHOULD_BE_USED = 42131;
+
     // 0A: feature not supported
 
     // HZ: remote database access
@@ -1916,16 +1927,6 @@ public class ErrorCode {
     public static final int DATABASE_IS_IN_EXCLUSIVE_MODE = 90135;
 
     /**
-     * The error with code <code>90136</code> is thrown when
-     * executing a query that used an unsupported outer join condition.
-     * Example:
-     * <pre>
-     * SELECT * FROM DUAL A LEFT JOIN DUAL B ON B.X=(SELECT MAX(X) FROM DUAL);
-     * </pre>
-     */
-    public static final int UNSUPPORTED_OUTER_JOIN_CONDITION_1 = 90136;
-
-    /**
      * The error with code <code>90137</code> is thrown when
      * trying to assign a value to something that is not a variable.
      * <pre>
@@ -2008,7 +2009,7 @@ public class ErrorCode {
     public static final int AUTHENTICATOR_NOT_AVAILABLE = 90144;
 
 
-    // next is 90145
+    // next are 90136, 90145
 
     private ErrorCode() {
         // utility class
@@ -2068,6 +2069,7 @@ public class ErrorCode {
         case INDEX_NOT_FOUND_1: return "42S12";
         case DUPLICATE_COLUMN_NAME_1: return "42S21";
         case COLUMN_NOT_FOUND_1: return "42S22";
+        case IDENTICAL_EXPRESSIONS_SHOULD_BE_USED: return "42S31";
 
         // 0A: feature not supported
 
