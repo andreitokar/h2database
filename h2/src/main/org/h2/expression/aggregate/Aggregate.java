@@ -19,6 +19,7 @@ import org.h2.expression.ExpressionVisitor;
 import org.h2.index.Cursor;
 import org.h2.index.Index;
 import org.h2.message.DbException;
+import org.h2.mvstore.db.MVSpatialIndex;
 import org.h2.result.SearchRow;
 import org.h2.result.SortOrder;
 import org.h2.table.Column;
@@ -40,7 +41,7 @@ import org.h2.value.ValueString;
 /**
  * Implements the integrated aggregate functions, such as COUNT, MAX, SUM.
  */
-public class Aggregate extends Expression {
+public class Aggregate extends AbstractAggregate {
 
     public enum AggregateType {
         /**
@@ -142,13 +143,31 @@ public class Aggregate extends Expression {
          * The aggregate type for MODE(expression).
          */
         MODE,
+
+        /**
+         * The aggregate type for ENVELOPE(expression).
+         */
+        ENVELOPE,
     }
+
+    /**
+     * Reset stage. Used to reset internal data to its initial state.
+     */
+    public static final int STAGE_RESET = 0;
+
+    /**
+     * Group stage, used for explicit or implicit GROUP BY operation.
+     */
+    public static final int STAGE_GROUP = 1;
+
+    /**
+     * Window processing stage.
+     */
+    public static final int STAGE_WINDOW = 2;
 
     private static final HashMap<String, AggregateType> AGGREGATES = new HashMap<>(64);
 
     private final AggregateType type;
-    private final Select select;
-    private final boolean distinct;
 
     private Expression on;
     private Expression groupConcatSeparator;
@@ -157,23 +176,23 @@ public class Aggregate extends Expression {
     private int dataType, scale;
     private long precision;
     private int displaySize;
-    private int lastGroupRowId;
-
-    private Expression filterCondition;
 
     /**
      * Create a new aggregate object.
      *
-     * @param type the aggregate type
-     * @param on the aggregated expression
-     * @param select the select statement
-     * @param distinct if distinct is used
+     * @param type
+     *            the aggregate type
+     * @param on
+     *            the aggregated expression
+     * @param select
+     *            the select statement
+     * @param distinct
+     *            if distinct is used
      */
     public Aggregate(AggregateType type, Expression on, Select select, boolean distinct) {
+        super(select, distinct);
         this.type = type;
         this.on = on;
-        this.select = select;
-        this.distinct = distinct;
     }
 
     static {
@@ -212,6 +231,7 @@ public class Aggregate extends Expression {
         addAggregate("MODE", AggregateType.MODE);
         // Oracle compatibility
         addAggregate("STATS_MODE", AggregateType.MODE);
+        addAggregate("ENVELOPE", AggregateType.ENVELOPE);
     }
 
     private static void addAggregate(String name, AggregateType type) {
@@ -222,17 +242,25 @@ public class Aggregate extends Expression {
      * Get the aggregate type for this name, or -1 if no aggregate has been
      * found.
      *
-     * @param name the aggregate function name
-     * @return null if no aggregate function has been found, or the aggregate type
+     * @param name
+     *            the aggregate function name
+     * @return null if no aggregate function has been found, or the aggregate
+     *         type
      */
     public static AggregateType getAggregateType(String name) {
         return AGGREGATES.get(name);
     }
 
+    @Override
+    public boolean isAggregate() {
+        return true;
+    }
+
     /**
      * Set the order for ARRAY_AGG() or GROUP_CONCAT() aggregate.
      *
-     * @param orderByList the order by list
+     * @param orderByList
+     *            the order by list
      */
     public void setOrderByList(ArrayList<SelectOrderBy> orderByList) {
         this.orderByList = orderByList;
@@ -241,31 +269,11 @@ public class Aggregate extends Expression {
     /**
      * Set the separator for the GROUP_CONCAT() aggregate.
      *
-     * @param separator the separator expression
+     * @param separator
+     *            the separator expression
      */
     public void setGroupConcatSeparator(Expression separator) {
         this.groupConcatSeparator = separator;
-    }
-
-    /**
-     * Sets the FILTER condition.
-     *
-     * @param filterCondition condition
-     */
-    public void setFilterCondition(Expression filterCondition) {
-        this.filterCondition = filterCondition;
-    }
-
-    private SortOrder initOrder(Session session) {
-        int size = orderByList.size();
-        int[] index = new int[size];
-        int[] sortType = new int[size];
-        for (int i = 0; i < size; i++) {
-            SelectOrderBy o = orderByList.get(i);
-            index[i] = i + 1;
-            sortType[i] = o.sortType;
-        }
-        return new SortOrder(session.getDatabase(), index, sortType, null);
     }
 
     private void sortWithOrderBy(Value[] array) {
@@ -283,106 +291,134 @@ public class Aggregate extends Expression {
     }
 
     @Override
-    public void updateAggregate(Session session) {
-        // TODO aggregates: check nested MIN(MAX(ID)) and so on
-        // if (on != null) {
-        // on.updateAggregate();
-        // }
-        if (!select.isCurrentGroup()) {
-            // this is a different level (the enclosing query)
-            return;
-        }
-
-        int groupRowId = select.getCurrentGroupRowId();
-        if (lastGroupRowId == groupRowId) {
-            // already visited
-            return;
-        }
-        lastGroupRowId = groupRowId;
-
-        AggregateData data = (AggregateData) select.getCurrentGroupExprData(this);
-        if (data == null) {
-            data = AggregateData.create(type);
-            select.setCurrentGroupExprData(this, data);
-        }
+    protected void updateAggregate(Session session, Object aggregateData) {
+        AggregateData data = (AggregateData) aggregateData;
         Value v = on == null ? null : on.getValue(session);
+        updateData(session, data, v, null);
+    }
+
+    private void updateData(Session session, AggregateData data, Value v, Value[] remembered) {
         if (type == AggregateType.GROUP_CONCAT) {
             if (v != ValueNull.INSTANCE) {
-                v = v.convertTo(Value.STRING);
-                if (orderByList != null) {
-                    int size = orderByList.size();
-                    Value[] array = new Value[1 + size];
-                    array[0] = v;
-                    for (int i = 0; i < size; i++) {
-                        SelectOrderBy o = orderByList.get(i);
-                        array[i + 1] = o.expression.getValue(session);
-                    }
-                    v = ValueArray.get(array);
-                }
+                v = updateCollecting(session, v.convertTo(Value.STRING), remembered);
             }
-        }
-        if (type == AggregateType.ARRAY_AGG) {
+        } else if (type == AggregateType.ARRAY_AGG) {
             if (v != ValueNull.INSTANCE) {
-                if (orderByList != null) {
-                    int size = orderByList.size();
-                    Value[] array = new Value[1 + size];
-                    array[0] = v;
-                    for (int i = 0; i < size; i++) {
-                        SelectOrderBy o = orderByList.get(i);
-                        array[i + 1] = o.expression.getValue(session);
-                    }
-                    v = ValueArray.get(array);
-                }
-            }
-        }
-        if (filterCondition != null) {
-            if (!filterCondition.getBooleanValue(session)) {
-                return;
+                v = updateCollecting(session, v, remembered);
             }
         }
         data.add(session.getDatabase(), dataType, distinct, v);
     }
 
     @Override
+    protected void updateGroupAggregates(Session session, int stage) {
+        if (on != null) {
+            on.updateAggregate(session, stage);
+        }
+        if (orderByList != null) {
+            for (SelectOrderBy orderBy : orderByList) {
+                orderBy.expression.updateAggregate(session, stage);
+            }
+        }
+    }
+
+    private Value updateCollecting(Session session, Value v, Value[] remembered) {
+        if (orderByList != null) {
+            int size = orderByList.size();
+            Value[] array = new Value[1 + size];
+            array[0] = v;
+            if (remembered == null) {
+                for (int i = 0; i < size; i++) {
+                    SelectOrderBy o = orderByList.get(i);
+                    array[i + 1] = o.expression.getValue(session);
+                }
+            } else {
+                for (int i = 1; i <= size; i++) {
+                    array[i] = remembered[i];
+                }
+            }
+            v = ValueArray.get(array);
+        }
+        return v;
+    }
+
+    @Override
+    protected int getNumExpressions() {
+        int n = on != null ? 1 : 0;
+        if (orderByList != null) {
+            n += orderByList.size();
+        }
+        return n;
+    }
+
+    @Override
+    protected void rememberExpressions(Session session, Value[] array) {
+        int offset = 0;
+        if (on != null) {
+            array[offset++] = on.getValue(session);
+        }
+        if (orderByList != null) {
+            for (SelectOrderBy o : orderByList) {
+                array[offset++] = o.expression.getValue(session);
+            }
+        }
+    }
+
+    @Override
+    protected void updateFromExpressions(Session session, Object aggregateData, Value[] array) {
+        AggregateData data = (AggregateData) aggregateData;
+        Value v = on == null ? null : array[0];
+        updateData(session, data, v, array);
+    }
+
+    @Override
+    protected Object createAggregateData() {
+        return AggregateData.create(type);
+    }
+
+    @Override
     public Value getValue(Session session) {
-        if (select.isQuickAggregateQuery()) {
-            switch (type) {
-            case COUNT:
-            case COUNT_ALL:
-                Table table = select.getTopTableFilter().getTable();
-                return ValueLong.get(table.getRowCount(session));
-            case MIN:
-            case MAX: {
-                boolean first = type == AggregateType.MIN;
-                Index index = getMinMaxColumnIndex();
-                int sortType = index.getIndexColumns()[0].sortType;
-                if ((sortType & SortOrder.DESCENDING) != 0) {
-                    first = !first;
-                }
-                Cursor cursor = index.findFirstOrLast(session, first);
-                SearchRow row = cursor.getSearchRow();
-                Value v;
-                if (row == null) {
-                    v = ValueNull.INSTANCE;
-                } else {
-                    v = row.getValue(index.getColumns()[0].getColumnId());
-                }
-                return v;
+        return select.isQuickAggregateQuery() ? getValueQuick(session) : super.getValue(session);
+    }
+
+    private Value getValueQuick(Session session) {
+        switch (type) {
+        case COUNT:
+        case COUNT_ALL:
+            Table table = select.getTopTableFilter().getTable();
+            return ValueLong.get(table.getRowCount(session));
+        case MIN:
+        case MAX: {
+            boolean first = type == AggregateType.MIN;
+            Index index = getMinMaxColumnIndex();
+            int sortType = index.getIndexColumns()[0].sortType;
+            if ((sortType & SortOrder.DESCENDING) != 0) {
+                first = !first;
             }
-            case MEDIAN: {
-                return AggregateDataMedian.getResultFromIndex(session, on, dataType);
+            Cursor cursor = index.findFirstOrLast(session, first);
+            SearchRow row = cursor.getSearchRow();
+            Value v;
+            if (row == null) {
+                v = ValueNull.INSTANCE;
+            } else {
+                v = row.getValue(index.getColumns()[0].getColumnId());
             }
-            default:
-                DbException.throwInternalError("type=" + type);
-            }
+            return v;
         }
-        if (!select.isCurrentGroup()) {
-            throw DbException.get(ErrorCode.INVALID_USE_OF_AGGREGATE_FUNCTION_1, getSQL());
+        case MEDIAN:
+            return AggregateDataMedian.getResultFromIndex(session, on, dataType);
+        case ENVELOPE:
+            return ((MVSpatialIndex) AggregateDataEnvelope.getGeometryColumnIndex(on)).getBounds(session);
+        default:
+            throw DbException.throwInternalError("type=" + type);
         }
-        AggregateData data = (AggregateData)select.getCurrentGroupExprData(this);
+    }
+
+    @Override
+    public Value getAggregatedValue(Session session, Object aggregateData) {
+        AggregateData data = (AggregateData) aggregateData;
         if (data == null) {
-            data = AggregateData.create(type);
-            select.setCurrentGroupExprData(this, data);
+            data = (AggregateData) createAggregateData();
         }
         switch (type) {
         case GROUP_CONCAT: {
@@ -394,8 +430,7 @@ public class Aggregate extends Expression {
                 sortWithOrderBy(array);
             }
             StatementBuilder buff = new StatementBuilder();
-            String sep = groupConcatSeparator == null ?
-                    "," : groupConcatSeparator.getValue(session).getString();
+            String sep = groupConcatSeparator == null ? "," : groupConcatSeparator.getValue(session).getString();
             for (Value val : array) {
                 String s;
                 if (val.getType() == Value.ARRAY) {
@@ -457,13 +492,12 @@ public class Aggregate extends Expression {
         if (groupConcatSeparator != null) {
             groupConcatSeparator.mapColumns(resolver, level);
         }
-        if (filterCondition != null) {
-            filterCondition.mapColumns(resolver, level);
-        }
+        super.mapColumns(resolver, level);
     }
 
     @Override
     public Expression optimize(Session session) {
+        super.optimize(session);
         if (on != null) {
             on = on.optimize(session);
             dataType = on.getType();
@@ -475,7 +509,7 @@ public class Aggregate extends Expression {
             for (SelectOrderBy o : orderByList) {
                 o.expression = o.expression.optimize(session);
             }
-            orderBySort = initOrder(session);
+            orderBySort = createOrder(session, orderByList, 1);
         }
         if (groupConcatSeparator != null) {
             groupConcatSeparator = groupConcatSeparator.optimize(session);
@@ -554,6 +588,11 @@ public class Aggregate extends Expression {
             scale = 0;
             precision = displaySize = Integer.MAX_VALUE;
             break;
+        case ENVELOPE:
+            dataType = Value.GEOMETRY;
+            scale = 0;
+            precision = displaySize = Integer.MAX_VALUE;
+            break;
         default:
             DbException.throwInternalError("type=" + type);
         }
@@ -573,9 +612,7 @@ public class Aggregate extends Expression {
         if (groupConcatSeparator != null) {
             groupConcatSeparator.setEvaluatable(tableFilter, b);
         }
-        if (filterCondition != null) {
-            filterCondition.setEvaluatable(tableFilter, b);
-        }
+        super.setEvaluatable(tableFilter, b);
     }
 
     @Override
@@ -594,48 +631,28 @@ public class Aggregate extends Expression {
     }
 
     private String getSQLGroupConcat() {
-        StatementBuilder buff = new StatementBuilder("GROUP_CONCAT(");
+        StringBuilder buff = new StringBuilder("GROUP_CONCAT(");
         if (distinct) {
             buff.append("DISTINCT ");
         }
         buff.append(on.getSQL());
-        if (orderByList != null) {
-            buff.append(" ORDER BY ");
-            for (SelectOrderBy o : orderByList) {
-                buff.appendExceptFirst(", ");
-                buff.append(o.expression.getSQL());
-                SortOrder.typeToString(buff.builder(), o.sortType);
-            }
-        }
+        Window.appendOrderBy(buff, orderByList);
         if (groupConcatSeparator != null) {
             buff.append(" SEPARATOR ").append(groupConcatSeparator.getSQL());
         }
         buff.append(')');
-        if (filterCondition != null) {
-            buff.append(" FILTER (WHERE ").append(filterCondition.getSQL()).append(')');
-        }
-        return buff.toString();
+        return appendTailConditions(buff).toString();
     }
 
     private String getSQLArrayAggregate() {
-        StatementBuilder buff = new StatementBuilder("ARRAY_AGG(");
+        StringBuilder buff = new StringBuilder("ARRAY_AGG(");
         if (distinct) {
             buff.append("DISTINCT ");
         }
         buff.append(on.getSQL());
-        if (orderByList != null) {
-            buff.append(" ORDER BY ");
-            for (SelectOrderBy o : orderByList) {
-                buff.appendExceptFirst(", ");
-                buff.append(o.expression.getSQL());
-                SortOrder.typeToString(buff.builder(), o.sortType);
-            }
-        }
+        Window.appendOrderBy(buff, orderByList);
         buff.append(')');
-        if (filterCondition != null) {
-            buff.append(" FILTER (WHERE ").append(filterCondition.getSQL()).append(')');
-        }
-        return buff.toString();
+        return appendTailConditions(buff).toString();
     }
 
     @Override
@@ -645,7 +662,7 @@ public class Aggregate extends Expression {
         case GROUP_CONCAT:
             return getSQLGroupConcat();
         case COUNT_ALL:
-            return "COUNT(*)";
+            return appendTailConditions(new StringBuilder().append("COUNT(*)")).toString();
         case COUNT:
             text = "COUNT";
             break;
@@ -699,18 +716,19 @@ public class Aggregate extends Expression {
         case MODE:
             text = "MODE";
             break;
+        case ENVELOPE:
+            text = "ENVELOPE";
+            break;
         default:
             throw DbException.throwInternalError("type=" + type);
         }
+        StringBuilder builder = new StringBuilder().append(text);
         if (distinct) {
-            text += "(DISTINCT " + on.getSQL() + ')';
+            builder.append("(DISTINCT ").append(on.getSQL()).append(')');
         } else {
-            text += StringUtils.enclose(on.getSQL());
+            builder.append(StringUtils.enclose(on.getSQL()));
         }
-        if (filterCondition != null) {
-            text += " FILTER (WHERE " + filterCondition.getSQL() + ')';
-        }
-        return text;
+        return appendTailConditions(builder).toString();
     }
 
     private Index getMinMaxColumnIndex() {
@@ -728,6 +746,9 @@ public class Aggregate extends Expression {
 
     @Override
     public boolean isEverything(ExpressionVisitor visitor) {
+        if (!super.isEverything(visitor)) {
+            return false;
+        }
         if (filterCondition != null && !filterCondition.isEverything(visitor)) {
             return false;
         }
@@ -749,6 +770,8 @@ public class Aggregate extends Expression {
                     return false;
                 }
                 return AggregateDataMedian.getMedianColumnIndex(on) != null;
+            case ENVELOPE:
+                return AggregateDataEnvelope.getGeometryColumnIndex(on) != null;
             default:
                 return false;
             }
@@ -756,8 +779,7 @@ public class Aggregate extends Expression {
         if (on != null && !on.isEverything(visitor)) {
             return false;
         }
-        if (groupConcatSeparator != null &&
-                !groupConcatSeparator.isEverything(visitor)) {
+        if (groupConcatSeparator != null && !groupConcatSeparator.isEverything(visitor)) {
             return false;
         }
         if (orderByList != null) {

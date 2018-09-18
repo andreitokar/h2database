@@ -358,7 +358,7 @@ public class DataType {
                 104
         );
         add(Value.GEOMETRY, Types.OTHER,
-                createString(false),
+                createGeometry(),
                 new String[]{"GEOMETRY"},
                 32
         );
@@ -546,6 +546,17 @@ public class DataType {
         t.maxPrecision = Long.MAX_VALUE;
         t.defaultPrecision = Long.MAX_VALUE;
         return t;
+    }
+
+    private static DataType createGeometry() {
+        DataType dataType = new DataType();
+        dataType.prefix = "'";
+        dataType.suffix = "'";
+        dataType.params = "TYPE,SRID";
+        dataType.maxPrecision = Integer.MAX_VALUE;
+        dataType.defaultPrecision = Integer.MAX_VALUE;
+        dataType.defaultDisplaySize = Integer.MAX_VALUE;
+        return dataType;
     }
 
     /**
@@ -898,7 +909,7 @@ public class DataType {
         case Value.RESULT_SET:
             return ResultSet.class.getName();
         case Value.GEOMETRY:
-            return GEOMETRY_CLASS_NAME;
+            return GEOMETRY_CLASS != null ? GEOMETRY_CLASS_NAME : String.class.getName();
         case Value.INTERVAL_YEAR:
         case Value.INTERVAL_MONTH:
         case Value.INTERVAL_DAY:
@@ -1401,6 +1412,16 @@ public class DataType {
      */
     public static boolean isStringType(int type) {
         return type == Value.STRING || type == Value.STRING_FIXED || type == Value.STRING_IGNORECASE;
+    }
+
+    /**
+     * Check if the given type may have extended type information.
+     *
+     * @param type the value type
+     * @return true if the value type may have extended type information
+     */
+    public static boolean isExtInfoType(int type) {
+        return type == Value.GEOMETRY || type == Value.ENUM;
     }
 
     /**

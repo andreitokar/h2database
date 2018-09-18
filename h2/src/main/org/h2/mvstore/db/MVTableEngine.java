@@ -367,27 +367,23 @@ public class MVTableEngine implements TableEngine {
          * fill rate are compacted, but old chunks are kept for some time, so
          * most likely the database file will not shrink.
          *
-         * @param maxCompactTime the maximum time in milliseconds to compact
+         * @param compactFully true if storage need to be compacted after closer
          */
-        public void close(long maxCompactTime) {
+        public void close(boolean compactFully) {
             if (!isClosed()) {
                 try {
                     FileStore fileStore = mvStore.getFileStore();
-                    if (fileStore != null) {
-                        boolean compactFully = false;
-                        if (!fileStore.isReadOnly()) {
-                            transactionStore.close();
-                            compactFully = maxCompactTime == Long.MAX_VALUE;
-                        }
-                        String fileName = fileStore.getFileName();
-                        mvStore.close();
-                        if (compactFully && FileUtils.exists(fileName)) {
-                            // the file could have been deleted concurrently,
-                            // so only compact if the file still exists
-                            MVStoreTool.compact(fileName, true);
-                        }
+                    if (!mvStore.isClosed() && fileStore != null) {
+                        compactFully = false;
                     } else {
-                        mvStore.close();
+                        transactionStore.close();
+                    }
+                    String fileName = fileStore.getFileName();
+                    mvStore.close();
+                    if (compactFully && FileUtils.exists(fileName)) {
+                        // the file could have been deleted concurrently,
+                        // so only compact if the file still exists
+                        MVStoreTool.compact(fileName, true);
                     }
                 } catch (IllegalStateException e) {
                     int errorCode = DataUtils.getErrorCode(e.getMessage());

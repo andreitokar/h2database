@@ -21,6 +21,52 @@ Change Log
 
 <h2>Next Version (unreleased)</h2>
 <ul>
+<li>PR #1454: Add FIRST_VALUE(), LAST_VALUE(), and NTH_VALUE()
+</li>
+<li>PR #1453, Issue #1161: Add ROW_NUMBER(), RANK(), DENSE_RANK(), PERCENT_RANK(), and CUME_DIST() window functions
+</li>
+<li>PR #1452: Reset aggregates before reuse
+</li>
+<li>PR #1451: Add experimental support for aggregates with OVER (ORDER BY *)
+</li>
+<li>PR #1450: Evaluate window aggregates only once for each partition
+</li>
+<li>PR #1449: Move more code from Aggregate and JavaAggregate to AbstractAggregate
+</li>
+<li>PR #1448: Add experimental implementation of grouped window queries
+</li>
+<li>PR #1447: Refactor OVER() processing code and fix some issues
+</li>
+<li>PR #1446: fix : The French messages are bad generated (not contain DB message)
+</li>
+<li>PR #1445: Use PostGIS-compatible format for SRID-only constraint in GEOMETRY
+</li>
+<li>PR #1444: Add experimental unoptimized support for OVER ([PARTITION BY ...]) in aggregates
+</li>
+<li>PR #1442: Bugfix - Release MVStore lock and file resources rightly even if errors when compacting database
+</li>
+<li>PR #1441: Add GEOMETRY type subtypes with type and SRID constraints
+</li>
+<li>PR #1434: Add support for ENUM in CAST and other changes
+</li>
+<li>PR #1431: Fix some inconsistencies in documentation and improve mvn build
+</li>
+<li>PR #1428: Add support for M and ZM dimensions to GEOMETRY data type
+</li>
+<li>Issue #1405: Introduce LocalResult factory
+</li>
+<li>PR #1422: Add ENVELOPE aggregate function
+</li>
+<li>Issue #1421: Remove old-style outer join
+</li>
+<li>PR #1419: Assorted minor changes
+</li>
+<li>PR #1414: DEFRAG and COMPACT mixup
+</li>
+<li>PR #1413: improvements to MVStore garbage collection
+</li>
+<li>PR #1412: Added org.h2.store.fs package to exported osgi bundles
+</li>
 <li>PR #1409: Map all remaining error codes to custom exception classes
 </li>
 <li>Issue #1407: Add a MODE() aggregate function

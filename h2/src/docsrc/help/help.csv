@@ -48,8 +48,8 @@ SELECT * FROM TEST ORDER BY NAME;
 SELECT ID, COUNT(*) FROM TEST GROUP BY ID;
 SELECT NAME, COUNT(*) FROM TEST GROUP BY NAME HAVING COUNT(*) > 2;
 SELECT 'ID' COL, MAX(ID) AS MAX FROM TEST UNION SELECT 'NAME', MAX(NAME) FROM TEST;
-SELECT * FROM TEST OFFSET 1000 ROWS FETCH NEXT 1000 ROWS ONLY;
-SELECT A, B FROM TEST ORDER BY A FETCH NEXT 10 ROWS WITH TIES;
+SELECT * FROM TEST OFFSET 1000 ROWS FETCH FIRST 1000 ROWS ONLY;
+SELECT A, B FROM TEST ORDER BY A FETCH FIRST 10 ROWS WITH TIES;
 SELECT * FROM (SELECT ID, COUNT(*) FROM TEST
     GROUP BY ID UNION SELECT NULL, COUNT(*) FROM TEST)
     ORDER BY 1 NULLS LAST;
@@ -1839,7 +1839,7 @@ but only for at most the time defined by the database setting ""h2.maxCompactTim
 
 SHUTDOWN IMMEDIATELY closes the database files without any cleanup and without compacting.
 
-SHUTDOWN DEFRAG re-orders the pages when closing the database so that table scans are faster.
+SHUTDOWN DEFRAG re-orders the pages when closing the database so that table scans are faster. In case of MVStore it is currently equivalent to COMPACT.
 
 Admin rights are required to execute this command.
 ","
@@ -2533,6 +2533,36 @@ The column list of the resulting table is C1, C2, and so on.
 SELECT * FROM (VALUES(1, 'Hello'), (2, 'World')) AS V;
 "
 
+"Other Grammar","Window specification","
+([PARTITION BY expression [,...]] [ORDER BY order [,...]]
+[windowFrame])
+","
+A window specification for a window function or aggregate.
+
+Window functions are currently experimental in H2 and should be used with caution.
+They also may require a lot of memory for large queries.
+","
+()
+(ORDER BY ID)
+(PARTITION BY CATEGORY)
+(PARTITION BY CATEGORY ORDER BY NAME, ID)
+(ORDER BY Y RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW EXCLUDE TIES)
+"
+
+"Other Grammar","Window frame","
+[RANGE BETWEEN {
+    UNBOUNDED PRECEDING AND CURRENT ROW
+    |CURRENT ROW AND UNBOUNDED FOLLOWING
+    |UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+    }]
+[EXCLUDE {CURRENT ROW|GROUP|TIES|NO OTHERS}]
+","
+A window frame clause.
+Is currently supported only in aggregates and FIRST_VALUE(), LAST_VALUE(), and NTH_VALUE() window functions.
+","
+RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW EXCLUDE GROUP
+"
+
 "Other Grammar","Term","
 value
     | columnName
@@ -2699,9 +2729,9 @@ INTERVAL '11:12.123' MINUTE TO SECOND
 
 "Other Grammar","Interval","
 intervalYear | intervalMonth | intervalDay | intervalHour | intervalMinute
-| intervalSecond | intervalYearToMonth | intervalDayToHour
-| intervalDayToMinute | intervalDayToSecond | intervalHourToMinute
-| intervalHourToSecond | intervalMinuteToSecond
+    | intervalSecond | intervalYearToMonth | intervalDayToHour
+    | intervalDayToMinute | intervalDayToSecond | intervalHourToMinute
+    | intervalHourToSecond | intervalMinuteToSecond
 ","
 An interval literal.
 ","
@@ -2710,7 +2740,7 @@ INTERVAL '1-2' YEAR TO MONTH
 
 "Other Grammar","Value","
 string | dollarQuotedString | numeric | dateAndTime | boolean | bytes
-| interval | array | null
+    | interval | array | null
 ","
 A literal value of any data type, or null.
 ","
@@ -3037,15 +3067,41 @@ ENUM('clubs', 'diamonds', 'hearts', 'spades')
 "
 "Data Types","GEOMETRY Type","
 GEOMETRY
+    [({ GEOMETRY |
+    { POINT
+    | LINESTRING
+    | POLYGON
+    | MULTIPOINT
+    | MULTILINESTRING
+    | MULTIPOLYGON
+    | GEOMETRYCOLLECTION } [Z|M|ZM]}
+    [, sridInt] )]
 ","
-A spatial geometry type, based on the ""org.locationtech.jts"" library.
+A spatial geometry type.
+If additional constraints are not specified this type accepts all supported types of geometries.
+A constraint with required geometry type and dimension system can be set by specifying name of the type and
+dimension system. A whitespace between them is optional.
+2D dimension system does not have a name and assumed if only a geometry type name is specified.
+POINT means 2D point, POINT Z or POINTZ means 3D point.
+GEOMETRY constraint means no restrictions on type or dimension system of geometry.
+A constraint with required spatial reference system identifier (SRID) can be set by specifying this identifier.
+
+Mapped to ""org.locationtech.jts.geom.Geometry"" if JTS library is in classpath and to ""java.lang.String"" otherwise.
 May be represented in textual format using the WKT (well-known text) or EWKT (extended well-known text) format.
 Values are stored internally in EWKB (extended well-known binary) format.
+Only a subset of EWKB and EWKT features is supported.
+Supported objects are POINT, LINESTRING, POLYGON, MULTIPOINT, MULTILINESTRING, MULTIPOLYGON, and GEOMETRYCOLLECTION.
+Supported dimension systems are 2D (XY), Z (XYZ), M (XYM), and ZM (XYZM).
+SRID (spatial reference system identifier) is supported.
 
 Use a quoted string containing a WKT/EWKT formatted string or ""PreparedStatement.setObject()"" to store values,
 and ""ResultSet.getObject(..)"" or ""ResultSet.getString(..)"" to retrieve the values.
 ","
 GEOMETRY
+GEOMETRY(POINT)
+GEOMETRY(POINT Z)
+GEOMETRY(POINT Z, 4326)
+GEOMETRY(GEOMETRY, 4326)
 "
 
 "Data Types","INTERVAL Type","
@@ -3225,7 +3281,8 @@ INTERVAL MINUTE TO SECOND
 "
 
 "Functions (Aggregate)","AVG","
-AVG ( [ DISTINCT ] { numeric } ) [ FILTER ( WHERE expression ) ]
+AVG ( [ DISTINCT ] { numeric } )
+[FILTER (WHERE expression)] [OVER windowSpecification]
 ","
 The average (mean) value.
 If no rows are selected, the result is NULL.
@@ -3236,7 +3293,8 @@ AVG(X)
 "
 
 "Functions (Aggregate)","BIT_AND","
-BIT_AND(expression) [ FILTER ( WHERE expression ) ]
+BIT_AND(expression)
+[FILTER (WHERE expression)] [OVER windowSpecification]
 ","
 The bitwise AND of all non-null values.
 If no rows are selected, the result is NULL.
@@ -3246,7 +3304,8 @@ BIT_AND(ID)
 "
 
 "Functions (Aggregate)","BIT_OR","
-BIT_OR(expression) [ FILTER ( WHERE expression ) ]
+BIT_OR(expression)
+[FILTER (WHERE expression)] [OVER windowSpecification]
 ","
 The bitwise OR of all non-null values.
 If no rows are selected, the result is NULL.
@@ -3256,7 +3315,8 @@ BIT_OR(ID)
 "
 
 "Functions (Aggregate)","BOOL_AND","
-BOOL_AND(boolean) [ FILTER ( WHERE expression ) ]
+BOOL_AND(boolean)
+[FILTER (WHERE expression)] [OVER windowSpecification]
 ","
 Returns true if all expressions are true.
 If no rows are selected, the result is NULL.
@@ -3266,7 +3326,8 @@ BOOL_AND(ID>10)
 "
 
 "Functions (Aggregate)","BOOL_OR","
-BOOL_OR(boolean) [ FILTER ( WHERE expression ) ]
+BOOL_OR(boolean)
+[FILTER (WHERE expression)] [OVER windowSpecification]
 ","
 Returns true if any expression is true.
 If no rows are selected, the result is NULL.
@@ -3276,7 +3337,8 @@ BOOL_OR(NAME LIKE 'W%')
 "
 
 "Functions (Aggregate)","COUNT","
-COUNT( { * | { [ DISTINCT ] expression } } ) [ FILTER ( WHERE expression ) ]
+COUNT( { * | { [ DISTINCT ] expression } } )
+[FILTER (WHERE expression)] [OVER windowSpecification]
 ","
 The count of all row, or of the non-null values.
 This method returns a long.
@@ -3289,7 +3351,8 @@ COUNT(*)
 "Functions (Aggregate)","GROUP_CONCAT","
 GROUP_CONCAT ( [ DISTINCT ] string
 [ ORDER BY { expression [ ASC | DESC ] } [,...] ]
-[ SEPARATOR expression ] ) [ FILTER ( WHERE expression ) ]
+[ SEPARATOR expression ] )
+[FILTER (WHERE expression)] [OVER windowSpecification]
 ","
 Concatenates strings with a separator.
 The default separator is a ',' (without space).
@@ -3303,7 +3366,7 @@ GROUP_CONCAT(NAME ORDER BY ID SEPARATOR ', ')
 "Functions (Aggregate)","ARRAY_AGG","
 ARRAY_AGG ( [ DISTINCT ] string
 [ ORDER BY { expression [ ASC | DESC ] } [,...] ] )
-[ FILTER ( WHERE expression ) ]
+[FILTER (WHERE expression)] [OVER windowSpecification]
 ","
 Aggregate the value into an array.
 This method returns an array.
@@ -3314,7 +3377,8 @@ ARRAY_AGG(NAME ORDER BY ID)
 "
 
 "Functions (Aggregate)","MAX","
-MAX(value) [ FILTER ( WHERE expression ) ]
+MAX(value)
+[FILTER (WHERE expression)] [OVER windowSpecification]
 ","
 The highest value.
 If no rows are selected, the result is NULL.
@@ -3325,7 +3389,8 @@ MAX(NAME)
 "
 
 "Functions (Aggregate)","MIN","
-MIN(value) [ FILTER ( WHERE expression ) ]
+MIN(value)
+[FILTER (WHERE expression)] [OVER windowSpecification]
 ","
 The lowest value.
 If no rows are selected, the result is NULL.
@@ -3336,7 +3401,8 @@ MIN(NAME)
 "
 
 "Functions (Aggregate)","SUM","
-SUM( [ DISTINCT ] { numeric } ) [ FILTER ( WHERE expression ) ]
+SUM( [ DISTINCT ] { numeric } )
+[FILTER (WHERE expression)] [OVER windowSpecification]
 ","
 The sum of all values.
 If no rows are selected, the result is NULL.
@@ -3348,7 +3414,8 @@ SUM(X)
 "
 
 "Functions (Aggregate)","SELECTIVITY","
-SELECTIVITY(value) [ FILTER ( WHERE expression ) ]
+SELECTIVITY(value)
+[FILTER (WHERE expression)] [OVER windowSpecification]
 ","
 Estimates the selectivity (0-100) of a value.
 The value is defined as (100 * distinctCount / rowCount).
@@ -3360,7 +3427,8 @@ SELECT SELECTIVITY(FIRSTNAME), SELECTIVITY(NAME) FROM TEST WHERE ROWNUM()<20000
 "
 
 "Functions (Aggregate)","STDDEV_POP","
-STDDEV_POP( [ DISTINCT ] numeric ) [ FILTER ( WHERE expression ) ]
+STDDEV_POP( [ DISTINCT ] numeric )
+[FILTER (WHERE expression)] [OVER windowSpecification]
 ","
 The population standard deviation.
 This method returns a double.
@@ -3371,7 +3439,8 @@ STDDEV_POP(X)
 "
 
 "Functions (Aggregate)","STDDEV_SAMP","
-STDDEV_SAMP( [ DISTINCT ] numeric ) [ FILTER ( WHERE expression ) ]
+STDDEV_SAMP( [ DISTINCT ] numeric )
+[FILTER (WHERE expression)] [OVER windowSpecification]
 ","
 The sample standard deviation.
 This method returns a double.
@@ -3382,7 +3451,8 @@ STDDEV(X)
 "
 
 "Functions (Aggregate)","VAR_POP","
-VAR_POP( [ DISTINCT ] numeric ) [ FILTER ( WHERE expression ) ]
+VAR_POP( [ DISTINCT ] numeric )
+[FILTER (WHERE expression)] [OVER windowSpecification]
 ","
 The population variance (square of the population standard deviation).
 This method returns a double.
@@ -3393,7 +3463,8 @@ VAR_POP(X)
 "
 
 "Functions (Aggregate)","VAR_SAMP","
-VAR_SAMP( [ DISTINCT ] numeric ) [ FILTER ( WHERE expression ) ]
+VAR_SAMP( [ DISTINCT ] numeric )
+[FILTER (WHERE expression)] [OVER windowSpecification]
 ","
 The sample variance (square of the sample standard deviation).
 This method returns a double.
@@ -3404,7 +3475,8 @@ VAR_SAMP(X)
 "
 
 "Functions (Aggregate)","MEDIAN","
-MEDIAN( [ DISTINCT ] value ) [ FILTER ( WHERE expression ) ]
+MEDIAN( [ DISTINCT ] value )
+[FILTER (WHERE expression)] [OVER windowSpecification]
 ","
 The value separating the higher half of a values from the lower half.
 Returns the middle value or an interpolated value between two middle values if number of values is even.
@@ -3419,7 +3491,7 @@ MEDIAN(X)
 "Functions (Aggregate)","MODE","
 { MODE( value ) [ ORDER BY expression [ ASC | DESC ] ] }
     | { MODE() WITHIN GROUP(ORDER BY expression [ ASC | DESC ]) }
-[ FILTER ( WHERE expression ) ]
+[FILTER (WHERE expression)] [OVER windowSpecification]
 ","
 Returns the value that occurs with the greatest frequency.
 If there are multiple values with the same frequency only one value will be returned.
@@ -3435,6 +3507,19 @@ Aggregates are only allowed in select statements.
 MODE(X)
 MODE(X ORDER BY X)
 MODE() WITHIN GROUP(ORDER BY X)
+"
+
+"Functions (Aggregate)","ENVELOPE","
+ENVELOPE( value )
+[FILTER (WHERE expression)] [OVER windowSpecification]
+","
+Returns the minimum bounding box that encloses all specified GEOMETRY values.
+Only 2D coordinate plane is supported.
+NULL values are ignored in the calculation.
+If no rows are selected, the result is NULL.
+Aggregates are only allowed in select statements.
+","
+ENVELOPE(X)
 "
 
 "Functions (Numeric)","ABS","
@@ -4724,6 +4809,23 @@ Throw an SQLException with the passed SQLState and reason.
 CALL SIGNAL('23505', 'Duplicate user ID: ' || user_id);
 "
 
+"Functions (System)","ESTIMATED_ENVELOPE","
+ESTIMATED_ENVELOPE(tableNameString, columnNameString)
+","
+Returns the estimated minimum bounding box that encloses all specified GEOMETRY values.
+Only 2D coordinate plane is supported.
+NULL values are ignored.
+This function is only supported by MVStore engine.
+Column must have a spatial index.
+This function is fast, but estimation may include uncommitted data (including data from other transactions),
+may return approximate bounds, or be different with actual value due to other reasons.
+Use with caution.
+If estimation is not available this function returns NULL.
+For accurate and reliable result use ESTIMATE aggregate function instead.
+","
+CALL ESTIMATED_ENVELOPE('MY_TABLE', 'GEOMETRY_COLUMN');
+"
+
 "Functions (System)","FILE_READ","
 FILE_READ(fileNameString [,encodingString])
 ","
@@ -4876,14 +4978,14 @@ READONLY()
 "
 
 "Functions (System)","ROWNUM","
-{ ROWNUM() } | { ROW_NUMBER() OVER() }
+ROWNUM()
 ","
 Returns the number of the current row.
-This method returns a long.
+This method returns an integer value.
 It is supported for SELECT statements, as well as for DELETE and UPDATE.
 The first row has the row number 1, and is calculated before ordering and grouping the result set,
 but after evaluating index conditions (even when the index conditions are specified in an outer query).
-To get the row number after ordering and grouping, use a subquery.
+Use the ROW_NUMBER() OVER () function to get row numbers after grouping or in specified order.
 ","
 SELECT ROWNUM(), * FROM TEST;
 SELECT ROWNUM(), * FROM (SELECT * FROM TEST ORDER BY NAME);
@@ -4979,6 +5081,130 @@ H2VERSION()
 Returns the H2 version as a String.
 ","
 H2VERSION()
+"
+
+"Functions (Window)","ROW_NUMBER","
+ROW_NUMBER() OVER windowSpecification
+","
+Returns the number of the current row starting with 1.
+
+Window functions are currently experimental in H2 and should be used with caution.
+They also may require a lot of memory for large queries.
+","
+SELECT ROW_NUMBER() OVER (), * FROM TEST;
+SELECT ROW_NUMBER() OVER (ORDER BY ID), * FROM TEST;
+SELECT ROW_NUMBER() OVER (PARTITION BY CATEGORY ORDER BY ID), * FROM TEST;
+"
+
+"Functions (Window)","RANK","
+RANK() OVER windowSpecification
+","
+Returns the rank of the current row.
+The rank of a row is the number of rows that precede this row plus 1.
+If two or more rows have the same values in ORDER BY columns, these rows get the same rank from the first row with the same values.
+It means that gaps in ranks are possible.
+
+Window functions are currently experimental in H2 and should be used with caution.
+They also may require a lot of memory for large queries.
+","
+SELECT RANK() OVER (ORDER BY ID), * FROM TEST;
+SELECT RANK() OVER (PARTITION BY CATEGORY ORDER BY ID), * FROM TEST;
+"
+
+"Functions (Window)","DENSE_RANK","
+DENSE_RANK() OVER windowSpecification
+","
+Returns the dense rank of the current row.
+The rank of a row is the number of groups of rows with the same values in ORDER BY columns that precede group with this row plus 1.
+If two or more rows have the same values in ORDER BY columns, these rows get the same rank.
+Gaps in ranks are not possible.
+
+Window functions are currently experimental in H2 and should be used with caution.
+They also may require a lot of memory for large queries.
+","
+SELECT DENSE_RANK() OVER (ORDER BY ID), * FROM TEST;
+SELECT DENSE_RANK() OVER (PARTITION BY CATEGORY ORDER BY ID), * FROM TEST;
+"
+
+"Functions (Window)","PERCENT_RANK","
+PERCENT_RANK() OVER windowSpecification
+","
+Returns the relative rank of the current row.
+The relative rank is calculated as (RANK - 1) / (NR - 1),
+where RANK is a rank of the row and NR is a number of rows in window partition with this row.
+
+Window functions are currently experimental in H2 and should be used with caution.
+They also may require a lot of memory for large queries.
+","
+SELECT PERCENT_RANK() OVER (ORDER BY ID), * FROM TEST;
+SELECT PERCENT_RANK() OVER (PARTITION BY CATEGORY ORDER BY ID), * FROM TEST;
+"
+
+"Functions (Window)","CUME_DIST","
+CUME_DIST() OVER windowSpecification
+","
+Returns the relative rank of the current row.
+The relative rank is calculated as NP / NR
+where NP is a number of rows that precede the current row or have the same values in ORDER BY columns
+and NR is a number of rows in window partition with this row.
+
+Window functions are currently experimental in H2 and should be used with caution.
+They also may require a lot of memory for large queries.
+","
+SELECT CUME_DIST() OVER (ORDER BY ID), * FROM TEST;
+SELECT CUME_DIST() OVER (PARTITION BY CATEGORY ORDER BY ID), * FROM TEST;
+"
+
+"Functions (Window)","FIRST_VALUE","
+FIRST_VALUE(value) [{RESPECT|IGNORE} NULLS] OVER windowSpecification
+","
+Returns the first value in a window.
+If IGNORE NULLS is specified null values are skipped and the function returns first non-null value, if any.
+
+Window functions are currently experimental in H2 and should be used with caution.
+They also may require a lot of memory for large queries.
+","
+SELECT FIRST_VALUE(X) OVER (ORDER BY ID), * FROM TEST;
+SELECT FIRST_VALUE(X) IGNORE NULLS OVER (PARTITION BY CATEGORY ORDER BY ID), * FROM TEST;
+"
+
+"Functions (Window)","LAST_VALUE","
+LAST_VALUE(value) [{RESPECT|IGNORE} NULLS] OVER windowSpecification
+","
+Returns the last value in a window.
+If IGNORE NULLS is specified null values are skipped and the function returns last non-null value before them, if any;
+if there is no non-null value it returns NULL.
+Note that the last value is actually a value in the current row if window frame is not specified.
+
+Window functions are currently experimental in H2 and should be used with caution.
+They also may require a lot of memory for large queries.
+","
+SELECT LAST_VALUE(X) OVER (ORDER BY ID), * FROM TEST;
+SELECT LAST_VALUE(X) IGNORE NULLS OVER (
+    PARTITION BY CATEGORY ORDER BY ID
+    RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING
+), * FROM TEST;
+"
+
+"Functions (Window)","NTH_VALUE","
+NTH_VALUE(value, nInt) [FROM {FIRST|LAST}] [{RESPECT|IGNORE} NULLS]
+OVER windowSpecification
+","
+Returns the value in a row with a specified relative number in a window.
+Relative row number must be positive.
+If FROM LAST is specified rows a counted backwards from the last row.
+If IGNORE NULLS is specified rows with null values in selected expression are skipped.
+If number of considered rows is less than specified relative number this function returns NULL.
+Note that the last row is actually a current row if window frame is not specified.
+
+Window functions are currently experimental in H2 and should be used with caution.
+They also may require a lot of memory for large queries.
+","
+SELECT NTH_VALUE(X) OVER (ORDER BY ID), * FROM TEST;
+SELECT NTH_VALUE(X) IGNORE NULLS OVER (
+    PARTITION BY CATEGORY ORDER BY ID
+    RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+), * FROM TEST;
 "
 
 "System Tables","Information Schema","

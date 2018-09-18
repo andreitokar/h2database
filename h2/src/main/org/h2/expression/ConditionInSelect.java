@@ -146,9 +146,9 @@ public class ConditionInSelect extends Condition {
     }
 
     @Override
-    public void updateAggregate(Session session) {
-        left.updateAggregate(session);
-        query.updateAggregate(session);
+    public void updateAggregate(Session session, int stage) {
+        left.updateAggregate(session, stage);
+        query.updateAggregate(session, stage);
     }
 
     @Override

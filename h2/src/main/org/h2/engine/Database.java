@@ -41,6 +41,7 @@ import org.h2.message.Trace;
 import org.h2.message.TraceSystem;
 import org.h2.mvstore.MVStore;
 import org.h2.mvstore.db.MVTableEngine;
+import org.h2.result.LocalResultFactory;
 import org.h2.result.Row;
 import org.h2.result.RowFactory;
 import org.h2.result.SearchRow;
@@ -230,6 +231,7 @@ public class Database implements DataHandler {
     private int queryStatisticsMaxEntries = Constants.QUERY_STATISTICS_MAX_ENTRIES;
     private QueryStatisticsData queryStatisticsData;
     private RowFactory rowFactory = RowFactory.getRowFactory();
+    private LocalResultFactory resultFactory = LocalResultFactory.DEFAULT;
 
     private Authenticator authenticator;
 
@@ -369,6 +371,14 @@ public class Database implements DataHandler {
 
     public void setRowFactory(RowFactory rowFactory) {
         this.rowFactory = rowFactory;
+    }
+
+    public LocalResultFactory getResultFactory() {
+        return resultFactory;
+    }
+
+    public void setResultFactory(LocalResultFactory resultFactory) {
+        this.resultFactory = resultFactory;
     }
 
     public static void setInitialPowerOffCount(int count) {
@@ -1536,16 +1546,22 @@ public class Database implements DataHandler {
                 }
             }
             reconnectModified(false);
-            if (store != null && store.getMvStore() != null && !store.getMvStore().isClosed()) {
-                long maxCompactTime = dbSettings.maxCompactTime;
-                if (compactMode == CommandInterface.SHUTDOWN_COMPACT) {
-                    store.compactFile(dbSettings.maxCompactTime);
-                } else if (compactMode == CommandInterface.SHUTDOWN_DEFRAG) {
-                    maxCompactTime = Long.MAX_VALUE;
-                } else if (getSettings().defragAlways) {
-                    maxCompactTime = Long.MAX_VALUE;
+            if (store != null) {
+                MVStore mvStore = store.getMvStore();
+                if (mvStore != null && !mvStore.isClosed()) {
+                    boolean compactFully =
+                            compactMode == CommandInterface.SHUTDOWN_COMPACT ||
+                            compactMode == CommandInterface.SHUTDOWN_DEFRAG ||
+                            getSettings().defragAlways;
+                    if (!compactFully && !mvStore.isReadOnly()) {
+                        try {
+                            store.compactFile(dbSettings.maxCompactTime);
+                        } catch (Throwable t) {
+                            trace.error(t, "compactFile");
+                        }
+                    }
+                    store.close(compactFully);
                 }
-                store.close(maxCompactTime);
             }
             if (systemSession != null) {
                 systemSession.close();

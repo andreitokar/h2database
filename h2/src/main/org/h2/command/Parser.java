@@ -141,7 +141,6 @@ import org.h2.engine.Mode.ModeEnum;
 import org.h2.engine.Procedure;
 import org.h2.engine.Right;
 import org.h2.engine.Session;
-import org.h2.engine.SysProperties;
 import org.h2.engine.User;
 import org.h2.engine.UserAggregate;
 import org.h2.engine.UserDataType;
@@ -171,9 +170,16 @@ import org.h2.expression.UnaryOperation;
 import org.h2.expression.ValueExpression;
 import org.h2.expression.Variable;
 import org.h2.expression.Wildcard;
+import org.h2.expression.aggregate.AbstractAggregate;
 import org.h2.expression.aggregate.Aggregate;
 import org.h2.expression.aggregate.Aggregate.AggregateType;
 import org.h2.expression.aggregate.JavaAggregate;
+import org.h2.expression.aggregate.Window;
+import org.h2.expression.aggregate.WindowFrame;
+import org.h2.expression.aggregate.WindowFrame.SimpleExtent;
+import org.h2.expression.aggregate.WindowFrame.WindowFrameExclusion;
+import org.h2.expression.aggregate.WindowFunction;
+import org.h2.expression.aggregate.WindowFunction.WindowFunctionType;
 import org.h2.index.Index;
 import org.h2.message.DbException;
 import org.h2.result.SortOrder;
@@ -195,14 +201,17 @@ import org.h2.util.ParserUtil;
 import org.h2.util.StatementBuilder;
 import org.h2.util.StringUtils;
 import org.h2.util.Utils;
+import org.h2.util.geometry.EWKTUtils;
 import org.h2.value.CompareMode;
 import org.h2.value.DataType;
+import org.h2.value.ExtTypeInfo;
+import org.h2.value.ExtTypeInfoEnum;
+import org.h2.value.ExtTypeInfoGeometry;
 import org.h2.value.Value;
 import org.h2.value.ValueBoolean;
 import org.h2.value.ValueBytes;
 import org.h2.value.ValueDate;
 import org.h2.value.ValueDecimal;
-import org.h2.value.ValueEnum;
 import org.h2.value.ValueInt;
 import org.h2.value.ValueInterval;
 import org.h2.value.ValueLong;
@@ -1397,18 +1406,17 @@ public class Parser {
 
 
     private Prepared parseMerge() {
-        Merge command = new Merge(session);
-        currentPrepared = command;
         int start = lastParseIndex;
         read("INTO");
         List<String> excludeIdentifiers = Arrays.asList("USING", "KEY", "VALUES");
         TableFilter targetTableFilter = readSimpleTableFilter(0, excludeIdentifiers);
+        if (readIf("USING")) {
+            return parseMergeUsing(targetTableFilter, start);
+        }
+        Merge command = new Merge(session);
+        currentPrepared = command;
         command.setTargetTableFilter(targetTableFilter);
         Table table = command.getTargetTable();
-
-        if (readIf("USING")) {
-            return parseMergeUsing(command, start);
-        }
         if (readIf(OPEN_PAREN)) {
             if (isSelect()) {
                 command.setQuery(parseSelect());
@@ -1434,8 +1442,8 @@ public class Parser {
         return command;
     }
 
-    private MergeUsing parseMergeUsing(Merge oldCommand, int start) {
-        MergeUsing command = new MergeUsing(oldCommand);
+    private MergeUsing parseMergeUsing(TableFilter targetTableFilter, int start) {
+        MergeUsing command = new MergeUsing(session, targetTableFilter);
         currentPrepared = command;
 
         if (readIf(OPEN_PAREN)) {
@@ -2810,41 +2818,7 @@ public class Parser {
                     }
                     read(CLOSE_PAREN);
                 } else {
-                    Expression right = readConcat();
-                    if (SysProperties.OLD_STYLE_OUTER_JOIN &&
-                            readIf(OPEN_PAREN) && readIf(PLUS_SIGN) && readIf(CLOSE_PAREN)) {
-                        // support for a subset of old-fashioned Oracle outer
-                        // join with (+)
-                        if (r instanceof ExpressionColumn &&
-                                right instanceof ExpressionColumn) {
-                            ExpressionColumn leftCol = (ExpressionColumn) r;
-                            ExpressionColumn rightCol = (ExpressionColumn) right;
-                            ArrayList<TableFilter> filters = currentSelect
-                                    .getTopFilters();
-                            for (TableFilter f : filters) {
-                                while (f != null) {
-                                    leftCol.mapColumns(f, 0);
-                                    rightCol.mapColumns(f, 0);
-                                    f = f.getJoin();
-                                }
-                            }
-                            TableFilter leftFilter = leftCol.getTableFilter();
-                            TableFilter rightFilter = rightCol.getTableFilter();
-                            r = new Comparison(session, compareType, r, right);
-                            if (leftFilter != null && rightFilter != null) {
-                                int idx = filters.indexOf(rightFilter);
-                                if (idx >= 0) {
-                                    filters.remove(idx);
-                                    leftFilter.addJoin(rightFilter, true, r);
-                                } else {
-                                    rightFilter.mapAndAddFilter(r);
-                                }
-                                r = ValueExpression.get(ValueBoolean.TRUE);
-                            }
-                        }
-                    } else {
-                        r = new Comparison(session, compareType, r, right);
-                    }
+                    r = new Comparison(session, compareType, r, readConcat());
                 }
             }
             if (not) {
@@ -2916,7 +2890,6 @@ public class Parser {
         if (currentSelect == null) {
             throw getSyntaxError();
         }
-        currentSelect.setGroupQuery();
         Aggregate r;
         switch (aggregateType) {
         case COUNT:
@@ -3000,7 +2973,7 @@ public class Parser {
         }
         read(CLOSE_PAREN);
         if (r != null) {
-            r.setFilterCondition(readFilterCondition());
+            readFilterAndOver(r);
         }
         return r;
     }
@@ -3057,22 +3030,108 @@ public class Parser {
         do {
             params.add(readExpression());
         } while (readIfMore(true));
-        Expression filterCondition = readFilterCondition();
         Expression[] list = params.toArray(new Expression[0]);
-        JavaAggregate agg = new JavaAggregate(aggregate, list, currentSelect, distinct, filterCondition);
-        currentSelect.setGroupQuery();
+        JavaAggregate agg = new JavaAggregate(aggregate, list, currentSelect, distinct);
+        readFilterAndOver(agg);
         return agg;
     }
 
-    private Expression readFilterCondition() {
-        if (readIf("FILTER")) {
+    private void readFilterAndOver(AbstractAggregate aggregate) {
+        boolean isAggregate = aggregate.isAggregate();
+        if (isAggregate && readIf("FILTER")) {
             read(OPEN_PAREN);
             read(WHERE);
             Expression filterCondition = readExpression();
             read(CLOSE_PAREN);
-            return filterCondition;
+            aggregate.setFilterCondition(filterCondition);
         }
-        return null;
+        Window over = null;
+        if (readIf("OVER")) {
+            read(OPEN_PAREN);
+            ArrayList<Expression> partitionBy = null;
+            if (readIf("PARTITION")) {
+                read("BY");
+                partitionBy = Utils.newSmallArrayList();
+                do {
+                    Expression expr = readExpression();
+                    partitionBy.add(expr);
+                } while (readIf(COMMA));
+            }
+            ArrayList<SelectOrderBy> orderBy = null;
+            if (readIf(ORDER)) {
+                read("BY");
+                orderBy = parseSimpleOrderList();
+            } else if (!isAggregate) {
+                orderBy = new ArrayList<>(0);
+            }
+            WindowFrame frame;
+            if (aggregate instanceof WindowFunction) {
+                WindowFunction w = (WindowFunction) aggregate;
+                switch (w.getFunctionType()) {
+                case FIRST_VALUE:
+                case LAST_VALUE:
+                case NTH_VALUE:
+                    frame = readWindowFrame();
+                    break;
+                default:
+                    frame = new WindowFrame(SimpleExtent.RANGE_BETWEEN_UNBOUNDED_PRECEDING_AND_CURRENT_ROW,
+                            WindowFrameExclusion.EXCLUDE_NO_OTHERS);
+                }
+            } else {
+                frame = readWindowFrame();
+            }
+            read(CLOSE_PAREN);
+            over = new Window(partitionBy, orderBy, frame);
+            aggregate.setOverCondition(over);
+            currentSelect.setWindowQuery();
+        } else if (!isAggregate) {
+            throw getSyntaxError();
+        } else {
+            currentSelect.setGroupQuery();
+        }
+    }
+
+    private WindowFrame readWindowFrame() {
+        SimpleExtent extent;
+        WindowFrameExclusion exclusion = WindowFrameExclusion.EXCLUDE_NO_OTHERS;
+        if (readIf("RANGE")) {
+            read("BETWEEN");
+            if (readIf("UNBOUNDED")) {
+                read("PRECEDING");
+                read("AND");
+                if (readIf("CURRENT")) {
+                    read("ROW");
+                    extent = SimpleExtent.RANGE_BETWEEN_UNBOUNDED_PRECEDING_AND_CURRENT_ROW;
+                } else {
+                    read("UNBOUNDED");
+                    read("FOLLOWING");
+                    extent = SimpleExtent.RANGE_BETWEEN_UNBOUNDED_PRECEDING_AND_UNBOUNDED_FOLLOWING;
+                }
+            } else {
+                read("CURRENT");
+                read("ROW");
+                read("AND");
+                read("UNBOUNDED");
+                read("FOLLOWING");
+                extent = SimpleExtent.RANGE_BETWEEN_CURRENT_ROW_AND_UNBOUNDED_FOLLOWING;
+            }
+            if (readIf("EXCLUDE")) {
+                if (readIf("CURRENT")) {
+                    read("ROW");
+                    exclusion = WindowFrameExclusion.EXCLUDE_CURRENT_ROW;
+                } else if (readIf(GROUP)) {
+                    exclusion = WindowFrameExclusion.EXCLUDE_GROUP;
+                } else if (readIf("TIES")) {
+                    exclusion = WindowFrameExclusion.EXCLUDE_TIES;
+                } else {
+                    read("NO");
+                    read("OTHERS");
+                }
+            }
+        } else {
+            extent = SimpleExtent.RANGE_BETWEEN_UNBOUNDED_PRECEDING_AND_CURRENT_ROW;
+        }
+        return new WindowFrame(extent, exclusion);
     }
 
     private AggregateType getAggregateType(String name) {
@@ -3100,6 +3159,10 @@ public class Parser {
         }
         Function function = Function.getFunction(database, name);
         if (function == null) {
+            WindowFunction windowFunction = readWindowFunction(name);
+            if (windowFunction != null) {
+                return windowFunction;
+            }
             UserAggregate aggregate = database.findAggregate(name);
             if (aggregate != null) {
                 return readJavaAggregate(aggregate);
@@ -3245,16 +3308,6 @@ public class Parser {
             tf.setColumns(columns);
             break;
         }
-        case Function.ROW_NUMBER:
-            read(CLOSE_PAREN);
-            read("OVER");
-            read(OPEN_PAREN);
-            read(CLOSE_PAREN);
-            if (currentSelect == null && currentPrepared == null) {
-                throw getSyntaxError();
-            }
-            return new Rownum(currentSelect == null ? currentPrepared
-                    : currentSelect);
         default:
             if (!readIf(CLOSE_PAREN)) {
                 int i = 0;
@@ -3265,6 +3318,63 @@ public class Parser {
         }
         function.doneWithParameters();
         return function;
+    }
+
+    private WindowFunction readWindowFunction(String name) {
+        if (!database.getSettings().databaseToUpper) {
+            // if not yet converted to uppercase, do it now
+            name = StringUtils.toUpperEnglish(name);
+        }
+        WindowFunctionType type = WindowFunctionType.get(name);
+        if (type == null) {
+            return null;
+        }
+        if (currentSelect == null) {
+            throw getSyntaxError();
+        }
+        int numArgs = WindowFunction.getArgumentCount(type);
+        Expression[] args = null;
+        if (numArgs > 0) {
+            args = new Expression[numArgs];
+            for (int i = 0; i < numArgs; i++) {
+                if (i > 0) {
+                    read(COMMA);
+                }
+                args[i] = readExpression();
+            }
+        }
+        read(CLOSE_PAREN);
+        WindowFunction function = new WindowFunction(type, currentSelect, args);
+        if (type == WindowFunctionType.NTH_VALUE) {
+            readFromFirstOrLast(function);
+        }
+        switch (type) {
+        case FIRST_VALUE:
+        case LAST_VALUE:
+        case NTH_VALUE:
+            readRespectOrIgnoreNulls(function);
+            //$FALL-THROUGH$
+        default:
+            // Avoid warning
+        }
+        readFilterAndOver(function);
+        return function;
+    }
+
+    private void readFromFirstOrLast(WindowFunction function) {
+        if (readIf(FROM) && !readIf("FIRST")) {
+            read("LAST");
+            function.setFromLast(true);
+        }
+    }
+
+    private void readRespectOrIgnoreNulls(WindowFunction function) {
+        if (readIf("RESPECT")) {
+            read("NULLS");
+        } else if (readIf("IGNORE")) {
+            read("NULLS");
+            function.setIgnoreNulls(true);
+        }
     }
 
     private Expression readFunctionWithoutParameters(String name) {
@@ -3314,12 +3424,7 @@ public class Parser {
         }
         String name = readColumnIdentifier();
         Schema s = database.findSchema(objectName);
-        if ((!SysProperties.OLD_STYLE_OUTER_JOIN || s != null) && readIf(OPEN_PAREN)) {
-            // only if the token before the dot is a valid schema name,
-            // otherwise the old style Oracle outer join doesn't work:
-            // t.x = t2.x(+)
-            // this additional check is not required
-            // if the old style outer joins are not supported
+        if (readIf(OPEN_PAREN)) {
             return readFunction(s, name);
         } else if (readIf(DOT)) {
             String schema = objectName;
@@ -4903,7 +5008,7 @@ public class Parser {
         }
         long precision = -1;
         int displaySize = -1;
-        String[] enumerators = null;
+        ExtTypeInfo extTypeInfo = null;
         int scale = -1;
         String comment = null;
         Column templateColumn = null;
@@ -4920,7 +5025,7 @@ public class Parser {
             precision = templateColumn.getPrecision();
             displaySize = templateColumn.getDisplaySize();
             scale = templateColumn.getScale();
-            enumerators = templateColumn.getEnumerators();
+            extTypeInfo = templateColumn.getExtTypeInfo();
         } else {
             Mode mode = database.getMode();
             dataType = DataType.getTypeByName(original, mode);
@@ -5048,25 +5153,52 @@ public class Parser {
                 original = original + '(' + p + ')';
             }
         } else if (dataType.type == Value.ENUM) {
-            if (readIf(OPEN_PAREN)) {
-                java.util.List<String> enumeratorList = new ArrayList<>();
-                original += '(';
-                String enumerator0 = readString();
-                enumeratorList.add(enumerator0);
-                original += "'" + enumerator0 + "'";
-                while (readIfMore(true)) {
-                    original += ',';
-                    String enumeratorN = readString();
-                    original += "'" + enumeratorN + "'";
-                    enumeratorList.add(enumeratorN);
+            if (extTypeInfo == null) {
+                String[] enumerators = null;
+                if (readIf(OPEN_PAREN)) {
+                    java.util.List<String> enumeratorList = new ArrayList<>();
+                    String enumerator0 = readString();
+                    enumeratorList.add(enumerator0);
+                    while (readIfMore(true)) {
+                        String enumeratorN = readString();
+                        enumeratorList.add(enumeratorN);
+                    }
+                    enumerators = enumeratorList.toArray(new String[0]);
                 }
-                original += ')';
-                enumerators = enumeratorList.toArray(new String[0]);
+                try {
+                    extTypeInfo = new ExtTypeInfoEnum(enumerators);
+                } catch (DbException e) {
+                    throw e.addSQL(original);
+                }
+                original += extTypeInfo.getCreateSQL();
             }
-            try {
-                ValueEnum.check(enumerators);
-            } catch (DbException e) {
-                throw e.addSQL(original);
+        } else if (dataType.type == Value.GEOMETRY) {
+            if (extTypeInfo == null) {
+                if (readIf(OPEN_PAREN)) {
+                    int type = 0;
+                    if (currentTokenType != IDENTIFIER || currentTokenQuoted) {
+                        throw getSyntaxError();
+                    }
+                    if (!readIf("GEOMETRY")) {
+                        try {
+                            type = EWKTUtils.parseGeometryType(currentToken);
+                            read();
+                            if (type / 1_000 == 0 && currentTokenType == IDENTIFIER && !currentTokenQuoted) {
+                                type +=  EWKTUtils.parseDimensionSystem(currentToken) * 1_000;
+                                read();
+                            }
+                        } catch (IllegalArgumentException ex) {
+                            throw getSyntaxError();
+                        }
+                    }
+                    Integer srid = null;
+                    if (readIf(COMMA)) {
+                        srid = readInt();
+                    }
+                    read(CLOSE_PAREN);
+                    extTypeInfo = new ExtTypeInfoGeometry(type, srid);
+                    original += extTypeInfo.getCreateSQL();
+                }
             }
         } else if (readIf(OPEN_PAREN)) {
             // Support for MySQL: INT(11), MEDIUMINT(8) and so on.
@@ -5090,7 +5222,7 @@ public class Parser {
         }
 
         Column column = new Column(columnName, type, precision, scale,
-            displaySize, enumerators);
+            displaySize, extTypeInfo);
         if (templateColumn != null) {
             column.setNullable(templateColumn.isNullable());
             column.setDefaultExpression(session,

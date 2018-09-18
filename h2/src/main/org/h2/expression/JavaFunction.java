@@ -107,10 +107,10 @@ public class JavaFunction extends Expression implements FunctionCall {
     }
 
     @Override
-    public void updateAggregate(Session session) {
+    public void updateAggregate(Session session, int stage) {
         for (Expression e : args) {
             if (e != null) {
-                e.updateAggregate(session);
+                e.updateAggregate(session, stage);
             }
         }
     }

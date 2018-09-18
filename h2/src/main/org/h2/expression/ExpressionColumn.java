@@ -8,6 +8,7 @@ package org.h2.expression;
 import org.h2.api.ErrorCode;
 import org.h2.command.Parser;
 import org.h2.command.dml.Select;
+import org.h2.command.dml.SelectGroups;
 import org.h2.command.dml.SelectListColumnResolver;
 import org.h2.engine.Database;
 import org.h2.engine.Session;
@@ -19,9 +20,9 @@ import org.h2.table.Column;
 import org.h2.table.ColumnResolver;
 import org.h2.table.Table;
 import org.h2.table.TableFilter;
+import org.h2.value.ExtTypeInfo;
 import org.h2.value.Value;
 import org.h2.value.ValueBoolean;
-import org.h2.value.ValueEnum;
 import org.h2.value.ValueNull;
 
 /**
@@ -152,19 +153,20 @@ public class ExpressionColumn extends Expression {
     }
 
     @Override
-    public void updateAggregate(Session session) {
+    public void updateAggregate(Session session, int stage) {
         Value now = columnResolver.getValue(column);
         Select select = columnResolver.getSelect();
         if (select == null) {
             throw DbException.get(ErrorCode.MUST_GROUP_BY_COLUMN_1, getSQL());
         }
-        if (!select.isCurrentGroup()) {
+        SelectGroups groupData = select.getGroupDataIfCurrent(false);
+        if (groupData == null) {
             // this is a different level (the enclosing query)
             return;
         }
-        Value v = (Value) select.getCurrentGroupExprData(this);
+        Value v = (Value) groupData.getCurrentGroupExprData(this, false);
         if (v == null) {
-            select.setCurrentGroupExprData(this, now);
+            groupData.setCurrentGroupExprData(this, now, false);
         } else {
             if (!database.areEqual(now, v)) {
                 throw DbException.get(ErrorCode.MUST_GROUP_BY_COLUMN_1, getSQL());
@@ -176,10 +178,14 @@ public class ExpressionColumn extends Expression {
     public Value getValue(Session session) {
         Select select = columnResolver.getSelect();
         if (select != null) {
-            if (select.isCurrentGroup()) {
-                Value v = (Value) select.getCurrentGroupExprData(this);
+            SelectGroups groupData = select.getGroupDataIfCurrent(false);
+            if (groupData != null) {
+                Value v = (Value) groupData.getCurrentGroupExprData(this, false);
                 if (v != null) {
                     return v;
+                }
+                if (select.isGroupWindowStage2()) {
+                    throw DbException.get(ErrorCode.MUST_GROUP_BY_COLUMN_1, getSQL());
                 }
             }
         }
@@ -191,8 +197,11 @@ public class ExpressionColumn extends Expression {
                 throw DbException.get(ErrorCode.MUST_GROUP_BY_COLUMN_1, getSQL());
             }
         }
-        if (column.getEnumerators() != null && value != ValueNull.INSTANCE) {
-            return ValueEnum.get(column.getEnumerators(), value.getInt());
+        if (value != ValueNull.INSTANCE) {
+            ExtTypeInfo extTypeInfo = column.getExtTypeInfo();
+            if (extTypeInfo != null) {
+                return extTypeInfo.cast(value);
+            }
         }
         return value;
     }

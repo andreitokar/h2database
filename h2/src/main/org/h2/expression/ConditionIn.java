@@ -163,10 +163,10 @@ public class ConditionIn extends Condition {
     }
 
     @Override
-    public void updateAggregate(Session session) {
-        left.updateAggregate(session);
+    public void updateAggregate(Session session, int stage) {
+        left.updateAggregate(session, stage);
         for (Expression e : valueList) {
-            e.updateAggregate(session);
+            e.updateAggregate(session, stage);
         }
     }
 

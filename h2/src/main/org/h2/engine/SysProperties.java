@@ -327,14 +327,6 @@ public class SysProperties {
     }
 
     /**
-     * System property <code>h2.oldStyleOuterJoin</code>
-     * (default: false).<br />
-     * Limited support for the old-style Oracle outer join with "(+)".
-     */
-    public static final boolean OLD_STYLE_OUTER_JOIN =
-            Utils.getProperty("h2.oldStyleOuterJoin", false);
-
-    /**
      * System property {@code h2.oldResultSetGetObject}, {@code true} by default
      * unless {@code h2.preview} is enabled.
      * <p>
@@ -572,6 +564,18 @@ public class SysProperties {
      */
     public static final String AUTH_CONFIG_FILE =
             Utils.getProperty("h2.authConfigFile", null);
+
+    /**
+     * System property {@code h2.mixedGeometries}, {@code false} by default.
+     * <p>
+     * If {@code true} illegal geometries with mixed XY/XYZ dimensionality like
+     * {@code 'LINESTRING (1 2, 3 4 5)'} are accepted.
+     * </p>
+     * <p>
+     * If {@code false} such geometries are rejected with data conversion error.
+     * </p>
+     */
+    public static final boolean MIXED_GEOMETRIES = Utils.getProperty("h2.mixedGeometries", false);
 
     private static final String H2_BASE_DIR = "h2.baseDir";
 

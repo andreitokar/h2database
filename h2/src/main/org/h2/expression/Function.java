@@ -27,9 +27,11 @@ import org.h2.engine.Constants;
 import org.h2.engine.Database;
 import org.h2.engine.Mode;
 import org.h2.engine.Session;
+import org.h2.index.Index;
 import org.h2.message.DbException;
 import org.h2.mode.FunctionsMSSQLServer;
 import org.h2.mode.FunctionsMySQL;
+import org.h2.mvstore.db.MVSpatialIndex;
 import org.h2.schema.Schema;
 import org.h2.schema.Sequence;
 import org.h2.security.BlockCipher;
@@ -54,6 +56,7 @@ import org.h2.util.ToChar;
 import org.h2.util.ToDateParser;
 import org.h2.util.Utils;
 import org.h2.value.DataType;
+import org.h2.value.ExtTypeInfo;
 import org.h2.value.Value;
 import org.h2.value.ValueArray;
 import org.h2.value.ValueBoolean;
@@ -116,7 +119,7 @@ public class Function extends Expression implements FunctionCall {
     public static final int DATABASE = 150, USER = 151, CURRENT_USER = 152,
             IDENTITY = 153, SCOPE_IDENTITY = 154, AUTOCOMMIT = 155,
             READONLY = 156, DATABASE_PATH = 157, LOCK_TIMEOUT = 158,
-            DISK_SPACE_USED = 159, SIGNAL = 160;
+            DISK_SPACE_USED = 159, SIGNAL = 160, ESTIMATED_ENVELOPE = 161;
 
     private static final Pattern SIGNAL_PATTERN = Pattern.compile("[0-9A-Z]{5}");
 
@@ -143,8 +146,6 @@ public class Function extends Expression implements FunctionCall {
      */
     public static final int H2VERSION = 231;
 
-    public static final int ROW_NUMBER = 300;
-
     protected static final int VAR_ARGS = -1;
     private static final long PRECISION_UNKNOWN = -1;
 
@@ -160,6 +161,8 @@ public class Function extends Expression implements FunctionCall {
     protected int scale;
     protected long precision = PRECISION_UNKNOWN;
     protected int displaySize;
+    protected ExtTypeInfo extTypeInfo;
+
     private final Database database;
 
     static {
@@ -456,6 +459,7 @@ public class Function extends Expression implements FunctionCall {
         addFunctionNotDeterministic("DISK_SPACE_USED", DISK_SPACE_USED,
                 1, Value.LONG);
         addFunctionWithNull("SIGNAL", SIGNAL, 2, Value.NULL);
+        addFunctionNotDeterministic("ESTIMATED_ENVELOPE", ESTIMATED_ENVELOPE, 2, Value.LONG);
         addFunction("H2VERSION", H2VERSION, 0, Value.STRING);
 
         // TableFunction
@@ -463,9 +467,6 @@ public class Function extends Expression implements FunctionCall {
                 VAR_ARGS, Value.RESULT_SET);
         addFunctionWithNull("TABLE_DISTINCT", TABLE_DISTINCT,
                 VAR_ARGS, Value.RESULT_SET);
-
-        // pseudo function
-        addFunctionWithNull("ROW_NUMBER", ROW_NUMBER, 0, Value.LONG);
 
         // ON DUPLICATE KEY VALUES function
         addFunction("VALUES", VALUES, 1, Value.NULL, false, true, false);
@@ -883,10 +884,13 @@ public class Function extends Expression implements FunctionCall {
         case DISK_SPACE_USED:
             result = ValueLong.get(getDiskSpaceUsed(session, v0));
             break;
+        case ESTIMATED_ENVELOPE:
+            result = getEstimatedEnvelope(session, v0, values[1]);
+            break;
         case CAST:
         case CONVERT: {
             Mode mode = database.getMode();
-            v0 = v0.convertTo(dataType, mode);
+            v0 = v0.convertTo(dataType, MathUtils.convertLongToInt(precision), mode, null, extTypeInfo);
             v0 = v0.convertScale(mode.convertOnlyToSmallerScale, scale);
             v0 = v0.convertPrecision(getPrecision(), false);
             result = v0;
@@ -1096,11 +1100,27 @@ public class Function extends Expression implements FunctionCall {
         return false;
     }
 
-    private static long getDiskSpaceUsed(Session session, Value v0) {
-        Parser p = new Parser(session);
-        String sql = v0.getString();
-        Table table = p.parseTableName(sql);
-        return table.getDiskSpaceUsed();
+    private static long getDiskSpaceUsed(Session session, Value tableName) {
+        return getTable(session, tableName).getDiskSpaceUsed();
+    }
+
+    private static Value getEstimatedEnvelope(Session session, Value tableName, Value columnName) {
+        Table table = getTable(session, tableName);
+        Column column = table.getColumn(columnName.getString());
+        ArrayList<Index> indexes = table.getIndexes();
+        if (indexes != null) {
+            for (int i = 1, size = indexes.size(); i < size; i++) {
+                Index index = indexes.get(i);
+                if (index instanceof MVSpatialIndex && index.isFirstColumn(column)) {
+                    return ((MVSpatialIndex) index).getEstimatedBounds(session);
+                }
+            }
+        }
+        return ValueNull.INSTANCE;
+    }
+
+    private static Table getTable(Session session, Value tableName) {
+        return new Parser(session).parseTableName(tableName.getString());
     }
 
     protected static Value getNullOrValue(Session session, Expression[] args,
@@ -2176,6 +2196,7 @@ public class Function extends Expression implements FunctionCall {
         precision = col.getPrecision();
         displaySize = col.getDisplaySize();
         scale = col.getScale();
+        extTypeInfo = col.getExtTypeInfo();
     }
 
     @Override
@@ -2576,7 +2597,7 @@ public class Function extends Expression implements FunctionCall {
         case CAST: {
             buff.append(args[0].getSQL()).append(" AS ").
                 append(new Column(null, dataType, precision,
-                        scale, displaySize).getCreateSQL());
+                        scale, displaySize, extTypeInfo).getCreateSQL());
             break;
         }
         case CONVERT: {
@@ -2607,10 +2628,10 @@ public class Function extends Expression implements FunctionCall {
     }
 
     @Override
-    public void updateAggregate(Session session) {
+    public void updateAggregate(Session session, int stage) {
         for (Expression e : args) {
             if (e != null) {
-                e.updateAggregate(session);
+                e.updateAggregate(session, stage);
             }
         }
     }

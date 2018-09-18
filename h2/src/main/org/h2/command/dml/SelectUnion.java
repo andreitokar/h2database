@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 
 import org.h2.api.ErrorCode;
+import org.h2.engine.Database;
 import org.h2.engine.Mode;
 import org.h2.engine.Session;
 import org.h2.engine.SysProperties;
@@ -130,14 +131,14 @@ public class SelectUnion extends Query {
     @Override
     public ResultInterface queryMeta() {
         int columnCount = left.getColumnCount();
-        LocalResult result = new LocalResult(session, expressionArray, columnCount);
+        LocalResult result = session.getDatabase().getResultFactory().create(session, expressionArray, columnCount);
         result.done();
         return result;
     }
 
     public LocalResult getEmptyResult() {
         int columnCount = left.getColumnCount();
-        return new LocalResult(session, expressionArray, columnCount);
+        return session.getDatabase().getResultFactory().create(session, expressionArray, columnCount);
     }
 
     @Override
@@ -159,7 +160,8 @@ public class SelectUnion extends Query {
             }
             limitExpr = ValueExpression.get(ValueInt.get(l));
         }
-        if (session.getDatabase().getSettings().optimizeInsertFromSelect) {
+        Database db = session.getDatabase();
+        if (db.getSettings().optimizeInsertFromSelect) {
             if (unionType == UnionType.UNION_ALL && target != null) {
                 if (sort == null && !distinct && maxRows == 0 &&
                         offsetExpr == null && limitExpr == null) {
@@ -189,7 +191,7 @@ public class SelectUnion extends Query {
                 return lazyResult;
             }
         }
-        LocalResult result = new LocalResult(session, expressionArray, columnCount);
+        LocalResult result = db.getResultFactory().create(session, expressionArray, columnCount);
         if (sort != null) {
             result.setSortOrder(sort);
         }
@@ -239,7 +241,7 @@ public class SelectUnion extends Query {
             break;
         }
         case INTERSECT: {
-            LocalResult temp = new LocalResult(session, expressionArray, columnCount);
+            LocalResult temp = db.getResultFactory().create(session, expressionArray, columnCount);
             temp.setDistinct();
             while (l.next()) {
                 temp.addRow(convert(l.currentRow(), columnCount));
@@ -447,9 +449,9 @@ public class SelectUnion extends Query {
     }
 
     @Override
-    public void updateAggregate(Session s) {
-        left.updateAggregate(s);
-        right.updateAggregate(s);
+    public void updateAggregate(Session s, int stage) {
+        left.updateAggregate(s, stage);
+        right.updateAggregate(s, stage);
     }
 
     @Override

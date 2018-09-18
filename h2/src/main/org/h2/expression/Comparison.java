@@ -208,13 +208,13 @@ public class Comparison extends Condition {
                     // once.
                     if (constType != resType) {
                         Column column = ((ExpressionColumn) left).getColumn();
-//*
+/*
                         assert resType == colType : resType + " != " + colType;
                         right = ValueExpression.get(column.convert(r, session.getDatabase().getMode()));
 /*/
                         right = ValueExpression.get(r.convertTo(resType,
                                 MathUtils.convertLongToInt(left.getPrecision()),
-                                session.getDatabase().getMode(), column, column.getEnumerators()));
+                                session.getDatabase().getMode(), column, column.getExtTypeInfo()));
 //*/
                     }
                 } else if (right instanceof Parameter) {
@@ -480,10 +480,10 @@ public class Comparison extends Condition {
     }
 
     @Override
-    public void updateAggregate(Session session) {
-        left.updateAggregate(session);
+    public void updateAggregate(Session session, int stage) {
+        left.updateAggregate(session, stage);
         if (right != null) {
-            right.updateAggregate(session);
+            right.updateAggregate(session, stage);
         }
     }
 

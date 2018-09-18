@@ -8,9 +8,7 @@ package org.h2.command.dml;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
-import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Map;
 import org.h2.api.ErrorCode;
 import org.h2.api.Trigger;
 import org.h2.command.Parser;
@@ -26,6 +24,7 @@ import org.h2.expression.ExpressionColumn;
 import org.h2.expression.ExpressionVisitor;
 import org.h2.expression.Parameter;
 import org.h2.expression.Wildcard;
+import org.h2.expression.aggregate.Aggregate;
 import org.h2.index.Cursor;
 import org.h2.index.Index;
 import org.h2.index.IndexType;
@@ -103,36 +102,19 @@ public class Select extends Query {
      */
     boolean[] groupByExpression;
 
-    /**
-     * The array of current group-by expression data e.g. AggregateData.
-     */
-    Object[] currentGroupByExprData;
-    /**
-     * Maps an expression object to an index, to use in accessing the Object[]
-     * pointed to by groupByData.
-     */
-    final HashMap<Expression,Integer> exprToIndexInGroupByData = new HashMap<>();
-    /**
-     * Map of group-by key to group-by expression data e.g. AggregateData
-     */
-    private HashMap<Value, Object[]> groupByData;
-    /**
-     * Key into groupByData that produces currentGroupByExprData. Not used in lazy mode.
-     */
-    ValueArray currentGroupsKey;
+    SelectGroups groupData;
 
     private int havingIndex;
-    private boolean isGroupQuery, isGroupSortedQuery;
+    boolean isGroupQuery;
+    private boolean isGroupSortedQuery;
+    private boolean isWindowQuery;
     private boolean isForUpdate, isForUpdateMvcc;
     private double cost;
     private boolean isQuickAggregateQuery, isDistinctQuery;
     private boolean isPrepared, checkInit;
     private boolean sortUsingIndex;
 
-    /**
-     * The id of the current group.
-     */
-    int currentGroupRowId;
+    private boolean isGroupWindowStage2;
 
     public Select(Session session) {
         super(session);
@@ -183,6 +165,13 @@ public class Select extends Query {
         isGroupQuery = true;
     }
 
+    /**
+     * Called if this query contains window functions.
+     */
+    public void setWindowQuery() {
+        isWindowQuery = true;
+    }
+
     public void setGroupBy(ArrayList<Expression> group) {
         this.group = group;
     }
@@ -191,49 +180,8 @@ public class Select extends Query {
         return group;
     }
 
-    /**
-     * Is there currently a group-by active
-     */
-    public boolean isCurrentGroup() {
-        return currentGroupByExprData != null;
-    }
-
-    /**
-     * Get the group-by data for the current group and the passed in expression.
-     */
-    public Object getCurrentGroupExprData(Expression expr) {
-        Integer index = exprToIndexInGroupByData.get(expr);
-        if (index == null) {
-            return null;
-        }
-        return currentGroupByExprData[index];
-    }
-
-    /**
-     * Set the group-by data for the current group and the passed in expression.
-     */
-    public void setCurrentGroupExprData(Expression expr, Object obj) {
-        Integer index = exprToIndexInGroupByData.get(expr);
-        if (index != null) {
-            assert currentGroupByExprData[index] == null;
-            currentGroupByExprData[index] = obj;
-            return;
-        }
-        index = exprToIndexInGroupByData.size();
-        exprToIndexInGroupByData.put(expr, index);
-        if (index >= currentGroupByExprData.length) {
-            currentGroupByExprData = Arrays.copyOf(currentGroupByExprData, currentGroupByExprData.length * 2);
-            // this can be null in lazy mode
-            if (currentGroupsKey != null) {
-                // since we changed the size of the array, update the object in the groups map
-                groupByData.put(currentGroupsKey, currentGroupByExprData);
-            }
-        }
-        currentGroupByExprData[index] = obj;
-    }
-
-    public int getCurrentGroupRowId() {
-        return currentGroupRowId;
+    public SelectGroups getGroupDataIfCurrent(boolean window) {
+        return groupData != null && (window || groupData.isCurrentGroup()) ? groupData : null;
     }
 
     @Override
@@ -410,84 +358,104 @@ public class Select extends Query {
         return condition == null || condition.getBooleanValue(session);
     }
 
-    private void queryGroup(int columnCount, LocalResult result, long offset, boolean quickOffset) {
-        groupByData = new HashMap<>();
-        currentGroupByExprData = null;
-        currentGroupsKey = null;
-        exprToIndexInGroupByData.clear();
+    private void queryWindow(int columnCount, LocalResult result, long offset, boolean quickOffset) {
+        initGroupData(columnCount);
         try {
-            int rowNumber = 0;
-            setCurrentRowNumber(0);
-            ValueArray defaultGroup = ValueArray.get(new Value[0]);
-            int sampleSize = getSampleSizeValue(session);
-            while (topTableFilter.next()) {
-                setCurrentRowNumber(rowNumber + 1);
-                if (isConditionMet()) {
-                    rowNumber++;
-                    if (groupIndex == null) {
-                        currentGroupsKey = defaultGroup;
-                    } else {
-                        Value[] keyValues = new Value[groupIndex.length];
-                        // update group
-                        for (int i = 0; i < groupIndex.length; i++) {
-                            int idx = groupIndex[i];
-                            Expression expr = expressions.get(idx);
-                            keyValues[i] = expr.getValue(session);
-                        }
-                        currentGroupsKey = ValueArray.get(keyValues);
-                    }
-                    Object[] values = groupByData.get(currentGroupsKey);
-                    if (values == null) {
-                        values = new Object[Math.max(exprToIndexInGroupByData.size(), expressions.size())];
-                        groupByData.put(currentGroupsKey, values);
-                    }
-                    currentGroupByExprData = values;
-                    currentGroupRowId++;
-                    for (int i = 0; i < columnCount; i++) {
-                        if (groupByExpression == null || !groupByExpression[i]) {
-                            Expression expr = expressions.get(i);
-                            expr.updateAggregate(session);
-                        }
-                    }
-                    if (sampleSize > 0 && rowNumber >= sampleSize) {
-                        break;
-                    }
-                }
+            gatherGroup(columnCount, Aggregate.STAGE_WINDOW);
+            processGroupResult(columnCount, result, offset, quickOffset);
+        } finally {
+            groupData.reset();
+        }
+    }
+
+    private void queryGroupWindow(int columnCount, LocalResult result, long offset, boolean quickOffset) {
+        initGroupData(columnCount);
+        try {
+            gatherGroup(columnCount, Aggregate.STAGE_GROUP);
+            while (groupData.next() != null) {
+                updateAgg(columnCount, Aggregate.STAGE_WINDOW);
             }
-            if (groupIndex == null && groupByData.size() == 0) {
-                groupByData.put(defaultGroup,
-                        new Object[Math.max(exprToIndexInGroupByData.size(), expressions.size())]);
-            }
-            for (Map.Entry<Value, Object[]> entry : groupByData.entrySet()) {
-                currentGroupsKey = (ValueArray) entry.getKey();
-                currentGroupByExprData = entry.getValue();
-                Value[] keyValues = currentGroupsKey.getList();
-                Value[] row = new Value[columnCount];
-                for (int j = 0; groupIndex != null && j < groupIndex.length; j++) {
-                    row[groupIndex[j]] = keyValues[j];
-                }
-                for (int j = 0; j < columnCount; j++) {
-                    if (groupByExpression != null && groupByExpression[j]) {
-                        continue;
-                    }
-                    Expression expr = expressions.get(j);
-                    row[j] = expr.getValue(session);
-                }
-                if (isHavingNullOrFalse(row)) {
-                    continue;
-                }
-                if (quickOffset && offset > 0) {
-                    offset--;
-                    continue;
-                }
-                row = keepOnlyDistinct(row, columnCount);
-                result.addRow(row);
+            groupData.done();
+            try {
+                isGroupWindowStage2 = true;
+                processGroupResult(columnCount, result, offset, quickOffset);
+            } finally {
+                isGroupWindowStage2 = false;
             }
         } finally {
-            groupByData = null;
-            currentGroupsKey = null;
-            currentGroupByExprData = null;
-            exprToIndexInGroupByData.clear();
+            groupData.reset();
+        }
+    }
+
+    private void queryGroup(int columnCount, LocalResult result, long offset, boolean quickOffset) {
+        initGroupData(columnCount);
+        try {
+            gatherGroup(columnCount, Aggregate.STAGE_GROUP);
+            processGroupResult(columnCount, result, offset, quickOffset);
+        } finally {
+            groupData.reset();
+        }
+    }
+
+    private void initGroupData(int columnCount) {
+        if (groupData == null) {
+            groupData = SelectGroups.getInstance(session, expressions, isGroupQuery, groupIndex);
+        } else {
+            updateAgg(columnCount, Aggregate.STAGE_RESET);
+        }
+        groupData.reset();
+    }
+
+    private void gatherGroup(int columnCount, int stage) {
+        int rowNumber = 0;
+        setCurrentRowNumber(0);
+        int sampleSize = getSampleSizeValue(session);
+        while (topTableFilter.next()) {
+            setCurrentRowNumber(rowNumber + 1);
+            if (isConditionMet()) {
+                rowNumber++;
+                groupData.nextSource();
+                updateAgg(columnCount, stage);
+                if (sampleSize > 0 && rowNumber >= sampleSize) {
+                    break;
+                }
+            }
+        }
+        groupData.done();
+    }
+
+    void updateAgg(int columnCount, int stage) {
+        for (int i = 0; i < columnCount; i++) {
+            if (groupByExpression == null || !groupByExpression[i]) {
+                Expression expr = expressions.get(i);
+                expr.updateAggregate(session, stage);
+            }
+        }
+    }
+
+    private void processGroupResult(int columnCount, LocalResult result, long offset, boolean quickOffset) {
+        for (ValueArray currentGroupsKey; (currentGroupsKey = groupData.next()) != null;) {
+            Value[] keyValues = currentGroupsKey.getList();
+            Value[] row = new Value[columnCount];
+            for (int j = 0; groupIndex != null && j < groupIndex.length; j++) {
+                row[groupIndex[j]] = keyValues[j];
+            }
+            for (int j = 0; j < columnCount; j++) {
+                if (groupByExpression != null && groupByExpression[j]) {
+                    continue;
+                }
+                Expression expr = expressions.get(j);
+                row[j] = expr.getValue(session);
+            }
+            if (isHavingNullOrFalse(row)) {
+                continue;
+            }
+            if (quickOffset && offset > 0) {
+                offset--;
+                continue;
+            }
+            row = keepOnlyDistinct(row, columnCount);
+            result.addRow(row);
         }
     }
 
@@ -687,7 +655,7 @@ public class Select extends Query {
 
     @Override
     public ResultInterface queryMeta() {
-        LocalResult result = new LocalResult(session, expressionArray,
+        LocalResult result = session.getDatabase().getResultFactory().create(session, expressionArray,
                 visibleColumnCount);
         result.done();
         return result;
@@ -754,7 +722,7 @@ public class Select extends Query {
             result = createLocalResult(result);
             result.setDistinct(distinctIndexes);
         }
-        if (isGroupQuery && !isGroupSortedQuery) {
+        if (isWindowQuery || isGroupQuery && !isGroupSortedQuery) {
             result = createLocalResult(result);
         }
         if (!lazy && (limitRows >= 0 || offset > 0)) {
@@ -788,6 +756,12 @@ public class Select extends Query {
             try {
                 if (isQuickAggregateQuery) {
                     queryQuick(columnCount, to, quickOffset && offset > 0);
+                } else if (isWindowQuery) {
+                    if (isGroupQuery) {
+                        queryGroupWindow(columnCount, result, offset, quickOffset);
+                    } else {
+                        queryWindow(columnCount, result, offset, quickOffset);
+                    }
                 } else if (isGroupQuery) {
                     if (isGroupSortedQuery) {
                         lazyResult = queryGroupSorted(columnCount, to, offset, quickOffset);
@@ -858,12 +832,13 @@ public class Select extends Query {
     }
 
     private LocalResult createLocalResult(LocalResult old) {
-        return old != null ? old : new LocalResult(session, expressionArray,
+        return old != null ? old : session.getDatabase().getResultFactory().create(session, expressionArray,
                 visibleColumnCount);
     }
 
     private LocalResult convertToDistinct(ResultInterface result) {
-        LocalResult distinctResult = new LocalResult(session, expressionArray, visibleColumnCount);
+        LocalResult distinctResult = session.getDatabase().getResultFactory().create(session,
+            expressionArray, visibleColumnCount);
         distinctResult.setDistinct();
         result.reset();
         while (result.next()) {
@@ -1473,6 +1448,34 @@ public class Select extends Query {
         return isQuickAggregateQuery;
     }
 
+    /**
+     * Checks if this query is a group query.
+     *
+     * @return whether this query is a group query.
+     */
+    public boolean isGroupQuery() {
+        return isGroupQuery;
+    }
+
+    /**
+     * Checks if this query contains window functions.
+     *
+     * @return whether this query contains window functions
+     */
+    public boolean isWindowQuery() {
+        return isWindowQuery;
+    }
+
+    /**
+     * Checks if window stage of group window query is performed. If true,
+     * column resolver may not be used.
+     *
+     * @return true if window stage of group window query is performed
+     */
+    public boolean isGroupWindowStage2() {
+        return isGroupWindowStage2;
+    }
+
     @Override
     public void addGlobalCondition(Parameter param, int columnId,
             int comparisonType) {
@@ -1518,15 +1521,15 @@ public class Select extends Query {
     }
 
     @Override
-    public void updateAggregate(Session s) {
+    public void updateAggregate(Session s, int stage) {
         for (Expression e : expressions) {
-            e.updateAggregate(s);
+            e.updateAggregate(s, stage);
         }
         if (condition != null) {
-            condition.updateAggregate(s);
+            condition.updateAggregate(s, stage);
         }
         if (having != null) {
-            having.updateAggregate(s);
+            having.updateAggregate(s, stage);
         }
     }
 
@@ -1675,19 +1678,24 @@ public class Select extends Query {
      */
     private final class LazyResultGroupSorted extends LazyResultSelect {
 
-        Value[] previousKeyValues;
+        private Value[] previousKeyValues;
 
         LazyResultGroupSorted(Expression[] expressions, int columnCount) {
             super(expressions, columnCount);
-            currentGroupByExprData = null;
-            currentGroupsKey = null;
+            if (groupData == null) {
+                groupData = SelectGroups.getInstance(getSession(), Select.this.expressions, isGroupQuery, groupIndex);
+            } else {
+                // TODO is this branch possible?
+                updateAgg(columnCount, Aggregate.STAGE_RESET);
+                groupData.resetLazy();
+            }
         }
 
         @Override
         public void reset() {
             super.reset();
-            currentGroupByExprData = null;
-            currentGroupsKey = null;
+            groupData.resetLazy();
+            previousKeyValues = null;
         }
 
         @Override
@@ -1707,22 +1715,14 @@ public class Select extends Query {
                     Value[] row = null;
                     if (previousKeyValues == null) {
                         previousKeyValues = keyValues;
-                        currentGroupByExprData =new Object[Math.max(exprToIndexInGroupByData.size(),
-                                expressions.size())];
+                        groupData.nextLazyGroup();
                     } else if (!Arrays.equals(previousKeyValues, keyValues)) {
                         row = createGroupSortedRow(previousKeyValues, columnCount);
                         previousKeyValues = keyValues;
-                        currentGroupByExprData = new Object[Math.max(exprToIndexInGroupByData.size(),
-                                expressions.size())];
+                        groupData.nextLazyGroup();
                     }
-                    currentGroupRowId++;
-
-                    for (int i = 0; i < columnCount; i++) {
-                        if (groupByExpression == null || !groupByExpression[i]) {
-                            Expression expr = expressions.get(i);
-                            expr.updateAggregate(getSession());
-                        }
-                    }
+                    groupData.nextLazyRow();
+                    updateAgg(columnCount, Aggregate.STAGE_GROUP);
                     if (row != null) {
                         return row;
                     }
