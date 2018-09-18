@@ -374,16 +374,18 @@ public class MVTableEngine implements TableEngine {
                 try {
                     FileStore fileStore = mvStore.getFileStore();
                     if (!mvStore.isClosed() && fileStore != null) {
-                        compactFully = false;
-                    } else {
-                        transactionStore.close();
-                    }
-                    String fileName = fileStore.getFileName();
-                    mvStore.close();
-                    if (compactFully && FileUtils.exists(fileName)) {
-                        // the file could have been deleted concurrently,
-                        // so only compact if the file still exists
-                        MVStoreTool.compact(fileName, true);
+                        if (fileStore.isReadOnly()) {
+                            compactFully = false;
+                        } else {
+                            transactionStore.close();
+                        }
+                        String fileName = fileStore.getFileName();
+                        mvStore.close();
+                        if (compactFully && FileUtils.exists(fileName)) {
+                            // the file could have been deleted concurrently,
+                            // so only compact if the file still exists
+                            MVStoreTool.compact(fileName, true);
+                        }
                     }
                 } catch (IllegalStateException e) {
                     int errorCode = DataUtils.getErrorCode(e.getMessage());
