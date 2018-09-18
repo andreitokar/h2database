@@ -228,7 +228,7 @@ public class ValueLobDb extends Value {
                 return ValueLobDb.createSmallLob(t, small);
             }
         }
-        return super.convertTo(t, precision, mode, column, enumerators);
+        return super.convertTo(t, precision, mode, column, null);
     }
 
     @Override

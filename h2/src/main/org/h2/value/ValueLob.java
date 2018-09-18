@@ -383,7 +383,7 @@ public class ValueLob extends Value {
         } else if (t == Value.BLOB) {
             return ValueLobDb.createTempBlob(getInputStream(), -1, handler);
         }
-        return super.convertTo(t, precision, mode, column, enumerators);
+        return super.convertTo(t, precision, mode, column, null);
     }
 
     @Override
