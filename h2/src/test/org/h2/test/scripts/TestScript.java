@@ -110,6 +110,7 @@ public class TestScript extends TestDb {
         testScript("altertable-fk.sql");
         testScript("default-and-on_update.sql");
         testScript("query-optimisations.sql");
+        testScript("window.sql");
         String decimal2;
         if (SysProperties.BIG_DECIMAL_IS_DECIMAL) {
             decimal2 = "decimal_decimal";
@@ -179,7 +180,7 @@ public class TestScript extends TestDb {
                 "parsedatetime", "quarter", "second", "truncate", "week", "year", "date_trunc" }) {
             testScript("functions/timeanddate/" + s + ".sql");
         }
-        for (String s : new String[] { "row_number", "nth_value" }) {
+        for (String s : new String[] { "lead", "nth_value", "ntile", "row_number" }) {
             testScript("functions/window/" + s + ".sql");
         }
 

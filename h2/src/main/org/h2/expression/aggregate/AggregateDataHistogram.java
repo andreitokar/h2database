@@ -22,12 +22,23 @@ import org.h2.value.ValueLong;
  */
 class AggregateDataHistogram extends AggregateData {
 
+    private final boolean distinct;
+
     private ValueHashMap<LongDataCounter> distinctValues;
 
+    /**
+     * Creates new instance of data for HISTOGRAM aggregate.
+     *
+     * @param distinct if distinct is used
+     */
+    AggregateDataHistogram(boolean distinct) {
+        this.distinct = distinct;
+    }
+
     @Override
-    void add(Database database, int dataType, boolean distinct, Value v) {
+    void add(Database database, int dataType, Value v) {
         if (distinctValues == null) {
-            distinctValues = ValueHashMap.newInstance();
+            distinctValues = new ValueHashMap<>();
         }
         LongDataCounter a = distinctValues.get(v);
         if (a == null) {
@@ -41,9 +52,9 @@ class AggregateDataHistogram extends AggregateData {
     }
 
     @Override
-    Value getValue(Database database, int dataType, boolean distinct) {
+    Value getValue(Database database, int dataType) {
         if (distinctValues == null) {
-            return ValueArray.get(new Value[0]).convertTo(dataType);
+            return ValueArray.getEmpty().convertTo(dataType);
         }
         ValueArray[] values = new ValueArray[distinctValues.size()];
         int i = 0;

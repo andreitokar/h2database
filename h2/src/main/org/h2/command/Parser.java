@@ -44,6 +44,7 @@ import static org.h2.util.ParserUtil.TRUE;
 import static org.h2.util.ParserUtil.UNION;
 import static org.h2.util.ParserUtil.UNIQUE;
 import static org.h2.util.ParserUtil.WHERE;
+import static org.h2.util.ParserUtil.WINDOW;
 import static org.h2.util.ParserUtil.WITH;
 
 import java.math.BigDecimal;
@@ -64,6 +65,7 @@ import org.h2.api.IntervalQualifier;
 import org.h2.api.Trigger;
 import org.h2.command.ddl.AlterIndexRename;
 import org.h2.command.ddl.AlterSchemaRename;
+import org.h2.command.ddl.AlterSequence;
 import org.h2.command.ddl.AlterTableAddConstraint;
 import org.h2.command.ddl.AlterTableAlterColumn;
 import org.h2.command.ddl.AlterTableDropConstraint;
@@ -107,9 +109,9 @@ import org.h2.command.ddl.DropView;
 import org.h2.command.ddl.GrantRevoke;
 import org.h2.command.ddl.PrepareProcedure;
 import org.h2.command.ddl.SchemaCommand;
+import org.h2.command.ddl.SequenceOptions;
 import org.h2.command.ddl.SetComment;
 import org.h2.command.ddl.TruncateTable;
-import org.h2.command.dml.AlterSequence;
 import org.h2.command.dml.AlterTableSet;
 import org.h2.command.dml.BackupCommand;
 import org.h2.command.dml.Call;
@@ -173,13 +175,16 @@ import org.h2.expression.Wildcard;
 import org.h2.expression.aggregate.AbstractAggregate;
 import org.h2.expression.aggregate.Aggregate;
 import org.h2.expression.aggregate.Aggregate.AggregateType;
+import org.h2.expression.aggregate.DataAnalysisOperation;
 import org.h2.expression.aggregate.JavaAggregate;
 import org.h2.expression.aggregate.Window;
 import org.h2.expression.aggregate.WindowFrame;
-import org.h2.expression.aggregate.WindowFrame.SimpleExtent;
-import org.h2.expression.aggregate.WindowFrame.WindowFrameExclusion;
+import org.h2.expression.aggregate.WindowFrameBound;
+import org.h2.expression.aggregate.WindowFrameBoundType;
+import org.h2.expression.aggregate.WindowFrameExclusion;
+import org.h2.expression.aggregate.WindowFrameUnits;
 import org.h2.expression.aggregate.WindowFunction;
-import org.h2.expression.aggregate.WindowFunction.WindowFunctionType;
+import org.h2.expression.aggregate.WindowFunctionType;
 import org.h2.index.Index;
 import org.h2.message.DbException;
 import org.h2.result.SortOrder;
@@ -480,6 +485,8 @@ public class Parser {
             "UNIQUE",
             // WHERE
             "WHERE",
+            // WINDOW
+            "WINDOW",
             // WITH
             "WITH",
             // PARAMETER
@@ -2626,6 +2633,17 @@ public class Parser {
             Expression condition = readExpression();
             command.setHaving(condition);
         }
+        if (readIf(WINDOW)) {
+            do {
+                int index = parseIndex;
+                String name = readAliasIdentifier();
+                read("AS");
+                Window w = readWindowSpecification();
+                if (!currentSelect.addWindow(name, w)) {
+                    throw DbException.getSyntaxError(sqlCommand, index, "unique identifier");
+                }
+            } while (readIf(COMMA));
+        }
         command.setParameterList(parameters);
         currentSelect = oldSelect;
         setSQL(command, "SELECT", start);
@@ -3037,101 +3055,148 @@ public class Parser {
     }
 
     private void readFilterAndOver(AbstractAggregate aggregate) {
-        boolean isAggregate = aggregate.isAggregate();
-        if (isAggregate && readIf("FILTER")) {
+        if (readIf("FILTER")) {
             read(OPEN_PAREN);
             read(WHERE);
             Expression filterCondition = readExpression();
             read(CLOSE_PAREN);
             aggregate.setFilterCondition(filterCondition);
         }
-        Window over = null;
+        readOver(aggregate);
+    }
+
+    private void readOver(DataAnalysisOperation operation) {
         if (readIf("OVER")) {
-            read(OPEN_PAREN);
-            ArrayList<Expression> partitionBy = null;
-            if (readIf("PARTITION")) {
-                read("BY");
-                partitionBy = Utils.newSmallArrayList();
-                do {
-                    Expression expr = readExpression();
-                    partitionBy.add(expr);
-                } while (readIf(COMMA));
-            }
-            ArrayList<SelectOrderBy> orderBy = null;
-            if (readIf(ORDER)) {
-                read("BY");
-                orderBy = parseSimpleOrderList();
-            } else if (!isAggregate) {
-                orderBy = new ArrayList<>(0);
-            }
-            WindowFrame frame;
-            if (aggregate instanceof WindowFunction) {
-                WindowFunction w = (WindowFunction) aggregate;
-                switch (w.getFunctionType()) {
-                case FIRST_VALUE:
-                case LAST_VALUE:
-                case NTH_VALUE:
-                    frame = readWindowFrame();
-                    break;
-                default:
-                    frame = new WindowFrame(SimpleExtent.RANGE_BETWEEN_UNBOUNDED_PRECEDING_AND_CURRENT_ROW,
-                            WindowFrameExclusion.EXCLUDE_NO_OTHERS);
-                }
-            } else {
-                frame = readWindowFrame();
-            }
-            read(CLOSE_PAREN);
-            over = new Window(partitionBy, orderBy, frame);
-            aggregate.setOverCondition(over);
+            operation.setOverCondition(readWindowNameOrSpecification());
             currentSelect.setWindowQuery();
-        } else if (!isAggregate) {
-            throw getSyntaxError();
-        } else {
+        } else if (operation.isAggregate()) {
             currentSelect.setGroupQuery();
+        } else {
+            throw getSyntaxError();
         }
     }
 
-    private WindowFrame readWindowFrame() {
-        SimpleExtent extent;
-        WindowFrameExclusion exclusion = WindowFrameExclusion.EXCLUDE_NO_OTHERS;
-        if (readIf("RANGE")) {
-            read("BETWEEN");
-            if (readIf("UNBOUNDED")) {
-                read("PRECEDING");
-                read("AND");
-                if (readIf("CURRENT")) {
-                    read("ROW");
-                    extent = SimpleExtent.RANGE_BETWEEN_UNBOUNDED_PRECEDING_AND_CURRENT_ROW;
-                } else {
-                    read("UNBOUNDED");
-                    read("FOLLOWING");
-                    extent = SimpleExtent.RANGE_BETWEEN_UNBOUNDED_PRECEDING_AND_UNBOUNDED_FOLLOWING;
-                }
-            } else {
-                read("CURRENT");
-                read("ROW");
-                read("AND");
-                read("UNBOUNDED");
-                read("FOLLOWING");
-                extent = SimpleExtent.RANGE_BETWEEN_CURRENT_ROW_AND_UNBOUNDED_FOLLOWING;
+    private Window readWindowNameOrSpecification() {
+        return isToken(OPEN_PAREN) ? readWindowSpecification() : new Window(readAliasIdentifier(), null, null, null);
+    }
+
+    private Window readWindowSpecification() {
+        read(OPEN_PAREN);
+        String parent = null;
+        if (currentTokenType == IDENTIFIER) {
+            String token = currentToken;
+            if (currentTokenQuoted || ( //
+                    !equalsToken(token, "PARTITION") //
+                    && !equalsToken(token, "ROWS") //
+                    && !equalsToken(token, "RANGE") //
+                    && !equalsToken(token, "GROUPS"))) {
+                parent = token;
+                read();
             }
-            if (readIf("EXCLUDE")) {
-                if (readIf("CURRENT")) {
-                    read("ROW");
-                    exclusion = WindowFrameExclusion.EXCLUDE_CURRENT_ROW;
-                } else if (readIf(GROUP)) {
-                    exclusion = WindowFrameExclusion.EXCLUDE_GROUP;
-                } else if (readIf("TIES")) {
-                    exclusion = WindowFrameExclusion.EXCLUDE_TIES;
-                } else {
-                    read("NO");
-                    read("OTHERS");
-                }
-            }
-        } else {
-            extent = SimpleExtent.RANGE_BETWEEN_UNBOUNDED_PRECEDING_AND_CURRENT_ROW;
         }
-        return new WindowFrame(extent, exclusion);
+        ArrayList<Expression> partitionBy = null;
+        if (readIf("PARTITION")) {
+            read("BY");
+            partitionBy = Utils.newSmallArrayList();
+            do {
+                Expression expr = readExpression();
+                partitionBy.add(expr);
+            } while (readIf(COMMA));
+        }
+        ArrayList<SelectOrderBy> orderBy = null;
+        if (readIf(ORDER)) {
+            read("BY");
+            orderBy = parseSimpleOrderList();
+        }
+        WindowFrame frame = readWindowFrame();
+        read(CLOSE_PAREN);
+        return new Window(parent, partitionBy, orderBy, frame);
+    }
+
+    private WindowFrame readWindowFrame() {
+        WindowFrameUnits units;
+        if (readIf("ROWS")) {
+            units = WindowFrameUnits.ROWS;
+        } else if (readIf("RANGE")) {
+            units = WindowFrameUnits.RANGE;
+        } else if (readIf("GROUPS")) {
+            units = WindowFrameUnits.GROUPS;
+        } else {
+            return null;
+        }
+        WindowFrameBound starting, following;
+        if (readIf("BETWEEN")) {
+            starting = readWindowFrameRange();
+            read("AND");
+            following = readWindowFrameRange();
+        } else {
+            starting = readWindowFrameStarting();
+            following = null;
+        }
+        int idx = lastParseIndex;
+        WindowFrameExclusion exclusion = WindowFrameExclusion.EXCLUDE_NO_OTHERS;
+        if (readIf("EXCLUDE")) {
+            if (readIf("CURRENT")) {
+                read("ROW");
+                exclusion = WindowFrameExclusion.EXCLUDE_CURRENT_ROW;
+            } else if (readIf(GROUP)) {
+                exclusion = WindowFrameExclusion.EXCLUDE_GROUP;
+            } else if (readIf("TIES")) {
+                exclusion = WindowFrameExclusion.EXCLUDE_TIES;
+            } else {
+                read("NO");
+                read("OTHERS");
+            }
+        }
+        WindowFrame frame = new WindowFrame(units, starting, following, exclusion);
+        if (!frame.isValid()) {
+            throw DbException.getSyntaxError(sqlCommand, idx);
+        }
+        return frame;
+    }
+
+    private WindowFrameBound readWindowFrameStarting() {
+        if (readIf("UNBOUNDED")) {
+            read("PRECEDING");
+            return new WindowFrameBound(WindowFrameBoundType.UNBOUNDED_PRECEDING, null);
+        }
+        if (readIf("CURRENT")) {
+            read("ROW");
+            return new WindowFrameBound(WindowFrameBoundType.CURRENT_ROW, null);
+        }
+        Expression value = readValueOrParameter();
+        read("PRECEDING");
+        return new WindowFrameBound(WindowFrameBoundType.PRECEDING, value);
+    }
+
+    private WindowFrameBound readWindowFrameRange() {
+        if (readIf("UNBOUNDED")) {
+            if (readIf("PRECEDING")) {
+                return new WindowFrameBound(WindowFrameBoundType.UNBOUNDED_PRECEDING, null);
+            }
+            read("FOLLOWING");
+            return new WindowFrameBound(WindowFrameBoundType.UNBOUNDED_FOLLOWING, null);
+        }
+        if (readIf("CURRENT")) {
+            read("ROW");
+            return new WindowFrameBound(WindowFrameBoundType.CURRENT_ROW, null);
+        }
+        Expression value = readValueOrParameter();
+        if (readIf("PRECEDING")) {
+            return new WindowFrameBound(WindowFrameBoundType.PRECEDING, value);
+        }
+        read("FOLLOWING");
+        return new WindowFrameBound(WindowFrameBoundType.FOLLOWING, value);
+    }
+
+    private Expression readValueOrParameter() {
+        int index = parseIndex;
+        Expression value = readExpression();
+        if (!(value instanceof ValueExpression) && !(value instanceof Parameter)) {
+            parseIndex = index;
+            throw getSyntaxError();
+        }
+        return value;
     }
 
     private AggregateType getAggregateType(String name) {
@@ -3332,15 +3397,34 @@ public class Parser {
         if (currentSelect == null) {
             throw getSyntaxError();
         }
-        int numArgs = WindowFunction.getArgumentCount(type);
+        int numArgs = WindowFunction.getMinArgumentCount(type);
         Expression[] args = null;
         if (numArgs > 0) {
-            args = new Expression[numArgs];
-            for (int i = 0; i < numArgs; i++) {
-                if (i > 0) {
-                    read(COMMA);
+            // There is no functions with numArgs == 0 && numArgsMax > 0
+            int numArgsMax = WindowFunction.getMaxArgumentCount(type);
+            args = new Expression[numArgsMax];
+            if (numArgs == numArgsMax) {
+                for (int i = 0; i < numArgs; i++) {
+                    if (i > 0) {
+                        read(COMMA);
+                    }
+                    args[i] = readExpression();
                 }
-                args[i] = readExpression();
+            } else {
+                int i = 0;
+                while (i < numArgsMax) {
+                    if (i > 0 && !readIf(COMMA)) {
+                        break;
+                    }
+                    args[i] = readExpression();
+                    i++;
+                }
+                if (i < numArgs) {
+                    throw getSyntaxError();
+                }
+                if (i != numArgsMax) {
+                    args = Arrays.copyOf(args, i);
+                }
             }
         }
         read(CLOSE_PAREN);
@@ -3349,6 +3433,8 @@ public class Parser {
             readFromFirstOrLast(function);
         }
         switch (type) {
+        case LEAD:
+        case LAG:
         case FIRST_VALUE:
         case LAST_VALUE:
         case NTH_VALUE:
@@ -3357,7 +3443,7 @@ public class Parser {
         default:
             // Avoid warning
         }
-        readFilterAndOver(function);
+        readOver(function);
         return function;
     }
 
@@ -4790,20 +4876,12 @@ public class Parser {
             }
             read("AS");
             read("IDENTITY");
-            long start = 1, increment = 1;
+            SequenceOptions options = new SequenceOptions();
             if (readIf(OPEN_PAREN)) {
-                read("START");
-                readIf(WITH);
-                start = readLong();
-                readIf(COMMA);
-                if (readIf("INCREMENT")) {
-                    readIf("BY");
-                    increment = readLong();
-                }
+                parseSequenceOptions(options, null, true);
                 read(CLOSE_PAREN);
             }
-            column.setPrimaryKey(true);
-            column.setAutoIncrement(true, start, increment);
+            column.setAutoIncrementOptions(options);
         }
         if (readIf(ON)) {
             read("UPDATE");
@@ -4840,15 +4918,15 @@ public class Parser {
     }
 
     private void parseAutoIncrement(Column column) {
-        long start = 1, increment = 1;
+        SequenceOptions options = new SequenceOptions();
         if (readIf(OPEN_PAREN)) {
-            start = readLong();
+            options.setStartValue(ValueExpression.get(ValueLong.get(readLong())));
             if (readIf(COMMA)) {
-                increment = readLong();
+                options.setIncrement(ValueExpression.get(ValueLong.get(readLong())));
             }
             read(CLOSE_PAREN);
         }
-        column.setAutoIncrement(true, start, increment);
+        column.setAutoIncrementOptions(options);
     }
 
     private String readCommentIf() {
@@ -5581,49 +5659,9 @@ public class Parser {
         CreateSequence command = new CreateSequence(session, getSchema());
         command.setIfNotExists(ifNotExists);
         command.setSequenceName(sequenceName);
-        while (true) {
-            if (readIf("START")) {
-                readIf(WITH);
-                command.setStartWith(readExpression());
-            } else if (readIf("INCREMENT")) {
-                readIf("BY");
-                command.setIncrement(readExpression());
-            } else if (readIf("MINVALUE")) {
-                command.setMinValue(readExpression());
-            } else if (readIf("NOMINVALUE")) {
-                command.setMinValue(null);
-            } else if (readIf("MAXVALUE")) {
-                command.setMaxValue(readExpression());
-            } else if (readIf("NOMAXVALUE")) {
-                command.setMaxValue(null);
-            } else if (readIf("CYCLE")) {
-                command.setCycle(true);
-            } else if (readIf("NOCYCLE")) {
-                command.setCycle(false);
-            } else if (readIf("NO")) {
-                if (readIf("MINVALUE")) {
-                    command.setMinValue(null);
-                } else if (readIf("MAXVALUE")) {
-                    command.setMaxValue(null);
-                } else if (readIf("CYCLE")) {
-                    command.setCycle(false);
-                } else if (readIf("CACHE")) {
-                    command.setCacheSize(ValueExpression.get(ValueLong.get(1)));
-                } else {
-                    break;
-                }
-            } else if (readIf("CACHE")) {
-                command.setCacheSize(readExpression());
-            } else if (readIf("NOCACHE")) {
-                command.setCacheSize(ValueExpression.get(ValueLong.get(1)));
-            } else if (readIf("BELONGS_TO_TABLE")) {
-                command.setBelongsToTable(true);
-            } else if (readIf(ORDER)) {
-                // Oracle compatibility
-            } else {
-                break;
-            }
-        }
+        SequenceOptions options = new SequenceOptions();
+        parseSequenceOptions(options, command, true);
+        command.setOptions(options);
         return command;
     }
 
@@ -6146,46 +6184,60 @@ public class Parser {
         AlterSequence command = new AlterSequence(session, getSchema());
         command.setSequenceName(sequenceName);
         command.setIfExists(ifExists);
-        while (true) {
-            if (readIf("RESTART")) {
-                read(WITH);
-                command.setStartWith(readExpression());
+        SequenceOptions options = new SequenceOptions();
+        parseSequenceOptions(options, null, false);
+        command.setOptions(options);
+        return command;
+    }
+
+    private void parseSequenceOptions(SequenceOptions options, CreateSequence command, boolean forCreate) {
+        for (;;) {
+            if (readIf(forCreate ? "START" : "RESTART")) {
+                readIf(WITH);
+                options.setStartValue(readExpression());
             } else if (readIf("INCREMENT")) {
-                read("BY");
-                command.setIncrement(readExpression());
+                readIf("BY");
+                options.setIncrement(readExpression());
             } else if (readIf("MINVALUE")) {
-                command.setMinValue(readExpression());
+                options.setMinValue(readExpression());
             } else if (readIf("NOMINVALUE")) {
-                command.setMinValue(null);
+                options.setMinValue(ValueExpression.getNull());
             } else if (readIf("MAXVALUE")) {
-                command.setMaxValue(readExpression());
+                options.setMaxValue(readExpression());
             } else if (readIf("NOMAXVALUE")) {
-                command.setMaxValue(null);
+                options.setMaxValue(ValueExpression.getNull());
             } else if (readIf("CYCLE")) {
-                command.setCycle(true);
+                options.setCycle(true);
             } else if (readIf("NOCYCLE")) {
-                command.setCycle(false);
+                options.setCycle(false);
             } else if (readIf("NO")) {
                 if (readIf("MINVALUE")) {
-                    command.setMinValue(null);
+                    options.setMinValue(ValueExpression.getNull());
                 } else if (readIf("MAXVALUE")) {
-                    command.setMaxValue(null);
+                    options.setMaxValue(ValueExpression.getNull());
                 } else if (readIf("CYCLE")) {
-                    command.setCycle(false);
+                    options.setCycle(false);
                 } else if (readIf("CACHE")) {
-                    command.setCacheSize(ValueExpression.get(ValueLong.get(1)));
+                    options.setCacheSize(ValueExpression.get(ValueLong.get(1)));
                 } else {
                     break;
                 }
             } else if (readIf("CACHE")) {
-                command.setCacheSize(readExpression());
+                options.setCacheSize(readExpression());
             } else if (readIf("NOCACHE")) {
-                command.setCacheSize(ValueExpression.get(ValueLong.get(1)));
+                options.setCacheSize(ValueExpression.get(ValueLong.get(1)));
+            } else if (command != null) {
+                if (readIf("BELONGS_TO_TABLE")) {
+                    command.setBelongsToTable(true);
+                } else if (readIf(ORDER)) {
+                    // Oracle compatibility
+                } else {
+                    break;
+                }
             } else {
                 break;
             }
         }
-        return command;
     }
 
     private AlterUser parseAlterUser() {
@@ -6955,7 +7007,9 @@ public class Parser {
                 Expression start = readExpression();
                 AlterSequence command = new AlterSequence(session, schema);
                 command.setColumn(column);
-                command.setStartWith(start);
+                SequenceOptions options = new SequenceOptions();
+                options.setStartValue(start);
+                command.setOptions(options);
                 return commandIfTableExists(schema, tableName, ifTableExists, command);
             } else if (readIf("SELECTIVITY")) {
                 AlterTableAlterColumn command = new AlterTableAlterColumn(

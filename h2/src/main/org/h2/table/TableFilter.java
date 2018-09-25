@@ -665,7 +665,7 @@ public class TableFilter implements ColumnResolver {
      */
     public void addJoin(TableFilter filter, boolean outer, Expression on) {
         if (on != null) {
-            on.mapColumns(this, 0);
+            on.mapColumns(this, 0, Expression.MAP_INITIAL);
             TableFilterVisitor visitor = new MapColumnsVisitor(on);
             visit(visitor);
             filter.visit(visitor);
@@ -699,11 +699,11 @@ public class TableFilter implements ColumnResolver {
      * @param on the condition
      */
     public void mapAndAddFilter(Expression on) {
-        on.mapColumns(this, 0);
+        on.mapColumns(this, 0, Expression.MAP_INITIAL);
         addFilterCondition(on, true);
         on.createIndexConditions(session, this);
         if (nestedJoin != null) {
-            on.mapColumns(nestedJoin, 0);
+            on.mapColumns(nestedJoin, 0, Expression.MAP_INITIAL);
             on.createIndexConditions(session, nestedJoin);
         }
         if (join != null) {
@@ -1221,7 +1221,7 @@ public class TableFilter implements ColumnResolver {
 
         @Override
         public void accept(TableFilter f) {
-            on.mapColumns(f, 0);
+            on.mapColumns(f, 0, Expression.MAP_INITIAL);
         }
     }
 

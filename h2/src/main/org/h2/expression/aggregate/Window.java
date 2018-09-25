@@ -7,9 +7,11 @@ package org.h2.expression.aggregate;
 
 import java.util.ArrayList;
 
+import org.h2.api.ErrorCode;
 import org.h2.command.dml.SelectOrderBy;
 import org.h2.engine.Session;
 import org.h2.expression.Expression;
+import org.h2.message.DbException;
 import org.h2.result.SortOrder;
 import org.h2.table.ColumnResolver;
 import org.h2.table.TableFilter;
@@ -22,11 +24,13 @@ import org.h2.value.ValueArray;
  */
 public final class Window {
 
-    private final ArrayList<Expression> partitionBy;
+    private ArrayList<Expression> partitionBy;
 
-    private final ArrayList<SelectOrderBy> orderBy;
+    private ArrayList<SelectOrderBy> orderBy;
 
-    private final WindowFrame frame;
+    private WindowFrame frame;
+
+    private String parent;
 
     /**
      * @param builder
@@ -54,6 +58,8 @@ public final class Window {
     /**
      * Creates a new instance of window clause.
      *
+     * @param parent
+     *            name of the parent window
      * @param partitionBy
      *            PARTITION BY clause, or null
      * @param orderBy
@@ -61,7 +67,9 @@ public final class Window {
      * @param frame
      *            window frame clause
      */
-    public Window(ArrayList<Expression> partitionBy, ArrayList<SelectOrderBy> orderBy, WindowFrame frame) {
+    public Window(String parent, ArrayList<Expression> partitionBy, ArrayList<SelectOrderBy> orderBy,
+            WindowFrame frame) {
+        this.parent = parent;
         this.partitionBy = partitionBy;
         this.orderBy = orderBy;
         this.frame = frame;
@@ -74,18 +82,39 @@ public final class Window {
      *            the column resolver
      * @param level
      *            the subquery nesting level
-     * @see Expression#mapColumns(ColumnResolver, int)
+     * @see Expression#mapColumns(ColumnResolver, int, int)
      */
     public void mapColumns(ColumnResolver resolver, int level) {
+        resolveWindows(resolver);
         if (partitionBy != null) {
             for (Expression e : partitionBy) {
-                e.mapColumns(resolver, level);
+                e.mapColumns(resolver, level, Expression.MAP_IN_WINDOW);
             }
         }
         if (orderBy != null) {
             for (SelectOrderBy o : orderBy) {
-                o.expression.mapColumns(resolver, level);
+                o.expression.mapColumns(resolver, level, Expression.MAP_IN_WINDOW);
             }
+        }
+    }
+
+    private void resolveWindows(ColumnResolver resolver) {
+        if (parent != null) {
+            Window p = resolver.getSelect().getWindow(parent);
+            if (p == null) {
+                throw DbException.get(ErrorCode.WINDOW_NOT_FOUND_1, parent);
+            }
+            p.resolveWindows(resolver);
+            if (partitionBy == null) {
+                partitionBy = p.partitionBy;
+            }
+            if (orderBy == null) {
+                orderBy = p.orderBy;
+            }
+            if (frame == null) {
+                frame = p.frame;
+            }
+            parent = null;
         }
     }
 
@@ -141,9 +170,9 @@ public final class Window {
     }
 
     /**
-     * Returns window frame.
+     * Returns window frame, or null.
      *
-     * @return window frame
+     * @return window frame, or null
      */
     public WindowFrame getWindowFrame() {
         return frame;
@@ -156,18 +185,22 @@ public final class Window {
      *            session
      * @return key for the current group, or null
      */
-    public ValueArray getCurrentKey(Session session) {
+    public Value getCurrentKey(Session session) {
         if (partitionBy == null) {
             return null;
         }
         int len = partitionBy.size();
-        Value[] keyValues = new Value[len];
-        // update group
-        for (int i = 0; i < len; i++) {
-            Expression expr = partitionBy.get(i);
-            keyValues[i] = expr.getValue(session);
+        if (len == 1) {
+            return partitionBy.get(0).getValue(session);
+        } else {
+            Value[] keyValues = new Value[len];
+            // update group
+            for (int i = 0; i < len; i++) {
+                Expression expr = partitionBy.get(i);
+                keyValues[i] = expr.getValue(session);
+            }
+            return ValueArray.get(keyValues);
         }
-        return ValueArray.get(keyValues);
     }
 
     /**
@@ -177,7 +210,7 @@ public final class Window {
      * @see Expression#getSQL()
      */
     public String getSQL() {
-        if (partitionBy == null && orderBy == null) {
+        if (partitionBy == null && orderBy == null && frame == null) {
             return "OVER ()";
         }
         StringBuilder builder = new StringBuilder().append("OVER (");
@@ -191,8 +224,11 @@ public final class Window {
             }
         }
         appendOrderBy(builder, orderBy);
-        if (!frame.isDefault()) {
-            builder.append(' ').append(frame.getSQL());
+        if (frame != null && !frame.isDefault()) {
+            if (builder.charAt(builder.length() - 1) != '(') {
+                builder.append(' ');
+            }
+            builder.append(frame.getSQL());
         }
         return builder.append(')').toString();
     }

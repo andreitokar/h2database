@@ -69,3 +69,28 @@ SELECT NR FROM (SELECT COUNT(ID) OVER (ORDER BY NAME) AS NR,
 
 DROP TABLE TEST;
 > ok
+
+SELECT I, V, COUNT(V) OVER W C, COUNT(DISTINCT V) OVER W D FROM
+    VALUES (1, 1), (2, 1), (3, 1), (4, 1), (5, 2), (6, 2), (7, 3) T(I, V)
+    WINDOW W AS (ORDER BY I);
+> I V C D
+> - - - -
+> 1 1 1 1
+> 2 1 2 1
+> 3 1 3 1
+> 4 1 4 1
+> 5 2 5 2
+> 6 2 6 2
+> 7 3 7 3
+> rows (ordered): 7
+
+SELECT I, C, COUNT(I) OVER (PARTITION BY C) CNT FROM
+    VALUES (1, 1), (2, 1), (3, 2), (4, 2), (5, 2) T(I, C);
+> I C CNT
+> - - ---
+> 1 1 2
+> 2 1 2
+> 3 2 3
+> 4 2 3
+> 5 2 3
+> rows: 5

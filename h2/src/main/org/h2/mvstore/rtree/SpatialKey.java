@@ -31,6 +31,11 @@ public class SpatialKey extends Value {
         this.minMax = minMax;
     }
 
+    public SpatialKey(long id, SpatialKey other) {
+        this.id = id;
+        this.minMax = other.minMax.clone();
+    }
+
     /**
      * Get the minimum value for the given dimension.
      *

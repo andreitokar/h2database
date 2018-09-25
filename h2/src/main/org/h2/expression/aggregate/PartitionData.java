@@ -12,12 +12,12 @@ import org.h2.value.Value;
 /**
  * Partition data of a window aggregate.
  */
-final class PartitionData {
+public final class PartitionData {
 
     /**
      * Aggregate data.
      */
-    private final Object data;
+    private Object data;
 
     /**
      * Evaluated result.
@@ -65,6 +65,7 @@ final class PartitionData {
      */
     void setResult(Value result) {
         this.result = result;
+        data = null;
     }
 
     /**
@@ -84,6 +85,7 @@ final class PartitionData {
      */
     void setOrderedResult(HashMap<Integer, Value> orderedResult) {
         this.orderedResult = orderedResult;
+        data = null;
     }
 
 }

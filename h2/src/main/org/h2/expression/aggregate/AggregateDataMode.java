@@ -20,12 +20,12 @@ class AggregateDataMode extends AggregateData {
     private ValueHashMap<LongDataCounter> distinctValues;
 
     @Override
-    void add(Database database, int dataType, boolean distinct, Value v) {
+    void add(Database database, int dataType, Value v) {
         if (v == ValueNull.INSTANCE) {
             return;
         }
         if (distinctValues == null) {
-            distinctValues = ValueHashMap.newInstance();
+            distinctValues = new ValueHashMap<>();
         }
         LongDataCounter a = distinctValues.get(v);
         if (a == null) {
@@ -36,7 +36,7 @@ class AggregateDataMode extends AggregateData {
     }
 
     @Override
-    Value getValue(Database database, int dataType, boolean distinct) {
+    Value getValue(Database database, int dataType) {
         Value v = ValueNull.INSTANCE;
         if (distinctValues != null) {
             long count = 0L;

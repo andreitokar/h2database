@@ -41,11 +41,6 @@ public class JavaAggregate extends AbstractAggregate {
     }
 
     @Override
-    public boolean isAggregate() {
-        return true;
-    }
-
-    @Override
     public int getCost() {
         int cost = 5;
         for (Expression e : args) {
@@ -115,11 +110,11 @@ public class JavaAggregate extends AbstractAggregate {
     }
 
     @Override
-    public void mapColumns(ColumnResolver resolver, int level) {
+    public void mapColumnsAnalysis(ColumnResolver resolver, int level, int innerState) {
         for (Expression arg : args) {
-            arg.mapColumns(resolver, level);
+            arg.mapColumns(resolver, level, innerState);
         }
-        super.mapColumns(resolver, level);
+        super.mapColumnsAnalysis(resolver, level, innerState);
     }
 
     @Override
@@ -139,9 +134,6 @@ public class JavaAggregate extends AbstractAggregate {
             dataType = aggregate.getInternalType(argTypes);
         } catch (SQLException e) {
             throw DbException.convert(e);
-        }
-        if (filterCondition != null) {
-            filterCondition = filterCondition.optimize(session);
         }
         return this;
     }
@@ -217,7 +209,7 @@ public class JavaAggregate extends AbstractAggregate {
                     arg = arg.convertTo(argTypes[i]);
                     argValues[i] = arg;
                 }
-                data.add(session.getDatabase(), dataType, true, args.length == 1 ? arg : ValueArray.get(argValues));
+                data.add(session.getDatabase(), dataType, args.length == 1 ? arg : ValueArray.get(argValues));
             } else {
                 Aggregate agg = (Aggregate) aggregateData;
                 Object[] argValues = new Object[args.length];
@@ -237,6 +229,7 @@ public class JavaAggregate extends AbstractAggregate {
 
     @Override
     protected void updateGroupAggregates(Session session, int stage) {
+        super.updateGroupAggregates(session, stage);
         for (Expression expr : args) {
             expr.updateAggregate(session, stage);
         }
@@ -261,7 +254,7 @@ public class JavaAggregate extends AbstractAggregate {
 
     @Override
     protected Object createAggregateData() {
-        return distinct ? new AggregateDataCollecting() : getInstance();
+        return distinct ? new AggregateDataCollecting(true) : getInstance();
     }
 
 }
