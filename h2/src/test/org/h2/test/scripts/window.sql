@@ -27,7 +27,7 @@ SELECT *, ROW_NUMBER() OVER W1, ROW_NUMBER() OVER W2 FROM TEST
 > 2  3 1        2                                                     1
 > 3  2 2        1                                                     2
 > 4  1 2        2                                                     1
-> rows (ordered): 4
+> rows: 4
 
 SELECT *, LAST_VALUE(ID) OVER W FROM TEST
     WINDOW W AS (PARTITION BY CATEGORY ORDER BY ID RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE CURRENT ROW);
@@ -37,7 +37,7 @@ SELECT *, LAST_VALUE(ID) OVER W FROM TEST
 > 2  3 1        1
 > 3  2 2        4
 > 4  1 2        3
-> rows (ordered): 4
+> rows: 4
 
 DROP TABLE TEST;
 > ok
@@ -50,3 +50,64 @@ SELECT MAX(MAX(X) OVER ()) FROM VALUES (1);
 
 SELECT MAX(MAX(X)) FROM VALUES (1);
 > exception INVALID_USE_OF_AGGREGATE_FUNCTION_1
+
+CREATE TABLE TEST(ID INT, CATEGORY INT);
+> ok
+
+INSERT INTO TEST VALUES
+    (1, 1),
+    (2, 1),
+    (4, 2),
+    (8, 2),
+    (16, 3),
+    (32, 3);
+> update count: 6
+
+SELECT ROW_NUMBER() OVER (ORDER  /**/ BY CATEGORY), SUM(ID) FROM TEST GROUP BY CATEGORY HAVING SUM(ID) = 12;
+> ROW_NUMBER() OVER (ORDER BY CATEGORY) SUM(ID)
+> ------------------------------------- -------
+> 1                                     12
+> rows: 1
+
+SELECT ROW_NUMBER() OVER (ORDER  /**/ BY CATEGORY), SUM(ID) FROM TEST GROUP BY CATEGORY HAVING CATEGORY = 2;
+> ROW_NUMBER() OVER (ORDER BY CATEGORY) SUM(ID)
+> ------------------------------------- -------
+> 1                                     12
+> rows: 1
+
+SELECT ROW_NUMBER() OVER (ORDER BY CATEGORY), SUM(ID) FROM TEST GROUP BY CATEGORY HAVING CATEGORY > 1;
+> ROW_NUMBER() OVER (ORDER BY CATEGORY) SUM(ID)
+> ------------------------------------- -------
+> 1                                     12
+> 2                                     48
+> rows: 2
+
+DROP TABLE TEST;
+> ok
+
+CREATE TABLE TEST(ID INT, CATEGORY BOOLEAN);
+> ok
+
+INSERT INTO TEST VALUES
+    (1, FALSE),
+    (2, FALSE),
+    (4, TRUE),
+    (8, TRUE),
+    (16, FALSE),
+    (32, FALSE);
+> update count: 6
+
+SELECT ROW_NUMBER() OVER (ORDER BY CATEGORY), SUM(ID) FROM TEST GROUP BY CATEGORY HAVING SUM(ID) = 12;
+> ROW_NUMBER() OVER (ORDER BY CATEGORY) SUM(ID)
+> ------------------------------------- -------
+> 1                                     12
+> rows: 1
+
+SELECT ROW_NUMBER() OVER (ORDER BY CATEGORY), SUM(ID) FROM TEST GROUP BY CATEGORY HAVING CATEGORY;
+> ROW_NUMBER() OVER (ORDER BY CATEGORY) SUM(ID)
+> ------------------------------------- -------
+> 1                                     12
+> rows: 1
+
+DROP TABLE TEST;
+> ok

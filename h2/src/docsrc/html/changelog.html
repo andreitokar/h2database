@@ -21,6 +21,38 @@ Change Log
 
 <h2>Next Version (unreleased)</h2>
 <ul>
+<li>Issue #1493: MERGE statement fails when it updates more than one row
+</li>
+<li>Issue #1492: Unnecessary restriction on MERGE USING statement when ON clause doesn't reference any target table columns
+</li>
+<li>Issue #1491: Unnecessary restriction on MERGE USING statement when ON predicate doesn't match inserted row
+</li>
+<li>Issue #1490: NullPointerException when running invalid MERGE statement
+</li>
+<li>Issue #1488: Improve documentation of window and some other functions
+</li>
+<li>Issue #1485: Default window frame in presence of ORDER BY is RANGE .., not ROWS
+</li>
+<li>PR #1484: New tests, reimplemented EXCLUDE clause, and assorted changes
+</li>
+<li>Issue #1338: MSSQLServer compatibility enhancements
+</li>
+<li>PR #1480: Update Maven build instruction and fix some problems
+</li>
+<li>PR #1478: Upgrade maven-surefire-plugin
+</li>
+<li>PR #1476: Add TransactionStore to MVStore jar
+</li>
+<li>Issue #1475: Dropping column used by a view produces misleading error message
+</li>
+<li>Issue #1473: TestScript needs better detection of sorted result
+</li>
+<li>PR #1471: issue 1350: TestCrashAPI: PageStore.freeListPagesPerList
+</li>
+<li>PR #1470: Fix window functions in queries with HAVING
+</li>
+<li>PR #1469: Forbid incorrect nesting of aggregates and window functions
+</li>
 <li>Issue #1437: Generated as Identity has a different behaviour.
 </li>
 <li>PR #1467: Fix subtraction of timestamps

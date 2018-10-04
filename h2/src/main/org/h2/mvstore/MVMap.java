@@ -397,6 +397,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      *
      * @param key the key
      * @return the value, or null if not found
+     * @throws ClassCastException if type of the specified key is not compatible with this map
      */
     @Override
     public final V get(Object key) {
@@ -409,6 +410,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @param p the root of a snapshot
      * @param key the key
      * @return the value, or null if not found
+     * @throws ClassCastException if type of the specified key is not compatible with this map
      */
     @SuppressWarnings("unchecked")
     public V get(Page p, Object key) {
@@ -451,6 +453,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      *
      * @param key the key (may not be null)
      * @return the old value if the key existed, or null otherwise
+     * @throws ClassCastException if type of the specified key is not compatible with this map
      */
     @Override
     @SuppressWarnings("unchecked")
@@ -974,10 +977,11 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     }
 
     /**
-     * Get the number of entries, as a integer. Integer.MAX_VALUE is returned if
-     * there are more than this entries.
+     * Get the number of entries, as a integer. {@link Integer#MAX_VALUE} is
+     * returned if there are more than this entries.
      *
      * @return the number of entries, as an integer
+     * @see #sizeAsLong()
      */
     @Override
     public final int size() {
