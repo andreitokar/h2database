@@ -140,7 +140,7 @@ public class Database implements DataHandler {
     private final HashMap<String, Setting> settings = new HashMap<>();
     private final HashMap<String, Schema> schemas = new HashMap<>();
     private final HashMap<String, Right> rights = new HashMap<>();
-    private final HashMap<String, UserDataType> userDataTypes = new HashMap<>();
+    private final HashMap<String, Domain> domains = new HashMap<>();
     private final HashMap<String, UserAggregate> aggregates = new HashMap<>();
     private final HashMap<String, Comment> comments = new HashMap<>();
     private final HashMap<String, TableEngine> tableEngines = new HashMap<>();
@@ -644,7 +644,7 @@ public class Database implements DataHandler {
                 n = tokenizer.nextToken();
             }
         }
-        if (n == null || n.length() == 0) {
+        if (n == null || n.isEmpty()) {
             n = "unnamed";
         }
         return dbSettings.databaseToUpper ? StringUtils.toUpperEnglish(n) : n;
@@ -1148,8 +1148,8 @@ public class Database implements DataHandler {
         case DbObject.SCHEMA:
             result = schemas;
             break;
-        case DbObject.USER_DATATYPE:
-            result = userDataTypes;
+        case DbObject.DOMAIN:
+            result = domains;
             break;
         case DbObject.COMMENT:
             result = comments;
@@ -1278,13 +1278,13 @@ public class Database implements DataHandler {
     }
 
     /**
-     * Get the user defined data type if it exists, or null if not.
+     * Get the domain if it exists, or null if not.
      *
-     * @param name the name of the user defined data type
-     * @return the user defined data type or null
+     * @param name the name of the domain
+     * @return the domain or null
      */
-    public UserDataType findUserDataType(String name) {
-        return userDataTypes.get(name);
+    public Domain findDomain(String name) {
+        return domains.get(name);
     }
 
     /**
@@ -1556,10 +1556,14 @@ public class Database implements DataHandler {
                             compactMode == CommandInterface.SHUTDOWN_DEFRAG ||
                             getSettings().defragAlways;
                     if (!compactFully && !mvStore.isReadOnly()) {
-                        try {
-                            store.compactFile(dbSettings.maxCompactTime);
-                        } catch (Throwable t) {
-                            trace.error(t, "compactFile");
+                        if (dbSettings.maxCompactTime > 0) {
+                            try {
+                                store.compactFile(dbSettings.maxCompactTime);
+                            } catch (Throwable t) {
+                                trace.error(t, "compactFile");
+                            }
+                        } else {
+                            mvStore.commit();
                         }
                     }
                     store.close(compactFully);
@@ -1756,8 +1760,8 @@ public class Database implements DataHandler {
         return new ArrayList<>(settings.values());
     }
 
-    public ArrayList<UserDataType> getAllUserDataTypes() {
-        return new ArrayList<>(userDataTypes.values());
+    public ArrayList<Domain> getAllDomains() {
+        return new ArrayList<>(domains.values());
     }
 
     public ArrayList<User> getAllUsers() {
@@ -2090,7 +2094,7 @@ public class Database implements DataHandler {
         }
         cacheSize = kb;
         if (pageStore != null) {
-            pageStore.getCache().setMaxMemory(kb);
+            pageStore.setMaxCacheMemory(kb);
         }
         if (store != null) {
             store.setCacheSize(Math.max(1, kb));
@@ -2287,7 +2291,7 @@ public class Database implements DataHandler {
     }
 
     public void setEventListenerClass(String className) {
-        if (className == null || className.length() == 0) {
+        if (className == null || className.isEmpty()) {
             eventListener = null;
         } else {
             try {

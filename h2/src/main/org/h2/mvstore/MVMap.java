@@ -1021,7 +1021,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @param memory the number of bytes used for this page
      */
     protected final void removePage(long pos, int memory) {
-        store.removePage(this, pos, memory);
+        store.removePage(pos, memory);
     }
 
     /**
@@ -1081,15 +1081,21 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @return version
      */
     public final long getVersion() {
-        RootReference rootReference = getRoot();
+        return getVersion(getRoot());
+    }
+
+    private long getVersion(RootReference rootReference) {
         RootReference previous = rootReference.previous;
-        return previous == null ||previous.root != rootReference.root ||
-               previous.appendCounter != rootReference.appendCounter ?
+        return previous == null || previous.root != rootReference.root ||
+                previous.appendCounter != rootReference.appendCounter ?
                     rootReference.version : previous.version;
     }
 
     final boolean hasChangesSince(long version) {
-        return getVersion() > version;
+        RootReference rootReference = getRoot();
+        Page root = rootReference.root;
+        return !root.isSaved() && root.getTotalCount() > 0 ||
+                getVersion(rootReference) > version;
     }
 
     public boolean isSingleWriter() {
@@ -1181,28 +1187,33 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         MVStore.TxCounter txCounter = store.registerVersionUsage();
         try {
             beforeWrite();
-            setRoot(copy(sourceMap.getRootPage()));
+            copy(sourceMap.getRootPage(), null, 0);
         } finally {
             store.deregisterVersionUsage(txCounter);
         }
     }
 
-    private Page copy(Page source) {
+    private Page copy(Page source, Page parent, int index) {
         Page target = source.copy(this);
-        store.registerUnsavedPage(target.getMemory());
+        if (parent == null) {
+            setRoot(target);
+        } else {
+            parent.setChild(index, target);
+        }
         if (!source.isLeaf()) {
             for (int i = 0; i < getChildPageCount(target); i++) {
                 if (source.getChildPagePos(i) != 0) {
                     // position 0 means no child
                     // (for example the last entry of an r-tree node)
                     // (the MVMap is also used for r-trees for compacting)
-                    Page child = copy(source.getChildPage(i));
-                    target.setChild(i, child);
+                    copy(source.getChildPage(i), target, i);
                 }
             }
-
-            setRoot(target);
-            beforeWrite();
+            target.setComplete();
+        }
+        store.registerUnsavedPage(target.getMemory());
+        if (store.isSaveNeeded()) {
+            store.commit();
         }
         return target;
     }
@@ -1214,7 +1225,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * @return potentially updated RootReference
      */
     private RootReference flushAppendBuffer(RootReference rootReference) {
-        beforeWrite();
         int attempt = 0;
         int keyCount;
         while((keyCount = rootReference.getAppendCounter()) > 0) {
@@ -1314,6 +1324,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
             RootReference rootReference = getRootInternal();
             int appendCounter = rootReference.getAppendCounter();
             if (appendCounter >= keysPerPage) {
+                beforeWrite();
                 rootReference = flushAppendBuffer(rootReference);
                 appendCounter = rootReference.getAppendCounter();
                 assert appendCounter < keysPerPage;
@@ -1335,7 +1346,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         int attempt = 0;
         boolean success;
         do {
-            RootReference rootReference = getRoot();
+            RootReference rootReference = getRootInternal();
             int appendCounter = rootReference.getAppendCounter();
             if (appendCounter > 0) {
                 RootReference updatedRootReference = new RootReference(rootReference, appendCounter - 1, ++attempt);

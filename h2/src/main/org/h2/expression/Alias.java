@@ -78,8 +78,9 @@ public class Alias extends Expression {
     }
 
     @Override
-    public String getSQL() {
-        return expr.getSQL() + " AS " + Parser.quoteIdentifier(alias);
+    public StringBuilder getSQL(StringBuilder builder) {
+        expr.getSQL(builder).append(" AS ");
+        return Parser.quoteIdentifier(builder, alias);
     }
 
     @Override
@@ -110,7 +111,7 @@ public class Alias extends Expression {
     @Override
     public String getTableName() {
         if (aliasColumnName) {
-            return super.getTableName();
+            return null;
         }
         return expr.getTableName();
     }
@@ -118,7 +119,7 @@ public class Alias extends Expression {
     @Override
     public String getColumnName() {
         if (!(expr instanceof ExpressionColumn) || aliasColumnName) {
-            return super.getColumnName();
+            return alias;
         }
         return expr.getColumnName();
     }

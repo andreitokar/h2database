@@ -154,15 +154,15 @@ public class TestScript extends TestDb {
                 "dropDomain", "dropIndex", "dropSchema", "truncateTable" }) {
             testScript("ddl/" + s + ".sql");
         }
-        for (String s : new String[] { "error_reporting", "insertIgnore", "merge", "mergeUsing", "replace",
+        for (String s : new String[] { "delete", "error_reporting", "insertIgnore", "merge", "mergeUsing", "replace",
                 "script", "select", "show", "with" }) {
             testScript("dml/" + s + ".sql");
         }
         for (String s : new String[] { "help" }) {
             testScript("other/" + s + ".sql");
         }
-        for (String s : new String[] { "array-agg", "avg", "bit-and", "bit-or", "count", "envelope",
-                "group-concat", "max", "median", "min", "mode", "selectivity", "stddev-pop",
+        for (String s : new String[] { "any", "array-agg", "avg", "bit-and", "bit-or", "count", "envelope",
+                "every", "group-concat", "histogram", "max", "median", "min", "mode", "selectivity", "stddev-pop",
                 "stddev-samp", "sum", "var-pop", "var-samp" }) {
             testScript("functions/aggregate/" + s + ".sql");
         }
@@ -194,7 +194,7 @@ public class TestScript extends TestDb {
                 "ifnull", "least", "link-schema", "lock-mode", "lock-timeout",
                 "memory-free", "memory-used", "nextval", "nullif", "nvl2",
                 "readonly", "rownum", "schema", "scope-identity", "session-id",
-                "set", "table", "transaction-id", "truncate-value", "user" }) {
+                "set", "table", "transaction-id", "truncate-value", "unnest", "user" }) {
             testScript("functions/system/" + s + ".sql");
         }
         for (String s : new String[] { "add_months", "current_date", "current_timestamp",
@@ -234,11 +234,7 @@ public class TestScript extends TestDb {
         stat = conn.createStatement();
         out = new PrintStream(new FileOutputStream(outFile));
         errors = new StringBuilder();
-        testFile(BASE_DIR + scriptFileName,
-                !scriptFileName.equals("functions/numeric/rand.sql") &&
-                !scriptFileName.equals("functions/system/set.sql") &&
-                !scriptFileName.equals("ddl/createAlias.sql") &&
-                !scriptFileName.equals("ddl/dropSchema.sql"));
+        testFile(BASE_DIR + scriptFileName);
         conn.close();
         out.close();
         if (errors.length() > 0) {
@@ -297,7 +293,7 @@ public class TestScript extends TestDb {
         putBack.addLast(line);
     }
 
-    private void testFile(String inFile, boolean allowReconnect) throws Exception {
+    private void testFile(String inFile) throws Exception {
         InputStream is = getClass().getClassLoader().getResourceAsStream(inFile);
         if (is == null) {
             throw new IOException("could not find " + inFile);
@@ -305,11 +301,8 @@ public class TestScript extends TestDb {
         fileName = inFile;
         in = new LineNumberReader(new InputStreamReader(is, StandardCharsets.UTF_8));
         StringBuilder buff = new StringBuilder();
-        while (true) {
-            String sql = readLine();
-            if (sql == null) {
-                break;
-            }
+        boolean allowReconnect = true;
+        for (String sql; (sql = readLine()) != null;) {
             if (sql.startsWith("--")) {
                 write(sql);
             } else if (sql.startsWith(">")) {
@@ -320,12 +313,24 @@ public class TestScript extends TestDb {
                 sql = buff.toString();
                 buff.setLength(0);
                 process(sql, allowReconnect);
-            } else if (sql.equals("@reconnect")) {
+            } else if (sql.startsWith("@")) {
                 if (buff.length() > 0) {
                     addWriteResultError("<command>", sql);
                 } else {
-                    if (!config.memory) {
-                        reconnect(conn.getAutoCommit());
+                    switch (sql) {
+                    case "@reconnect":
+                        if (!config.memory) {
+                            reconnect(conn.getAutoCommit());
+                        }
+                        break;
+                    case "@reconnect on":
+                        allowReconnect = true;
+                        break;
+                    case "@reconnect off":
+                        allowReconnect = false;
+                        break;
+                    default:
+                        addWriteResultError("<command>", sql);
                     }
                 }
             } else {
@@ -616,7 +621,8 @@ public class TestScript extends TestDb {
     static {
         try {
             for (Field field : ErrorCode.class.getDeclaredFields()) {
-                if (field.getModifiers() == (Modifier.PUBLIC | Modifier.STATIC | Modifier.FINAL)) {
+                if (field.getModifiers() == (Modifier.PUBLIC | Modifier.STATIC | Modifier.FINAL)
+                        && field.getAnnotation(Deprecated.class) == null) {
                     ERROR_CODE_TO_NAME.put(field.getInt(null), field.getName());
                 }
             }

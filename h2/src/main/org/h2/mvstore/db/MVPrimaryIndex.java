@@ -210,15 +210,26 @@ public class MVPrimaryIndex extends BaseIndex
         }
     }
 
-    public void lockRows(Session session, Iterable<Row> rowsForUpdate) {
+    void lockRows(Session session, Iterable<Row> rowsForUpdate) {
         TransactionMap<Long, Row> map = getMap(session);
         for (Row row : rowsForUpdate) {
             long key = row.getKey();
-            try {
-                map.lock(key);
-            } catch (IllegalStateException ex) {
-                throw mvTable.convertException(ex);
-            }
+            lockRow(map, key);
+        }
+    }
+
+    Row lockRow(Session session, Row row) {
+        TransactionMap<Long, Row> map = getMap(session);
+        long key = row.getKey();
+        ValueArray array = (ValueArray) lockRow(map, key);
+        return array == null ? null : getRow(session, key, array);
+    }
+
+    private Row lockRow(TransactionMap<Long, Row> map, long key) {
+        try {
+            return map.lock(key);
+        } catch (IllegalStateException ex) {
+            throw mvTable.convertException(ex);
         }
     }
 

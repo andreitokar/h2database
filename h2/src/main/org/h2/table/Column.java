@@ -12,14 +12,14 @@ import org.h2.api.ErrorCode;
 import org.h2.command.Parser;
 import org.h2.command.ddl.SequenceOptions;
 import org.h2.engine.Constants;
+import org.h2.engine.Domain;
 import org.h2.engine.Mode;
 import org.h2.engine.Session;
-import org.h2.engine.UserDataType;
-import org.h2.expression.ConditionAndOr;
 import org.h2.expression.Expression;
 import org.h2.expression.ExpressionVisitor;
 import org.h2.expression.SequenceValue;
 import org.h2.expression.ValueExpression;
+import org.h2.expression.condition.ConditionAndOr;
 import org.h2.message.DbException;
 import org.h2.result.Row;
 import org.h2.schema.Schema;
@@ -88,7 +88,7 @@ public class Column {
     private String comment;
     private boolean primaryKey;
     private boolean visible = true;
-    private UserDataType userDataType;
+    private Domain domain;
 
     public Column(String name, int type) {
         this(name, type, -1, -1, -1, null);
@@ -174,7 +174,7 @@ public class Column {
                         getCreateSQL();
                 throw DbException.get(
                         ErrorCode.DATA_CONVERSION_ERROR_1, e,
-                        v.getSQL() + " (" + target + ")");
+                        v.getTraceSQL() + " (" + target + ")");
             }
             throw e;
         }
@@ -311,12 +311,12 @@ public class Column {
         visible = b;
     }
 
-    public UserDataType getUserDataType() {
-        return userDataType;
+    public Domain getDomain() {
+        return domain;
     }
 
-    public void setUserDataType(UserDataType userDataType) {
-        this.userDataType = userDataType;
+    public void setDomain(Domain domain) {
+        this.domain = domain;
     }
 
     /**
@@ -362,13 +362,13 @@ public class Column {
                     if (dt.decimal) {
                         value = ValueInt.get(0).convertTo(type);
                     } else if (dt.type == Value.TIMESTAMP) {
-                        value = session.getTransactionStart().convertTo(Value.TIMESTAMP);
+                        value = session.getCurrentCommandStart().convertTo(Value.TIMESTAMP);
                     } else if (dt.type == Value.TIMESTAMP_TZ) {
-                        value = session.getTransactionStart();
+                        value = session.getCurrentCommandStart();
                     } else if (dt.type == Value.TIME) {
                         value = ValueTime.fromNanos(0);
                     } else if (dt.type == Value.DATE) {
-                        value = session.getTransactionStart().convertTo(Value.DATE);
+                        value = session.getCurrentCommandStart().convertTo(Value.DATE);
                     } else {
                         value = ValueString.get("").convertTo(type);
                     }
@@ -496,7 +496,7 @@ public class Column {
     private String getCreateSQL(boolean includeName) {
         StringBuilder buff = new StringBuilder();
         if (includeName && name != null) {
-            buff.append(Parser.quoteIdentifier(name)).append(' ');
+            Parser.quoteIdentifier(buff, name).append(' ');
         }
         if (originalSQL != null) {
             buff.append(originalSQL);
@@ -546,24 +546,21 @@ public class Column {
         }
 
         if (defaultExpression != null) {
-            String sql = defaultExpression.getSQL();
-            if (sql != null) {
-                if (isComputed) {
-                    buff.append(" AS ").append(sql);
-                } else if (defaultExpression != null) {
-                    buff.append(" DEFAULT ").append(sql);
-                }
+            if (isComputed) {
+                buff.append(" AS ");
+                defaultExpression.getSQL(buff);
+            } else if (defaultExpression != null) {
+                buff.append(" DEFAULT ");
+                defaultExpression.getSQL(buff);
             }
         }
         if (onUpdateExpression != null) {
-            String sql = onUpdateExpression.getSQL();
-            if (sql != null) {
-                buff.append(" ON UPDATE ").append(sql);
-            }
+            buff.append(" ON UPDATE ");
+            onUpdateExpression.getSQL(buff);
         }
         if (!nullable) {
             buff.append(" NOT NULL");
-        } else if (userDataType != null && !userDataType.getColumn().isNullable()) {
+        } else if (domain != null && !domain.getColumn().isNullable()) {
             buff.append(" NULL");
         }
         if (convertNullToDefault) {
@@ -576,7 +573,8 @@ public class Column {
             buff.append(" SELECTIVITY ").append(selectivity);
         }
         if (comment != null) {
-            buff.append(" COMMENT ").append(StringUtils.quoteStringSQL(comment));
+            buff.append(" COMMENT ");
+            StringUtils.quoteStringSQL(buff, comment);
         }
         if (checkConstraint != null) {
             buff.append(" CHECK ").append(checkConstraintSQL);

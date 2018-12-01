@@ -125,6 +125,10 @@ public class VersionedValue {
         public int compare(Object a, Object b) {
             if (a == b) {
                 return 0;
+            } else if (aObj == null) {
+                return -1;
+            } else if (bObj == null) {
+                return 1;
             }
             VersionedValue one = (VersionedValue) a;
             VersionedValue two = (VersionedValue) b;

@@ -5,6 +5,7 @@
  */
 package org.h2.expression.aggregate;
 
+import org.h2.engine.Constants;
 import org.h2.engine.Database;
 import org.h2.expression.aggregate.Aggregate.AggregateType;
 import org.h2.message.DbException;
@@ -39,8 +40,8 @@ abstract class AggregateData {
         case MAX:
         case BIT_OR:
         case BIT_AND:
-        case BOOL_OR:
-        case BOOL_AND:
+        case ANY:
+        case EVERY:
             return new AggregateDataDefault(aggregateType);
         case SUM:
         case AVG:
@@ -55,9 +56,9 @@ abstract class AggregateData {
         case SELECTIVITY:
             return new AggregateDataSelectivity(distinct);
         case HISTOGRAM:
-            return new AggregateDataHistogram(distinct);
+            return new AggregateDataDistinctWithCounts(false, Constants.SELECTIVITY_DISTINCT_COUNT);
         case MODE:
-            return new AggregateDataMode();
+            return new AggregateDataDistinctWithCounts(true, Integer.MAX_VALUE);
         case ENVELOPE:
             return new AggregateDataEnvelope();
         default:

@@ -21,6 +21,76 @@ Change Log
 
 <h2>Next Version (unreleased)</h2>
 <ul>
+<li>Issue #1573: DELETE FROM w/ ROWNUM and subquery
+</li>
+<li>PR #1571: Optimizing ConditionAndOr queries
+</li>
+<li>Issue #1565: SOME / ANY conflict
+</li>
+<li>PR #1564: Refactor Expression implementations
+</li>
+<li>Issue #1561: Incorrect documentation and strange fallback value of SysProperties.FILE_ENCODING
+</li>
+<li>Issue #1566: MVStore implements Closeable/AutoCloseable
+</li>
+<li>Issue #1550: OutOfMemoryError during "shutdown defrag"
+</li>
+<li>Issue #1440: OOM when executing "shutdown compact" in server mode
+</li>
+<li>Issue #1561: Incorrect documentation and strange fallback value of SysProperties.FILE_ENCODING
+</li>
+<li>PR #1557: increase lock timeout to TestConcurrentUpdate due to Travis failures
+</li>
+<li>Issue #1554: REGEXP_REPLACE - accept 'g' flag in PostgreSQL compatibility mode
+</li>
+<li>Issue #950: Comparison between databases in README.md and in features.html
+</li>
+<li>Issue #1549: [RFE] Implement locking modes (select for update)
+</li>
+<li>PR #1548: Add AsynchronousFileChannel-based experimental FilePathAsync
+</li>
+<li>PR #1547: Speedup unused chunks collection
+</li>
+<li>PR #1546: Tiny optimization: use `System.arraycopy` when possible
+</li>
+<li>PR #1545: Export datetime value functions to SQL using standard syntax
+</li>
+<li>Issue #1371: NPE in CacheLRU
+</li>
+<li>Issue #1534: Typo in message
+</li>
+<li>Issue #1527: Parser performance: Excessive use of regular expressions to validate column names
+</li>
+<li>PR #1543: MVStore assorted re-factorings
+</li>
+<li>PR #1538: Add support for newer Lucene versions without recompilation
+</li>
+<li>Issue #1536: CURRENT_TIMESTAMP result doesn't change under Transactions
+</li>
+<li>Issue #239: Consider supporting Lucene 5 indexes
+</li>
+<li>PR #1520: Fixes bug in PutIfAbsentDecisionMaker
+</li>
+<li>Issue #1518: ENUM and VIEW with filtering on enum column
+</li>
+<li>Issue #1516: Array element reference array[index] should be 1-based
+</li>
+<li>Issue #1512: TestMVTableEngine.testLowRetentionTime(): NPE in VersionedValue.Type
+</li>
+<li>PR #1513: Assorted minor changes
+</li>
+<li>PR #1510: Add optional EXCEPT clause to wildcards
+</li>
+<li>PR #1509: Use domain term everywhere
+</li>
+<li>Issue #1507: Add INFORMATION_SCHEMA.COLUMNS.COLUMN_TYPE qualification for domains
+</li>
+<li>Issue #1499: TestScript::envelope.sql failure in &#8220;big&#8221; mode
+</li>
+<li>Issue #1498: NPE in SimpleResultSet.getColumnCount()
+</li>
+<li>Issue #1495: MERGE statement doesn't affect any rows when Oracle UPDATE .. WHERE .. DELETE .. WHERE is used
+</li>
 <li>Issue #1493: MERGE statement fails when it updates more than one row
 </li>
 <li>Issue #1492: Unnecessary restriction on MERGE USING statement when ON clause doesn't reference any target table columns
@@ -28,6 +98,8 @@ Change Log
 <li>Issue #1491: Unnecessary restriction on MERGE USING statement when ON predicate doesn't match inserted row
 </li>
 <li>Issue #1490: NullPointerException when running invalid MERGE statement
+</li>
+<li>Issue #1489: MERGE USING documentation has misleading railroad diagram
 </li>
 <li>Issue #1488: Improve documentation of window and some other functions
 </li>
