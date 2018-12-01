@@ -197,7 +197,7 @@ final class CommitEntryProcessor extends MVMap.DecisionMaker<VersionedValue>
                 valueType.setValue(values, count, value);
                 ++count;
             }
-            page = Page.create(page.map, newKeyCount, keys, values, null, newKeyCount, 0);
+            page = Page.createLeaf(page.map, newKeyCount, keys, values, 0);
         }
         return new Page[]{page};
     }

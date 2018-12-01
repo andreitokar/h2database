@@ -155,12 +155,12 @@ public abstract class Page implements Cloneable
     public static Page createEmptyNode(MVMap<?, ?> map, boolean capable) {
         int capacity = capable ? map.getStore().getKeysPerPage() : 0;
         Object keys = map.getExtendedKeyType().createStorage(capacity);
-        PageReference children[] = SINGLE_EMPTY;
+        PageReference[] children = SINGLE_EMPTY;
         if (capacity > 0 ) {
             children = new PageReference[capacity + 1];
             children[0] = PageReference.EMPTY;
         }
-        return createNonLeaf(map, 0, keys, children, 0,
+        return createNode(map, 0, keys, children, 0,
                                 PAGE_NODE_MEMORY +
                                 MEMORY_POINTER + PAGE_MEMORY_CHILD); // there is always one child
     }

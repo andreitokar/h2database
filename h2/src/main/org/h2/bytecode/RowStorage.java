@@ -285,18 +285,17 @@ public class RowStorage extends Value implements Row, Cloneable {
     }
 
     @Override
-    public String getSQL() {
-        StringBuilder sb = new StringBuilder();
-        sb.append("(");
+    public StringBuilder getSQL(StringBuilder builder) {
+        builder.append("(");
         for (int indx = 0; indx < getColumnCount(); ++indx) {
             if(indx != 0) {
-                sb.append(", ");
+                builder.append(", ");
             }
             Value value = getValue(indx);
-            sb.append(value.getSQL());
+            builder.append(value.getSQL());
         }
-        sb.append(")");
-        return sb.toString();
+        builder.append(")");
+        return builder;
     }
 
     @Override

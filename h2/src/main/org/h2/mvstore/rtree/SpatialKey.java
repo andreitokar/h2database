@@ -98,8 +98,8 @@ public class SpatialKey extends Value {
     }
 
     @Override
-    public String getSQL() {
-        return null;
+    public StringBuilder getSQL(StringBuilder builder) {
+        return builder;
     }
 
     @Override

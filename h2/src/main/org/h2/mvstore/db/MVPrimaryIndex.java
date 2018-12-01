@@ -221,8 +221,7 @@ public class MVPrimaryIndex extends BaseIndex
     Row lockRow(Session session, Row row) {
         TransactionMap<Long, Row> map = getMap(session);
         long key = row.getKey();
-        ValueArray array = (ValueArray) lockRow(map, key);
-        return array == null ? null : getRow(session, key, array);
+        return lockRow(map, key);
     }
 
     private Row lockRow(TransactionMap<Long, Row> map, long key) {
@@ -242,7 +241,7 @@ public class MVPrimaryIndex extends BaseIndex
     }
 
     private Long extractPKFromRow(SearchRow row, long defaultValue) {
-        Long result;
+        long result;
         if (row == null) {
             result = defaultValue;
         } else if (mainIndexColumn == SearchRow.ROWID_INDEX) {

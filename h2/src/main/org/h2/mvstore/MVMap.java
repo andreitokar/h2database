@@ -1228,10 +1228,10 @@ public class MVMap<K, V> extends AbstractMap<K, V>
         int attempt = 0;
         int keyCount;
         while((keyCount = rootReference.getAppendCounter()) > 0) {
-            Page page = Page.create(this, keyCount,
+            Page page = Page.createLeaf(this, keyCount,
                     createAndFillStorage(getExtendedKeyType(), keyCount, keysBuffer),
                     createAndFillStorage(getExtendedValueType(), keyCount, valuesBuffer),
-                    null, keyCount, 0);
+                    0);
             rootReference = appendLeafPage(rootReference, page, ++attempt);
             if (rootReference == null) {
                 rootReference = getRootInternal();
@@ -1264,7 +1264,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                     Page.PageReference children[] = new Page.PageReference[store.getKeysPerPage() + 1];
                     children[0] = new Page.PageReference(p);
                     children[1] = new Page.PageReference(page);
-                    p = Page.create(this, 1, keys, null, children, p.getTotalCount() + page.getTotalCount(), 0);
+                    p = Page.createNode(this, 1, keys, children, p.getTotalCount() + page.getTotalCount(), 0);
                 }
                 break;
             }
@@ -1870,7 +1870,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                                     new Page.PageReference(p),
                                     new Page.PageReference(split)
                             };
-                            p = Page.create(this, 1, keys, null, children, totalCount, 0);
+                            p = Page.createNode(this, 1, keys, children, totalCount, 0);
                             break;
                         }
                         Page c = p;
@@ -2218,10 +2218,10 @@ public class MVMap<K, V> extends AbstractMap<K, V>
 
         public void flush() {
             if (keyCount > 0) {
-                Page page = Page.create(map, keyCount,
+                Page page = Page.createLeaf(map, keyCount,
                                         createAndFillStorage(map.getExtendedKeyType(), keyCount, keysBuffer),
                                         createAndFillStorage(map.getExtendedValueType(), keyCount, valuesBuffer),
-                                        null, keyCount, 0);
+                                        0);
                 int attempt = 0;
                 while(map.appendLeafPage(map.getRoot(), page, ++attempt) == null) {/**/}
                 keyCount = 0;
