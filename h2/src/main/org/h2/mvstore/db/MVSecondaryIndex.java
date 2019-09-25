@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.mvstore.db;
@@ -19,6 +19,7 @@ import org.h2.index.BaseIndex;
 import org.h2.index.Cursor;
 import org.h2.index.IndexType;
 import org.h2.message.DbException;
+import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.MVMap;
 import org.h2.mvstore.MVStore;
 import org.h2.mvstore.tx.Transaction;
@@ -33,6 +34,7 @@ import org.h2.table.IndexColumn;
 import org.h2.table.TableFilter;
 import org.h2.value.Value;
 import org.h2.value.ValueNull;
+import org.h2.value.VersionedValue;
 
 /**
  * A table stored in a MVStore.
@@ -60,7 +62,7 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
         DataType keyType = rowFactory.getDataType();
         DataType valueType = ObjectDataType.NoneType.INSTANCE;
         String mapName = "index." + getId();
-        assert db.isStarting() || !db.getStore().getMvStore().getMetaMap().containsKey("name." + mapName);
+        assert db.isStarting() || !db.getStore().getMvStore().getMetaMap().containsKey(DataUtils.META_NAME + mapName);
         Transaction t = mvTable.getTransactionBegin();
         dataMap = t.openMap(mapName, keyType, valueType);
         dataMap.map.setVolatile(!table.isPersistData() || !indexType.isPersistent());
@@ -112,28 +114,27 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
             return currentRowData;
         }
 
-        static final class Comparator implements java.util.Comparator<Source> {
+        public static final class Comparator implements java.util.Comparator<Source> {
+            private final Database database;
+            private final CompareMode compareMode;
 
-            private final DataType type;
-
-            public Comparator(DataType type) {
-                this.type = type;
+            public Comparator(Database database, CompareMode compareMode) {
+                this.database = database;
+                this.compareMode = compareMode;
             }
 
             @Override
             public int compare(Source one, Source two) {
-                return type.compare(one.currentRowData, two.currentRowData);
+                return one.currentRowData.compareTo(two.currentRowData, database, compareMode);
             }
         }
     }
 
     @Override
     public void addBufferedRows(List<String> bufferNames) {
-        MVMap.BufferingAgent<SearchRow,Value> agent = dataMap.getBufferingAgent();
-        ArrayList<String> mapNames = new ArrayList<>(bufferNames);
         int buffersCount = bufferNames.size();
         Queue<Source> queue = new PriorityQueue<>(buffersCount,
-                                new Source.Comparator(rowFactory.getDataType()));
+                new Source.Comparator(database, database.getCompareMode()));
         for (String bufferName : bufferNames) {
             Iterator<SearchRow> iter = openMap(bufferName).keyIterator(null);
             if (iter.hasNext()) {
@@ -211,7 +212,7 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
         while (it.hasNext()) {
             SearchRow k = it.next();
             if (newKey != k.getKey()) {
-                if (map.get(k) != null) {
+                if (map.getImmediate(k) != null) {
                     // committed
                     throw getDuplicateKeyException(k.toString());
                 }
@@ -226,8 +227,9 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
         TransactionMap<SearchRow,Value> map = getMap(session);
         try {
             if (map.remove(searchRow) == null) {
-                throw DbException.get(ErrorCode.ROW_NOT_FOUND_WHEN_DELETING_1,
-                        getSQL() + ": " + row.getKey());
+                StringBuilder builder = new StringBuilder();
+                getSQL(builder, false).append(": ").append(row.getKey());
+                throw DbException.get(ErrorCode.ROW_NOT_FOUND_WHEN_DELETING_1, builder.toString());
             }
         } catch (IllegalStateException e) {
             throw mvTable.convertException(e);
@@ -396,6 +398,11 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
         }
         Transaction t = session.getTransaction();
         return dataMap.getInstance(t);
+    }
+
+    @Override
+    public MVMap<Value, VersionedValue> getMVMap() {
+        return dataMap.map;
     }
 
     /**

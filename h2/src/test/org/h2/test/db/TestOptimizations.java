@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.test.db;
@@ -115,7 +115,7 @@ public class TestOptimizations extends TestDb {
     private void testExplainRoundTrip() throws Exception {
         Connection conn = getConnection("optimizations");
         assertExplainRoundTrip(conn,
-                "select x from dual where x > any(select x from dual)");
+                "SELECT \"X\" FROM DUAL WHERE \"X\" > ANY(SELECT \"X\" FROM DUAL)");
         conn.close();
     }
 
@@ -124,14 +124,14 @@ public class TestOptimizations extends TestDb {
         Statement stat = conn.createStatement();
         ResultSet rs = stat.executeQuery("explain " + sql);
         rs.next();
-        String plan = rs.getString(1).toLowerCase();
+        String plan = rs.getString(1);
         plan = plan.replaceAll("\\s+", " ");
         plan = plan.replaceAll("/\\*[^\\*]*\\*/", "");
         plan = plan.replaceAll("\\s+", " ");
-        plan = StringUtils.replaceAll(plan, "system_range(1, 1)", "dual");
+        plan = StringUtils.replaceAll(plan, "SYSTEM_RANGE(1, 1)", "DUAL");
         plan = plan.replaceAll("\\( ", "\\(");
         plan = plan.replaceAll(" \\)", "\\)");
-        assertEquals(plan, sql);
+        assertEquals(sql, plan);
     }
 
     private void testOrderByExpression() throws Exception {
@@ -217,7 +217,7 @@ public class TestOptimizations extends TestDb {
                 "where exists(select 1 from test, test, test) and id = 10");
         rs.next();
         // ensure the ID = 10 part is evaluated first
-        assertContains(rs.getString(1), "WHERE (ID = 10)");
+        assertContains(rs.getString(1), "WHERE (\"ID\" = 10)");
         stat.execute("drop table test");
         conn.close();
     }
@@ -484,7 +484,7 @@ public class TestOptimizations extends TestDb {
         assertTrue(resultSet.next());
         // String constant '5' has been converted to int constant 5 on
         // optimization
-        assertTrue(resultSet.getString(1).endsWith("X = 5"));
+        assertTrue(resultSet.getString(1).endsWith("\"X\" = 5"));
 
         stat.execute("drop table test");
 
@@ -1137,7 +1137,7 @@ public class TestOptimizations extends TestDb {
         ResultSet rs = stat.executeQuery("EXPLAIN PLAN FOR SELECT * " +
                 "FROM test WHERE ID=1 OR ID=2 OR ID=3 OR ID=4 OR ID=5");
         rs.next();
-        assertContains(rs.getString(1), "ID IN(1, 2, 3, 4, 5)");
+        assertContains(rs.getString(1), "\"ID\" IN(1, 2, 3, 4, 5)");
 
         rs = stat.executeQuery("SELECT COUNT(*) FROM test " +
                 "WHERE ID=1 OR ID=2 OR ID=3 OR ID=4 OR ID=5");
@@ -1155,7 +1155,7 @@ public class TestOptimizations extends TestDb {
                 "name VARCHAR NOT NULL, active BOOLEAN DEFAULT TRUE, " +
                 "UNIQUE KEY TABLE_A_UK (name) )");
         stat.execute("CREATE TABLE TABLE_B(id IDENTITY PRIMARY KEY NOT NULL,  " +
-                "TABLE_a_id BIGINT NOT NULL,  createDate TIMESTAMP DEFAULT NOW(), " +
+                "TABLE_a_id BIGINT NOT NULL,  createDate TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP, " +
                 "UNIQUE KEY TABLE_B_UK (table_a_id, createDate), " +
                 "FOREIGN KEY (table_a_id) REFERENCES TABLE_A(id) )");
         stat.execute("INSERT INTO TABLE_A (name)  SELECT 'package_' || CAST(X as VARCHAR) " +
@@ -1164,7 +1164,7 @@ public class TestOptimizations extends TestDb {
         stat.execute("INSERT INTO TABLE_B (table_a_id, createDate)  SELECT " +
                 "CASE WHEN table_a_id = 0 THEN 1 ELSE table_a_id END, createDate " +
                 "FROM ( SELECT ROUND((RAND() * 100)) AS table_a_id, " +
-                "DATEADD('SECOND', X, NOW()) as createDate FROM SYSTEM_RANGE(1, " + count + ") " +
+                "DATEADD('SECOND', X, CURRENT_TIMESTAMP) as createDate FROM SYSTEM_RANGE(1, " + count + ") " +
                 "WHERE X < " + count + "  )");
         stat.execute("CREATE INDEX table_b_idx ON table_b(table_a_id, id)");
         stat.execute("ANALYZE");

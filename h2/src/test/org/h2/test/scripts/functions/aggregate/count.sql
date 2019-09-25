@@ -1,5 +1,5 @@
--- Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
--- and the EPL 1.0 (http://h2database.com/html/license.html).
+-- Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+-- and the EPL 1.0 (https://h2database.com/html/license.html).
 -- Initial Developer: H2 Group
 --
 
@@ -22,7 +22,6 @@ select count(*), count(*) filter (where v >= 4) from test;
 > -------- --------------------------------
 > 13       9
 > rows: 1
-
 
 select count(*), count(*) filter (where v >= 4) from test where v <= 10;
 > COUNT(*) COUNT(*) FILTER (WHERE (V >= 4))
@@ -104,3 +103,53 @@ SELECT X, COUNT(*) OVER (ORDER BY X) C FROM VALUES (1), (1), (2), (2), (3) V(X);
 > 2 4
 > 3 5
 > rows: 5
+
+CREATE TABLE TEST (N NUMERIC) AS VALUES (0), (0.0), (NULL);
+> ok
+
+SELECT COUNT(*) FROM TEST;
+>> 3
+
+SELECT COUNT(N) FROM TEST;
+>> 2
+
+SELECT COUNT(DISTINCT N) FROM TEST;
+>> 1
+
+SELECT COUNT(*) FROM TEST GROUP BY N;
+> COUNT(*)
+> --------
+> 1
+> 2
+> rows: 2
+
+SELECT COUNT(N) OVER (PARTITION BY N) C FROM TEST;
+> C
+> -
+> 0
+> 2
+> 2
+> rows: 3
+
+DROP TABLE TEST;
+> ok
+
+CREATE TABLE TEST(A INT, B INT) AS (VALUES (1, NULL), (1, NULL), (2, NULL));
+> ok
+
+SELECT COUNT((A, B)) C, COUNT(DISTINCT (A, B)) CD FROM TEST;
+> C CD
+> - --
+> 3 2
+> rows: 1
+
+SELECT COUNT(*) OVER (PARTITION BY A, B) C1, COUNT(*) OVER (PARTITION BY (A, B)) C2 FROM TEST;
+> C1 C2
+> -- --
+> 1  1
+> 2  2
+> 2  2
+> rows: 3
+
+DROP TABLE TEST;
+> ok

@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.test.unit;
@@ -20,15 +20,19 @@ import java.sql.Time;
 import java.sql.Timestamp;
 import java.sql.Types;
 import java.util.Properties;
+import java.util.TimeZone;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+
 import org.h2.api.ErrorCode;
 import org.h2.test.TestBase;
 import org.h2.test.TestDb;
 import org.h2.tools.Server;
+import org.h2.util.DateTimeUtils;
+import org.h2.util.JSR310;
 
 /**
  * Tests the PostgreSQL server protocol compliant implementation.
@@ -73,11 +77,11 @@ public class TestPgServer extends TestDb {
         }
         deleteDb("pgserver");
         Connection conn = getConnection(
-                "mem:pgserver;DATABASE_TO_UPPER=false", "sa", "sa");
+                "mem:pgserver;DATABASE_TO_LOWER=true", "sa", "sa");
         Statement stat = conn.createStatement();
         stat.execute("create table test(id int, name varchar(255))");
         Server server = createPgServer("-baseDir", getBaseDir(),
-                "-pgPort", "5535", "-pgDaemon", "-key", "pgserver",
+                "-ifNotExists", "-pgPort", "5535", "-pgDaemon", "-key", "pgserver",
                 "mem:pgserver");
         try {
             Connection conn2;
@@ -128,7 +132,7 @@ public class TestPgServer extends TestDb {
     private void testPgAdapter() throws SQLException {
         deleteDb("pgserver");
         Server server = Server.createPgServer(
-                "-baseDir", getBaseDir(), "-pgPort", "5535", "-pgDaemon");
+                "-ifNotExists", "-baseDir", getBaseDir(), "-pgPort", "5535", "-pgDaemon");
         assertEquals(5535, server.getPort());
         assertEquals("Not started", server.getStatus());
         server.start();
@@ -148,7 +152,7 @@ public class TestPgServer extends TestDb {
         }
 
         Server server = createPgServer(
-                "-pgPort", "5535", "-pgDaemon", "-key", "pgserver", "mem:pgserver");
+                "-ifNotExists", "-pgPort", "5535", "-pgDaemon", "-key", "pgserver", "mem:pgserver");
 
         ExecutorService executor = Executors.newSingleThreadExecutor();
         try {
@@ -352,12 +356,12 @@ public class TestPgServer extends TestDb {
         rs = stat.executeQuery("select pg_get_indexdef("+indexId+", 0, false)");
         rs.next();
         assertEquals(
-                "CREATE INDEX PUBLIC.IDX_TEST_NAME ON PUBLIC.TEST(NAME, ID)",
+                "CREATE INDEX \"PUBLIC\".\"IDX_TEST_NAME\" ON \"PUBLIC\".\"TEST\"(\"NAME\", \"ID\")",
                 rs.getString(1));
         rs = stat.executeQuery("select pg_get_indexdef("+indexId+", null, false)");
         rs.next();
         assertEquals(
-                "CREATE INDEX PUBLIC.IDX_TEST_NAME ON PUBLIC.TEST(NAME, ID)",
+                "CREATE INDEX \"PUBLIC\".\"IDX_TEST_NAME\" ON \"PUBLIC\".\"TEST\"(\"NAME\", \"ID\")",
                 rs.getString(1));
         rs = stat.executeQuery("select pg_get_indexdef("+indexId+", 1, false)");
         rs.next();
@@ -374,7 +378,7 @@ public class TestPgServer extends TestDb {
             return;
         }
         Server server = createPgServer(
-                "-pgPort", "5535", "-pgDaemon", "-key", "pgserver", "mem:pgserver");
+                "-ifNotExists", "-pgPort", "5535", "-pgDaemon", "-key", "pgserver", "mem:pgserver");
         try {
             Connection conn = DriverManager.getConnection(
                     "jdbc:postgresql://localhost:5535/pgserver", "sa", "sa");
@@ -401,7 +405,7 @@ public class TestPgServer extends TestDb {
         }
 
         Server server = createPgServer(
-                "-pgPort", "5535", "-pgDaemon", "-key", "pgserver", "mem:pgserver");
+                "-ifNotExists", "-pgPort", "5535", "-pgDaemon", "-key", "pgserver", "mem:pgserver");
         try {
             Properties props = new Properties();
             props.setProperty("user", "sa");
@@ -474,58 +478,73 @@ public class TestPgServer extends TestDb {
         if (!getPgJdbcDriver()) {
             return;
         }
-
-        Server server = createPgServer(
-                "-pgPort", "5535", "-pgDaemon", "-key", "pgserver", "mem:pgserver");
+        TimeZone old = TimeZone.getDefault();
+        if (JSR310.PRESENT) {
+            /*
+             * java.util.TimeZone doesn't support LMT, so perform this test with
+             * fixed time zone offset
+             */
+            TimeZone.setDefault(TimeZone.getTimeZone("GMT+01"));
+            DateTimeUtils.resetCalendar();
+        }
         try {
-            Properties props = new Properties();
-            props.setProperty("user", "sa");
-            props.setProperty("password", "sa");
-            // force binary
-            props.setProperty("prepareThreshold", "-1");
+            Server server = createPgServer(
+                    "-ifNotExists", "-pgPort", "5535", "-pgDaemon", "-key", "pgserver", "mem:pgserver");
+            try {
+                Properties props = new Properties();
+                props.setProperty("user", "sa");
+                props.setProperty("password", "sa");
+                // force binary
+                props.setProperty("prepareThreshold", "-1");
 
-            Connection conn = DriverManager.getConnection(
-                    "jdbc:postgresql://localhost:5535/pgserver", props);
-            Statement stat = conn.createStatement();
+                Connection conn = DriverManager.getConnection(
+                        "jdbc:postgresql://localhost:5535/pgserver", props);
+                Statement stat = conn.createStatement();
 
-            stat.execute(
-                    "create table test(x1 date, x2 time, x3 timestamp)");
+                stat.execute(
+                        "create table test(x1 date, x2 time, x3 timestamp)");
 
-            Date[] dates = { null, Date.valueOf("2017-02-20"),
-                    Date.valueOf("1970-01-01"), Date.valueOf("1969-12-31"),
-                    Date.valueOf("1940-01-10"), Date.valueOf("1950-11-10"),
-                    Date.valueOf("1500-01-01")};
-            Time[] times = { null, Time.valueOf("14:15:16"),
-                    Time.valueOf("00:00:00"), Time.valueOf("23:59:59"),
-                    Time.valueOf("00:10:59"), Time.valueOf("08:30:42"),
-                    Time.valueOf("10:00:00")};
-            Timestamp[] timestamps = { null, Timestamp.valueOf("2017-02-20 14:15:16.763"),
-                    Timestamp.valueOf("1970-01-01 00:00:00"), Timestamp.valueOf("1969-12-31 23:59:59"),
-                    Timestamp.valueOf("1940-01-10 00:10:59"), Timestamp.valueOf("1950-11-10 08:30:42.12"),
-                    Timestamp.valueOf("1500-01-01 10:00:10")};
-            int count = dates.length;
+                Date[] dates = { null, Date.valueOf("2017-02-20"),
+                        Date.valueOf("1970-01-01"), Date.valueOf("1969-12-31"),
+                        Date.valueOf("1940-01-10"), Date.valueOf("1950-11-10"),
+                        Date.valueOf("1500-01-01")};
+                Time[] times = { null, Time.valueOf("14:15:16"),
+                        Time.valueOf("00:00:00"), Time.valueOf("23:59:59"),
+                        Time.valueOf("00:10:59"), Time.valueOf("08:30:42"),
+                        Time.valueOf("10:00:00")};
+                Timestamp[] timestamps = { null, Timestamp.valueOf("2017-02-20 14:15:16.763"),
+                        Timestamp.valueOf("1970-01-01 00:00:00"), Timestamp.valueOf("1969-12-31 23:59:59"),
+                        Timestamp.valueOf("1940-01-10 00:10:59"), Timestamp.valueOf("1950-11-10 08:30:42.12"),
+                        Timestamp.valueOf("1500-01-01 10:00:10")};
+                int count = dates.length;
 
-            PreparedStatement ps = conn.prepareStatement(
-                    "insert into test values (?,?,?)");
+                PreparedStatement ps = conn.prepareStatement(
+                        "insert into test values (?,?,?)");
+                    for (int i = 0; i < count; i++) {
+                    ps.setDate(1, dates[i]);
+                    ps.setTime(2, times[i]);
+                    ps.setTimestamp(3, timestamps[i]);
+                    ps.execute();
+                }
+
+                ResultSet rs = stat.executeQuery("select * from test");
                 for (int i = 0; i < count; i++) {
-                ps.setDate(1, dates[i]);
-                ps.setTime(2, times[i]);
-                ps.setTimestamp(3, timestamps[i]);
-                ps.execute();
-            }
+                    assertTrue(rs.next());
+                    assertEquals(dates[i], rs.getDate(1));
+                    assertEquals(times[i], rs.getTime(2));
+                    assertEquals(timestamps[i], rs.getTimestamp(3));
+                }
+                assertFalse(rs.next());
 
-            ResultSet rs = stat.executeQuery("select * from test");
-            for (int i = 0; i < count; i++) {
-                assertTrue(rs.next());
-                assertEquals(dates[i], rs.getDate(1));
-                assertEquals(times[i], rs.getTime(2));
-                assertEquals(timestamps[i], rs.getTimestamp(3));
+                conn.close();
+            } finally {
+                server.stop();
             }
-            assertFalse(rs.next());
-
-            conn.close();
         } finally {
-            server.stop();
+            if (JSR310.PRESENT) {
+                TimeZone.setDefault(old);
+                DateTimeUtils.resetCalendar();
+            }
         }
     }
 
@@ -535,7 +554,7 @@ public class TestPgServer extends TestDb {
         }
 
         Server server = createPgServer(
-                "-pgPort", "5535", "-pgDaemon", "-key", "pgserver", "mem:pgserver");
+                "-ifNotExists", "-pgPort", "5535", "-pgDaemon", "-key", "pgserver", "mem:pgserver");
         try {
             Properties props = new Properties();
 

@@ -1,11 +1,15 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.engine;
 
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.Map;
+import java.util.Map.Entry;
 
 import org.h2.api.ErrorCode;
 import org.h2.message.DbException;
@@ -37,6 +41,16 @@ public class SettingsBase {
             throw DbException.get(ErrorCode.DATA_CONVERSION_ERROR_1,
                     e, "key:" + key + " value:" + s);
         }
+    }
+
+    /**
+     * Set an entry in the key-value pair.
+     *
+     * @param key the key
+     * @param value the value
+     */
+    void set(String key, boolean value) {
+        settings.put(key, Boolean.toString(value));
     }
 
     /**
@@ -102,6 +116,23 @@ public class SettingsBase {
      */
     public HashMap<String, String> getSettings() {
         return settings;
+    }
+
+    /**
+     * Get all settings in alphabetical order.
+     *
+     * @return the settings
+     */
+    public Entry<String, String>[] getSortedSettings() {
+        @SuppressWarnings("unchecked")
+        Map.Entry<String, String>[] entries = settings.entrySet().toArray(new Map.Entry[0]);
+        Arrays.sort(entries, new Comparator<Map.Entry<String, String>>() {
+            @Override
+            public int compare(Entry<String, String> o1, Entry<String, String> o2) {
+                return o1.getKey().compareTo(o2.getKey());
+            }
+        });
+        return entries;
     }
 
 }

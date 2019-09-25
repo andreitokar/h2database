@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.expression.function;
@@ -36,7 +36,7 @@ public interface FunctionCall {
      *
      * @return the data type
      */
-    int getType();
+    int getValueType();
 
     /**
      * Optimize the function if possible.
@@ -56,9 +56,10 @@ public interface FunctionCall {
     /**
      * Get the SQL snippet of the function (including arguments).
      *
+     * @param alwaysQuote quote all identifiers
      * @return the SQL snippet.
      */
-    String getSQL();
+    String getSQL(boolean alwaysQuote);
 
     /**
      * Whether the function always returns the same result for the same
@@ -67,12 +68,5 @@ public interface FunctionCall {
      * @return true if it does
      */
     boolean isDeterministic();
-
-    /**
-     * Should the return value ResultSet be buffered in a local temporary file?
-     *
-     * @return true if it should be.
-     */
-    boolean isBufferResultSetToLocalTemp();
 
 }

@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.engine;
@@ -15,22 +15,22 @@ public class Constants {
     /**
      * The build date is updated for each public release.
      */
-    public static final String BUILD_DATE = "2018-03-18";
+    public static final String BUILD_DATE = "2019-03-13";
 
     /**
      * The build date of the last stable release.
      */
-    public static final String BUILD_DATE_STABLE = "2017-06-10";
+    public static final String BUILD_DATE_STABLE = "2018-03-18";
 
     /**
      * The build id is incremented for each public release.
      */
-    public static final int BUILD_ID = 197;
+    public static final int BUILD_ID = 199;
 
     /**
      * The build id of the last stable release.
      */
-    public static final int BUILD_ID_STABLE = 196;
+    public static final int BUILD_ID_STABLE = 197;
 
     /**
      * Whether this is a snapshot version.
@@ -44,12 +44,6 @@ public class Constants {
      * Example: ACME_SVN1651_BUILD3
      */
     public static final String BUILD_VENDOR_AND_VERSION = null;
-
-    /**
-     * The TCP protocol version number 8.
-     * @since 1.2.143 (2010-09-18)
-     */
-    public static final int TCP_PROTOCOL_VERSION_8 = 8;
 
     /**
      * The TCP protocol version number 9.
@@ -107,19 +101,25 @@ public class Constants {
 
     /**
      * The TCP protocol version number 18.
-     * @since 1.4.198 (TODO)
+     * @since 1.4.198 (2019-02-22)
      */
     public static final int TCP_PROTOCOL_VERSION_18 = 18;
 
     /**
+     * The TCP protocol version number 18.
+     * @since 1.4.200 (TODO)
+     */
+    public static final int TCP_PROTOCOL_VERSION_19 = 19;
+
+    /**
      * Minimum supported version of TCP protocol.
      */
-    public static final int TCP_PROTOCOL_VERSION_MIN_SUPPORTED = TCP_PROTOCOL_VERSION_8;
+    public static final int TCP_PROTOCOL_VERSION_MIN_SUPPORTED = TCP_PROTOCOL_VERSION_9;
 
     /**
      * Maximum supported version of TCP protocol.
      */
-    public static final int TCP_PROTOCOL_VERSION_MAX_SUPPORTED = TCP_PROTOCOL_VERSION_18;
+    public static final int TCP_PROTOCOL_VERSION_MAX_SUPPORTED = TCP_PROTOCOL_VERSION_19;
 
     /**
      * The major version of this database.
@@ -408,6 +408,16 @@ public class Constants {
     public static final int SALT_LEN = 8;
 
     /**
+     * The identity of INFORMATION_SCHEMA.
+     */
+    public static final int INFORMATION_SCHEMA_ID = -1;
+
+    /**
+     * The identity of PUBLIC schema.
+     */
+    public static final int MAIN_SCHEMA_ID = 0;
+
+    /**
      * The name of the default schema.
      */
     public static final String SCHEMA_MAIN = "PUBLIC";
@@ -546,44 +556,37 @@ public class Constants {
      */
     public static final String PG_VERSION = "8.2.23";
 
-    private Constants() {
-        // utility class
-    }
+    /**
+     * The version of this product, consisting of major version, minor
+     * version, and build id.
+     */
+    public static final String VERSION;
 
     /**
-     * Get the version of this product, consisting of major version, minor
-     * version, and build id.
-     *
-     * @return the version number
+     * The last stable version name.
      */
-    public static String getVersion() {
-        String version = VERSION_MAJOR + "." + VERSION_MINOR + "." + BUILD_ID;
+    public static final String VERSION_STABLE = "1.4." + BUILD_ID_STABLE;
+
+    /**
+     * The complete version number of this database, consisting of
+     * the major version, the minor version, the build id, and the build date.
+     */
+    public static final String FULL_VERSION;
+
+    static {
+        String version = VERSION_MAJOR + "." + VERSION_MINOR + '.' + BUILD_ID;
         if (BUILD_VENDOR_AND_VERSION != null) {
-            version += "_" + BUILD_VENDOR_AND_VERSION;
+            version += '_' + BUILD_VENDOR_AND_VERSION;
         }
         if (BUILD_SNAPSHOT) {
             version += "-SNAPSHOT";
         }
-        return version;
+        VERSION = version;
+        FULL_VERSION = version + (" (" + BUILD_DATE + ')');
     }
 
-    /**
-     * Get the last stable version name.
-     *
-     * @return the version number
-     */
-    public static Object getVersionStable() {
-        return "1.4." + BUILD_ID_STABLE;
-    }
-
-    /**
-     * Get the complete version number of this database, consisting of
-     * the major version, the minor version, the build id, and the build date.
-     *
-     * @return the complete version
-     */
-    public static String getFullVersion() {
-        return getVersion() + " (" + BUILD_DATE + ")";
+    private Constants() {
+        // utility class
     }
 
 }

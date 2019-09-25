@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.test.server;
@@ -172,7 +172,7 @@ public class TestWeb extends TestDb {
         Server server = new Server();
         server.setOut(new PrintStream(new ByteArrayOutputStream()));
         server.runTool("-web", "-webPort", "8182",
-                "-properties", "null", "-tcp", "-tcpPort", "9101");
+                "-properties", "null", "-tcp", "-tcpPort", "9101", "-webAdminPassword", "123");
         try {
             String url = "http://localhost:8182";
             WebClient client;
@@ -180,6 +180,7 @@ public class TestWeb extends TestDb {
             client = new WebClient();
             result = client.get(url);
             client.readSessionId(result);
+            result = client.get(url, "adminLogin.do?password=123");
             result = client.get(url, "tools.jsp");
             FileUtils.delete(getBaseDir() + "/backup.zip");
             result = client.get(url, "tools.do?tool=Backup&args=-dir," +
@@ -264,7 +265,8 @@ public class TestWeb extends TestDb {
                 getUser(), getPassword());
         Server server = new Server();
         server.setOut(new PrintStream(new ByteArrayOutputStream()));
-        server.runTool("-ifExists", "-web", "-webPort", "8182",
+        // -ifExists is the default
+        server.runTool("-web", "-webPort", "8182",
                 "-properties", "null", "-tcp", "-tcpPort", "9101");
         try {
             String url = "http://localhost:8182";
@@ -288,12 +290,13 @@ public class TestWeb extends TestDb {
             server.shutdown();
             conn.close();
         }
+
     }
 
     private void testWebApp() throws Exception {
         Server server = new Server();
         server.setOut(new PrintStream(new ByteArrayOutputStream()));
-        server.runTool("-web", "-webPort", "8182",
+        server.runTool("-ifNotExists", "-web", "-webPort", "8182",
                 "-properties", "null", "-tcp", "-tcpPort", "9101");
         try {
             String url = "http://localhost:8182";
@@ -449,6 +452,21 @@ public class TestWeb extends TestDb {
             result = client.get(url,
                     "query.do?sql=@generated insert into test(id) values(test_sequence.nextval)");
             assertContains(result, "<tr><th>ID</th></tr><tr><td>1</td></tr>");
+            result = client.get(url,
+                    "query.do?sql=@generated(1) insert into test(id) values(test_sequence.nextval)");
+            assertContains(result, "<tr><th>ID</th></tr><tr><td>2</td></tr>");
+            result = client.get(url,
+                    "query.do?sql=@generated(1, 1) insert into test(id) values(test_sequence.nextval)");
+            assertContains(result, "<tr><th>ID</th><th>ID</th></tr><tr><td>3</td><td>3</td></tr>");
+            result = client.get(url,
+                    "query.do?sql=@generated(id) insert into test(id) values(test_sequence.nextval)");
+            assertContains(result, "<tr><th>ID</th></tr><tr><td>4</td></tr>");
+            result = client.get(url,
+                    "query.do?sql=@generated(id, id) insert into test(id) values(test_sequence.nextval)");
+            assertContains(result, "<tr><th>ID</th><th>ID</th></tr><tr><td>5</td><td>5</td></tr>");
+            result = client.get(url,
+                    "query.do?sql=@generated() insert into test(id) values(test_sequence.nextval)");
+            assertContains(result, "<table cellspacing=0 cellpadding=0><tr></tr></table>");
             result = client.get(url, "query.do?sql=@maxrows 2000");
             assertContains(result, "Max rowcount is set");
             result = client.get(url, "query.do?sql=@password_hash user password");
@@ -722,7 +740,7 @@ public class TestWeb extends TestDb {
 
         @Override
         public String getScheme() {
-            return null;
+            return "http";
         }
 
         @Override
@@ -732,7 +750,7 @@ public class TestWeb extends TestDb {
 
         @Override
         public int getServerPort() {
-            return 0;
+            return 80;
         }
 
         @Override

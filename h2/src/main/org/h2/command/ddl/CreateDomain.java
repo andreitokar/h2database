@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.command.ddl;
@@ -64,9 +64,9 @@ public class CreateDomain extends DefineCommand {
             }
             Table table = session.getDatabase().getFirstUserTable();
             if (table != null) {
-                throw DbException.get(
-                        ErrorCode.DOMAIN_ALREADY_EXISTS_1,
-                        typeName + " (" + table.getSQL() + ")");
+                StringBuilder builder = new StringBuilder(typeName).append(" (");
+                table.getSQL(builder, false).append(')');
+                throw DbException.get(ErrorCode.DOMAIN_ALREADY_EXISTS_1, builder.toString());
             }
         }
         int id = getObjectId();

@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.util;
@@ -18,7 +18,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.concurrent.TimeUnit;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -280,29 +279,27 @@ public class Utils {
 
     public static long getGarbageCollectionCount() {
         long totalGCCount = 0;
+        int poolCount = 0;
         for (GarbageCollectorMXBean gcMXBean : ManagementFactory.getGarbageCollectorMXBeans()) {
-            long collectionCount = gcMXBean.getCollectionCount();
+            long collectionCount = gcMXBean.getCollectionTime();
             if(collectionCount > 0) {
                 totalGCCount += collectionCount;
+                poolCount += gcMXBean.getMemoryPoolNames().length;
             }
         }
-        return totalGCCount;
+        poolCount = Math.max(poolCount, 1);
+        return (totalGCCount + (poolCount >> 1)) / poolCount;
     }
 
-    private static synchronized void collectGarbage() {
-        long time = System.nanoTime();
-        if (lastGC + TimeUnit.MILLISECONDS.toNanos(GC_DELAY) < time) {
-            Runtime runtime = Runtime.getRuntime();
-            long initialCount = getGarbageCollectionCount();
-            for (int i = 0; i < MAX_GC; i++) {
-                runtime.gc();
-                try { Thread.sleep(GC_DELAY); } catch (InterruptedException ignore) {}
-                long count = getGarbageCollectionCount();
-                if (count - initialCount > MAX_COLLECTIONS_TO_WAIT) {
-                    break;
-                }
-            }
-            lastGC = System.nanoTime();
+    /**
+     * Run Java memory garbage collection.
+     */
+    public static synchronized void collectGarbage() {
+        Runtime runtime = Runtime.getRuntime();
+        long garbageCollectionCount = getGarbageCollectionCount();
+        while (garbageCollectionCount == getGarbageCollectionCount()) {
+            runtime.gc();
+            Thread.yield();
         }
     }
 

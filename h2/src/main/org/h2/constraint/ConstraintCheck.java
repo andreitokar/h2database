@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.constraint;
@@ -50,7 +50,7 @@ public class ConstraintCheck extends Constraint {
     @Override
     public String getCreateSQLForCopy(Table forTable, String quotedName) {
         StringBuilder buff = new StringBuilder("ALTER TABLE ");
-        buff.append(forTable.getSQL()).append(" ADD CONSTRAINT ");
+        forTable.getSQL(buff, true).append(" ADD CONSTRAINT ");
         if (forTable.isHidden()) {
             buff.append("IF NOT EXISTS ");
         }
@@ -60,13 +60,13 @@ public class ConstraintCheck extends Constraint {
             StringUtils.quoteStringSQL(buff, comment);
         }
         buff.append(" CHECK(");
-        expr.getUnenclosedSQL(buff).append(") NOCHECK");
+        expr.getUnenclosedSQL(buff, true).append(") NOCHECK");
         return buff.toString();
     }
 
     private String getShortDescription() {
         StringBuilder builder = new StringBuilder().append(getName()).append(": ");
-        expr.getSQL(builder);
+        expr.getSQL(builder, false);
         return builder.toString();
     }
 
@@ -77,7 +77,7 @@ public class ConstraintCheck extends Constraint {
 
     @Override
     public String getCreateSQL() {
-        return getCreateSQLForCopy(table, getSQL());
+        return getCreateSQLForCopy(table, getSQL(true));
     }
 
     @Override
@@ -143,10 +143,9 @@ public class ConstraintCheck extends Constraint {
             // don't check at startup
             return;
         }
-        StringBuilder builder = new StringBuilder().append("SELECT 1 FROM ")
-                .append(filter.getTable().getSQL())
-                .append(" WHERE NOT(");
-        expr.getSQL(builder).append(')');
+        StringBuilder builder = new StringBuilder().append("SELECT 1 FROM ");
+        filter.getTable().getSQL(builder, true).append(" WHERE NOT(");
+        expr.getSQL(builder, true).append(')');
         String sql = builder.toString();
         ResultInterface r = session.prepare(sql).query(1);
         if (r.next()) {

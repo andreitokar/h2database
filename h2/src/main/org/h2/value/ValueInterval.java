@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.value;
@@ -13,8 +13,10 @@ import static org.h2.util.DateTimeUtils.NANOS_PER_SECOND;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 
+import org.h2.api.ErrorCode;
 import org.h2.api.Interval;
 import org.h2.api.IntervalQualifier;
+import org.h2.engine.CastDataProvider;
 import org.h2.message.DbException;
 import org.h2.util.DateTimeUtils;
 import org.h2.util.IntervalUtils;
@@ -44,7 +46,9 @@ public class ValueInterval extends Value {
      */
     public static final int MAXIMUM_SCALE = 9;
 
-    private final int type;
+    private final int valueType;
+
+    private TypeInfo type;
 
     private final boolean negative;
 
@@ -53,6 +57,8 @@ public class ValueInterval extends Value {
     private final long remaining;
 
     /**
+     * Create a ValueInterval instance.
+     *
      * @param qualifier
      *            qualifier
      * @param negative
@@ -80,6 +86,7 @@ public class ValueInterval extends Value {
      * @param scale
      *            fractional seconds precision. Ignored if specified type of
      *            interval does not have seconds.
+     * @return display size
      */
     public static int getDisplaySize(int type, int precision, int scale) {
         switch (type) {
@@ -131,7 +138,7 @@ public class ValueInterval extends Value {
     }
 
     private ValueInterval(int type, boolean negative, long leading, long remaining) {
-        this.type = type;
+        this.valueType = type;
         this.negative = negative;
         this.leading = leading;
         this.remaining = remaining;
@@ -143,19 +150,45 @@ public class ValueInterval extends Value {
     }
 
     @Override
-    public int getType() {
+    public TypeInfo getType() {
+        TypeInfo type = this.type;
+        if (type == null) {
+            long l = leading;
+            int precision = 0;
+            while (l > 0) {
+                precision++;
+                l /= 10;
+            }
+            if (precision == 0) {
+                precision = 1;
+            }
+            this.type = type = new TypeInfo(valueType, precision, 0,
+                    getDisplaySize(valueType, MAXIMUM_PRECISION, MAXIMUM_SCALE), null);
+        }
         return type;
     }
 
     @Override
-    public long getPrecision() {
-        long l = leading;
-        int precision = 0;
-        while (l > 0) {
-            precision++;
-            l /= 10;
+    public int getValueType() {
+        return valueType;
+    }
+
+    @Override
+    public int getMemory() {
+        // Java 11 with -XX:-UseCompressedOops
+        return 48;
+    }
+
+    @Override
+    public boolean checkPrecision(long prec) {
+        if (prec < 18) {
+            for (long l = leading, p = 1, precision = 0; l >= p; p *= 10) {
+                if (++precision > prec) {
+                    return false;
+                }
+            }
         }
-        return precision > 0 ? precision : 1;
+        return true;
     }
 
     @Override
@@ -166,47 +199,42 @@ public class ValueInterval extends Value {
         if (targetScale < 0) {
             throw DbException.getInvalidValueException("scale", targetScale);
         }
-        IntervalQualifier qualifier = getQualifier();
-        if (!qualifier.hasSeconds()) {
-            return this;
-        }
-        long r = DateTimeUtils.convertScale(remaining, targetScale);
-        if (r == remaining) {
+        long range;
+        switch (valueType) {
+        case INTERVAL_SECOND:
+            range = NANOS_PER_SECOND;
+            break;
+        case INTERVAL_DAY_TO_SECOND:
+            range = NANOS_PER_DAY;
+            break;
+        case INTERVAL_HOUR_TO_SECOND:
+            range = NANOS_PER_HOUR;
+            break;
+        case INTERVAL_MINUTE_TO_SECOND:
+            range = NANOS_PER_MINUTE;
+            break;
+        default:
             return this;
         }
         long l = leading;
-        switch (type) {
-        case INTERVAL_SECOND:
-            if (r >= NANOS_PER_SECOND) {
-                l++;
-                r -= NANOS_PER_SECOND;
-            }
-            break;
-        case INTERVAL_DAY_TO_SECOND:
-            if (r >= NANOS_PER_DAY) {
-                l++;
-                r -= NANOS_PER_DAY;
-            }
-            break;
-        case INTERVAL_HOUR_TO_SECOND:
-            if (r >= NANOS_PER_HOUR) {
-                l++;
-                r -= NANOS_PER_HOUR;
-            }
-            break;
-        case INTERVAL_MINUTE_TO_SECOND:
-            if (r >= NANOS_PER_MINUTE) {
-                l++;
-                r -= NANOS_PER_MINUTE;
-            }
-            break;
+        long r = DateTimeUtils.convertScale(remaining, targetScale,
+                l == 999_999_999_999_999_999L ? range : Long.MAX_VALUE);
+        if (r == remaining) {
+            return this;
         }
-        return from(qualifier, negative, l, r);
+        if (r >= range) {
+            l++;
+            r -= range;
+        }
+        return from(getQualifier(), negative, l, r);
     }
 
     @Override
-    public int getDisplaySize() {
-        return getDisplaySize(type, MAXIMUM_PRECISION, MAXIMUM_SCALE);
+    public Value convertPrecision(long precision) {
+        if (checkPrecision(precision)) {
+            return this;
+        }
+        throw DbException.get(ErrorCode.NUMERIC_VALUE_OUT_OF_RANGE_1, getSQL());
     }
 
     @Override
@@ -226,7 +254,7 @@ public class ValueInterval extends Value {
      * @return the interval qualifier
      */
     public IntervalQualifier getQualifier() {
-        return IntervalQualifier.valueOf(type - INTERVAL_YEAR);
+        return IntervalQualifier.valueOf(valueType - INTERVAL_YEAR);
     }
 
     /**
@@ -267,7 +295,7 @@ public class ValueInterval extends Value {
     public int hashCode() {
         final int prime = 31;
         int result = 1;
-        result = prime * result + type;
+        result = prime * result + valueType;
         result = prime * result + (negative ? 1231 : 1237);
         result = prime * result + (int) (leading ^ leading >>> 32);
         result = prime * result + (int) (remaining ^ remaining >>> 32);
@@ -283,12 +311,12 @@ public class ValueInterval extends Value {
             return false;
         }
         ValueInterval other = (ValueInterval) obj;
-        return type == other.type && negative == other.negative && leading == other.leading
+        return valueType == other.valueType && negative == other.negative && leading == other.leading
                 && remaining == other.remaining;
     }
 
     @Override
-    public int compareTypeSafe(Value v, CompareMode mode) {
+    public int compareTypeSafe(Value v, CompareMode mode, CastDataProvider provider) {
         ValueInterval other = (ValueInterval) v;
         if (negative != other.negative) {
             return negative ? -1 : 1;
@@ -322,7 +350,7 @@ public class ValueInterval extends Value {
         if (leading == 0L && remaining == 0L) {
             return this;
         }
-        return from(getQualifier(), !negative, leading, remaining);
+        return Value.cache(new ValueInterval(valueType, !negative, leading, remaining));
     }
 
 }

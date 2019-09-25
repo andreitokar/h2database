@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.value;
@@ -10,7 +10,7 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.Arrays;
 import org.h2.api.ErrorCode;
-import org.h2.engine.Mode;
+import org.h2.engine.CastDataProvider;
 import org.h2.message.DbException;
 import org.h2.util.Bits;
 import org.h2.util.StringUtils;
@@ -263,8 +263,13 @@ public class ValueGeometry extends Value {
     }
 
     @Override
-    public int getType() {
-        return Value.GEOMETRY;
+    public TypeInfo getType() {
+        return TypeInfo.TYPE_GEOMETRY;
+    }
+
+    @Override
+    public int getValueType() {
+        return GEOMETRY;
     }
 
     @Override
@@ -275,18 +280,13 @@ public class ValueGeometry extends Value {
     }
 
     @Override
-    public int compareTypeSafe(Value v, CompareMode mode) {
+    public int compareTypeSafe(Value v, CompareMode mode, CastDataProvider provider) {
         return Bits.compareNotNullUnsigned(bytes, ((ValueGeometry) v).bytes);
     }
 
     @Override
     public String getString() {
         return getEWKT();
-    }
-
-    @Override
-    public long getPrecision() {
-        return 0;
     }
 
     @Override
@@ -318,11 +318,6 @@ public class ValueGeometry extends Value {
     }
 
     @Override
-    public int getDisplaySize() {
-        return getEWKT().length();
-    }
-
-    @Override
     public int getMemory() {
         return bytes.length * 20 + 24;
     }
@@ -348,16 +343,6 @@ public class ValueGeometry extends Value {
      */
     public byte[] getEWKB() {
         return bytes;
-    }
-
-    @Override
-    public Value convertTo(int targetType, int precision, Mode mode, Object column, ExtTypeInfo extTypeInfo) {
-        if (targetType == Value.GEOMETRY) {
-            return extTypeInfo != null ? extTypeInfo.cast(this) : this;
-        } else if (targetType == Value.JAVA_OBJECT) {
-            return this;
-        }
-        return super.convertTo(targetType, precision, mode, column, null);
     }
 
 }

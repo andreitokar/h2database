@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.value;
@@ -8,10 +8,14 @@ package org.h2.value;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.sql.Types;
+import java.util.TimeZone;
 import org.h2.api.ErrorCode;
-import org.h2.engine.Mode;
+import org.h2.engine.CastDataProvider;
 import org.h2.message.DbException;
 import org.h2.util.DateTimeUtils;
+import org.h2.util.JSR310;
+import org.h2.util.JSR310Utils;
 
 /**
  * Implementation of the TIMESTAMP data type.
@@ -41,16 +45,6 @@ public class ValueTimestamp extends Value {
     public static final int MAXIMUM_SCALE = 9;
 
     /**
-     * Get display size for the specified scale.
-     *
-     * @param scale scale
-     * @return display size
-     */
-    public static int getDisplaySize(int scale) {
-        return scale == 0 ? 19 : 20 + scale;
-    }
-
-    /**
      * A bit field with bits for the year, month, and day (see DateTimeUtils for
      * encoding)
      */
@@ -61,10 +55,13 @@ public class ValueTimestamp extends Value {
     private final long timeNanos;
 
     private ValueTimestamp(long dateValue, long timeNanos) {
-        this.dateValue = dateValue;
+        if (dateValue < DateTimeUtils.MIN_DATE_VALUE || dateValue > DateTimeUtils.MAX_DATE_VALUE) {
+            throw new IllegalArgumentException("dateValue out of range " + dateValue);
+        }
         if (timeNanos < 0 || timeNanos >= DateTimeUtils.NANOS_PER_DAY) {
             throw new IllegalArgumentException("timeNanos out of range " + timeNanos);
         }
+        this.dateValue = dateValue;
         this.timeNanos = timeNanos;
     }
 
@@ -83,15 +80,15 @@ public class ValueTimestamp extends Value {
     /**
      * Get or create a timestamp value for the given timestamp.
      *
+     * @param timeZone time zone, or {@code null} for default
      * @param timestamp the timestamp
      * @return the value
      */
-    public static ValueTimestamp get(Timestamp timestamp) {
+    public static ValueTimestamp get(TimeZone timeZone, Timestamp timestamp) {
         long ms = timestamp.getTime();
-        long nanos = timestamp.getNanos() % 1_000_000;
-        long dateValue = DateTimeUtils.dateValueFromDate(ms);
-        nanos += DateTimeUtils.nanosFromDate(ms);
-        return fromDateValueAndNanos(dateValue, nanos);
+        return fromLocalMillis(
+                ms + (timeZone == null ? DateTimeUtils.getTimeZoneOffsetMillis(ms) : timeZone.getOffset(ms)),
+                timestamp.getNanos() % 1_000_000);
     }
 
     /**
@@ -101,22 +98,14 @@ public class ValueTimestamp extends Value {
      * @param nanos the nanoseconds
      * @return the value
      */
-    public static ValueTimestamp fromMillisNanos(long ms, int nanos) {
-        long dateValue = DateTimeUtils.dateValueFromDate(ms);
-        long timeNanos = nanos + DateTimeUtils.nanosFromDate(ms);
-        return fromDateValueAndNanos(dateValue, timeNanos);
+    public static ValueTimestamp fromMillis(long ms, int nanos) {
+        return fromLocalMillis(ms + DateTimeUtils.getTimeZoneOffsetMillis(ms), nanos);
     }
 
-    /**
-     * Get or create a timestamp value for the given date/time in millis.
-     *
-     * @param ms the milliseconds
-     * @return the value
-     */
-    public static ValueTimestamp fromMillis(long ms) {
-        long dateValue = DateTimeUtils.dateValueFromDate(ms);
-        long nanos = DateTimeUtils.nanosFromDate(ms);
-        return fromDateValueAndNanos(dateValue, nanos);
+    private static ValueTimestamp fromLocalMillis(long ms, int nanos) {
+        long dateValue = DateTimeUtils.dateValueFromLocalMillis(ms);
+        long timeNanos = nanos + DateTimeUtils.nanosFromLocalMillis(ms);
+        return fromDateValueAndNanos(dateValue, timeNanos);
     }
 
     /**
@@ -132,17 +121,17 @@ public class ValueTimestamp extends Value {
     }
 
     /**
-     * Parse a string to a ValueTimestamp, using the given {@link Mode}.
+     * Parse a string to a ValueTimestamp, using the given {@link CastDataProvider}.
      * This method supports the format +/-year-month-day[ -]hour[:.]minute[:.]seconds.fractional
      * and an optional timezone part.
      *
      * @param s the string to parse
-     * @param mode the database {@link Mode}
+     * @param provider the cast information provider, or {@code null}
      * @return the date
      */
-    public static ValueTimestamp parse(String s, Mode mode) {
+    public static ValueTimestamp parse(String s, CastDataProvider provider) {
         try {
-            return (ValueTimestamp) DateTimeUtils.parseTimestamp(s, mode, false);
+            return (ValueTimestamp) DateTimeUtils.parseTimestamp(s, provider, false);
         } catch (Exception e) {
             throw DbException.get(ErrorCode.INVALID_DATETIME_CONSTANT_2,
                     e, "TIMESTAMP", s);
@@ -169,13 +158,25 @@ public class ValueTimestamp extends Value {
     }
 
     @Override
-    public Timestamp getTimestamp() {
-        return DateTimeUtils.convertDateValueToTimestamp(dateValue, timeNanos);
+    public Timestamp getTimestamp(TimeZone timeZone) {
+        Timestamp ts = new Timestamp(DateTimeUtils.getMillis(timeZone, dateValue, timeNanos));
+        ts.setNanos((int) (timeNanos % DateTimeUtils.NANOS_PER_SECOND));
+        return ts;
     }
 
     @Override
-    public int getType() {
-        return Value.TIMESTAMP;
+    public TypeInfo getType() {
+        return TypeInfo.TYPE_TIMESTAMP;
+    }
+
+    @Override
+    public int getValueType() {
+        return TIMESTAMP;
+    }
+
+    @Override
+    public int getMemory() {
+        return 32;
     }
 
     @Override
@@ -197,21 +198,6 @@ public class ValueTimestamp extends Value {
     }
 
     @Override
-    public long getPrecision() {
-        return MAXIMUM_PRECISION;
-    }
-
-    @Override
-    public int getScale() {
-        return MAXIMUM_SCALE;
-    }
-
-    @Override
-    public int getDisplaySize() {
-        return MAXIMUM_PRECISION;
-    }
-
-    @Override
     public boolean checkPrecision(long precision) {
         // TIMESTAMP data type does not have precision parameter
         return true;
@@ -225,12 +211,13 @@ public class ValueTimestamp extends Value {
         if (targetScale < 0) {
             throw DbException.getInvalidValueException("scale", targetScale);
         }
+        long dv = dateValue;
         long n = timeNanos;
-        long n2 = DateTimeUtils.convertScale(n, targetScale);
+        long n2 = DateTimeUtils.convertScale(n, targetScale,
+                dv == DateTimeUtils.MAX_DATE_VALUE ? DateTimeUtils.NANOS_PER_DAY : Long.MAX_VALUE);
         if (n2 == n) {
             return this;
         }
-        long dv = dateValue;
         if (n2 >= DateTimeUtils.NANOS_PER_DAY) {
             n2 -= DateTimeUtils.NANOS_PER_DAY;
             dv = DateTimeUtils.incrementDateValue(dv);
@@ -239,7 +226,7 @@ public class ValueTimestamp extends Value {
     }
 
     @Override
-    public int compareTypeSafe(Value o, CompareMode mode) {
+    public int compareTypeSafe(Value o, CompareMode mode, CastDataProvider provider) {
         ValueTimestamp t = (ValueTimestamp) o;
         int c = Long.compare(dateValue, t.dateValue);
         if (c != 0) {
@@ -266,13 +253,20 @@ public class ValueTimestamp extends Value {
 
     @Override
     public Object getObject() {
-        return getTimestamp();
+        return getTimestamp(null);
     }
 
     @Override
-    public void set(PreparedStatement prep, int parameterIndex)
-            throws SQLException {
-        prep.setTimestamp(parameterIndex, getTimestamp());
+    public void set(PreparedStatement prep, int parameterIndex) throws SQLException {
+        if (JSR310.PRESENT) {
+            try {
+                prep.setObject(parameterIndex, JSR310Utils.valueToLocalDateTime(this, null), Types.TIMESTAMP);
+                return;
+            } catch (SQLException ignore) {
+                // Nothing to do
+            }
+        }
+        prep.setTimestamp(parameterIndex, getTimestamp(null));
     }
 
     @Override

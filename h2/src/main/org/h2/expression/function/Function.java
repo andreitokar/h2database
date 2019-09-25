@@ -1,21 +1,25 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.expression.function;
 
+import java.io.ByteArrayOutputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -27,17 +31,22 @@ import org.h2.command.Parser;
 import org.h2.engine.Constants;
 import org.h2.engine.Database;
 import org.h2.engine.Mode;
+import org.h2.engine.Mode.ModeEnum;
 import org.h2.engine.Session;
 import org.h2.expression.Expression;
 import org.h2.expression.ExpressionColumn;
 import org.h2.expression.ExpressionVisitor;
-import org.h2.expression.SequenceValue;
+import org.h2.expression.ExpressionWithFlags;
+import org.h2.expression.Format;
+import org.h2.expression.Subquery;
+import org.h2.expression.TypedValueExpression;
 import org.h2.expression.ValueExpression;
 import org.h2.expression.Variable;
 import org.h2.index.Index;
 import org.h2.message.DbException;
 import org.h2.mode.FunctionsMSSQLServer;
 import org.h2.mode.FunctionsMySQL;
+import org.h2.mode.FunctionsOracle;
 import org.h2.mvstore.db.MVSpatialIndex;
 import org.h2.schema.Schema;
 import org.h2.schema.Sequence;
@@ -58,20 +67,27 @@ import org.h2.util.JdbcUtils;
 import org.h2.util.MathUtils;
 import org.h2.util.StringUtils;
 import org.h2.util.Utils;
+import org.h2.util.json.JSONByteArrayTarget;
+import org.h2.util.json.JSONBytesSource;
+import org.h2.util.json.JSONStringTarget;
+import org.h2.util.json.JSONValidationTargetWithUniqueKeys;
 import org.h2.value.DataType;
-import org.h2.value.ExtTypeInfo;
+import org.h2.value.TypeInfo;
 import org.h2.value.Value;
 import org.h2.value.ValueArray;
 import org.h2.value.ValueBoolean;
 import org.h2.value.ValueBytes;
+import org.h2.value.ValueCollectionBase;
 import org.h2.value.ValueDate;
+import org.h2.value.ValueDecimal;
 import org.h2.value.ValueDouble;
+import org.h2.value.ValueFloat;
 import org.h2.value.ValueInt;
+import org.h2.value.ValueJson;
 import org.h2.value.ValueLong;
 import org.h2.value.ValueNull;
 import org.h2.value.ValueResultSet;
 import org.h2.value.ValueString;
-import org.h2.value.ValueTime;
 import org.h2.value.ValueTimestamp;
 import org.h2.value.ValueTimestampTimeZone;
 import org.h2.value.ValueUuid;
@@ -79,7 +95,7 @@ import org.h2.value.ValueUuid;
 /**
  * This class implements most built-in functions of this database.
  */
-public class Function extends Expression implements FunctionCall {
+public class Function extends Expression implements FunctionCall, ExpressionWithFlags {
     public static final int ABS = 0, ACOS = 1, ASIN = 2, ATAN = 3, ATAN2 = 4,
             BITAND = 5, BITOR = 6, BITXOR = 7, CEILING = 8, COS = 9, COT = 10,
             DEGREES = 11, EXP = 12, FLOOR = 13, LOG = 14, LOG10 = 15, MOD = 16,
@@ -88,24 +104,24 @@ public class Function extends Expression implements FunctionCall {
             TRUNCATE = 27, SECURE_RAND = 28, HASH = 29, ENCRYPT = 30,
             DECRYPT = 31, COMPRESS = 32, EXPAND = 33, ZERO = 34,
             RANDOM_UUID = 35, COSH = 36, SINH = 37, TANH = 38, LN = 39,
-            BITGET = 40, ORA_HASH = 41;
+            BITGET = 40, ORA_HASH = 41, BITNOT = 42, LSHIFT = 43, RSHIFT = 44;
 
     public static final int ASCII = 50, BIT_LENGTH = 51, CHAR = 52,
             CHAR_LENGTH = 53, CONCAT = 54, DIFFERENCE = 55, HEXTORAW = 56,
             INSERT = 57, INSTR = 58, LCASE = 59, LEFT = 60, LENGTH = 61,
             LOCATE = 62, LTRIM = 63, OCTET_LENGTH = 64, RAWTOHEX = 65,
             REPEAT = 66, REPLACE = 67, RIGHT = 68, RTRIM = 69, SOUNDEX = 70,
-            SPACE = 71, SUBSTR = 72, SUBSTRING = 73, UCASE = 74, LOWER = 75,
+            SPACE = 71, /* 72 */ SUBSTRING = 73, UCASE = 74, LOWER = 75,
             UPPER = 76, POSITION = 77, TRIM = 78, STRINGENCODE = 79,
             STRINGDECODE = 80, STRINGTOUTF8 = 81, UTF8TOSTRING = 82,
             XMLATTR = 83, XMLNODE = 84, XMLCOMMENT = 85, XMLCDATA = 86,
             XMLSTARTDOC = 87, XMLTEXT = 88, REGEXP_REPLACE = 89, RPAD = 90,
-            LPAD = 91, CONCAT_WS = 92, TO_CHAR = 93, TRANSLATE = 94, /* 95 */
+            LPAD = 91, CONCAT_WS = 92, TO_CHAR = 93, TRANSLATE = 94, QUOTE_IDENT = 95,
             TO_DATE = 96, TO_TIMESTAMP = 97, ADD_MONTHS = 98, TO_TIMESTAMP_TZ = 99;
 
     public static final int CURRENT_DATE = 100, CURRENT_TIME = 101, LOCALTIME = 102,
             CURRENT_TIMESTAMP = 103, LOCALTIMESTAMP = 104,
-            DATE_ADD = 105, DATE_DIFF = 106, DAY_NAME = 107, DAY_OF_MONTH = 108,
+            DATEADD = 105, DATEDIFF = 106, DAY_NAME = 107, DAY_OF_MONTH = 108,
             DAY_OF_WEEK = 109, DAY_OF_YEAR = 110, HOUR = 111, MINUTE = 112,
             MONTH = 113, MONTH_NAME = 114, QUARTER = 115,
             SECOND = 116, WEEK = 117, YEAR = 118, EXTRACT = 119,
@@ -117,9 +133,9 @@ public class Function extends Expression implements FunctionCall {
      */
     public static final int MILLISECOND = 126, EPOCH = 127, MICROSECOND = 128, NANOSECOND = 129,
             TIMEZONE_HOUR = 130, TIMEZONE_MINUTE = 131, DECADE = 132, CENTURY = 133,
-            MILLENNIUM = 134;
+            MILLENNIUM = 134, DOW = 135;
 
-    public static final int DATABASE = 150, USER = 151, CURRENT_USER = 152,
+    public static final int CURRENT_CATALOG = 150, USER = 151, CURRENT_USER = 152,
             IDENTITY = 153, SCOPE_IDENTITY = 154, AUTOCOMMIT = 155,
             READONLY = 156, DATABASE_PATH = 157, LOCK_TIMEOUT = 158,
             DISK_SPACE_USED = 159, SIGNAL = 160, ESTIMATED_ENVELOPE = 161;
@@ -130,12 +146,12 @@ public class Function extends Expression implements FunctionCall {
             CAST = 203, COALESCE = 204, NULLIF = 205, CASE = 206,
             NEXTVAL = 207, CURRVAL = 208, ARRAY_GET = 209, CSVREAD = 210,
             CSVWRITE = 211, MEMORY_FREE = 212, MEMORY_USED = 213,
-            LOCK_MODE = 214, SCHEMA = 215, SESSION_ID = 216,
+            LOCK_MODE = 214, CURRENT_SCHEMA = 215, SESSION_ID = 216,
             ARRAY_LENGTH = 217, LINK_SCHEMA = 218, GREATEST = 219, LEAST = 220,
             CANCEL_SESSION = 221, SET = 222, TABLE = 223, TABLE_DISTINCT = 224,
             FILE_READ = 225, TRANSACTION_ID = 226, TRUNCATE_VALUE = 227,
             NVL2 = 228, DECODE = 229, ARRAY_CONTAINS = 230, FILE_WRITE = 232,
-            UNNEST = 233;
+            UNNEST = 233, ARRAY_CONCAT = 234, ARRAY_APPEND = 235, ARRAY_SLICE = 236;
 
     public static final int REGEXP_LIKE = 240;
 
@@ -144,28 +160,48 @@ public class Function extends Expression implements FunctionCall {
      */
     public static final int VALUES = 250;
 
+    public static final int JSON_OBJECT = 251, JSON_ARRAY = 252;
+
     /**
      * This is called H2VERSION() and not VERSION(), because we return a fake
      * value for VERSION() when running under the PostgreSQL ODBC driver.
      */
     public static final int H2VERSION = 231;
 
-    protected static final int VAR_ARGS = -1;
-    private static final long PRECISION_UNKNOWN = -1;
+    private static final int COUNT = JSON_ARRAY + 1;
 
-    private static final HashMap<String, FunctionInfo> FUNCTIONS = new HashMap<>(256);
+    /**
+     * The flag for TRIM(LEADING ...) function.
+     */
+    public static final int TRIM_LEADING = 1;
+
+    /**
+     * The flag for TRIM(TRAILING ...) function.
+     */
+    public static final int TRIM_TRAILING = 2;
+
+    /**
+     * The ABSENT ON NULL flag for JSON_ARRAY and JSON_OBJECT functions.
+     */
+    public static final int JSON_ABSENT_ON_NULL = 1;
+
+    /**
+     * The WITH UNIQUE KEYS flag for JSON_OBJECT function.
+     */
+    public static final int JSON_WITH_UNIQUE_KEYS = 2;
+
+    protected static final int VAR_ARGS = -1;
+
+    private static final FunctionInfo[] FUNCTIONS_BY_ID = new FunctionInfo[COUNT];
+    private static final HashMap<String, FunctionInfo> FUNCTIONS_BY_NAME = new HashMap<>(256);
     private static final char[] SOUNDEX_INDEX = new char[128];
 
     protected Expression[] args;
+    private int argsCount;
 
     protected final FunctionInfo info;
-    private ArrayList<Expression> varArgs;
-    protected int dataType;
-
-    protected int scale;
-    protected long precision = PRECISION_UNKNOWN;
-    protected int displaySize;
-    protected ExtTypeInfo extTypeInfo;
+    private int flags;
+    protected TypeInfo type;
 
     private final Database database;
 
@@ -191,19 +227,21 @@ public class Function extends Expression implements FunctionCall {
         addFunction("ATAN2", ATAN2, 2, Value.DOUBLE);
         addFunction("BITAND", BITAND, 2, Value.LONG);
         addFunction("BITGET", BITGET, 2, Value.BOOLEAN);
+        addFunction("BITNOT", BITNOT, 1, Value.LONG);
         addFunction("BITOR", BITOR, 2, Value.LONG);
         addFunction("BITXOR", BITXOR, 2, Value.LONG);
-        addFunction("CEILING", CEILING, 1, Value.DOUBLE);
-        addFunction("CEIL", CEILING, 1, Value.DOUBLE);
+        addFunction("CEILING", CEILING, 1, Value.NULL);
+        addFunction("CEIL", CEILING, 1, Value.NULL);
         addFunction("COS", COS, 1, Value.DOUBLE);
         addFunction("COSH", COSH, 1, Value.DOUBLE);
         addFunction("COT", COT, 1, Value.DOUBLE);
         addFunction("DEGREES", DEGREES, 1, Value.DOUBLE);
         addFunction("EXP", EXP, 1, Value.DOUBLE);
-        addFunction("FLOOR", FLOOR, 1, Value.DOUBLE);
-        addFunction("LOG", LOG, 1, Value.DOUBLE);
+        addFunction("FLOOR", FLOOR, 1, Value.NULL);
+        addFunction("LOG", LOG, VAR_ARGS, Value.DOUBLE);
         addFunction("LN", LN, 1, Value.DOUBLE);
         addFunction("LOG10", LOG10, 1, Value.DOUBLE);
+        addFunction("LSHIFT", LSHIFT, 2, Value.LONG);
         addFunction("MOD", MOD, 2, Value.LONG);
         addFunction("PI", PI, 0, Value.DOUBLE);
         addFunction("POWER", POWER, 2, Value.DOUBLE);
@@ -212,8 +250,9 @@ public class Function extends Expression implements FunctionCall {
         // RAND with one argument: seed the random generator
         addFunctionNotDeterministic("RAND", RAND, VAR_ARGS, Value.DOUBLE);
         addFunctionNotDeterministic("RANDOM", RAND, VAR_ARGS, Value.DOUBLE);
-        addFunction("ROUND", ROUND, VAR_ARGS, Value.DOUBLE);
+        addFunction("ROUND", ROUND, VAR_ARGS, Value.NULL);
         addFunction("ROUNDMAGIC", ROUNDMAGIC, 1, Value.DOUBLE);
+        addFunction("RSHIFT", RSHIFT, 2, Value.LONG);
         addFunction("SIGN", SIGN, 1, Value.INT);
         addFunction("SIN", SIN, 1, Value.DOUBLE);
         addFunction("SINH", SINH, 1, Value.DOUBLE);
@@ -231,7 +270,6 @@ public class Function extends Expression implements FunctionCall {
         addFunction("EXPAND", EXPAND, 1, Value.BYTES);
         addFunction("ZERO", ZERO, 0, Value.INT);
         addFunctionNotDeterministic("RANDOM_UUID", RANDOM_UUID, 0, Value.UUID);
-        addFunctionNotDeterministic("SYS_GUID", RANDOM_UUID, 0, Value.UUID);
         addFunctionNotDeterministic("UUID", RANDOM_UUID, 0, Value.UUID);
         addFunction("ORA_HASH", ORA_HASH, VAR_ARGS, Value.LONG);
         // string
@@ -245,7 +283,7 @@ public class Function extends Expression implements FunctionCall {
         addFunctionWithNull("CONCAT", CONCAT, VAR_ARGS, Value.STRING);
         addFunctionWithNull("CONCAT_WS", CONCAT_WS, VAR_ARGS, Value.STRING);
         addFunction("DIFFERENCE", DIFFERENCE, 2, Value.INT);
-        addFunction("HEXTORAW", HEXTORAW, 1, Value.STRING);
+        addFunction("HEXTORAW", HEXTORAW, 1, Value.NULL);
         addFunctionWithNull("INSERT", INSERT, 4, Value.STRING);
         addFunction("LCASE", LCASE, 1, Value.STRING);
         addFunction("LEFT", LEFT, 2, Value.STRING);
@@ -264,8 +302,8 @@ public class Function extends Expression implements FunctionCall {
         addFunction("RTRIM", RTRIM, VAR_ARGS, Value.STRING);
         addFunction("SOUNDEX", SOUNDEX, 1, Value.STRING);
         addFunction("SPACE", SPACE, 1, Value.STRING);
-        addFunction("SUBSTR", SUBSTR, VAR_ARGS, Value.STRING);
-        addFunction("SUBSTRING", SUBSTRING, VAR_ARGS, Value.STRING);
+        addFunction("SUBSTR", SUBSTRING, VAR_ARGS, Value.NULL);
+        addFunction("SUBSTRING", SUBSTRING, VAR_ARGS, Value.NULL);
         addFunction("UCASE", UCASE, 1, Value.STRING);
         addFunction("LOWER", LOWER, 1, Value.STRING);
         addFunction("UPPER", UPPER, 1, Value.STRING);
@@ -286,6 +324,7 @@ public class Function extends Expression implements FunctionCall {
         addFunction("LPAD", LPAD, VAR_ARGS, Value.STRING);
         addFunction("TO_CHAR", TO_CHAR, VAR_ARGS, Value.STRING);
         addFunction("TRANSLATE", TRANSLATE, 3, Value.STRING);
+        addFunction("QUOTE_IDENT", QUOTE_IDENT, 1, Value.STRING);
         addFunction("REGEXP_LIKE", REGEXP_LIKE, VAR_ARGS, Value.BOOLEAN);
 
         // date
@@ -294,7 +333,7 @@ public class Function extends Expression implements FunctionCall {
         addFunctionNotDeterministic("SYSDATE", CURRENT_DATE, 0, Value.DATE, false);
         addFunctionNotDeterministic("TODAY", CURRENT_DATE, 0, Value.DATE, false);
 
-        addFunctionNotDeterministic("CURRENT_TIME", CURRENT_TIME, VAR_ARGS, Value.TIME);
+        addFunctionNotDeterministic("CURRENT_TIME", CURRENT_TIME, VAR_ARGS, Value.TIME, false);
 
         addFunctionNotDeterministic("LOCALTIME", LOCALTIME, VAR_ARGS, Value.TIME, false);
         addFunctionNotDeterministic("SYSTIME", LOCALTIME, 0, Value.TIME, false);
@@ -310,14 +349,10 @@ public class Function extends Expression implements FunctionCall {
         addFunction("TO_TIMESTAMP", TO_TIMESTAMP, VAR_ARGS, Value.TIMESTAMP);
         addFunction("ADD_MONTHS", ADD_MONTHS, 2, Value.TIMESTAMP);
         addFunction("TO_TIMESTAMP_TZ", TO_TIMESTAMP_TZ, VAR_ARGS, Value.TIMESTAMP_TZ);
-        addFunction("DATEADD", DATE_ADD,
-                3, Value.TIMESTAMP);
-        addFunction("TIMESTAMPADD", DATE_ADD,
-                3, Value.TIMESTAMP);
-        addFunction("DATEDIFF", DATE_DIFF,
-                3, Value.LONG);
-        addFunction("TIMESTAMPDIFF", DATE_DIFF,
-                3, Value.LONG);
+        addFunction("DATEADD", DATEADD, 3, Value.TIMESTAMP);
+        addFunction("TIMESTAMPADD", DATEADD, 3, Value.TIMESTAMP);
+        addFunction("DATEDIFF", DATEDIFF, 3, Value.LONG);
+        addFunction("TIMESTAMPDIFF", DATEDIFF, 3, Value.LONG);
         addFunction("DAYNAME", DAY_NAME,
                 1, Value.STRING);
         addFunction("DAYNAME", DAY_NAME,
@@ -366,8 +401,8 @@ public class Function extends Expression implements FunctionCall {
                 1, Value.INT);
         addFunction("DATE_TRUNC", DATE_TRUNC, 2, Value.NULL);
         // system
-        addFunctionNotDeterministic("DATABASE", DATABASE,
-                0, Value.STRING);
+        addFunctionNotDeterministic("CURRENT_CATALOG", CURRENT_CATALOG, 0, Value.STRING, false);
+        addFunctionNotDeterministic("DATABASE", CURRENT_CATALOG, 0, Value.STRING);
         addFunctionNotDeterministic("USER", USER,
                 0, Value.STRING);
         addFunctionNotDeterministic("CURRENT_USER", CURRENT_USER,
@@ -377,8 +412,6 @@ public class Function extends Expression implements FunctionCall {
         addFunctionNotDeterministic("SCOPE_IDENTITY", SCOPE_IDENTITY,
                 0, Value.LONG);
         addFunctionNotDeterministic("IDENTITY_VAL_LOCAL", IDENTITY,
-                0, Value.LONG);
-        addFunctionNotDeterministic("LAST_INSERT_ID", IDENTITY,
                 0, Value.LONG);
         addFunctionNotDeterministic("LASTVAL", IDENTITY,
                 0, Value.LONG);
@@ -419,18 +452,21 @@ public class Function extends Expression implements FunctionCall {
         addFunction("ARRAY_GET", ARRAY_GET,
                 2, Value.NULL);
         addFunctionWithNull("ARRAY_CONTAINS", ARRAY_CONTAINS, 2, Value.BOOLEAN);
+        addFunction("ARRAY_CAT", ARRAY_CONCAT, 2, Value.ARRAY);
+        addFunction("ARRAY_APPEND", ARRAY_APPEND, 2, Value.ARRAY);
+        addFunction("ARRAY_SLICE", ARRAY_SLICE, 3, Value.ARRAY);
         addFunction("CSVREAD", CSVREAD,
-                VAR_ARGS, Value.RESULT_SET, false, false, false, true);
+                VAR_ARGS, Value.RESULT_SET, false, false, true, false);
         addFunction("CSVWRITE", CSVWRITE,
-                VAR_ARGS, Value.INT, false, false, true, true);
+                VAR_ARGS, Value.INT, false, false, true, false);
         addFunctionNotDeterministic("MEMORY_FREE", MEMORY_FREE,
                 0, Value.INT);
         addFunctionNotDeterministic("MEMORY_USED", MEMORY_USED,
                 0, Value.INT);
         addFunctionNotDeterministic("LOCK_MODE", LOCK_MODE,
                 0, Value.INT);
-        addFunctionNotDeterministic("SCHEMA", SCHEMA,
-                0, Value.STRING);
+        addFunctionNotDeterministic("CURRENT_SCHEMA", CURRENT_SCHEMA, 0, Value.STRING, false);
+        addFunctionNotDeterministic("SCHEMA", CURRENT_SCHEMA, 0, Value.STRING);
         addFunctionNotDeterministic("SESSION_ID", SESSION_ID,
                 0, Value.INT);
         addFunction("ARRAY_LENGTH", ARRAY_LENGTH,
@@ -444,11 +480,11 @@ public class Function extends Expression implements FunctionCall {
         addFunctionNotDeterministic("CANCEL_SESSION", CANCEL_SESSION,
                 1, Value.BOOLEAN);
         addFunction("SET", SET,
-                2, Value.NULL, false, false, true, true);
+                2, Value.NULL, false, false, true, false);
         addFunction("FILE_READ", FILE_READ,
-                VAR_ARGS, Value.NULL, false, false, true, true);
+                VAR_ARGS, Value.NULL, false, false, true, false);
         addFunction("FILE_WRITE", FILE_WRITE,
-                2, Value.LONG, false, false, true, true);
+                2, Value.LONG, false, false, true, false);
         addFunctionNotDeterministic("TRANSACTION_ID", TRANSACTION_ID,
                 0, Value.STRING);
         addFunctionWithNull("DECODE", DECODE,
@@ -465,30 +501,21 @@ public class Function extends Expression implements FunctionCall {
         addFunctionWithNull("UNNEST", UNNEST, VAR_ARGS, Value.RESULT_SET);
 
         // ON DUPLICATE KEY VALUES function
-        addFunction("VALUES", VALUES, 1, Value.NULL, false, true, false, true);
-    }
+        addFunction("VALUES", VALUES, 1, Value.NULL, false, true, true, false);
 
-    /**
-     * Creates a new instance of function.
-     *
-     * @param database database
-     * @param info function information
-     */
-    public Function(Database database, FunctionInfo info) {
-        this.database = database;
-        this.info = info;
-        if (info.parameterCount == VAR_ARGS) {
-            varArgs = Utils.newSmallArrayList();
-        } else {
-            args = new Expression[info.parameterCount];
-        }
+        addFunction("JSON_ARRAY", JSON_ARRAY, VAR_ARGS, Value.JSON, false, true, true, true);
+        addFunction("JSON_OBJECT", JSON_OBJECT, VAR_ARGS, Value.JSON, false, true, true, true);
     }
 
     private static void addFunction(String name, int type, int parameterCount,
             int returnDataType, boolean nullIfParameterIsNull, boolean deterministic,
-            boolean bufferResultSetToLocalTemp, boolean requireParentheses) {
-        FUNCTIONS.put(name, new FunctionInfo(name, type, parameterCount, returnDataType, nullIfParameterIsNull,
-                deterministic, bufferResultSetToLocalTemp, requireParentheses));
+            boolean requireParentheses, boolean specialArguments) {
+        FunctionInfo info = new FunctionInfo(name, type, parameterCount, returnDataType, nullIfParameterIsNull,
+                deterministic, requireParentheses, specialArguments);
+        if (FUNCTIONS_BY_ID[type] == null) {
+            FUNCTIONS_BY_ID[type] = info;
+        }
+        FUNCTIONS_BY_NAME.put(name, info);
     }
 
     private static void addFunctionNotDeterministic(String name, int type,
@@ -498,17 +525,40 @@ public class Function extends Expression implements FunctionCall {
 
     private static void addFunctionNotDeterministic(String name, int type,
             int parameterCount, int returnDataType, boolean requireParentheses) {
-        addFunction(name, type, parameterCount, returnDataType, true, false, true, requireParentheses);
+        addFunction(name, type, parameterCount, returnDataType, true, false, requireParentheses, false);
     }
 
     private static void addFunction(String name, int type, int parameterCount,
             int returnDataType) {
-        addFunction(name, type, parameterCount, returnDataType, true, true, true, true);
+        addFunction(name, type, parameterCount, returnDataType, true, true, true, false);
     }
 
     private static void addFunctionWithNull(String name, int type,
             int parameterCount, int returnDataType) {
-        addFunction(name, type, parameterCount, returnDataType, false, true, true, true);
+        addFunction(name, type, parameterCount, returnDataType, false, true, true, false);
+    }
+
+    /**
+     * Get an instance of the given function for this database.
+     *
+     * @param database the database
+     * @param id the function number
+     * @return the function object
+     */
+    public static Function getFunction(Database database, int id) {
+        return createFunction(database, FUNCTIONS_BY_ID[id], null);
+    }
+
+    /**
+     * Get an instance of the given function for this database.
+     *
+     * @param database the database
+     * @param id the function number
+     * @param arguments the arguments
+     * @return the function object
+     */
+    public static Function getFunctionWithArgs(Database database, int id, Expression... arguments) {
+        return createFunction(database, FUNCTIONS_BY_ID[id], arguments);
     }
 
     /**
@@ -524,24 +574,31 @@ public class Function extends Expression implements FunctionCall {
             // if not yet converted to uppercase, do it now
             name = StringUtils.toUpperEnglish(name);
         }
-        FunctionInfo info = FUNCTIONS.get(name);
+        FunctionInfo info = FUNCTIONS_BY_NAME.get(name);
         if (info == null) {
             switch (database.getMode().getEnum()) {
             case MSSQLServer:
                 return FunctionsMSSQLServer.getFunction(database, name);
             case MySQL:
                 return FunctionsMySQL.getFunction(database, name);
+            case Oracle:
+                return FunctionsOracle.getFunction(database, name);
             default:
                 return null;
             }
         }
+        return createFunction(database, info, null);
+    }
+
+    private static Function createFunction(Database database, FunctionInfo info, Expression[] arguments) {
         switch (info.type) {
         case TABLE:
         case TABLE_DISTINCT:
         case UNNEST:
+            assert arguments == null;
             return new TableFunction(database, info, Long.MAX_VALUE);
         default:
-            return new Function(database, info);
+            return arguments != null ? new Function(database, info, arguments) : new Function(database, info);
         }
     }
 
@@ -552,25 +609,64 @@ public class Function extends Expression implements FunctionCall {
      * @return the function information or {@code null}
      */
     public static FunctionInfo getFunctionInfo(String upperName) {
-        return FUNCTIONS.get(upperName);
+        return FUNCTIONS_BY_NAME.get(upperName);
     }
 
     /**
-     * Set the parameter expression at the given index.
+     * Creates a new instance of function.
      *
-     * @param index the index (0, 1,...)
+     * @param database database
+     * @param info function information
+     */
+    public Function(Database database, FunctionInfo info) {
+        this.database = database;
+        this.info = info;
+        int count = info.parameterCount;
+        args = new Expression[count != VAR_ARGS ? count : 4];
+    }
+
+    /**
+     * Creates a new instance of function.
+     *
+     * @param database database
+     * @param info function information
+     * @param arguments the arguments
+     */
+    public Function(Database database, FunctionInfo info, Expression[] arguments) {
+        this.database = database;
+        this.info = info;
+        int expected = info.parameterCount, len = arguments.length;
+        if (expected == VAR_ARGS) {
+            checkParameterCount(len);
+        } else if (expected != len) {
+            throw DbException.get(ErrorCode.INVALID_PARAMETER_COUNT_2, info.name, Integer.toString(expected));
+        }
+        args = arguments;
+    }
+
+    /**
+     * Adds the parameter expression.
      * @param param the expression
      */
-    public void setParameter(int index, Expression param) {
-        if (varArgs != null) {
-            varArgs.add(param);
-        } else {
-            if (index >= args.length) {
-                throw DbException.get(ErrorCode.INVALID_PARAMETER_COUNT_2,
-                        info.name, Integer.toString(args.length));
+    public void addParameter(Expression param) {
+        int capacity = args.length;
+        if (argsCount >= capacity) {
+            if (info.parameterCount != VAR_ARGS) {
+                throw DbException.get(ErrorCode.INVALID_PARAMETER_COUNT_2, info.name, Integer.toString(capacity));
             }
-            args[index] = param;
+            args = Arrays.copyOf(args, capacity * 2);
         }
+        args[argsCount++] = param;
+    }
+
+    @Override
+    public void setFlags(int flags) {
+        this.flags = flags;
+    }
+
+    @Override
+    public int getFlags() {
+        return flags;
     }
 
     @Override
@@ -595,7 +691,7 @@ public class Function extends Expression implements FunctionCall {
             result = ValueDouble.get(Math.atan(v0.getDouble()));
             break;
         case CEILING:
-            result = ValueDouble.get(Math.ceil(v0.getDouble()));
+            result = getCeilOrFloor(v0, false);
             break;
         case COS:
             result = ValueDouble.get(Math.cos(v0.getDouble()));
@@ -606,7 +702,7 @@ public class Function extends Expression implements FunctionCall {
         case COT: {
             double d = Math.tan(v0.getDouble());
             if (d == 0.0) {
-                throw DbException.get(ErrorCode.DIVISION_BY_ZERO_1, getSQL());
+                throw DbException.get(ErrorCode.DIVISION_BY_ZERO_1, getSQL(false));
             }
             result = ValueDouble.get(1. / d);
             break;
@@ -618,21 +714,27 @@ public class Function extends Expression implements FunctionCall {
             result = ValueDouble.get(Math.exp(v0.getDouble()));
             break;
         case FLOOR:
-            result = ValueDouble.get(Math.floor(v0.getDouble()));
+            result = getCeilOrFloor(v0, true);
             break;
-        case LN:
-            result = ValueDouble.get(Math.log(v0.getDouble()));
-            break;
-        case LOG:
-            if (database.getMode().logIsLogBase10) {
-                result = ValueDouble.get(Math.log10(v0.getDouble()));
-            } else {
-                result = ValueDouble.get(Math.log(v0.getDouble()));
+        case LN: {
+            double arg = v0.getDouble();
+            if (arg <= 0) {
+                throw DbException.getInvalidValueException("LN() argument", arg);
             }
+            result = ValueDouble.get(Math.log(arg));
             break;
-        case LOG10:
-            result = ValueDouble.get(Math.log10(v0.getDouble()));
+        }
+        case LOG:
+            result = log(v0, getNullOrValue(session, args, values, 1));
             break;
+        case LOG10: {
+            double arg = v0.getDouble();
+            if (arg <= 0) {
+                throw DbException.getInvalidValueException("LOG10() argument", arg);
+            }
+            result = ValueDouble.get(Math.log10(arg));
+            break;
+        }
         case PI:
             result = ValueDouble.get(Math.PI);
             break;
@@ -695,8 +797,7 @@ public class Function extends Expression implements FunctionCall {
             result = ValueLong.get(16 * length(v0));
             break;
         case CHAR:
-            result = ValueString.get(String.valueOf((char) v0.getInt()),
-                    database.getMode().treatEmptyStringsAsNull);
+            result = ValueString.get(String.valueOf((char) v0.getInt()), database);
             break;
         case CHAR_LENGTH:
         case LENGTH:
@@ -727,36 +828,30 @@ public class Function extends Expression implements FunctionCall {
                             && !StringUtils.isNullOrEmpty(tmp)) {
                         tmp = separator + tmp;
                     }
-                    result = ValueString.get(result.getString() + tmp,
-                            database.getMode().treatEmptyStringsAsNull);
+                    result = ValueString.get(result.getString() + tmp, database);
                 }
             }
             if (info.type == CONCAT_WS) {
                 if (separator != null && result == ValueNull.INSTANCE) {
-                    result = ValueString.get("",
-                            database.getMode().treatEmptyStringsAsNull);
+                    result = ValueString.get("", database);
                 }
             }
             break;
         }
         case HEXTORAW:
-            result = ValueString.get(hexToRaw(v0.getString()),
-                    database.getMode().treatEmptyStringsAsNull);
+            result = hexToRaw(v0.getString(), database);
             break;
         case LOWER:
         case LCASE:
             // TODO this is locale specific, need to document or provide a way
             // to set the locale
-            result = ValueString.get(v0.getString().toLowerCase(),
-                    database.getMode().treatEmptyStringsAsNull);
+            result = ValueString.get(v0.getString().toLowerCase(), database);
             break;
         case RAWTOHEX:
-            result = ValueString.get(rawToHex(v0.getString()),
-                    database.getMode().treatEmptyStringsAsNull);
+            result = ValueString.get(rawToHex(v0, database.getMode()), database);
             break;
         case SOUNDEX:
-            result = ValueString.get(getSoundex(v0.getString()),
-                    database.getMode().treatEmptyStringsAsNull);
+            result = ValueString.get(getSoundex(v0.getString()), database);
             break;
         case SPACE: {
             int len = Math.max(0, v0.getInt());
@@ -764,76 +859,55 @@ public class Function extends Expression implements FunctionCall {
             for (int i = len - 1; i >= 0; i--) {
                 chars[i] = ' ';
             }
-            result = ValueString.get(new String(chars),
-                    database.getMode().treatEmptyStringsAsNull);
+            result = ValueString.get(new String(chars), database);
             break;
         }
         case UPPER:
         case UCASE:
             // TODO this is locale specific, need to document or provide a way
             // to set the locale
-            result = ValueString.get(v0.getString().toUpperCase(),
-                    database.getMode().treatEmptyStringsAsNull);
+            result = ValueString.get(v0.getString().toUpperCase(), database);
             break;
         case STRINGENCODE:
-            result = ValueString.get(StringUtils.javaEncode(v0.getString()),
-                    database.getMode().treatEmptyStringsAsNull);
+            result = ValueString.get(StringUtils.javaEncode(v0.getString()), database);
             break;
         case STRINGDECODE:
-            result = ValueString.get(StringUtils.javaDecode(v0.getString()),
-                    database.getMode().treatEmptyStringsAsNull);
+            result = ValueString.get(StringUtils.javaDecode(v0.getString()), database);
             break;
         case STRINGTOUTF8:
             result = ValueBytes.getNoCopy(v0.getString().
                     getBytes(StandardCharsets.UTF_8));
             break;
         case UTF8TOSTRING:
-            result = ValueString.get(new String(v0.getBytesNoCopy(),
-                    StandardCharsets.UTF_8),
-                    database.getMode().treatEmptyStringsAsNull);
+            result = ValueString.get(new String(v0.getBytesNoCopy(), StandardCharsets.UTF_8), database);
             break;
         case XMLCOMMENT:
-            result = ValueString.get(StringUtils.xmlComment(v0.getString()),
-                    database.getMode().treatEmptyStringsAsNull);
+            result = ValueString.get(StringUtils.xmlComment(v0.getString()), database);
             break;
         case XMLCDATA:
-            result = ValueString.get(StringUtils.xmlCData(v0.getString()),
-                    database.getMode().treatEmptyStringsAsNull);
+            result = ValueString.get(StringUtils.xmlCData(v0.getString()), database);
             break;
         case XMLSTARTDOC:
-            result = ValueString.get(StringUtils.xmlStartDoc(),
-                    database.getMode().treatEmptyStringsAsNull);
+            result = ValueString.get(StringUtils.xmlStartDoc(), database);
             break;
-        case CURRENT_DATE: {
-            result = (database.getMode().dateTimeValueWithinTransaction ? session.getTransactionStart()
-                    : session.getCurrentCommandStart()).convertTo(Value.DATE);
+        case CURRENT_DATE:
+            result = session.currentTimestamp().convertTo(Value.DATE);
             break;
-        }
         case CURRENT_TIME:
-        case LOCALTIME: {
-            ValueTime vt = (ValueTime) (database.getMode().dateTimeValueWithinTransaction
-                    ? session.getTransactionStart()
-                    : session.getCurrentCommandStart()).convertTo(Value.TIME);
-            result = vt.convertScale(false, v0 == null ? 0 : v0.getInt());
+        case LOCALTIME:
+            result = session.currentTimestamp().convertTo(Value.TIME) //
+                    .convertScale(false, v0 == null ? 0 : v0.getInt());
             break;
-        }
-        case CURRENT_TIMESTAMP: {
-            ValueTimestampTimeZone vt = database.getMode().dateTimeValueWithinTransaction
-                    ? session.getTransactionStart()
-                    : session.getCurrentCommandStart();
-            result = vt.convertScale(false, v0 == null ? 6 : v0.getInt());
+        case CURRENT_TIMESTAMP:
+            result = session.currentTimestamp().convertScale(false, v0 == null ? 6 : v0.getInt());
             break;
-        }
-        case LOCALTIMESTAMP: {
-            Value vt = (database.getMode().dateTimeValueWithinTransaction ? session.getTransactionStart()
-                    : session.getCurrentCommandStart()).convertTo(Value.TIMESTAMP);
-            result = vt.convertScale(false, v0 == null ? 6 : v0.getInt());
+        case LOCALTIMESTAMP:
+            result = session.currentTimestamp().convertTo(Value.TIMESTAMP) //
+                    .convertScale(false, v0 == null ? 6 : v0.getInt());
             break;
-        }
         case DAY_NAME: {
             int dayOfWeek = DateTimeUtils.getSundayDayOfWeek(DateTimeUtils.dateAndTimeFromValue(v0)[0]);
-            result = ValueString.get(DateTimeFunctions.getMonthsAndWeeks(1)[dayOfWeek],
-                    database.getMode().treatEmptyStringsAsNull);
+            result = ValueString.get(DateTimeFunctions.getMonthsAndWeeks(1)[dayOfWeek], database);
             break;
         }
         case DAY_OF_MONTH:
@@ -849,22 +923,19 @@ public class Function extends Expression implements FunctionCall {
         case SECOND:
         case WEEK:
         case YEAR:
-            result = ValueInt.get(DateTimeFunctions.getIntDatePart(v0, info.type));
+            result = ValueInt.get(DateTimeFunctions.getIntDatePart(v0, info.type, database.getMode()));
             break;
         case MONTH_NAME: {
             int month = DateTimeUtils.monthFromDateValue(DateTimeUtils.dateAndTimeFromValue(v0)[0]);
-            result = ValueString.get(DateTimeFunctions.getMonthsAndWeeks(0)[month - 1],
-                    database.getMode().treatEmptyStringsAsNull);
+            result = ValueString.get(DateTimeFunctions.getMonthsAndWeeks(0)[month - 1], database);
             break;
         }
-        case DATABASE:
-            result = ValueString.get(database.getShortName(),
-                    database.getMode().treatEmptyStringsAsNull);
+        case CURRENT_CATALOG:
+            result = ValueString.get(database.getShortName(), database);
             break;
         case USER:
         case CURRENT_USER:
-            result = ValueString.get(session.getUser().getName(),
-                    database.getMode().treatEmptyStringsAsNull);
+            result = ValueString.get(session.getUser().getName(), database);
             break;
         case IDENTITY:
             result = session.getLastIdentity();
@@ -880,9 +951,7 @@ public class Function extends Expression implements FunctionCall {
             break;
         case DATABASE_PATH: {
             String path = database.getDatabasePath();
-            result = path == null ?
-                    (Value) ValueNull.INSTANCE : ValueString.get(path,
-                    database.getMode().treatEmptyStringsAsNull);
+            result = path == null ? (Value) ValueNull.INSTANCE : ValueString.get(path, database);
             break;
         }
         case LOCK_TIMEOUT:
@@ -895,14 +964,9 @@ public class Function extends Expression implements FunctionCall {
             result = getEstimatedEnvelope(session, v0, values[1]);
             break;
         case CAST:
-        case CONVERT: {
-            Mode mode = database.getMode();
-            v0 = v0.convertTo(dataType, MathUtils.convertLongToInt(precision), mode, null, extTypeInfo);
-            v0 = v0.convertScale(mode.convertOnlyToSmallerScale, scale);
-            v0 = v0.convertPrecision(getPrecision(), false);
-            result = v0;
+        case CONVERT:
+            result = type.cast(v0, session, false, true, null);
             break;
-        }
         case MEMORY_FREE:
             session.getUser().checkAdmin();
             result = ValueInt.get(Utils.getMemoryFree());
@@ -914,9 +978,8 @@ public class Function extends Expression implements FunctionCall {
         case LOCK_MODE:
             result = ValueInt.get(database.getLockMode());
             break;
-        case SCHEMA:
-            result = ValueString.get(session.getCurrentSchemaName(),
-                    database.getMode().treatEmptyStringsAsNull);
+        case CURRENT_SCHEMA:
+            result = ValueString.get(session.getCurrentSchemaName(), database);
             break;
         case SESSION_ID:
             result = ValueInt.get(session.getId());
@@ -926,7 +989,7 @@ public class Function extends Expression implements FunctionCall {
             if (v0 == ValueNull.INSTANCE) {
                 result = getNullOrValue(session, args, values, 1);
             }
-            result = result.convertTo(dataType, database.getMode());
+            result = result.convertTo(type, session, false, null);
             break;
         }
         case CASEWHEN: {
@@ -936,7 +999,7 @@ public class Function extends Expression implements FunctionCall {
             } else {
                 v = getNullOrValue(session, args, values, 1);
             }
-            result = v.convertTo(dataType);
+            result = v.convertTo(type, session, false, null);
             break;
         }
         case DECODE: {
@@ -953,7 +1016,7 @@ public class Function extends Expression implements FunctionCall {
             }
             Value v = index < 0 ? ValueNull.INSTANCE :
                     getNullOrValue(session, args, values, index);
-            result = v.convertTo(dataType);
+            result = v.convertTo(type, session, false, null);
             break;
         }
         case NVL2: {
@@ -963,7 +1026,7 @@ public class Function extends Expression implements FunctionCall {
             } else {
                 v = getNullOrValue(session, args, values, 1);
             }
-            result = v.convertTo(dataType);
+            result = v.convertTo(type, session, false, null);
             break;
         }
         case COALESCE: {
@@ -971,7 +1034,7 @@ public class Function extends Expression implements FunctionCall {
             for (int i = 0; i < args.length; i++) {
                 Value v = getNullOrValue(session, args, values, i);
                 if (v != ValueNull.INSTANCE) {
-                    result = v.convertTo(dataType);
+                    result = v.convertTo(type, session, false, null);
                     break;
                 }
             }
@@ -983,7 +1046,7 @@ public class Function extends Expression implements FunctionCall {
             for (int i = 0; i < args.length; i++) {
                 Value v = getNullOrValue(session, args, values, i);
                 if (v != ValueNull.INSTANCE) {
-                    v = v.convertTo(dataType);
+                    v = v.convertTo(type, session, true, null);
                     if (result == ValueNull.INSTANCE) {
                         result = v;
                     } else {
@@ -1034,14 +1097,14 @@ public class Function extends Expression implements FunctionCall {
                 then = args[args.length - 1];
             }
             Value v = then == null ? ValueNull.INSTANCE : then.getValue(session);
-            result = v.convertTo(dataType);
+            result = v.convertTo(type, session, false, null);
             break;
         }
         case ARRAY_GET: {
-            if (v0.getType() == Value.ARRAY) {
+            Value[] list = getArray(v0);
+            if (list != null) {
                 Value v1 = getNullOrValue(session, args, values, 1);
                 int element = v1.getInt();
-                Value[] list = ((ValueArray) v0).getList();
                 if (element < 1 || element > list.length) {
                     result = ValueNull.INSTANCE;
                 } else {
@@ -1053,8 +1116,8 @@ public class Function extends Expression implements FunctionCall {
             break;
         }
         case ARRAY_LENGTH: {
-            if (v0.getType() == Value.ARRAY) {
-                Value[] list = ((ValueArray) v0).getList();
+            Value[] list = getArray(v0);
+            if (list != null) {
                 result = ValueInt.get(list.length);
             } else {
                 result = ValueNull.INSTANCE;
@@ -1063,9 +1126,9 @@ public class Function extends Expression implements FunctionCall {
         }
         case ARRAY_CONTAINS: {
             result = ValueBoolean.FALSE;
-            if (v0.getType() == Value.ARRAY) {
+            Value[] list = getArray(v0);
+            if (list != null) {
                 Value v1 = getNullOrValue(session, args, values, 1);
-                Value[] list = ((ValueArray) v0).getList();
                 for (Value v : list) {
                     if (database.areEqual(v, v1)) {
                         result = ValueBoolean.TRUE;
@@ -1085,10 +1148,41 @@ public class Function extends Expression implements FunctionCall {
             result = session.getTransactionId();
             break;
         }
+        case JSON_OBJECT:
+            result = jsonObject(session, args);
+            break;
+        case JSON_ARRAY:
+            result = jsonArray(session, args);
+            break;
         default:
             result = null;
         }
         return result;
+    }
+
+    private static Value getCeilOrFloor(Value v0, boolean floor) {
+        Value result;
+        int t = v0.getValueType();
+        if (t == Value.DOUBLE || t == Value.FLOAT) {
+            double v = v0.getDouble();
+            v = floor ? Math.floor(v) : Math.ceil(v);
+            result = t == Value.DOUBLE ? ValueDouble.get(v) : ValueFloat.get((float) v);
+        } else {
+            result = ValueDecimal
+                    .get(v0.getBigDecimal().setScale(0, floor ? RoundingMode.FLOOR : RoundingMode.CEILING));
+        }
+        return result;
+    }
+
+    private static Value[] getArray(Value v0) {
+        int t = v0.getValueType();
+        Value[] list;
+        if (t == Value.ARRAY || t == Value.ROW) {
+            list = ((ValueCollectionBase) v0).getList();
+        } else {
+            list = null;
+        }
+        return list;
     }
 
     private static boolean cancelStatement(Session session, int targetSessionId) {
@@ -1130,6 +1224,16 @@ public class Function extends Expression implements FunctionCall {
         return new Parser(session).parseTableName(tableName.getString());
     }
 
+    /**
+     * Get value transformed by expression, or null if i is out of range or
+     * the input value is null.
+     *
+     * @param session database session
+     * @param args expressions
+     * @param values array of input values
+     * @param i index of value of transform
+     * @return value or null
+     */
     protected static Value getNullOrValue(Session session, Expression[] args,
             Value[] values, int i) {
         if (i >= args.length) {
@@ -1146,6 +1250,13 @@ public class Function extends Expression implements FunctionCall {
         return v;
     }
 
+    /**
+     * Return the resulting value for the given expression arguments.
+     *
+     * @param session the session
+     * @param args argument expressions
+     * @return the result
+     */
     protected Value getValueWithArgs(Session session, Expression[] args) {
         Value[] values = new Value[args.length];
         if (info.nullIfParameterIsNull) {
@@ -1158,7 +1269,7 @@ public class Function extends Expression implements FunctionCall {
                 values[i] = v;
             }
         }
-        Value v0 = getNullOrValue(session, args, values, 0);
+        Value v0 = info.specialArguments ? null : getNullOrValue(session, args, values, 0);
         Value resultSimple = getSimpleValue(session, v0, args, values);
         if (resultSimple != null) {
             return resultSimple;
@@ -1180,16 +1291,25 @@ public class Function extends Expression implements FunctionCall {
         case BITGET:
             result = ValueBoolean.get((v0.getLong() & (1L << v1.getInt())) != 0);
             break;
+        case BITNOT:
+            result = ValueLong.get(~v0.getLong());
+            break;
         case BITOR:
             result = ValueLong.get(v0.getLong() | v1.getLong());
             break;
         case BITXOR:
             result = ValueLong.get(v0.getLong() ^ v1.getLong());
             break;
+        case LSHIFT:
+            result = ValueLong.get(v0.getLong() << v1.getInt());
+            break;
+        case RSHIFT:
+            result = ValueLong.get(v0.getLong() >> v1.getInt());
+            break;
         case MOD: {
             long x = v1.getLong();
             if (x == 0) {
-                throw DbException.get(ErrorCode.DIVISION_BY_ZERO_1, getSQL());
+                throw DbException.get(ErrorCode.DIVISION_BY_ZERO_1, getSQL(false));
             }
             result = ValueLong.get(v0.getLong() % x);
             break;
@@ -1198,36 +1318,12 @@ public class Function extends Expression implements FunctionCall {
             result = ValueDouble.get(Math.pow(
                     v0.getDouble(), v1.getDouble()));
             break;
-        case ROUND: {
-            double f = v1 == null ? 1. : Math.pow(10., v1.getDouble());
-
-            double middleResult = v0.getDouble() * f;
-
-            int oneWithSymbol = middleResult > 0 ? 1 : -1;
-            result = ValueDouble.get(Math.round(Math.abs(middleResult)) / f * oneWithSymbol);
+        case ROUND:
+            result = round(v0, v1);
             break;
-        }
-        case TRUNCATE: {
-            if (v0.getType() == Value.TIMESTAMP) {
-                result = ValueTimestamp.fromDateValueAndNanos(((ValueTimestamp) v0).getDateValue(), 0);
-            } else if (v0.getType() == Value.DATE) {
-                result = ValueTimestamp.fromDateValueAndNanos(((ValueDate) v0).getDateValue(), 0);
-            } else if (v0.getType() == Value.TIMESTAMP_TZ) {
-                ValueTimestampTimeZone ts = (ValueTimestampTimeZone) v0;
-                result = ValueTimestampTimeZone.fromDateValueAndNanos(ts.getDateValue(), 0,
-                        ts.getTimeZoneOffsetMins());
-            } else if (v0.getType() == Value.STRING) {
-                ValueTimestamp ts = ValueTimestamp.parse(v0.getString(), session.getDatabase().getMode());
-                result = ValueTimestamp.fromDateValueAndNanos(ts.getDateValue(), 0);
-            } else {
-                double d = v0.getDouble();
-                int p = v1 == null ? 0 : v1.getInt();
-                double f = Math.pow(10., p);
-                double g = d * f;
-                result = ValueDouble.get(((d < 0) ? Math.ceil(g) : Math.floor(g)) / f);
-            }
+        case TRUNCATE:
+            result = truncate(session, v0, v1);
             break;
-        }
         case HASH:
             result = getHash(v0.getString(), v1, v2 == null ? 1 : v2.getInt());
             break;
@@ -1261,15 +1357,12 @@ public class Function extends Expression implements FunctionCall {
             if (v1 == ValueNull.INSTANCE || v2 == ValueNull.INSTANCE) {
                 result = v1;
             } else {
-                result = ValueString.get(insert(v0.getString(),
-                        v1.getInt(), v2.getInt(), v3.getString()),
-                        database.getMode().treatEmptyStringsAsNull);
+                result = ValueString.get(insert(v0.getString(), v1.getInt(), v2.getInt(), v3.getString()), database);
             }
             break;
         }
         case LEFT:
-            result = ValueString.get(left(v0.getString(), v1.getInt()),
-                    database.getMode().treatEmptyStringsAsNull);
+            result = ValueString.get(left(v0.getString(), v1.getInt()), database);
             break;
         case LOCATE: {
             int start = v2 == null ? 0 : v2.getInt();
@@ -1283,11 +1376,10 @@ public class Function extends Expression implements FunctionCall {
         }
         case REPEAT: {
             int count = Math.max(0, v1.getInt());
-            result = ValueString.get(repeat(v0.getString(), count),
-                    database.getMode().treatEmptyStringsAsNull);
+            result = ValueString.get(repeat(v0.getString(), count), database);
             break;
         }
-        case REPLACE: {
+        case REPLACE:
             if (v0 == ValueNull.INSTANCE || v1 == ValueNull.INSTANCE
                     || v2 == ValueNull.INSTANCE && database.getMode().getEnum() != Mode.ModeEnum.Oracle) {
                 result = ValueNull.INSTANCE;
@@ -1298,49 +1390,33 @@ public class Function extends Expression implements FunctionCall {
                 if (s2 == null) {
                     s2 = "";
                 }
-                result = ValueString.get(StringUtils.replaceAll(s0, s1, s2),
-                        database.getMode().treatEmptyStringsAsNull);
+                result = ValueString.get(StringUtils.replaceAll(s0, s1, s2), database);
             }
             break;
-        }
         case RIGHT:
-            result = ValueString.get(right(v0.getString(), v1.getInt()),
-                    database.getMode().treatEmptyStringsAsNull);
+            result = ValueString.get(right(v0.getString(), v1.getInt()), database);
             break;
         case LTRIM:
-            result = ValueString.get(StringUtils.trim(v0.getString(),
-                    true, false, v1 == null ? " " : v1.getString()),
-                    database.getMode().treatEmptyStringsAsNull);
+            result = ValueString.get(StringUtils.trim(v0.getString(), true, false, v1 == null ? " " : v1.getString()),
+                    database);
             break;
         case TRIM:
             result = ValueString.get(StringUtils.trim(v0.getString(),
-                    true, true, v1 == null ? " " : v1.getString()),
-                    database.getMode().treatEmptyStringsAsNull);
+                    (flags & TRIM_LEADING) != 0, (flags & TRIM_TRAILING) != 0, v1 == null ? " " : v1.getString()),
+                    database);
             break;
         case RTRIM:
-            result = ValueString.get(StringUtils.trim(v0.getString(),
-                    false, true, v1 == null ? " " : v1.getString()),
-                    database.getMode().treatEmptyStringsAsNull);
+            result = ValueString.get(StringUtils.trim(v0.getString(), false, true, v1 == null ? " " : v1.getString()),
+                    database);
             break;
-        case SUBSTR:
-        case SUBSTRING: {
-            String s = v0.getString();
-            int offset = v1.getInt();
-            if (offset < 0) {
-                offset = s.length() + offset + 1;
-            }
-            int length = v2 == null ? s.length() : v2.getInt();
-            result = ValueString.get(substring(s, offset, length),
-                    database.getMode().treatEmptyStringsAsNull);
+        case SUBSTRING:
+            result = substring(v0, v1, v2);
             break;
-        }
         case POSITION:
             result = ValueInt.get(locate(v0.getString(), v1.getString(), 0));
             break;
         case XMLATTR:
-            result = ValueString.get(
-                    StringUtils.xmlAttr(v0.getString(), v1.getString()),
-                    database.getMode().treatEmptyStringsAsNull);
+            result = ValueString.get(StringUtils.xmlAttr(v0.getString(), v1.getString()), database);
             break;
         case XMLNODE: {
             String attr = v1 == null ?
@@ -1349,9 +1425,7 @@ public class Function extends Expression implements FunctionCall {
                     null : v2 == ValueNull.INSTANCE ? null : v2.getString();
             boolean indent = v3 == null ?
                     true : v3.getBoolean();
-            result = ValueString.get(StringUtils.xmlNode(
-                    v0.getString(), attr, content, indent),
-                    database.getMode().treatEmptyStringsAsNull);
+            result = ValueString.get(StringUtils.xmlNode(v0.getString(), attr, content, indent), database);
             break;
         }
         case REGEXP_REPLACE: {
@@ -1363,25 +1437,26 @@ public class Function extends Expression implements FunctionCall {
             break;
         }
         case RPAD:
-            result = ValueString.get(StringUtils.pad(v0.getString(),
-                    v1.getInt(), v2 == null ? null : v2.getString(), true),
-                    database.getMode().treatEmptyStringsAsNull);
+            result = ValueString.get(
+                    StringUtils.pad(v0.getString(), v1.getInt(), v2 == null ? null : v2.getString(), true),
+                    database);
             break;
         case LPAD:
-            result = ValueString.get(StringUtils.pad(v0.getString(),
-                    v1.getInt(), v2 == null ? null : v2.getString(), false),
-                    database.getMode().treatEmptyStringsAsNull);
+            result = ValueString.get(
+                    StringUtils.pad(v0.getString(), v1.getInt(), v2 == null ? null : v2.getString(), false),
+                    database);
             break;
         case TO_CHAR:
-            switch (v0.getType()){
+            switch (v0.getValueType()){
             case Value.TIME:
             case Value.DATE:
             case Value.TIMESTAMP:
             case Value.TIMESTAMP_TZ:
-                result = ValueString.get(ToChar.toCharDateTime(v0,
+                result = ValueString.get(
+                        ToChar.toCharDateTime(v0,
                         v1 == null ? null : v1.getString(),
                         v2 == null ? null : v2.getString()),
-                        database.getMode().treatEmptyStringsAsNull);
+                        database);
                 break;
             case Value.SHORT:
             case Value.INT:
@@ -1392,51 +1467,52 @@ public class Function extends Expression implements FunctionCall {
                 result = ValueString.get(ToChar.toChar(v0.getBigDecimal(),
                         v1 == null ? null : v1.getString(),
                         v2 == null ? null : v2.getString()),
-                        database.getMode().treatEmptyStringsAsNull);
+                        database);
                 break;
             default:
-                result = ValueString.get(v0.getString(),
-                        database.getMode().treatEmptyStringsAsNull);
+                result = ValueString.get(v0.getString(), database);
             }
             break;
         case TO_DATE:
-            result = ToDateParser.toDate(v0.getString(),
-                    v1 == null ? null : v1.getString());
+            result = ToDateParser.toDate(session, v0.getString(), v1 == null ? null : v1.getString());
             break;
         case TO_TIMESTAMP:
-            result = ToDateParser.toTimestamp(v0.getString(),
-                    v1 == null ? null : v1.getString());
+            result = ToDateParser.toTimestamp(session, v0.getString(), v1 == null ? null : v1.getString());
             break;
         case ADD_MONTHS:
             result = DateTimeFunctions.dateadd("MONTH", v1.getInt(), v0);
             break;
         case TO_TIMESTAMP_TZ:
-            result = ToDateParser.toTimestampTz(v0.getString(),
-                    v1 == null ? null : v1.getString());
+            result = ToDateParser.toTimestampTz(session, v0.getString(), v1 == null ? null : v1.getString());
             break;
         case TRANSLATE: {
             String matching = v1.getString();
             String replacement = v2.getString();
-            result = ValueString.get(
-                    translate(v0.getString(), matching, replacement),
-                    database.getMode().treatEmptyStringsAsNull);
+            if (database.getMode().getEnum() == ModeEnum.DB2) {
+                String t = matching;
+                matching = replacement;
+                replacement = t;
+            }
+            result = ValueString.get(translate(v0.getString(), matching, replacement), database);
             break;
         }
-        case H2VERSION:
-            result = ValueString.get(Constants.getVersion(),
-                    database.getMode().treatEmptyStringsAsNull);
+        case QUOTE_IDENT:
+            result = ValueString.get(StringUtils.quoteIdentifier(v0.getString()), database);
             break;
-        case DATE_ADD:
+        case H2VERSION:
+            result = ValueString.get(Constants.VERSION, database);
+            break;
+        case DATEADD:
             result = DateTimeFunctions.dateadd(v0.getString(), v1.getLong(), v2);
             break;
-        case DATE_DIFF:
+        case DATEDIFF:
             result = ValueLong.get(DateTimeFunctions.datediff(v0.getString(), v1, v2));
             break;
         case DATE_TRUNC:
             result = DateTimeFunctions.truncateDate(v0.getString(), v1);
             break;
         case EXTRACT:
-            result = DateTimeFunctions.extract(v0.getString(), v1);
+            result = DateTimeFunctions.extract(v0.getString(), v1, database.getMode());
             break;
         case FORMATDATETIME: {
             if (v0 == ValueNull.INSTANCE || v1 == ValueNull.INSTANCE) {
@@ -1447,12 +1523,12 @@ public class Function extends Expression implements FunctionCall {
                 String tz = v3 == null ?
                         null : v3 == ValueNull.INSTANCE ? null : v3.getString();
                 if (v0 instanceof ValueTimestampTimeZone) {
-                    tz = DateTimeUtils.timeZoneNameFromOffsetMins(
-                            ((ValueTimestampTimeZone) v0).getTimeZoneOffsetMins());
+                    tz = DateTimeUtils.timeZoneNameFromOffsetSeconds(
+                            ((ValueTimestampTimeZone) v0).getTimeZoneOffsetSeconds());
                 }
-                result = ValueString.get(DateTimeFunctions.formatDateTime(
-                        v0.getTimestamp(), v1.getString(), locale, tz),
-                        database.getMode().treatEmptyStringsAsNull);
+                result = ValueString.get(
+                        DateTimeFunctions.formatDateTime(v0.getTimestamp(null), v1.getString(), locale, tz),
+                        database);
             }
             break;
         }
@@ -1466,7 +1542,7 @@ public class Function extends Expression implements FunctionCall {
                         null : v3 == ValueNull.INSTANCE ? null : v3.getString();
                 java.util.Date d = DateTimeFunctions.parseDateTime(
                         v0.getString(), v1.getString(), locale, tz);
-                result = ValueTimestamp.fromMillis(d.getTime());
+                result = ValueTimestamp.fromMillis(d.getTime(), 0);
             }
             break;
         }
@@ -1476,8 +1552,8 @@ public class Function extends Expression implements FunctionCall {
             // system
         case NEXTVAL: {
             Sequence sequence = getSequence(session, v0, v1);
-            SequenceValue value = new SequenceValue(sequence);
-            result = value.getValue(session);
+            result = ValueLong.get(sequence.getNext(session));
+            session.setLastIdentity(result);
             break;
         }
         case CURRVAL: {
@@ -1512,6 +1588,61 @@ public class Function extends Expression implements FunctionCall {
             } catch (SQLException e) {
                 throw DbException.convert(e);
             }
+            break;
+        }
+        case ARRAY_CONCAT: {
+            final ValueArray array = (ValueArray) v0.convertTo(Value.ARRAY);
+            final ValueArray array2 = (ValueArray) v1.convertTo(Value.ARRAY);
+            if (!array.getComponentType().equals(array2.getComponentType()))
+                throw DbException.get(ErrorCode.GENERAL_ERROR_1, "Expected component type " + array.getComponentType()
+                        + " but got " + array2.getComponentType());
+            final Value[] res = Arrays.copyOf(array.getList(), array.getList().length + array2.getList().length);
+            System.arraycopy(array2.getList(), 0, res, array.getList().length, array2.getList().length);
+            result = ValueArray.get(array.getComponentType(), res);
+            break;
+        }
+        case ARRAY_APPEND: {
+            final ValueArray array = (ValueArray) v0.convertTo(Value.ARRAY);
+            if (v1 != ValueNull.INSTANCE && array.getComponentType() != Object.class
+                    && !array.getComponentType().isInstance(v1.getObject()))
+                throw DbException.get(ErrorCode.GENERAL_ERROR_1,
+                        "Expected component type " + array.getComponentType() + " but got " + v1.getClass());
+            final Value[] res = Arrays.copyOf(array.getList(), array.getList().length + 1);
+            res[array.getList().length] = v1;
+            result = ValueArray.get(array.getComponentType(), res);
+            break;
+        }
+        case ARRAY_SLICE: {
+            result = null;
+            final ValueArray array = (ValueArray) v0.convertTo(Value.ARRAY);
+            // SQL is 1-based
+            int index1 = v1.getInt() - 1;
+            // 1-based and inclusive as postgreSQL (-1+1)
+            int index2 = v2.getInt();
+            // https://www.postgresql.org/docs/current/arrays.html#ARRAYS-ACCESSING
+            // For historical reasons postgreSQL ignore invalid indexes
+            final boolean isPG = database.getMode().getEnum() == ModeEnum.PostgreSQL;
+            if (index1 > index2) {
+                if (isPG)
+                    result = ValueArray.get(array.getComponentType(), new Value[0]);
+                else
+                    result = ValueNull.INSTANCE;
+            } else {
+                if (index1 < 0) {
+                    if (isPG)
+                        index1 = 0;
+                    else
+                        result = ValueNull.INSTANCE;
+                }
+                if (index2 > array.getList().length) {
+                    if (isPG)
+                        index2 = array.getList().length;
+                    else
+                        result = ValueNull.INSTANCE;
+                }
+            }
+            if (result == null)
+                result = ValueArray.get(array.getComponentType(), Arrays.copyOfRange(array.getList(), index1, index2));
             break;
         }
         case LINK_SCHEMA: {
@@ -1606,18 +1737,22 @@ public class Function extends Expression implements FunctionCall {
             break;
         }
         case TRUNCATE_VALUE: {
-            result = v0.convertPrecision(v1.getLong(), v2.getBoolean());
+            long precision = v1.getLong();
+            int valueType;
+            if (v2.getBoolean() //
+                    && DataType.isNumericType(valueType = v0.getValueType()) && valueType != Value.DECIMAL) {
+                result = v0.checkPrecision(precision) ? v0 //
+                        : v0.convertTo(Value.DECIMAL).convertPrecision(precision).convertTo(valueType);
+            } else {
+                result = v0.convertPrecision(precision);
+            }
             break;
         }
         case XMLTEXT:
             if (v1 == null) {
-                result = ValueString.get(StringUtils.xmlText(
-                        v0.getString()),
-                        database.getMode().treatEmptyStringsAsNull);
+                result = ValueString.get(StringUtils.xmlText(v0.getString()), database);
             } else {
-                result = ValueString.get(StringUtils.xmlText(
-                        v0.getString(), v1.getBoolean()),
-                        database.getMode().treatEmptyStringsAsNull);
+                result = ValueString.get(StringUtils.xmlText(v0.getString(), v1.getBoolean()), database);
             }
             break;
         case REGEXP_LIKE: {
@@ -1632,10 +1767,15 @@ public class Function extends Expression implements FunctionCall {
             }
             break;
         }
-        case VALUES:
-            result = session.getVariable(args[0].getSchemaName() + "." +
-                    args[0].getTableName() + "." + args[0].getColumnName());
+        case VALUES: {
+            Expression a0 = args[0];
+            StringBuilder builder = new StringBuilder();
+            Parser.quoteIdentifier(builder, a0.getSchemaName(), true).append('.');
+            Parser.quoteIdentifier(builder, a0.getTableName(), true).append('.');
+            Parser.quoteIdentifier(builder, a0.getColumnName(), true);
+            result = session.getVariable(builder.toString());
             break;
+        }
         case SIGNAL: {
             String sqlState = v0.getString();
             if (sqlState.startsWith("00") || !SIGNAL_PATTERN.matcher(sqlState).matches()) {
@@ -1646,6 +1786,62 @@ public class Function extends Expression implements FunctionCall {
         }
         default:
             throw DbException.throwInternalError("type=" + info.type);
+        }
+        return result;
+    }
+
+    private Value round(Value v0, Value v1) {
+        BigDecimal bd = v0.getBigDecimal().setScale(v1 == null ? 0 : v1.getInt(), RoundingMode.HALF_UP);
+        Value result;
+        switch (type.getValueType()) {
+        case Value.DOUBLE:
+            result = ValueDouble.get(bd.doubleValue());
+            break;
+        case Value.FLOAT:
+            result = ValueFloat.get(bd.floatValue());
+            break;
+        default:
+            result = ValueDecimal.get(bd);
+        }
+        return result;
+    }
+
+    private static Value truncate(Session session, Value v0, Value v1) {
+        Value result;
+        int t = v0.getValueType();
+        switch (t) {
+        case Value.TIMESTAMP:
+            result = ValueTimestamp.fromDateValueAndNanos(((ValueTimestamp) v0).getDateValue(), 0);
+            break;
+        case Value.DATE:
+            result = ValueTimestamp.fromDateValueAndNanos(((ValueDate) v0).getDateValue(), 0);
+            break;
+        case Value.TIMESTAMP_TZ: {
+            ValueTimestampTimeZone ts = (ValueTimestampTimeZone) v0;
+            result = ValueTimestampTimeZone.fromDateValueAndNanos(ts.getDateValue(), 0,
+                    ts.getTimeZoneOffsetSeconds());
+            break;
+        }
+        case Value.STRING:
+            result = ValueTimestamp.fromDateValueAndNanos(
+                    ValueTimestamp.parse(v0.getString(), session).getDateValue(), 0);
+            break;
+        default:
+            int scale = v1 == null ? 0 : v1.getInt();
+            if (t == Value.DOUBLE || t == Value.FLOAT) {
+                double d = v0.getDouble();
+                if (scale == 0) {
+                    d = d < 0 ? Math.ceil(d) : Math.floor(d);
+                } else {
+                    double f = Math.pow(10, scale);
+                    d *= f;
+                    d = (d < 0 ? Math.ceil(d) : Math.floor(d)) / f;
+                }
+                result = t == Value.DOUBLE ? ValueDouble.get(d) : ValueFloat.get((float) d);
+            } else {
+                result = ValueDecimal.get(v0.getBigDecimal().setScale(scale, RoundingMode.DOWN));
+            }
+            break;
         }
         return result;
     }
@@ -1686,15 +1882,48 @@ public class Function extends Expression implements FunctionCall {
     }
 
     private static long length(Value v) {
-        switch (v.getType()) {
+        switch (v.getValueType()) {
         case Value.BLOB:
         case Value.CLOB:
         case Value.BYTES:
         case Value.JAVA_OBJECT:
-            return v.getPrecision();
+            return v.getType().getPrecision();
         default:
             return v.getString().length();
         }
+    }
+
+    private Value log(Value v0, Value v1) {
+        double arg = v0.getDouble();
+        double r;
+        Mode mode = database.getMode();
+        if (v1 == null) {
+            if (arg <= 0) {
+                throw DbException.getInvalidValueException("LOG() argument", arg);
+            }
+            r = mode.logIsLogBase10 ? Math.log10(arg) : Math.log(arg);
+        } else {
+            double base = v1.getDouble();
+            if (!mode.swapLogFunctionParameters) {
+                double t = arg;
+                arg = base;
+                base = t;
+            }
+            if (arg <= 0) {
+                throw DbException.getInvalidValueException("LOG() argument", arg);
+            }
+            if (base <= 0 || base == 1) {
+                throw DbException.getInvalidValueException("LOG() base", base);
+            }
+            if (base == Math.E) {
+                r = Math.log(arg);
+            } else if (base == 10d) {
+                r = Math.log10(arg);
+            } else {
+                r = Math.log(arg) / Math.log(base);
+            }
+        }
+        return ValueDouble.get(r);
     }
 
     private static byte[] getPaddedArrayCopy(byte[] data, int blockSize) {
@@ -1738,20 +1967,51 @@ public class Function extends Expression implements FunctionCall {
         return ValueBytes.getNoCopy(b);
     }
 
-    private static String substring(String s, int start, int length) {
-        int len = s.length();
-        start--;
-        if (start < 0) {
-            start = 0;
+    private Value substring(Value stringValue, Value startValue, Value lengthValue) {
+        if (type.getValueType() == Value.BYTES) {
+            byte[] s = stringValue.getBytesNoCopy();
+            int sl = s.length;
+            int start = startValue.getInt();
+            // These compatibility conditions violate the Standard
+            if (start == 0) {
+                start = 1;
+            } else if (start < 0) {
+                start = sl + start + 1;
+            }
+            int end = lengthValue == null ? Math.max(sl + 1, start) : start + lengthValue.getInt();
+            // SQL Standard requires "data exception - substring error" when
+            // end < start but H2 does not throw it for compatibility
+            start = Math.max(start, 1);
+            end = Math.min(end, sl + 1);
+            if (start > sl || end <= start) {
+                return ValueBytes.EMPTY;
+            }
+            start--;
+            end--;
+            if (start == 0 && end == s.length) {
+                return stringValue.convertTo(Value.BYTES);
+            }
+            return ValueBytes.getNoCopy(Arrays.copyOfRange(s, start, end));
+        } else {
+            String s = stringValue.getString();
+            int sl = s.length();
+            int start = startValue.getInt();
+            // These compatibility conditions violate the Standard
+            if (start == 0) {
+                start = 1;
+            } else if (start < 0) {
+                start = sl + start + 1;
+            }
+            int end = lengthValue == null ? Math.max(sl + 1, start) : start + lengthValue.getInt();
+            // SQL Standard requires "data exception - substring error" when
+            // end < start but H2 does not throw it for compatibility
+            start = Math.max(start, 1);
+            end = Math.min(end, sl + 1);
+            if (start > sl || end <= start) {
+                return database.getMode().treatEmptyStringsAsNull ? ValueNull.INSTANCE : ValueString.EMPTY;
+            }
+            return ValueString.get(s.substring(start - 1, end - 1), null);
         }
-        if (length < 0) {
-            length = 0;
-        }
-        start = (start > len) ? len : start;
-        if (start + length > len) {
-            length = len - start;
-        }
-        return s.substring(start, start + length);
     }
 
     private static String repeat(String s, int count) {
@@ -1762,7 +2022,14 @@ public class Function extends Expression implements FunctionCall {
         return buff.toString();
     }
 
-    private static String rawToHex(String s) {
+    private static String rawToHex(Value v, Mode mode) {
+        if (DataType.isBinaryStringOrSpecialBinaryType(v.getValueType())) {
+            return StringUtils.convertBytesToHex(v.getBytesNoCopy());
+        }
+        String s = v.getString();
+        if (mode.getEnum() == ModeEnum.Oracle) {
+            return StringUtils.convertBytesToHex(s.getBytes(StandardCharsets.UTF_8));
+        }
         int length = s.length();
         StringBuilder buff = new StringBuilder(4 * length);
         for (int i = 0; i < length; i++) {
@@ -1821,8 +2088,10 @@ public class Function extends Expression implements FunctionCall {
         return s1.substring(0, start) + s2 + s1.substring(start + length);
     }
 
-    private static String hexToRaw(String s) {
-        // TODO function hextoraw compatibility with oracle
+    private static Value hexToRaw(String s, Database database) {
+        if (database.getMode().getEnum() == ModeEnum.Oracle) {
+            return ValueBytes.get(StringUtils.convertHexToBytes(s));
+        }
         int len = s.length();
         if (len % 4 != 0) {
             throw DbException.get(ErrorCode.DATA_CONVERSION_ERROR_1, s);
@@ -1836,7 +2105,7 @@ public class Function extends Expression implements FunctionCall {
                 throw DbException.get(ErrorCode.DATA_CONVERSION_ERROR_1, s);
             }
         }
-        return buff.toString();
+        return ValueString.get(buff.toString(), database);
     }
 
     private static int getDifference(String s1, String s2) {
@@ -1967,7 +2236,7 @@ public class Function extends Expression implements FunctionCall {
 
     private static MessageDigest hashImpl(Value value, String algorithm) {
         MessageDigest md;
-        switch (value.getType()) {
+        switch (value.getValueType()) {
         case Value.NULL:
             return null;
         case Value.STRING:
@@ -2029,12 +2298,10 @@ public class Function extends Expression implements FunctionCall {
             Matcher matcher = Pattern.compile(regexp, flags).matcher(input);
             return ValueString.get(isInPostgreSqlMode && (regexpMode == null || regexpMode.indexOf('g') < 0) ?
                     matcher.replaceFirst(replacement) : matcher.replaceAll(replacement),
-                    mode.treatEmptyStringsAsNull);
-        } catch (StringIndexOutOfBoundsException e) {
-            throw DbException.get(ErrorCode.LIKE_ESCAPE_ERROR_1, e, replacement);
+                    database);
         } catch (PatternSyntaxException e) {
             throw DbException.get(ErrorCode.LIKE_ESCAPE_ERROR_1, e, regexp);
-        } catch (IllegalArgumentException e) {
+        } catch (StringIndexOutOfBoundsException | IllegalArgumentException e) {
             throw DbException.get(ErrorCode.LIKE_ESCAPE_ERROR_1, e, replacement);
         }
     }
@@ -2069,9 +2336,132 @@ public class Function extends Expression implements FunctionCall {
         return flags;
     }
 
+    private Value jsonObject(Session session, Expression[] args) {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        baos.write('{');
+        for (int i = 0, l = args.length; i < l;) {
+            String name = args[i++].getValue(session).getString();
+            if (name == null) {
+                throw DbException.getInvalidValueException("JSON_OBJECT key", "NULL");
+            }
+            Value value = args[i++].getValue(session);
+            if (value == ValueNull.INSTANCE) {
+                if ((flags & JSON_ABSENT_ON_NULL) != 0) {
+                    continue;
+                } else {
+                    value = ValueJson.NULL;
+                }
+            }
+            jsonObjectAppend(baos, name, value);
+        }
+        return jsonObjectFinish(baos, flags);
+    }
+
+    /**
+     * Appends a value to a JSON object in the specified string builder.
+     *
+     * @param baos the output stream to append to
+     * @param key the name of the property
+     * @param value the value of the property
+     */
+    public static void jsonObjectAppend(ByteArrayOutputStream baos, String key, Value value) {
+        if (baos.size() > 1) {
+            baos.write(',');
+        }
+        JSONByteArrayTarget.encodeString(baos, key).write(':');
+        byte[] b = value.convertTo(Value.JSON).getBytesNoCopy();
+        baos.write(b, 0, b.length);
+    }
+
+    /**
+     * Appends trailing closing brace to the specified string builder with a
+     * JSON object, validates it, and converts to a JSON value.
+     *
+     * @param baos the output stream with the object
+     * @param flags the flags ({@link #JSON_WITH_UNIQUE_KEYS})
+     * @return the JSON value
+     * @throws DbException
+     *             if {@link #JSON_WITH_UNIQUE_KEYS} is specified and keys are
+     *             not unique
+     */
+    public static Value jsonObjectFinish(ByteArrayOutputStream baos, int flags) {
+        baos.write('}');
+        byte[] result = baos.toByteArray();
+        if ((flags & JSON_WITH_UNIQUE_KEYS) != 0) {
+            try {
+                JSONBytesSource.parse(result, new JSONValidationTargetWithUniqueKeys());
+            } catch (RuntimeException ex) {
+                String s = JSONBytesSource.parse(result, new JSONStringTarget());
+                throw DbException.getInvalidValueException("JSON WITH UNIQUE KEYS",
+                        s.length() < 128 ? result : s.substring(0, 128) + "...");
+            }
+        }
+        return ValueJson.getInternal(result);
+    }
+
+    private Value jsonArray(Session session, Expression[] args) {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        baos.write('[');
+        int l = args.length;
+        evaluate: {
+            if (l == 1) {
+                Expression arg0 = args[0];
+                if (arg0 instanceof Subquery) {
+                    Subquery q = (Subquery) arg0;
+                    for (Value value : q.getAllRows(session)) {
+                        jsonArrayAppend(baos, value, flags);
+                    }
+                    break evaluate;
+                } else if (arg0 instanceof Format) {
+                    Format format = (Format) arg0;
+                    arg0 = format.getSubexpression(0);
+                    if (arg0 instanceof Subquery) {
+                        Subquery q = (Subquery) arg0;
+                        for (Value value : q.getAllRows(session)) {
+                            jsonArrayAppend(baos, format.getValue(value), flags);
+                        }
+                        break evaluate;
+                    }
+                }
+            }
+            for (int i = 0; i < l;) {
+                jsonArrayAppend(baos, args[i++].getValue(session), flags);
+            }
+        }
+        baos.write(']');
+        return ValueJson.getInternal(baos.toByteArray());
+    }
+
+    /**
+     * Appends a value to a JSON array in the specified string builder.
+     *
+     * @param baos the output stream to append to
+     * @param value the value
+     * @param flags the flags ({@link #JSON_ABSENT_ON_NULL})
+     */
+    public static void jsonArrayAppend(ByteArrayOutputStream baos, Value value, int flags) {
+        if (value == ValueNull.INSTANCE) {
+            if ((flags & JSON_ABSENT_ON_NULL) != 0) {
+                return;
+            } else {
+                value = ValueJson.NULL;
+            }
+        }
+        if (baos.size() > 1) {
+            baos.write(',');
+        }
+        byte[] b = value.convertTo(Value.JSON).getBytesNoCopy();
+        baos.write(b, 0, b.length);
+    }
+
     @Override
-    public int getType() {
-        return dataType;
+    public TypeInfo getType() {
+        return type;
+    }
+
+    @Override
+    public int getValueType() {
+        return type.getValueType();
     }
 
     @Override
@@ -2105,6 +2495,7 @@ public class Function extends Expression implements FunctionCall {
         case RAND:
             max = 1;
             break;
+        case LOG:
         case COMPRESS:
         case LTRIM:
         case RTRIM:
@@ -2115,6 +2506,8 @@ public class Function extends Expression implements FunctionCall {
         case TRUNCATE:
         case TO_TIMESTAMP:
         case TO_TIMESTAMP_TZ:
+        case CURRVAL:
+        case NEXTVAL:
             min = 1;
             max = 2;
             break;
@@ -2124,9 +2517,6 @@ public class Function extends Expression implements FunctionCall {
             break;
         case TO_CHAR:
         case TO_DATE:
-            min = 1;
-            max = 3;
-            break;
         case ORA_HASH:
             min = 1;
             max = 3;
@@ -2135,10 +2525,10 @@ public class Function extends Expression implements FunctionCall {
         case REPLACE:
         case LOCATE:
         case INSTR:
-        case SUBSTR:
         case SUBSTRING:
         case LPAD:
         case RPAD:
+        case REGEXP_LIKE:
             min = 2;
             max = 3;
             break;
@@ -2156,11 +2546,6 @@ public class Function extends Expression implements FunctionCall {
             min = 2;
             max = 4;
             break;
-        case CURRVAL:
-        case NEXTVAL:
-            min = 1;
-            max = 2;
-            break;
         case DECODE:
         case CASE:
             min = 3;
@@ -2169,18 +2554,14 @@ public class Function extends Expression implements FunctionCall {
             min = 3;
             max = 4;
             break;
-        case REGEXP_LIKE:
-            min = 2;
-            max = 3;
+        case JSON_OBJECT: // Ensured by Parser
+        case JSON_ARRAY:
             break;
         default:
             DbException.throwInternalError("type=" + info.type);
         }
-        boolean ok = (len >= min) && (len <= max);
-        if (!ok) {
-            throw DbException.get(
-                    ErrorCode.INVALID_PARAMETER_COUNT_2,
-                    info.name, min + ".." + max);
+        if (len < min || len > max) {
+            throw DbException.get(ErrorCode.INVALID_PARAMETER_COUNT_2, info.name, min + ".." + max);
         }
     }
 
@@ -2191,26 +2572,19 @@ public class Function extends Expression implements FunctionCall {
      * @throws DbException if the parameter count is incorrect.
      */
     public void doneWithParameters() {
-        if (info.parameterCount == VAR_ARGS) {
-            checkParameterCount(varArgs.size());
-            args = varArgs.toArray(new Expression[0]);
-            varArgs = null;
-        } else {
-            int len = args.length;
-            if (len > 0 && args[len - 1] == null) {
-                throw DbException.get(
-                        ErrorCode.INVALID_PARAMETER_COUNT_2,
-                        info.name, Integer.toString(len));
+        int count = info.parameterCount;
+        if (count == VAR_ARGS) {
+            checkParameterCount(argsCount);
+            if (args.length != argsCount) {
+                args = Arrays.copyOf(args, argsCount);
             }
+        } else if (count != argsCount) {
+            throw DbException.get(ErrorCode.INVALID_PARAMETER_COUNT_2, info.name, Integer.toString(argsCount));
         }
     }
 
-    public void setDataType(Column col) {
-        dataType = col.getType();
-        precision = col.getPrecision();
-        displaySize = col.getDisplaySize();
-        scale = col.getScale();
-        extTypeInfo = col.getExtTypeInfo();
+    public void setDataType(TypeInfo type) {
+        this.type = type;
     }
 
     @Override
@@ -2227,20 +2601,16 @@ public class Function extends Expression implements FunctionCall {
                 allConst = false;
             }
         }
-        int t, s, d;
-        long p;
+        TypeInfo typeInfo;
         Expression p0 = args.length < 1 ? null : args[0];
         switch (info.type) {
-        case DATE_ADD: {
-            t = Value.TIMESTAMP;
-            p = d = ValueTimestamp.DEFAULT_PRECISION;
-            s = ValueTimestamp.MAXIMUM_SCALE;
+        case DATEADD: {
+            typeInfo = TypeInfo.TYPE_TIMESTAMP;
             if (p0.isConstant()) {
                 Expression p2 = args[2];
-                switch (p2.getType()) {
+                switch (p2.getType().getValueType()) {
                 case Value.TIME:
-                    t = Value.TIME;
-                    p = d = ValueTime.DEFAULT_PRECISION;
+                    typeInfo = TypeInfo.TYPE_TIME;
                     break;
                 case Value.DATE: {
                     int field = DateTimeFunctions.getDatePart(p0.getValue(session).getString());
@@ -2255,209 +2625,178 @@ public class Function extends Expression implements FunctionCall {
                         // TIMESTAMP result
                         break;
                     default:
-                        t = Value.DATE;
-                        p = d = ValueDate.PRECISION;
-                        s = 0;
+                        type = TypeInfo.TYPE_DATE;
                     }
                     break;
                 }
                 case Value.TIMESTAMP_TZ:
-                    t = Value.TIMESTAMP_TZ;
-                    p = d = ValueTimestampTimeZone.DEFAULT_PRECISION;
+                    type = TypeInfo.TYPE_TIMESTAMP_TZ;
                 }
             }
             break;
         }
         case EXTRACT: {
             if (p0.isConstant() && DateTimeFunctions.getDatePart(p0.getValue(session).getString()) == Function.EPOCH) {
-                t = Value.DECIMAL;
-                p = ValueLong.PRECISION + ValueTimestamp.MAXIMUM_SCALE;
-                s = ValueTimestamp.MAXIMUM_SCALE;
-                d = ValueLong.PRECISION + ValueTimestamp.MAXIMUM_SCALE + 1;
+                typeInfo = TypeInfo.getTypeInfo(Value.DECIMAL, ValueLong.PRECISION + ValueTimestamp.MAXIMUM_SCALE,
+                        ValueTimestamp.MAXIMUM_SCALE, null);
             } else {
-                t = Value.INT;
-                p = ValueInt.PRECISION;
-                s = 0;
-                d = ValueInt.DISPLAY_SIZE;
+                typeInfo = TypeInfo.TYPE_INT;
             }
             break;
         }
-        case DATE_TRUNC: {
-            Expression p1 = args[1];
-            t = p1.getType();
-            if (t == Value.TIMESTAMP_TZ) {
-                p = d = ValueTimestampTimeZone.DEFAULT_PRECISION;
-            } else {
-                t = Value.TIMESTAMP;
-                p = d = ValueTimestamp.DEFAULT_PRECISION;
+        case DATE_TRUNC:
+            typeInfo = args[1].getType();
+            // TODO set scale when possible
+            if (typeInfo.getValueType() != Value.TIMESTAMP_TZ) {
+                typeInfo = TypeInfo.TYPE_TIMESTAMP;
             }
-            s = ValueTimestamp.MAXIMUM_SCALE;
             break;
-        }
         case IFNULL:
         case NULLIF:
         case COALESCE:
         case LEAST:
         case GREATEST: {
-            t = Value.UNKNOWN;
-            s = 0;
-            p = 0;
-            d = 0;
+            typeInfo = TypeInfo.TYPE_UNKNOWN;
             for (Expression e : args) {
-                if (e != ValueExpression.getNull()) {
-                    int type = e.getType();
-                    if (type != Value.UNKNOWN && type != Value.NULL) {
-                        t = Value.getHigherOrder(t, type);
-                        s = Math.max(s, e.getScale());
-                        p = Math.max(p, e.getPrecision());
-                        d = Math.max(d, e.getDisplaySize());
+                if (!e.isNullConstant()) {
+                    TypeInfo type = e.getType();
+                    int valueType = type.getValueType();
+                    if (valueType != Value.UNKNOWN && valueType != Value.NULL) {
+                        typeInfo = Value.getHigherType(typeInfo, type);
                     }
                 }
             }
-            if (t == Value.UNKNOWN) {
-                t = Value.STRING;
-                s = 0;
-                p = Integer.MAX_VALUE;
-                d = Integer.MAX_VALUE;
+            if (typeInfo.getValueType() == Value.UNKNOWN) {
+                typeInfo = TypeInfo.TYPE_STRING;
             }
             break;
         }
         case CASE:
         case DECODE: {
-            t = Value.UNKNOWN;
-            s = 0;
-            p = 0;
-            d = 0;
+            typeInfo = TypeInfo.TYPE_UNKNOWN;
             // (expr, when, then)
             // (expr, when, then, else)
             // (expr, when, then, when, then)
             // (expr, when, then, when, then, else)
             for (int i = 2, len = args.length; i < len; i += 2) {
                 Expression then = args[i];
-                if (then != ValueExpression.getNull()) {
-                    int type = then.getType();
-                    if (type != Value.UNKNOWN && type != Value.NULL) {
-                        t = Value.getHigherOrder(t, type);
-                        s = Math.max(s, then.getScale());
-                        p = Math.max(p, then.getPrecision());
-                        d = Math.max(d, then.getDisplaySize());
+                if (!then.isNullConstant()) {
+                    TypeInfo type = then.getType();
+                    int valueType = type.getValueType();
+                    if (valueType != Value.UNKNOWN && valueType != Value.NULL) {
+                        typeInfo = Value.getHigherType(typeInfo, type);
                     }
                 }
             }
             if (args.length % 2 == 0) {
                 Expression elsePart = args[args.length - 1];
-                if (elsePart != ValueExpression.getNull()) {
-                    int type = elsePart.getType();
-                    if (type != Value.UNKNOWN && type != Value.NULL) {
-                        t = Value.getHigherOrder(t, type);
-                        s = Math.max(s, elsePart.getScale());
-                        p = Math.max(p, elsePart.getPrecision());
-                        d = Math.max(d, elsePart.getDisplaySize());
+                if (!elsePart.isNullConstant()) {
+                    TypeInfo type = elsePart.getType();
+                    int valueType = type.getValueType();
+                    if (valueType != Value.UNKNOWN && valueType != Value.NULL) {
+                        typeInfo = Value.getHigherType(typeInfo, type);
                     }
                 }
             }
-            if (t == Value.UNKNOWN) {
-                t = Value.STRING;
-                s = 0;
-                p = Integer.MAX_VALUE;
-                d = Integer.MAX_VALUE;
+            if (typeInfo.getValueType() == Value.UNKNOWN) {
+                typeInfo = TypeInfo.TYPE_STRING;
             }
             break;
         }
         case CASEWHEN:
-            t = Value.getHigherOrder(args[1].getType(), args[2].getType());
-            p = Math.max(args[1].getPrecision(), args[2].getPrecision());
-            d = Math.max(args[1].getDisplaySize(), args[2].getDisplaySize());
-            s = Math.max(args[1].getScale(), args[2].getScale());
+            typeInfo = Value.getHigherType(args[1].getType(), args[2].getType());
             break;
-        case NVL2:
-            switch (args[1].getType()) {
+        case NVL2: {
+            TypeInfo t1 = args[1].getType(), t2 = args[2].getType();
+            switch (t1.getValueType()) {
             case Value.STRING:
             case Value.CLOB:
             case Value.STRING_FIXED:
             case Value.STRING_IGNORECASE:
-                t = args[1].getType();
+                typeInfo = TypeInfo.getTypeInfo(t1.getValueType(), -1, 0, null);
                 break;
             default:
-                t = Value.getHigherOrder(args[1].getType(), args[2].getType());
+                typeInfo = Value.getHigherType(t1, t2);
                 break;
             }
-            p = Math.max(args[1].getPrecision(), args[2].getPrecision());
-            d = Math.max(args[1].getDisplaySize(), args[2].getDisplaySize());
-            s = Math.max(args[1].getScale(), args[2].getScale());
             break;
+        }
         case CAST:
         case CONVERT:
         case TRUNCATE_VALUE:
-            // data type, precision and scale is already set
-            t = dataType;
-            p = precision;
-            s = scale;
-            d = displaySize;
+            if (type != null) {
+                // data type, precision and scale is already set
+                typeInfo = type;
+            } else {
+                typeInfo = TypeInfo.TYPE_UNKNOWN;
+            }
+            break;
+        case CEILING:
+        case FLOOR:
+        case ROUND:
+            switch (p0.getType().getValueType()) {
+            case Value.DOUBLE:
+                typeInfo = TypeInfo.TYPE_DOUBLE;
+                break;
+            case Value.FLOAT:
+                typeInfo = TypeInfo.TYPE_FLOAT;
+                break;
+            default:
+                typeInfo = getRoundNumericType(session);
+            }
             break;
         case TRUNCATE:
-            switch (p0.getType()) {
+            switch (p0.getType().getValueType()) {
+            case Value.DOUBLE:
+                typeInfo = TypeInfo.TYPE_DOUBLE;
+                break;
+            case Value.FLOAT:
+                typeInfo = TypeInfo.TYPE_FLOAT;
+                break;
             case Value.STRING:
             case Value.DATE:
             case Value.TIMESTAMP:
-                t = Value.TIMESTAMP;
-                p = d = ValueTimestamp.DEFAULT_PRECISION;
-                s = 0;
+                if (args.length > 1) {
+                    throw DbException.get(ErrorCode.INVALID_PARAMETER_COUNT_2, info.name, "1");
+                }
+                typeInfo = TypeInfo.getTypeInfo(Value.TIMESTAMP, -1, 0, null);
                 break;
             case Value.TIMESTAMP_TZ:
-                t = Value.TIMESTAMP;
-                p = d = ValueTimestampTimeZone.DEFAULT_PRECISION;
-                s = 0;
+                if (args.length > 1) {
+                    throw DbException.get(ErrorCode.INVALID_PARAMETER_COUNT_2, info.name, "1");
+                }
+                typeInfo = TypeInfo.getTypeInfo(Value.TIMESTAMP_TZ, -1, 0, null);
                 break;
             default:
-                t = Value.DOUBLE;
-                s = 0;
-                p = ValueDouble.PRECISION;
-                d = ValueDouble.DISPLAY_SIZE;
+                typeInfo = getRoundNumericType(session);
             }
             break;
-        case ABS:
-        case FLOOR:
-        case ROUND:
-            t = p0.getType();
-            s = p0.getScale();
-            p = p0.getPrecision();
-            d = p0.getDisplaySize();
-            if (t == Value.NULL) {
-                t = Value.INT;
-                p = ValueInt.PRECISION;
-                d = ValueInt.DISPLAY_SIZE;
-                s = 0;
+        case ABS: {
+            TypeInfo type = p0.getType();
+            typeInfo = type;
+            if (typeInfo.getValueType() == Value.NULL) {
+                typeInfo = TypeInfo.TYPE_INT;
             }
             break;
-        case SET: {
-            Expression p1 = args[1];
-            t = p1.getType();
-            p = p1.getPrecision();
-            s = p1.getScale();
-            d = p1.getDisplaySize();
+        }
+        case SET:
+            typeInfo = args[1].getType();
             if (!(p0 instanceof Variable)) {
                 throw DbException.get(
-                        ErrorCode.CAN_ONLY_ASSIGN_TO_VARIABLE_1, p0.getSQL());
+                        ErrorCode.CAN_ONLY_ASSIGN_TO_VARIABLE_1, p0.getSQL(false));
             }
             break;
-        }
         case FILE_READ: {
             if (args.length == 1) {
-                t = Value.BLOB;
+                typeInfo = TypeInfo.getTypeInfo(Value.BLOB, Integer.MAX_VALUE, 0, null);
             } else {
-                t = Value.CLOB;
+                typeInfo = TypeInfo.getTypeInfo(Value.CLOB, Integer.MAX_VALUE, 0, null);
             }
-            p = Integer.MAX_VALUE;
-            s = 0;
-            d = Integer.MAX_VALUE;
             break;
         }
-        case SUBSTRING:
-        case SUBSTR: {
-            t = info.returnDataType;
-            p = args[0].getPrecision();
-            s = 0;
+        case SUBSTRING: {
+            TypeInfo argType = args[0].getType();
+            long p = argType.getPrecision();
             if (args[1].isConstant()) {
                 // if only two arguments are used,
                 // subtract offset from first argument length
@@ -2468,30 +2807,114 @@ public class Function extends Expression implements FunctionCall {
                 p = Math.min(p, args[2].getValue(session).getLong());
             }
             p = Math.max(0, p);
-            d = MathUtils.convertLongToInt(p);
+            typeInfo = TypeInfo.getTypeInfo(DataType.isBinaryStringType(argType.getValueType())
+                    ? Value.BYTES : Value.STRING, p, 0, null);
             break;
         }
-        default:
-            t = info.returnDataType;
-            DataType type = DataType.getDataType(t);
-            p = PRECISION_UNKNOWN;
-            d = 0;
-            s = type.defaultScale;
+        case ENCRYPT:
+        case DECRYPT:
+            typeInfo = TypeInfo.getTypeInfo(info.returnDataType, args[2].getType().getPrecision(), 0, null);
+            break;
+        case COMPRESS:
+            typeInfo = TypeInfo.getTypeInfo(info.returnDataType, args[0].getType().getPrecision(), 0, null);
+            break;
+        case CHAR:
+            typeInfo = TypeInfo.getTypeInfo(info.returnDataType, 1, 0, null);
+            break;
+        case CONCAT: {
+            long p = 0;
+            for (Expression e : args) {
+                TypeInfo type = e.getType();
+                p += type.getPrecision();
+                if (p < 0) {
+                    p = Long.MAX_VALUE;
+                }
+            }
+            typeInfo = TypeInfo.getTypeInfo(info.returnDataType, p, 0, null);
+            break;
         }
-        dataType = t;
-        precision = p;
-        scale = s;
-        displaySize = d;
+        case HEXTORAW: {
+            TypeInfo t = args[0].getType();
+            if (database.getMode().getEnum() == ModeEnum.Oracle) {
+                if (DataType.isStringType(t.getValueType())) {
+                    typeInfo = TypeInfo.getTypeInfo(Value.BYTES, t.getPrecision() / 2, 0, null);
+                } else {
+                    typeInfo = TypeInfo.TYPE_BYTES;
+                }
+            } else {
+                if (DataType.isStringType(t.getValueType())) {
+                    typeInfo = TypeInfo.getTypeInfo(Value.STRING, t.getPrecision() / 4, 0, null);
+                } else {
+                    typeInfo = TypeInfo.TYPE_STRING;
+                }
+            }
+            break;
+        }
+        case LCASE:
+        case LTRIM:
+        case RIGHT:
+        case RTRIM:
+        case UCASE:
+        case LOWER:
+        case UPPER:
+        case TRIM:
+        case STRINGDECODE:
+        case UTF8TOSTRING:
+            typeInfo = TypeInfo.getTypeInfo(info.returnDataType, args[0].getType().getPrecision(), 0, null);
+            break;
+        case RAWTOHEX: {
+            TypeInfo t = args[0].getType();
+            long precision = t.getPrecision();
+            int mul = DataType.isBinaryStringOrSpecialBinaryType(t.getValueType()) ? 2
+                    : database.getMode().getEnum() == ModeEnum.Oracle ? 6 : 4;
+            typeInfo = TypeInfo.getTypeInfo(info.returnDataType,
+                    precision <= Long.MAX_VALUE / mul ? precision * mul : Long.MAX_VALUE, 0, null);
+            break;
+        }
+        case SOUNDEX:
+            typeInfo = TypeInfo.getTypeInfo(info.returnDataType, 4, 0, null);
+            break;
+        case DAY_NAME:
+        case MONTH_NAME:
+            // day and month names may be long in some languages
+            typeInfo = TypeInfo.getTypeInfo(info.returnDataType, 20, 0, null);
+            break;
+        default:
+            typeInfo = TypeInfo.getTypeInfo(info.returnDataType, -1, -1, null);
+        }
+        type = typeInfo;
         if (allConst) {
             Value v = getValue(session);
-            if (v == ValueNull.INSTANCE) {
-                if (info.type == CAST || info.type == CONVERT) {
-                    return this;
+            if (info.type == CAST || info.type == CONVERT) {
+                if (v == ValueNull.INSTANCE) {
+                    return TypedValueExpression.get(ValueNull.INSTANCE, type);
+                }
+                DataType dt = DataType.getDataType(type.getValueType());
+                TypeInfo vt = v.getType();
+                if (dt.supportsPrecision && type.getPrecision() != vt.getPrecision()
+                        || dt.supportsScale && type.getScale() != vt.getScale()) {
+                    return TypedValueExpression.get(v, type);
                 }
             }
             return ValueExpression.get(v);
         }
         return this;
+    }
+
+    private TypeInfo getRoundNumericType(Session session) {
+        int scale = 0;
+        if (args.length > 1) {
+            Expression scaleExpr = args[1];
+            if (scaleExpr.isConstant()) {
+                Value scaleValue = scaleExpr.getValue(session);
+                if (scaleValue != ValueNull.INSTANCE) {
+                    scale = scaleValue.getInt();
+                }
+            } else {
+                scale = Integer.MAX_VALUE;
+            }
+        }
+        return TypeInfo.getTypeInfo(Value.DECIMAL, Integer.MAX_VALUE, scale, null);
     }
 
     @Override
@@ -2504,109 +2927,22 @@ public class Function extends Expression implements FunctionCall {
     }
 
     @Override
-    public int getScale() {
-        return scale;
-    }
-
-    @Override
-    public long getPrecision() {
-        if (precision == PRECISION_UNKNOWN) {
-            calculatePrecisionAndDisplaySize();
-        }
-        return precision;
-    }
-
-    @Override
-    public int getDisplaySize() {
-        if (precision == PRECISION_UNKNOWN) {
-            calculatePrecisionAndDisplaySize();
-        }
-        return displaySize;
-    }
-
-    private void calculatePrecisionAndDisplaySize() {
-        switch (info.type) {
-        case ENCRYPT:
-        case DECRYPT:
-            precision = args[2].getPrecision();
-            displaySize = args[2].getDisplaySize();
-            break;
-        case COMPRESS:
-            precision = args[0].getPrecision();
-            displaySize = args[0].getDisplaySize();
-            break;
-        case CHAR:
-            precision = 1;
-            displaySize = 1;
-            break;
-        case CONCAT:
-            precision = 0;
-            displaySize = 0;
-            for (Expression e : args) {
-                precision += e.getPrecision();
-                displaySize = MathUtils.convertLongToInt(
-                        (long) displaySize + e.getDisplaySize());
-                if (precision < 0) {
-                    precision = Long.MAX_VALUE;
-                }
-            }
-            break;
-        case HEXTORAW:
-            precision = (args[0].getPrecision() + 3) / 4;
-            displaySize = MathUtils.convertLongToInt(precision);
-            break;
-        case LCASE:
-        case LTRIM:
-        case RIGHT:
-        case RTRIM:
-        case UCASE:
-        case LOWER:
-        case UPPER:
-        case TRIM:
-        case STRINGDECODE:
-        case UTF8TOSTRING:
-        case TRUNCATE:
-            precision = args[0].getPrecision();
-            displaySize = args[0].getDisplaySize();
-            break;
-        case RAWTOHEX:
-            precision = args[0].getPrecision() * 4;
-            displaySize = MathUtils.convertLongToInt(precision);
-            break;
-        case SOUNDEX:
-            precision = 4;
-            displaySize = (int) precision;
-            break;
-        case DAY_NAME:
-        case MONTH_NAME:
-            // day and month names may be long in some languages
-            precision = 20;
-            displaySize = (int) precision;
-            break;
-        default:
-            DataType type = DataType.getDataType(dataType);
-            precision = type.defaultPrecision;
-            displaySize = type.defaultDisplaySize;
-        }
-    }
-
-    @Override
-    public StringBuilder getSQL(StringBuilder builder) {
+    public StringBuilder getSQL(StringBuilder builder, boolean alwaysQuote) {
         builder.append(info.name);
         if (info.type == CASE) {
             if (args[0] != null) {
                 builder.append(' ');
-                args[0].getSQL(builder);
+                args[0].getSQL(builder, alwaysQuote);
             }
             for (int i = 1, len = args.length - 1; i < len; i += 2) {
                 builder.append(" WHEN ");
-                args[i].getSQL(builder);
+                args[i].getSQL(builder, alwaysQuote);
                 builder.append(" THEN ");
-                args[i + 1].getSQL(builder);
+                args[i + 1].getSQL(builder, alwaysQuote);
             }
             if (args.length % 2 == 0) {
                 builder.append(" ELSE ");
-                args[args.length - 1].getSQL(builder);
+                args[args.length - 1].getSQL(builder, alwaysQuote);
             }
             return builder.append(" END");
         }
@@ -2615,38 +2951,92 @@ public class Function extends Expression implements FunctionCall {
             builder.append('(');
         }
         switch (info.type) {
+        case SUBSTRING: {
+            args[0].getSQL(builder, alwaysQuote).append(" FROM ");
+            args[1].getSQL(builder, alwaysQuote);
+            if (args.length > 2) {
+                builder.append(" FOR ");
+                args[2].getSQL(builder, alwaysQuote);
+            }
+            break;
+        }
+        case TRIM: {
+            switch (flags) {
+            case TRIM_LEADING:
+                builder.append("LEADING ");
+                break;
+            case TRIM_TRAILING:
+                builder.append("TRAILING ");
+                break;
+            }
+            if (args.length > 1) {
+                args[1].getSQL(builder, alwaysQuote).append(" FROM ");
+            }
+            args[0].getSQL(builder, alwaysQuote);
+            break;
+        }
         case CAST: {
-            args[0].getSQL(builder).append(" AS ").
-                append(new Column(null, dataType, precision,
-                        scale, displaySize, extTypeInfo).getCreateSQL());
+            args[0].getSQL(builder, alwaysQuote).append(" AS ").append(new Column(null, type).getCreateSQL());
             break;
         }
         case CONVERT: {
             if (database.getMode().swapConvertFunctionParameters) {
-                builder.append(new Column(null, dataType, precision,
-                        scale, displaySize).getCreateSQL()).
-                    append(',');
-                args[0].getSQL(builder);
+                builder.append(new Column(null, type).getCreateSQL()).append(',');
+                args[0].getSQL(builder, alwaysQuote);
             } else {
-                args[0].getSQL(builder).append(',').
-                    append(new Column(null, dataType, precision,
-                        scale, displaySize).getCreateSQL());
+                args[0].getSQL(builder, alwaysQuote).append(',').append(new Column(null, type).getCreateSQL());
             }
             break;
         }
         case EXTRACT: {
             ValueString v = (ValueString) ((ValueExpression) args[0]).getValue(null);
             builder.append(v.getString()).append(" FROM ");
-            args[1].getSQL(builder);
+            args[1].getSQL(builder, alwaysQuote);
+            break;
+        }
+        case JSON_OBJECT: {
+            for (int i = 0, l = args.length; i < l;) {
+                if (i > 0) {
+                    builder.append(", ");
+                }
+                args[i++].getSQL(builder, alwaysQuote).append(": ");
+                args[i++].getSQL(builder, alwaysQuote);
+            }
+            getJsonFunctionFlagsSQL(builder, flags, false);
+            break;
+        }
+        case JSON_ARRAY: {
+            writeExpressions(builder, args, alwaysQuote);
+            getJsonFunctionFlagsSQL(builder, flags, true);
             break;
         }
         default:
-            writeExpressions(builder, args);
+            writeExpressions(builder, args, alwaysQuote);
         }
         if (addParentheses) {
             builder.append(')');
         }
         return builder;
+    }
+
+    /**
+     * Appends flags of a JSON function to the specified string builder.
+     *
+     * @param builder string builder to append to
+     * @param flags flags to append
+     * @param forArray whether the function is an array function
+     */
+    public static void getJsonFunctionFlagsSQL(StringBuilder builder, int flags, boolean forArray) {
+        if ((flags & JSON_ABSENT_ON_NULL) != 0) {
+            if (!forArray) {
+                builder.append(" ABSENT ON NULL");
+            }
+        } else if (forArray) {
+            builder.append(" NULL ON NULL");
+        }
+        if (!forArray && (flags & JSON_WITH_UNIQUE_KEYS) != 0) {
+            builder.append(" WITH UNIQUE KEYS");
+        }
     }
 
     @Override
@@ -2780,16 +3170,6 @@ public class Function extends Expression implements FunctionCall {
     @Override
     public boolean isDeterministic() {
         return info.deterministic;
-    }
-
-    @Override
-    public boolean isBufferResultSetToLocalTemp() {
-        return info.bufferResultSetToLocalTemp;
-    }
-
-    @Override
-    public boolean isGeneratedKey() {
-        return info.type == NEXTVAL;
     }
 
     @Override

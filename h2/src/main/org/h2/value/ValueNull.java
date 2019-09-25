@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.value;
@@ -14,8 +14,9 @@ import java.sql.SQLException;
 import java.sql.Time;
 import java.sql.Timestamp;
 import java.sql.Types;
+import java.util.TimeZone;
 
-import org.h2.engine.Mode;
+import org.h2.engine.CastDataProvider;
 import org.h2.message.DbException;
 
 /**
@@ -29,20 +30,14 @@ public class ValueNull extends Value {
     public static final ValueNull INSTANCE = new ValueNull();
 
     /**
-     * This special instance is used as a marker for deleted entries in a map.
-     * It should not be used anywhere else.
-     */
-    public static final ValueNull DELETED = new ValueNull();
-
-    /**
      * The precision of NULL.
      */
-    private static final int PRECISION = 1;
+    static final int PRECISION = 1;
 
     /**
      * The display size of the textual representation of NULL.
      */
-    private static final int DISPLAY_SIZE = 4;
+    static final int DISPLAY_SIZE = 4;
 
     private ValueNull() {
         // don't allow construction
@@ -54,8 +49,19 @@ public class ValueNull extends Value {
     }
 
     @Override
-    public int getType() {
-        return Value.NULL;
+    public TypeInfo getType() {
+        return TypeInfo.TYPE_NULL;
+    }
+
+    @Override
+    public int getValueType() {
+        return NULL;
+    }
+
+    @Override
+    public int getMemory() {
+        // Singleton value
+        return 0;
     }
 
     @Override
@@ -69,17 +75,17 @@ public class ValueNull extends Value {
     }
 
     @Override
-    public Date getDate() {
+    public Date getDate(TimeZone timeZone) {
         return null;
     }
 
     @Override
-    public Time getTime() {
+    public Time getTime(TimeZone timeZone) {
         return null;
     }
 
     @Override
-    public Timestamp getTimestamp() {
+    public Timestamp getTimestamp(TimeZone timeZone) {
         return null;
     }
 
@@ -134,18 +140,19 @@ public class ValueNull extends Value {
     }
 
     @Override
-    public Value convertTo(int type, int precision, Mode mode, Object column, ExtTypeInfo extTypeInfo) {
+    protected Value convertTo(int targetType, ExtTypeInfo extTypeInfo, CastDataProvider provider,
+            boolean forComparison, Object column) {
         return this;
     }
 
     @Override
-    public int compareTypeSafe(Value v, CompareMode mode) {
+    public int compareTypeSafe(Value v, CompareMode mode, CastDataProvider provider) {
         throw DbException.throwInternalError("compare null");
     }
 
     @Override
-    public long getPrecision() {
-        return PRECISION;
+    public boolean containsNull() {
+        return true;
     }
 
     @Override
@@ -162,11 +169,6 @@ public class ValueNull extends Value {
     public void set(PreparedStatement prep, int parameterIndex)
             throws SQLException {
         prep.setNull(parameterIndex, Types.NULL);
-    }
-
-    @Override
-    public int getDisplaySize() {
-        return DISPLAY_SIZE;
     }
 
     @Override

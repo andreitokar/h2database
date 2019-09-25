@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.build.code;
@@ -84,18 +84,6 @@ public class CheckTextFiles {
                 if (suffix.equals(s)) {
                     check = true;
                 }
-            }
-//            if (name.endsWith(".html") && name.indexOf("_ja") > 0) {
-//                int todoRemoveJapaneseFiles;
-//                // Japanese html files are UTF-8 at this time
-//                check = false;
-//                ignore = true;
-//            }
-            if (name.endsWith(".utf8.txt") ||
-                    (name.startsWith("_docs_") &&
-                    name.endsWith(".properties"))) {
-                check = false;
-                ignore = true;
             }
             for (String s : SUFFIX_IGNORE) {
                 if (suffix.equals(s)) {

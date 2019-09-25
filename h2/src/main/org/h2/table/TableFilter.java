@@ -1,22 +1,25 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.table;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.Map.Entry;
 
 import org.h2.api.ErrorCode;
 import org.h2.command.Parser;
 import org.h2.command.dml.AllColumnsForPlan;
 import org.h2.command.dml.Select;
+import org.h2.engine.Database;
 import org.h2.engine.Right;
 import org.h2.engine.Session;
-import org.h2.engine.SysProperties;
 import org.h2.expression.Expression;
 import org.h2.expression.ExpressionColumn;
 import org.h2.expression.condition.Comparison;
@@ -30,7 +33,6 @@ import org.h2.message.DbException;
 import org.h2.result.Row;
 import org.h2.result.SearchRow;
 import org.h2.result.SortOrder;
-import org.h2.util.StatementBuilder;
 import org.h2.util.StringUtils;
 import org.h2.util.Utils;
 import org.h2.value.Value;
@@ -44,8 +46,17 @@ import org.h2.value.ValueNull;
  */
 public class TableFilter implements ColumnResolver {
 
-    private static final int BEFORE_FIRST = 0, FOUND = 1, AFTER_LAST = 2,
-            NULL_ROW = 3;
+    private static final int BEFORE_FIRST = 0, FOUND = 1, AFTER_LAST = 2, NULL_ROW = 3;
+
+    /**
+     * Comparator that uses order in FROM clause as a sort key.
+     */
+    public static final Comparator<TableFilter> ORDER_IN_FROM_COMPARATOR = new Comparator<TableFilter>() {
+        @Override
+        public int compare(TableFilter o1, TableFilter o2) {
+            return Integer.compare(o1.getOrderInFrom(), o2.getOrderInFrom());
+        }
+    };
 
     /**
      * Whether this is a direct or indirect (nested) outer join
@@ -119,13 +130,24 @@ public class TableFilter implements ColumnResolver {
      */
     private TableFilter nestedJoin;
 
-    private ArrayList<Column> naturalJoinColumns;
+    /**
+     * Map of common join columns, used for NATURAL joins and USING clause of
+     * other joins. This map preserves original order of the columns.
+     */
+    private LinkedHashMap<Column, Column> commonJoinColumns;
+
+    private TableFilter commonJoinColumnsFilter;
+    private ArrayList<Column> commonJoinColumnsToExclude;
     private boolean foundOne;
     private Expression fullCondition;
     private final int hashCode;
     private final int orderInFrom;
 
-    private HashMap<Column, String> derivedColumnMap;
+    /**
+     * Map of derived column names. This map preserves original order of the
+     * columns.
+     */
+    private LinkedHashMap<Column, String> derivedColumnMap;
 
     /**
      * Create a new table filter object.
@@ -191,7 +213,7 @@ public class TableFilter implements ColumnResolver {
     }
 
     /**
-     * Get the best plan item (index, cost) to use use for the current join
+     * Get the best plan item (index, cost) to use for the current join
      * order.
      *
      * @param s the session
@@ -323,13 +345,13 @@ public class TableFilter implements ColumnResolver {
             }
         }
         if (nestedJoin != null) {
-            if (SysProperties.CHECK && nestedJoin == this) {
+            if (nestedJoin == this) {
                 DbException.throwInternalError("self join");
             }
             nestedJoin.prepare();
         }
         if (join != null) {
-            if (SysProperties.CHECK && join == this) {
+            if (join == this) {
                 DbException.throwInternalError("self join");
             }
             join.prepare();
@@ -608,8 +630,6 @@ public class TableFilter implements ColumnResolver {
      * @param current the current row
      */
     public void set(Row current) {
-        // this is currently only used so that check constraints work - to set
-        // the current (new) row
         this.current = current;
         this.currentSearchRow = current;
     }
@@ -715,13 +735,30 @@ public class TableFilter implements ColumnResolver {
     public void mapAndAddFilter(Expression on) {
         on.mapColumns(this, 0, Expression.MAP_INITIAL);
         addFilterCondition(on, true);
-        on.createIndexConditions(session, this);
         if (nestedJoin != null) {
             on.mapColumns(nestedJoin, 0, Expression.MAP_INITIAL);
-            on.createIndexConditions(session, nestedJoin);
         }
         if (join != null) {
             join.mapAndAddFilter(on);
+        }
+    }
+
+    /**
+     * Create the index conditions for this filter if needed.
+     */
+    public void createIndexConditions() {
+        if (joinCondition != null) {
+            joinCondition = joinCondition.optimize(session);
+            joinCondition.createIndexConditions(session, this);
+            if (nestedJoin != null) {
+                joinCondition.createIndexConditions(session, nestedJoin);
+            }
+        }
+        if (join != null) {
+            join.createIndexConditions();
+        }
+        if (nestedJoin != null) {
+            nestedJoin.createIndexConditions();
         }
     }
 
@@ -754,9 +791,10 @@ public class TableFilter implements ColumnResolver {
      *
      * @param builder string builder to append to
      * @param isJoin if this is a joined table
+     * @param alwaysQuote quote all identifiers
      * @return the specified builder
      */
-    public StringBuilder getPlanSQL(StringBuilder builder, boolean isJoin) {
+    public StringBuilder getPlanSQL(StringBuilder builder, boolean isJoin, boolean alwaysQuote) {
         if (isJoin) {
             if (joinOuter) {
                 builder.append("LEFT OUTER JOIN ");
@@ -768,7 +806,7 @@ public class TableFilter implements ColumnResolver {
             StringBuilder buffNested = new StringBuilder();
             TableFilter n = nestedJoin;
             do {
-                n.getPlanSQL(buffNested, n != nestedJoin).append('\n');
+                n.getPlanSQL(buffNested, n != nestedJoin, alwaysQuote).append('\n');
                 n = n.getJoin();
             } while (n != null);
             String nested = buffNested.toString();
@@ -787,23 +825,35 @@ public class TableFilter implements ColumnResolver {
                     // otherwise the nesting is unclear
                     builder.append("1=1");
                 } else {
-                    joinCondition.getUnenclosedSQL(builder);
+                    joinCondition.getUnenclosedSQL(builder, alwaysQuote);
                 }
             }
             return builder;
         }
         if (table.isView() && ((TableView) table).isRecursive()) {
-            builder.append(table.getSchema().getSQL()).append('.');
-            Parser.quoteIdentifier(builder, table.getName());
+            table.getSchema().getSQL(builder, alwaysQuote).append('.');
+            Parser.quoteIdentifier(builder, table.getName(), alwaysQuote);
         } else {
-            builder.append(table.getSQL());
+            table.getSQL(builder, alwaysQuote);
         }
         if (table.isView() && ((TableView) table).isInvalid()) {
             throw DbException.get(ErrorCode.VIEW_IS_INVALID_2, table.getName(), "not compiled");
         }
         if (alias != null) {
             builder.append(' ');
-            Parser.quoteIdentifier(builder, alias);
+            Parser.quoteIdentifier(builder, alias, alwaysQuote);
+            if (derivedColumnMap != null) {
+                builder.append('(');
+                boolean f = false;
+                for (String name : derivedColumnMap.values()) {
+                    if (f) {
+                        builder.append(", ");
+                    }
+                    f = true;
+                    Parser.quoteIdentifier(builder, name, alwaysQuote);
+                }
+                builder.append(')');
+            }
         }
         if (indexHints != null) {
             builder.append(" USE INDEX (");
@@ -814,13 +864,13 @@ public class TableFilter implements ColumnResolver {
                 } else {
                     first = false;
                 }
-                Parser.quoteIdentifier(builder, index);
+                Parser.quoteIdentifier(builder, index, alwaysQuote);
             }
             builder.append(")");
         }
         if (index != null) {
             builder.append('\n');
-            StatementBuilder planBuff = new StatementBuilder();
+            StringBuilder planBuilder = new StringBuilder();
             if (joinBatch != null) {
                 IndexLookupBatch lookupBatch = joinBatch.getLookupBatch(joinFilterId);
                 if (lookupBatch == null) {
@@ -828,25 +878,26 @@ public class TableFilter implements ColumnResolver {
                         throw DbException.throwInternalError(Integer.toString(joinFilterId));
                     }
                 } else {
-                    planBuff.append("batched:");
-                    String batchPlan = lookupBatch.getPlanSQL();
-                    planBuff.append(batchPlan);
-                    planBuff.append(" ");
+                    planBuilder.append("batched:").append(lookupBatch.getPlanSQL()).append(' ');
                 }
             }
-            planBuff.append(index.getPlanSQL());
+            planBuilder.append(index.getPlanSQL());
             if (!indexConditions.isEmpty()) {
-                planBuff.append(": ");
-                for (IndexCondition condition : indexConditions) {
-                    planBuff.appendExceptFirst("\n    AND ");
-                    planBuff.append(condition.getSQL());
+                planBuilder.append(": ");
+                for (int i = 0, size = indexConditions.size(); i < size; i++) {
+                    if (i > 0) {
+                        planBuilder.append("\n    AND ");
+                    }
+                    planBuilder.append(indexConditions.get(i).getSQL(false));
                 }
             }
-            String plan = StringUtils.quoteRemarkSQL(planBuff.toString());
+            String plan = StringUtils.quoteRemarkSQL(planBuilder.toString());
+            planBuilder.setLength(0);
+            planBuilder.append("/* ").append(plan);
             if (plan.indexOf('\n') >= 0) {
-                plan += "\n";
+                planBuilder.append('\n');
             }
-            StringUtils.indent(builder, "/* " + plan + " */", 4, false);
+            StringUtils.indent(builder, planBuilder.append(" */").toString(), 4, false);
         }
         if (isJoin) {
             builder.append("\n    ON ");
@@ -855,12 +906,12 @@ public class TableFilter implements ColumnResolver {
                 // unclear
                 builder.append("1=1");
             } else {
-                joinCondition.getUnenclosedSQL(builder);
+                joinCondition.getUnenclosedSQL(builder, alwaysQuote);
             }
         }
         if (filterCondition != null) {
             builder.append('\n');
-            String condition = StringUtils.unEnclose(filterCondition.getSQL());
+            String condition = StringUtils.unEnclose(filterCondition.getSQL(false));
             condition = "/* WHERE " + StringUtils.quoteRemarkSQL(condition) + "\n*/";
             StringUtils.indent(builder, condition, 4, false);
         }
@@ -956,17 +1007,15 @@ public class TableFilter implements ColumnResolver {
     /**
      * Optimize the full condition. This will add the full condition to the
      * filter condition.
-     *
-     * @param fromOuterJoin if this method was called from an outer joined table
      */
-    void optimizeFullCondition(boolean fromOuterJoin) {
-        if (fullCondition != null) {
-            fullCondition.addFilterConditions(this, fromOuterJoin || joinOuter);
+    void optimizeFullCondition() {
+        if (!joinOuter && fullCondition != null) {
+            fullCondition.addFilterConditions(this);
             if (nestedJoin != null) {
-                nestedJoin.optimizeFullCondition(fromOuterJoin || joinOuter);
+                nestedJoin.optimizeFullCondition();
             }
             if (join != null) {
-                join.optimizeFullCondition(fromOuterJoin || joinOuter);
+                join.optimizeFullCondition();
             }
         }
     }
@@ -1005,7 +1054,10 @@ public class TableFilter implements ColumnResolver {
 
     @Override
     public String getSchemaName() {
-        return table.getSchema().getName();
+        if (alias == null && !(table instanceof VirtualTable)) {
+            return table.getSchema().getName();
+        }
+        return null;
     }
 
     @Override
@@ -1014,9 +1066,59 @@ public class TableFilter implements ColumnResolver {
     }
 
     @Override
-    public String getDerivedColumnName(Column column) {
+    public Column findColumn(String name) {
         HashMap<Column, String> map = derivedColumnMap;
-        return map != null ? map.get(column) : null;
+        if (map != null) {
+            Database db = session.getDatabase();
+            for (Entry<Column, String> entry : derivedColumnMap.entrySet()) {
+                if (db.equalsIdentifiers(entry.getValue(), name)) {
+                    return entry.getKey();
+                }
+            }
+            return null;
+        }
+        return table.findColumn(name);
+    }
+
+    @Override
+    public String getColumnName(Column column) {
+        HashMap<Column, String> map = derivedColumnMap;
+        return map != null ? map.get(column) : column.getName();
+    }
+
+    @Override
+    public boolean hasDerivedColumnList() {
+        return derivedColumnMap != null;
+    }
+
+    /**
+     * Get the column with the given name.
+     *
+     * @param columnName
+     *            the column name
+     * @param ifExists
+     *            if (@code true) return {@code null} if column does not exist
+     * @return the column
+     * @throws DbException
+     *             if the column was not found and {@code ifExists} is
+     *             {@code false}
+     */
+    public Column getColumn(String columnName, boolean ifExists) {
+        HashMap<Column, String> map = derivedColumnMap;
+        if (map != null) {
+            Database database = session.getDatabase();
+            for (Entry<Column, String> entry : map.entrySet()) {
+                if (database.equalsIdentifiers(columnName, entry.getValue())) {
+                    return entry.getKey();
+                }
+            }
+            if (ifExists) {
+                return null;
+            } else {
+                throw DbException.get(ErrorCode.COLUMN_NOT_FOUND_1, columnName);
+            }
+        }
+        return table.getColumn(columnName, ifExists);
     }
 
     /**
@@ -1043,10 +1145,7 @@ public class TableFilter implements ColumnResolver {
 
     @Override
     public Column getRowIdColumn() {
-        if (session.getDatabase().getSettings().rowId) {
-            return table.getRowIdColumn();
-        }
-        return null;
+        return table.getRowIdColumn();
     }
 
     @Override
@@ -1094,7 +1193,7 @@ public class TableFilter implements ColumnResolver {
         if (count != derivedColumnNames.size()) {
             throw DbException.get(ErrorCode.COLUMN_COUNT_DOES_NOT_MATCH);
         }
-        HashMap<Column, String> map = new HashMap<>();
+        LinkedHashMap<Column, String> map = new LinkedHashMap<>();
         for (int i = 0; i < count; i++) {
             String alias = derivedColumnNames.get(i);
             for (int j = 0; j < i; j++) {
@@ -1118,25 +1217,66 @@ public class TableFilter implements ColumnResolver {
     }
 
     /**
-     * Add a column to the natural join key column list.
+     * Add a column to the common join column list for a left table filter.
      *
-     * @param c the column to add
+     * @param leftColumn
+     *            the column on the left side
+     * @param replacementColumn
+     *            the column to use instead, may be the same as column on the
+     *            left side
+     * @param replacementFilter
+     *            the table filter for replacement columns
      */
-    public void addNaturalJoinColumn(Column c) {
-        if (naturalJoinColumns == null) {
-            naturalJoinColumns = Utils.newSmallArrayList();
+    public void addCommonJoinColumns(Column leftColumn, Column replacementColumn, TableFilter replacementFilter) {
+        if (commonJoinColumns == null) {
+            commonJoinColumns = new LinkedHashMap<>();
+            commonJoinColumnsFilter = replacementFilter;
+        } else {
+            assert commonJoinColumnsFilter == replacementFilter;
         }
-        naturalJoinColumns.add(c);
+        commonJoinColumns.put(leftColumn, replacementColumn);
     }
 
     /**
-     * Check if the given column is a natural join column.
+     * Add an excluded column to the common join column list.
      *
-     * @param c the column to check
-     * @return true if this is a joined natural join column
+     * @param columnToExclude
+     *            the column to exclude
      */
-    public boolean isNaturalJoinColumn(Column c) {
-        return naturalJoinColumns != null && naturalJoinColumns.contains(c);
+    public void addCommonJoinColumnToExclude(Column columnToExclude) {
+        if (commonJoinColumnsToExclude == null) {
+            commonJoinColumnsToExclude = Utils.newSmallArrayList();
+        }
+        commonJoinColumnsToExclude.add(columnToExclude);
+    }
+
+    /**
+     * Returns common join columns map.
+     *
+     * @return common join columns map, or {@code null}
+     */
+    public LinkedHashMap<Column, Column> getCommonJoinColumns() {
+        return commonJoinColumns;
+    }
+
+    /**
+     * Returns common join columns table filter.
+     *
+     * @return common join columns table filter, or {@code null}
+     */
+    public TableFilter getCommonJoinColumnsFilter() {
+        return commonJoinColumnsFilter;
+    }
+
+    /**
+     * Check if the given column is an excluded common join column.
+     *
+     * @param c
+     *            the column to check
+     * @return true if this is an excluded common join column
+     */
+    public boolean isCommonJoinColumnToExclude(Column c) {
+        return commonJoinColumnsToExclude != null && commonJoinColumnsToExclude.contains(c);
     }
 
     @Override
@@ -1168,15 +1308,6 @@ public class TableFilter implements ColumnResolver {
         if (state == FOUND) {
             rows.add(get());
         }
-    }
-
-    /**
-     * Lock the given rows.
-     *
-     * @param forUpdateRows the rows to lock
-     */
-    public void lockRows(Iterable<Row> forUpdateRows) {
-        table.lockRows(session, forUpdateRows);
     }
 
     public TableFilter getNestedJoin() {

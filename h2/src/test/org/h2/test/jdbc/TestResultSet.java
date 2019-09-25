@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.test.jdbc;
@@ -44,7 +44,7 @@ import org.h2.test.TestBase;
 import org.h2.test.TestDb;
 import org.h2.util.DateTimeUtils;
 import org.h2.util.IOUtils;
-import org.h2.util.LocalDateTimeUtils;
+import org.h2.util.JSR310;
 import org.h2.util.MathUtils;
 import org.h2.util.StringUtils;
 
@@ -89,6 +89,7 @@ public class TestResultSet extends TestDb {
         testFindColumn();
         testColumnLength();
         testArray();
+        testRowValue();
         testEnum();
         testLimitMaxRows();
 
@@ -574,7 +575,7 @@ public class TestResultSet extends TestDb {
         assertEquals(10, meta.getPrecision(1));
         assertEquals(1, meta.getPrecision(2));
         assertEquals(30, meta.getPrecision(3));
-        assertEquals(3, meta.getPrecision(4));
+        assertEquals(2, meta.getPrecision(4));
         assertEquals(40, meta.getPrecision(5));
         stat.execute("DROP TABLE one");
     }
@@ -693,19 +694,19 @@ public class TestResultSet extends TestDb {
         o = rs.getObject("value");
         trace(o.getClass().getName());
         assertTrue(o instanceof Integer);
-        assertTrue(((Integer) o).intValue() == -1);
+        assertTrue((Integer) o == -1);
         o = rs.getObject("value", Integer.class);
         trace(o.getClass().getName());
         assertTrue(o instanceof Integer);
-        assertTrue(((Integer) o).intValue() == -1);
+        assertTrue((Integer) o == -1);
         o = rs.getObject(2);
         trace(o.getClass().getName());
         assertTrue(o instanceof Integer);
-        assertTrue(((Integer) o).intValue() == -1);
+        assertTrue((Integer) o == -1);
         o = rs.getObject(2, Integer.class);
         trace(o.getClass().getName());
         assertTrue(o instanceof Integer);
-        assertTrue(((Integer) o).intValue() == -1);
+        assertTrue((Integer) o == -1);
         assertTrue(rs.getBoolean("Value"));
         assertTrue(rs.getByte("Value") == (byte) -1);
         assertTrue(rs.getShort("Value") == (short) -1);
@@ -816,7 +817,7 @@ public class TestResultSet extends TestDb {
         o = rs.getObject("value", Short.class);
         trace(o.getClass().getName());
         assertTrue(o instanceof Short);
-        assertTrue(((Short) o).shortValue() == -1);
+        assertTrue((Short) o == -1);
         o = rs.getObject(2);
         trace(o.getClass().getName());
         assertTrue(o.getClass() == (SysProperties.OLD_RESULT_SET_GET_OBJECT ? Short.class : Integer.class));
@@ -824,7 +825,7 @@ public class TestResultSet extends TestDb {
         o = rs.getObject(2, Short.class);
         trace(o.getClass().getName());
         assertTrue(o instanceof Short);
-        assertTrue(((Short) o).shortValue() == -1);
+        assertTrue((Short) o == -1);
         assertTrue(rs.getBoolean("Value"));
         assertTrue(rs.getByte("Value") == (byte) -1);
         assertTrue(rs.getInt("Value") == -1);
@@ -935,11 +936,11 @@ public class TestResultSet extends TestDb {
         o = rs.getObject("value");
         trace(o.getClass().getName());
         assertTrue(o instanceof Long);
-        assertTrue(((Long) o).longValue() == -1);
+        assertTrue((Long) o == -1);
         o = rs.getObject("value", Long.class);
         trace(o.getClass().getName());
         assertTrue(o instanceof Long);
-        assertTrue(((Long) o).longValue() == -1);
+        assertTrue((Long) o == -1);
         o = rs.getObject("value", BigInteger.class);
         trace(o.getClass().getName());
         assertTrue(o instanceof BigInteger);
@@ -947,11 +948,11 @@ public class TestResultSet extends TestDb {
         o = rs.getObject(2);
         trace(o.getClass().getName());
         assertTrue(o instanceof Long);
-        assertTrue(((Long) o).longValue() == -1);
+        assertTrue((Long) o == -1);
         o = rs.getObject(2, Long.class);
         trace(o.getClass().getName());
         assertTrue(o instanceof Long);
-        assertTrue(((Long) o).longValue() == -1);
+        assertTrue((Long) o == -1);
         o = rs.getObject(2, BigInteger.class);
         trace(o.getClass().getName());
         assertTrue(o instanceof BigInteger);
@@ -1361,46 +1362,48 @@ public class TestResultSet extends TestDb {
         assertEquals("2002-02-02 02:02:02.0", ts.toString());
         rs.next();
 
-        assertEquals("1800-01-01", rs.getDate("value").toString());
-        if (LocalDateTimeUtils.isJava8DateApiPresent()) {
+        if (JSR310.PRESENT) {
             assertEquals("1800-01-01", rs.getObject("value",
-                            LocalDateTimeUtils.LOCAL_DATE).toString());
+                            JSR310.LOCAL_DATE).toString());
+        } else {
+            assertEquals("1800-01-01", rs.getDate("value").toString());
         }
         assertEquals("00:00:00", rs.getTime("value").toString());
-        if (LocalDateTimeUtils.isJava8DateApiPresent()) {
+        if (JSR310.PRESENT) {
             assertEquals("00:00", rs.getObject("value",
-                            LocalDateTimeUtils.LOCAL_TIME).toString());
+                            JSR310.LOCAL_TIME).toString());
         }
-        assertEquals("1800-01-01 00:00:00.0", rs.getTimestamp("value").toString());
-        if (LocalDateTimeUtils.isJava8DateApiPresent()) {
+        if (JSR310.PRESENT) {
             assertEquals("1800-01-01T00:00", rs.getObject("value",
-                            LocalDateTimeUtils.LOCAL_DATE_TIME).toString());
+                            JSR310.LOCAL_DATE_TIME).toString());
+        } else {
+            assertEquals("1800-01-01 00:00:00.0", rs.getTimestamp("value").toString());
         }
         rs.next();
 
         assertEquals("9999-12-31", rs.getDate("Value").toString());
-        if (LocalDateTimeUtils.isJava8DateApiPresent()) {
+        if (JSR310.PRESENT) {
             assertEquals("9999-12-31", rs.getObject("Value",
-                            LocalDateTimeUtils.LOCAL_DATE).toString());
+                            JSR310.LOCAL_DATE).toString());
         }
         assertEquals("23:59:59", rs.getTime("Value").toString());
-        if (LocalDateTimeUtils.isJava8DateApiPresent()) {
+        if (JSR310.PRESENT) {
             assertEquals("23:59:59", rs.getObject("Value",
-                            LocalDateTimeUtils.LOCAL_TIME).toString());
+                            JSR310.LOCAL_TIME).toString());
         }
         assertEquals("9999-12-31 23:59:59.0", rs.getTimestamp("Value").toString());
-        if (LocalDateTimeUtils.isJava8DateApiPresent()) {
+        if (JSR310.PRESENT) {
             assertEquals("9999-12-31T23:59:59", rs.getObject("Value",
-                            LocalDateTimeUtils.LOCAL_DATE_TIME).toString());
+                            JSR310.LOCAL_DATE_TIME).toString());
         }
         rs.next();
 
         assertTrue(rs.getDate("Value") == null && rs.wasNull());
         assertTrue(rs.getTime("vALUe") == null && rs.wasNull());
         assertTrue(rs.getTimestamp(2) == null && rs.wasNull());
-        if (LocalDateTimeUtils.isJava8DateApiPresent()) {
+        if (JSR310.PRESENT) {
             assertTrue(rs.getObject(2,
-                            LocalDateTimeUtils.LOCAL_DATE_TIME) == null && rs.wasNull());
+                            JSR310.LOCAL_DATE_TIME) == null && rs.wasNull());
         }
         assertFalse(rs.next());
 
@@ -1421,21 +1424,57 @@ public class TestResultSet extends TestDb {
         assertEquals("2001-02-03", date.toString());
         assertEquals("14:15:16", time.toString());
         assertEquals("2007-08-09 10:11:12.141516171", ts.toString());
-        if (LocalDateTimeUtils.isJava8DateApiPresent()) {
+        if (JSR310.PRESENT) {
             assertEquals("2001-02-03", rs.getObject(1,
-                            LocalDateTimeUtils.LOCAL_DATE).toString());
-        }
-        if (LocalDateTimeUtils.isJava8DateApiPresent()) {
+                            JSR310.LOCAL_DATE).toString());
             assertEquals("14:15:16", rs.getObject(2,
-                            LocalDateTimeUtils.LOCAL_TIME).toString());
-        }
-        if (LocalDateTimeUtils.isJava8DateApiPresent()) {
+                            JSR310.LOCAL_TIME).toString());
             assertEquals("2007-08-09T10:11:12.141516171",
-                    rs.getObject(3, LocalDateTimeUtils.LOCAL_DATE_TIME)
+                    rs.getObject(3, JSR310.LOCAL_DATE_TIME)
                             .toString());
         }
 
         stat.execute("DROP TABLE TEST");
+
+        if (JSR310.PRESENT) {
+            rs = stat.executeQuery("SELECT DATE '-1000000000-01-01', " + "DATE '1000000000-12-31'");
+            rs.next();
+            assertEquals("-999999999-01-01", rs.getObject(1, JSR310.LOCAL_DATE).toString());
+            assertEquals("+999999999-12-31", rs.getObject(2, JSR310.LOCAL_DATE).toString());
+
+            rs = stat.executeQuery("SELECT TIMESTAMP '-1000000000-01-01 00:00:00', "
+                    + "TIMESTAMP '1000000000-12-31 23:59:59.999999999'");
+            rs.next();
+            assertEquals("-999999999-01-01T00:00", rs.getObject(1, JSR310.LOCAL_DATE_TIME).toString());
+            assertEquals("+999999999-12-31T23:59:59.999999999",
+                    rs.getObject(2, JSR310.LOCAL_DATE_TIME).toString());
+
+            rs = stat.executeQuery("SELECT TIMESTAMP WITH TIME ZONE '-1000000000-01-01 00:00:00Z', "
+                    + "TIMESTAMP WITH TIME ZONE '1000000000-12-31 23:59:59.999999999Z', "
+                    + "TIMESTAMP WITH TIME ZONE '-1000000000-01-01 00:00:00+18', "
+                    + "TIMESTAMP WITH TIME ZONE '1000000000-12-31 23:59:59.999999999-18'");
+            rs.next();
+            assertEquals("-999999999-01-01T00:00Z", rs.getObject(1, JSR310.OFFSET_DATE_TIME).toString());
+            assertEquals("+999999999-12-31T23:59:59.999999999Z",
+                    rs.getObject(2, JSR310.OFFSET_DATE_TIME).toString());
+            assertEquals("-999999999-01-01T00:00+18:00",
+                    rs.getObject(3, JSR310.OFFSET_DATE_TIME).toString());
+            assertEquals("+999999999-12-31T23:59:59.999999999-18:00",
+                    rs.getObject(4, JSR310.OFFSET_DATE_TIME).toString());
+            assertEquals("-999999999-01-01T00:00Z", rs.getObject(1, JSR310.ZONED_DATE_TIME).toString());
+            assertEquals("+999999999-12-31T23:59:59.999999999Z",
+                    rs.getObject(2, JSR310.ZONED_DATE_TIME).toString());
+            assertEquals("-999999999-01-01T00:00+18:00",
+                    rs.getObject(3, JSR310.ZONED_DATE_TIME).toString());
+            assertEquals("+999999999-12-31T23:59:59.999999999-18:00",
+                    rs.getObject(4, JSR310.ZONED_DATE_TIME).toString());
+            assertEquals("-1000000000-01-01T00:00:00Z", rs.getObject(1, JSR310.INSTANT).toString());
+            assertEquals("+1000000000-12-31T23:59:59.999999999Z",
+                    rs.getObject(2, JSR310.INSTANT).toString());
+            assertEquals("-1000000000-01-01T00:00:00Z", rs.getObject(3, JSR310.INSTANT).toString());
+            assertEquals("+1000000000-12-31T23:59:59.999999999Z",
+                    rs.getObject(4, JSR310.INSTANT).toString());
+        }
     }
 
     private void testDatetimeWithCalendar() throws SQLException {
@@ -1584,27 +1623,36 @@ public class TestResultSet extends TestDb {
     }
 
     private void testInterval8() throws SQLException {
-        if (!LocalDateTimeUtils.isJava8DateApiPresent()) {
+        if (!JSR310.PRESENT) {
             return;
         }
         trace("Test INTERVAL 8");
         ResultSet rs;
+        Object expected;
+
+        rs = stat.executeQuery("CALL INTERVAL '1-2' YEAR TO MONTH");
+        rs.next();
+        assertEquals("INTERVAL '1-2' YEAR TO MONTH", rs.getString(1));
+        try {
+            expected = JSR310.PERIOD.getMethod("of", int.class, int.class, int.class)
+                    .invoke(null, 1, 2, 0);
+        } catch (ReflectiveOperationException ex) {
+            throw new RuntimeException(ex);
+        }
+        assertEquals(expected, rs.getObject(1, JSR310.PERIOD));
+        assertThrows(ErrorCode.DATA_CONVERSION_ERROR_1, rs).getObject(1, JSR310.DURATION);
 
         rs = stat.executeQuery("CALL INTERVAL '-3.1' SECOND");
         rs.next();
         assertEquals("INTERVAL '-3.1' SECOND", rs.getString(1));
-        Object expected;
         try {
-            expected = LocalDateTimeUtils.DURATION.getMethod("ofSeconds", long.class, long.class)
+            expected = JSR310.DURATION.getMethod("ofSeconds", long.class, long.class)
                     .invoke(null, -4, 900_000_000);
         } catch (ReflectiveOperationException ex) {
             throw new RuntimeException(ex);
         }
-        assertEquals(expected, rs.getObject(1, LocalDateTimeUtils.DURATION));
-
-        rs = stat.executeQuery("CALL INTERVAL '1-2' YEAR TO MONTH");
-        rs.next();
-        assertThrows(ErrorCode.DATA_CONVERSION_ERROR_1, rs).getObject(1, LocalDateTimeUtils.DURATION);
+        assertEquals(expected, rs.getObject(1, JSR310.DURATION));
+        assertThrows(ErrorCode.DATA_CONVERSION_ERROR_1, rs).getObject(1, JSR310.PERIOD);
     }
 
     private void testBlob() throws SQLException {
@@ -1851,7 +1899,7 @@ public class TestResultSet extends TestDb {
         assertEquals(Types.NULL, array.getBaseType());
         assertEquals("NULL", array.getBaseTypeName());
 
-        assertTrue(array.toString().endsWith(": (11, 12)"));
+        assertTrue(array.toString().endsWith(": [11, 12]"));
 
         // free
         array.free();
@@ -1891,6 +1939,30 @@ public class TestResultSet extends TestDb {
         assertFalse(rs.next());
 
         stat.execute("DROP TABLE TEST");
+    }
+
+    private void testRowValue() throws SQLException {
+        trace("Test ROW value");
+        ResultSet rs;
+        rs = stat.executeQuery("SELECT (1, 'test')");
+        rs.next();
+        Object[] expectedArray = new Object[] {1, "test"};
+        assertEquals(expectedArray, (Object[]) rs.getObject(1));
+        Array array = rs.getArray(1);
+        assertEquals(expectedArray, (Object[]) array.getArray());
+        ResultSet rowAsResultSet = rs.getObject(1, ResultSet.class);
+        ResultSetMetaData md = rowAsResultSet.getMetaData();
+        assertEquals(2, md.getColumnCount());
+        assertEquals("C1", md.getColumnLabel(1));
+        assertEquals("C1", md.getColumnName(1));
+        assertEquals("C2", md.getColumnLabel(2));
+        assertEquals("C2", md.getColumnName(2));
+        assertEquals(Types.INTEGER, md.getColumnType(1));
+        assertEquals(Types.VARCHAR, md.getColumnType(2));
+        assertTrue(rowAsResultSet.next());
+        assertEquals(1, rowAsResultSet.getInt(1));
+        assertEquals("test", rowAsResultSet.getString(2));
+        assertFalse(rowAsResultSet.next());
     }
 
     private void testEnum() throws SQLException {

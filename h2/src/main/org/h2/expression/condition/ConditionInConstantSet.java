@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.expression.condition;
@@ -9,7 +9,6 @@ import java.util.ArrayList;
 import java.util.TreeSet;
 
 import org.h2.engine.Database;
-import org.h2.engine.Mode;
 import org.h2.engine.Session;
 import org.h2.expression.Expression;
 import org.h2.expression.ExpressionColumn;
@@ -18,7 +17,7 @@ import org.h2.index.IndexCondition;
 import org.h2.message.DbException;
 import org.h2.table.ColumnResolver;
 import org.h2.table.TableFilter;
-import org.h2.value.ExtTypeInfo;
+import org.h2.value.TypeInfo;
 import org.h2.value.Value;
 import org.h2.value.ValueBoolean;
 import org.h2.value.ValueNull;
@@ -26,17 +25,16 @@ import org.h2.value.ValueNull;
 /**
  * Used for optimised IN(...) queries where the contents of the IN list are all
  * constant and of the same type.
- * <p>
- * Checking using a HashSet is has time complexity O(1), instead of O(n) for
- * checking using an array.
  */
 public class ConditionInConstantSet extends Condition {
 
     private Expression left;
     private final ArrayList<Expression> valueList;
+    // HashSet cannot be used here, because we need to compare values of
+    // different type or scale properly.
     private final TreeSet<Value> valueSet;
-    private final int type;
-    private ExtTypeInfo extTypeInfo;
+    private boolean hasNull;
+    private final TypeInfo type;
 
     /**
      * Create a new IN(..) condition.
@@ -54,31 +52,28 @@ public class ConditionInConstantSet extends Condition {
         Database database = session.getDatabase();
         this.valueSet = new TreeSet<>(database.getCompareMode());
         type = left.getType();
-        Mode mode = database.getMode();
-        if (type == Value.ENUM) {
-            extTypeInfo = ((ExpressionColumn) left).getColumn().getExtTypeInfo();
-            for (Expression expression : valueList) {
-                valueSet.add(extTypeInfo.cast(expression.getValue(session)));
-            }
+        for (Expression expression : valueList) {
+            add(expression.getValue(session).convertTo(type, database, true, null));
+        }
+    }
+
+    private void add(Value v) {
+        if (v.containsNull()) {
+            hasNull = true;
         } else {
-            for (Expression expression : valueList) {
-                valueSet.add(expression.getValue(session).convertTo(type, mode));
-            }
+            valueSet.add(v);
         }
     }
 
     @Override
     public Value getValue(Session session) {
         Value x = left.getValue(session);
-        if (x == ValueNull.INSTANCE) {
+        if (x.containsNull()) {
             return x;
         }
         boolean result = valueSet.contains(x);
-        if (!result) {
-            boolean setHasNull = valueSet.contains(ValueNull.INSTANCE);
-            if (setHasNull) {
-                return ValueNull.INSTANCE;
-            }
+        if (!result && hasNull) {
+            return ValueNull.INSTANCE;
         }
         return ValueBoolean.get(result);
     }
@@ -114,10 +109,10 @@ public class ConditionInConstantSet extends Condition {
     }
 
     @Override
-    public StringBuilder getSQL(StringBuilder builder) {
+    public StringBuilder getSQL(StringBuilder builder, boolean alwaysQuote) {
         builder.append('(');
-        left.getSQL(builder).append(" IN(");
-        writeExpressions(builder, valueList);
+        left.getSQL(builder, alwaysQuote).append(" IN(");
+        writeExpressions(builder, valueList, alwaysQuote);
         return builder.append("))");
     }
 
@@ -167,11 +162,7 @@ public class ConditionInConstantSet extends Condition {
         if (add != null) {
             if (add.isConstant()) {
                 valueList.add(add);
-                if (type == Value.ENUM) {
-                    valueSet.add(add.getValue(session).convertToEnum(extTypeInfo));
-                } else {
-                    valueSet.add(add.getValue(session).convertTo(type, session.getDatabase().getMode()));
-                }
+                add(add.getValue(session).convertTo(type, session.getDatabase(), true, null));
                 return this;
             }
         }

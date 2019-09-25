@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.util;
@@ -25,11 +25,11 @@ public final class CurrentTimestamp {
          * epoch and time zone offsets with seconds because such support is not
          * required for current dates.
          */
-        int offsetSec = DateTimeUtils.getTimeZone().getOffset(second * 1_000 + nano / 1_000_000) / 1000;
-        second += offsetSec;
+        int offset = DateTimeUtils.getTimeZoneOffset(second);
+        second += offset;
         return ValueTimestampTimeZone.fromDateValueAndNanos(
                 DateTimeUtils.dateValueFromAbsoluteDay(second / DateTimeUtils.SECONDS_PER_DAY),
-                second % DateTimeUtils.SECONDS_PER_DAY * 1_000_000_000 + nano, (short) (offsetSec / 60));
+                second % DateTimeUtils.SECONDS_PER_DAY * 1_000_000_000 + nano, offset);
     }
 
     private CurrentTimestamp() {

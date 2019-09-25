@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.expression;
@@ -12,6 +12,7 @@ import org.h2.message.DbException;
 import org.h2.table.Column;
 import org.h2.table.ColumnResolver;
 import org.h2.table.TableFilter;
+import org.h2.value.TypeInfo;
 import org.h2.value.Value;
 import org.h2.value.ValueBoolean;
 import org.h2.value.ValueNull;
@@ -31,7 +32,7 @@ public class Parameter extends Expression implements ParameterInterface {
     }
 
     @Override
-    public StringBuilder getSQL(StringBuilder builder) {
+    public StringBuilder getSQL(StringBuilder builder, boolean alwaysQuote) {
         return builder.append('?').append(index + 1);
     }
 
@@ -61,12 +62,23 @@ public class Parameter extends Expression implements ParameterInterface {
     }
 
     @Override
-    public int getType() {
+    public TypeInfo getType() {
         if (value != null) {
             return value.getType();
         }
         if (column != null) {
             return column.getType();
+        }
+        return TypeInfo.TYPE_UNKNOWN;
+    }
+
+    @Override
+    public int getValueType() {
+        if (value != null) {
+            return value.getValueType();
+        }
+        if (column != null) {
+            return column.getType().getValueType();
         }
         return Value.UNKNOWN;
     }
@@ -111,10 +123,10 @@ public class Parameter extends Expression implements ParameterInterface {
     @Override
     public int getScale() {
         if (value != null) {
-            return value.getScale();
+            return value.getType().getScale();
         }
         if (column != null) {
-            return column.getScale();
+            return column.getType().getScale();
         }
         return 0;
     }
@@ -122,21 +134,10 @@ public class Parameter extends Expression implements ParameterInterface {
     @Override
     public long getPrecision() {
         if (value != null) {
-            return value.getPrecision();
+            return value.getType().getPrecision();
         }
         if (column != null) {
-            return column.getPrecision();
-        }
-        return 0;
-    }
-
-    @Override
-    public int getDisplaySize() {
-        if (value != null) {
-            return value.getDisplaySize();
-        }
-        if (column != null) {
-            return column.getDisplaySize();
+            return column.getType().getPrecision();
         }
         return 0;
     }

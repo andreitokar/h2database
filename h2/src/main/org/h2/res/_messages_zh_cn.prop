@@ -8,6 +8,7 @@
 22004=#Numeric value out of range: {0} in column {1}
 22007=不能解析字段 {0} 的数值 :{1}
 22012=除数为零: {0}
+22013=#Invalid PRECEDING or FOLLOWING size in window function: {0}
 22018=转换数据{0}期间出现转换错误
 22025=LIKE ESCAPE(转义符)存在错误: {0}
 22030=#Value not permitted for column {0}: {1}
@@ -25,6 +26,7 @@
 40001=检测到死锁.当前事务已回滚.详情: {0}
 42000=SQL语法错误 {0}
 42001=SQL语法错误 {0}; 预期： {1}
+42602=#Invalid name {0}
 42S01= {0}表已存在
 42S02=找不到表 {0}
 42S11=索引 {0} 已存在
@@ -176,6 +178,8 @@
 90143=#Row {1} not found in primary index {0}
 90144=#Authenticator not enabled on database {0}
 90145=#FOR UPDATE is not allowed in DISTINCT or grouped select
+90146=#Database {0} not found, and IFEXISTS=true, so we can't auto-create it
+90147=#Method {0} is not allowed when connection is in auto-commit mode
 HY000=常规错误: {0}
 HY004=位置数据类型: {0}
 HYC00=不支持的特性: {0}

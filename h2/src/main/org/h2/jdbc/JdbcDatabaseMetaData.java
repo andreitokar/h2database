@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.jdbc;
@@ -11,13 +11,11 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.RowIdLifetime;
 import java.sql.SQLException;
-import java.sql.Types;
 import java.util.Arrays;
 import java.util.Map.Entry;
 import java.util.Properties;
 
 import org.h2.engine.Constants;
-import org.h2.engine.Mode.ModeEnum;
 import org.h2.engine.SessionInterface;
 import org.h2.engine.SessionRemote;
 import org.h2.engine.SysProperties;
@@ -25,8 +23,8 @@ import org.h2.message.DbException;
 import org.h2.message.Trace;
 import org.h2.message.TraceObject;
 import org.h2.result.SimpleResult;
-import org.h2.util.StatementBuilder;
 import org.h2.util.StringUtils;
+import org.h2.value.TypeInfo;
 import org.h2.value.ValueInt;
 import org.h2.value.ValueString;
 
@@ -86,7 +84,7 @@ public class JdbcDatabaseMetaData extends TraceObject implements
     @Override
     public String getDatabaseProductVersion() {
         debugCodeCall("getDatabaseProductVersion");
-        return Constants.getFullVersion();
+        return Constants.FULL_VERSION;
     }
 
     /**
@@ -109,7 +107,7 @@ public class JdbcDatabaseMetaData extends TraceObject implements
     @Override
     public String getDriverVersion() {
         debugCodeCall("getDriverVersion");
-        return Constants.getFullVersion();
+        return Constants.FULL_VERSION;
     }
 
     private boolean hasSynonyms() {
@@ -1540,19 +1538,45 @@ public class JdbcDatabaseMetaData extends TraceObject implements
 
     /**
      * Gets the comma-separated list of all SQL keywords that are not supported as
-     * table/column/index name, in addition to the SQL-2003 keywords. The list
+     * table/column/index name, in addition to the SQL:2003 keywords. The list
      * returned is:
      * <pre>
-     * INTERSECTS,LIMIT,MINUS,OFFSET,ROWNUM,SYSDATE,SYSTIME,SYSTIMESTAMP,TODAY,TOP
+     * CURRENT_CATALOG,CURRENT_SCHEMA,
+     * GROUPS,
+     * IF,ILIKE,INTERSECTS,
+     * LIMIT,
+     * MINUS,
+     * OFFSET,
+     * QUALIFY,
+     * REGEXP,_ROWID_,ROWNUM,
+     * SYSDATE,SYSTIME,SYSTIMESTAMP,
+     * TODAY,TOP
      * </pre>
-     * The complete list of keywords (including SQL-2003 keywords) is:
+     * The complete list of keywords (including SQL:2003 keywords) is:
      * <pre>
-     * ALL, CHECK, CONSTRAINT, CROSS, CURRENT_DATE, CURRENT_TIME, CURRENT_TIMESTAMP,
-     * DISTINCT, EXCEPT, EXISTS, FALSE, FETCH, FOR, FOREIGN, FROM, FULL, GROUP,
-     * HAVING, INNER, INTERSECT, INTERSECTS, IS, JOIN, LIKE, LIMIT, LOCALTIME,
-     * LOCALTIMESTAMP, MINUS, NATURAL, NOT, NULL, OFFSET, ON, ORDER, PRIMARY, ROWNUM,
-     * SELECT, SYSDATE, SYSTIME, SYSTIMESTAMP, TODAY, TOP, TRUE, UNION, UNIQUE, WHERE,
-     * WINDOW, WITH
+     * ALL, AND, ARRAY, AS,
+     * BETWEEN, BOTH
+     * CASE, CHECK, CONSTRAINT, CROSS, CURRENT_CATALOG, CURRENT_DATE, CURRENT_SCHEMA,
+     * CURRENT_TIME, CURRENT_TIMESTAMP, CURRENT_USER,
+     * DISTINCT,
+     * EXCEPT, EXISTS,
+     * FALSE, FETCH, FILTER, FOR, FOREIGN, FROM, FULL,
+     * GROUP, GROUPS
+     * HAVING,
+     * IF, ILIKE, IN, INNER, INTERSECT, INTERSECTS, INTERVAL, IS,
+     * JOIN,
+     * LEADING, LEFT, LIKE, LIMIT, LOCALTIME, LOCALTIMESTAMP,
+     * MINUS,
+     * NATURAL, NOT, NULL,
+     * OFFSET, ON, OR, ORDER, OVER,
+     * PARTITION, PRIMARY,
+     * QUALIFY,
+     * RANGE, REGEXP, RIGHT, ROW, _ROWID_, ROWNUM, ROWS,
+     * SELECT, SYSDATE, SYSTIME, SYSTIMESTAMP,
+     * TABLE, TODAY, TOP, TRAILING, TRUE,
+     * UNION, UNIQUE, UNKNOWN, USING
+     * VALUES,
+     * WHERE, WINDOW, WITH
      * </pre>
      *
      * @return a list of additional the keywords
@@ -1560,7 +1584,17 @@ public class JdbcDatabaseMetaData extends TraceObject implements
     @Override
     public String getSQLKeywords() {
         debugCodeCall("getSQLKeywords");
-        return "INTERSECTS,LIMIT,MINUS,OFFSET,ROWNUM,SYSDATE,SYSTIME,SYSTIMESTAMP,TODAY,TOP";
+        return "CURRENT_CATALOG," //
+                + "CURRENT_SCHEMA," //
+                + "GROUPS," //
+                + "IF,ILIKE,INTERSECTS," //
+                + "LIMIT," //
+                + "MINUS," //
+                + "OFFSET," //
+                + "QUALIFY," //
+                + "REGEXP,_ROWID_,ROWNUM," //
+                + "SYSDATE,SYSTIME,SYSTIMESTAMP," //
+                + "TODAY,TOP";
     }
 
     /**
@@ -1614,25 +1648,27 @@ public class JdbcDatabaseMetaData extends TraceObject implements
                     + "FROM INFORMATION_SCHEMA.HELP WHERE SECTION = ?");
             prep.setString(1, section);
             ResultSet rs = prep.executeQuery();
-            StatementBuilder buff = new StatementBuilder();
+            StringBuilder builder = new StringBuilder();
             while (rs.next()) {
                 String s = rs.getString(1).trim();
                 String[] array = StringUtils.arraySplit(s, ',', true);
                 for (String a : array) {
-                    buff.appendExceptFirst(",");
+                    if (builder.length() != 0) {
+                        builder.append(',');
+                    }
                     String f = a.trim();
                     int spaceIndex = f.indexOf(' ');
                     if (spaceIndex >= 0) {
                         // remove 'Function' from 'INSERT Function'
-                        StringUtils.trimSubstring(buff.builder(), f, 0, spaceIndex);
+                        StringUtils.trimSubstring(builder, f, 0, spaceIndex);
                     } else {
-                        buff.append(f);
+                        builder.append(f);
                     }
                 }
             }
             rs.close();
             prep.close();
-            return buff.toString();
+            return builder.toString();
         } catch (Exception e) {
             throw logAndConvert(e);
         }
@@ -2563,98 +2599,100 @@ public class JdbcDatabaseMetaData extends TraceObject implements
 
     /**
      * Checks if for CREATE TABLE Test(ID INT), getTables returns Test as the
-     * table name.
+     * table name and identifiers are case sensitive.
      *
-     * @return false
+     * @return true is so, false otherwise
      */
     @Override
-    public boolean supportsMixedCaseIdentifiers() {
+    public boolean supportsMixedCaseIdentifiers() throws SQLException{
         debugCodeCall("supportsMixedCaseIdentifiers");
-        return false;
-    }
-
-    /**
-     * Checks if a table created with CREATE TABLE "Test"(ID INT) is a different
-     * table than a table created with CREATE TABLE TEST(ID INT).
-     *
-     * @return true usually, and false in MySQL mode
-     */
-    @Override
-    public boolean supportsMixedCaseQuotedIdentifiers() throws SQLException {
-        debugCodeCall("supportsMixedCaseQuotedIdentifiers");
-        return conn.getMode().getEnum() != ModeEnum.MySQL;
+        JdbcConnection.Settings settings = conn.getSettings();
+        return !settings.databaseToUpper && !settings.databaseToLower && !settings.caseInsensitiveIdentifiers;
     }
 
     /**
      * Checks if for CREATE TABLE Test(ID INT), getTables returns TEST as the
      * table name.
      *
-     * @return true usually, and false in MySQL mode
+     * @return true is so, false otherwise
      */
     @Override
     public boolean storesUpperCaseIdentifiers() throws SQLException {
         debugCodeCall("storesUpperCaseIdentifiers");
-        return conn.getMode().getEnum() != ModeEnum.MySQL;
+        return conn.getSettings().databaseToUpper;
     }
 
     /**
      * Checks if for CREATE TABLE Test(ID INT), getTables returns test as the
      * table name.
      *
-     * @return false usually, and true in MySQL mode
+     * @return true is so, false otherwise
      */
     @Override
     public boolean storesLowerCaseIdentifiers() throws SQLException {
         debugCodeCall("storesLowerCaseIdentifiers");
-        return conn.getMode().getEnum() == ModeEnum.MySQL;
+        return conn.getSettings().databaseToLower;
     }
 
     /**
      * Checks if for CREATE TABLE Test(ID INT), getTables returns Test as the
-     * table name.
+     * table name and identifiers are not case sensitive.
      *
-     * @return false
+     * @return true is so, false otherwise
      */
     @Override
-    public boolean storesMixedCaseIdentifiers() {
+    public boolean storesMixedCaseIdentifiers() throws SQLException {
         debugCodeCall("storesMixedCaseIdentifiers");
-        return false;
+        JdbcConnection.Settings settings = conn.getSettings();
+        return !settings.databaseToUpper && !settings.databaseToLower && settings.caseInsensitiveIdentifiers;
+    }
+
+    /**
+     * Checks if a table created with CREATE TABLE "Test"(ID INT) is a different
+     * table than a table created with CREATE TABLE "TEST"(ID INT).
+     *
+     * @return true is so, false otherwise
+     */
+    @Override
+    public boolean supportsMixedCaseQuotedIdentifiers() throws SQLException {
+        debugCodeCall("supportsMixedCaseQuotedIdentifiers");
+        return !conn.getSettings().caseInsensitiveIdentifiers;
     }
 
     /**
      * Checks if for CREATE TABLE "Test"(ID INT), getTables returns TEST as the
      * table name.
      *
-     * @return false usually, and true in MySQL mode
+     * @return false
      */
     @Override
     public boolean storesUpperCaseQuotedIdentifiers() throws SQLException {
         debugCodeCall("storesUpperCaseQuotedIdentifiers");
-        return conn.getMode().getEnum() == ModeEnum.MySQL;
+        return false;
     }
 
     /**
      * Checks if for CREATE TABLE "Test"(ID INT), getTables returns test as the
      * table name.
      *
-     * @return false usually, and true in MySQL mode
+     * @return false
      */
     @Override
     public boolean storesLowerCaseQuotedIdentifiers() throws SQLException {
         debugCodeCall("storesLowerCaseQuotedIdentifiers");
-        return conn.getMode().getEnum() == ModeEnum.MySQL;
+        return false;
     }
 
     /**
      * Checks if for CREATE TABLE "Test"(ID INT), getTables returns Test as the
-     * table name.
+     * table name and identifiers are case insensitive.
      *
-     * @return true usually, and false in MySQL mode
+     * @return true is so, false otherwise
      */
     @Override
     public boolean storesMixedCaseQuotedIdentifiers() throws SQLException {
         debugCodeCall("storesMixedCaseQuotedIdentifiers");
-        return conn.getMode().getEnum() != ModeEnum.MySQL;
+        return conn.getSettings().caseInsensitiveIdentifiers;
     }
 
     /**
@@ -3052,12 +3090,12 @@ public class JdbcDatabaseMetaData extends TraceObject implements
     /**
      * Gets the SQL State type.
      *
-     * @return DatabaseMetaData.sqlStateSQL99
+     * @return {@link DatabaseMetaData#sqlStateSQL}
      */
     @Override
     public int getSQLStateType() {
         debugCodeCall("getSQLStateType");
-        return DatabaseMetaData.sqlStateSQL99;
+        return DatabaseMetaData.sqlStateSQL;
     }
 
     /**
@@ -3184,12 +3222,12 @@ public class JdbcDatabaseMetaData extends TraceObject implements
     public ResultSet getClientInfoProperties() throws SQLException {
         Properties clientInfo = conn.getClientInfo();
         SimpleResult result = new SimpleResult();
-        result.addColumn("NAME", "NAME", Types.VARCHAR, 0, 0, Integer.MAX_VALUE);
-        result.addColumn("MAX_LEN", "MAX_LEN", Types.INTEGER, 0, 0, ValueInt.DISPLAY_SIZE);
-        result.addColumn("DEFAULT_VALUE", "DEFAULT_VALUE", Types.VARCHAR, 0, 0, Integer.MAX_VALUE);
-        result.addColumn("DESCRIPTION", "DESCRIPTION", Types.VARCHAR, 0, 0, Integer.MAX_VALUE);
+        result.addColumn("NAME", "NAME", TypeInfo.TYPE_STRING);
+        result.addColumn("MAX_LEN", "MAX_LEN", TypeInfo.TYPE_INT);
+        result.addColumn("DEFAULT_VALUE", "DEFAULT_VALUE", TypeInfo.TYPE_STRING);
+        result.addColumn("DESCRIPTION", "DESCRIPTION", TypeInfo.TYPE_STRING);
         // Non-standard column
-        result.addColumn("VALUE", "VALUE", Types.VARCHAR, 0, 0, Integer.MAX_VALUE);
+        result.addColumn("VALUE", "VALUE", TypeInfo.TYPE_STRING);
         for (Entry<Object, Object> entry : clientInfo.entrySet()) {
             result.addRow(ValueString.get((String) entry.getKey()), ValueInt.get(Integer.MAX_VALUE),
                     ValueString.EMPTY, ValueString.EMPTY, ValueString.get((String) entry.getValue()));
@@ -3251,7 +3289,10 @@ public class JdbcDatabaseMetaData extends TraceObject implements
     }
 
     /**
-     * [Not supported]
+     * Returns whether database always returns generated keys if valid names or
+     * indexes of columns were specified and command was completed successfully.
+     *
+     * @return true
      */
     @Override
     public boolean generatedKeyAlwaysReturned() {

@@ -1,5 +1,5 @@
--- Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
--- and the EPL 1.0 (http://h2database.com/html/license.html).
+-- Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+-- and the EPL 1.0 (https://h2database.com/html/license.html).
 -- Initial Developer: H2 Group
 --
 
@@ -73,11 +73,14 @@ SELECT * FROM TEST;
 DELETE FROM TEST;
 > update count: 1
 
-INSERT INTO TEST(T0) VALUES ('23:59:59.999999999');
+INSERT INTO TEST(T0, T8) VALUES ('23:59:59.999999999', '23:59:59.999999999');
 > update count: 1
 
 SELECT T0 FROM TEST;
->> 23:59:59.999999999
+>> 23:59:59
+
+SELECT T8 FROM TEST;
+>> 23:59:59.99999999
 
 DROP TABLE TEST;
 > ok
@@ -111,3 +114,12 @@ SELECT TIME '12233.1';
 
 SELECT TIME '1122.1';
 > exception INVALID_DATETIME_CONSTANT_2
+
+SELECT CAST (TIMESTAMP '1000000000-12-31 11:22:33.123456789' AS TIME);
+>> 11:22:33
+
+SELECT CAST (TIMESTAMP '1000000000-12-31 11:22:33.123456789' AS TIME(9));
+>> 11:22:33.123456789
+
+SELECT CAST (TIMESTAMP '-1000000000-12-31 11:22:33.123456789' AS TIME(9));
+>> 11:22:33.123456789

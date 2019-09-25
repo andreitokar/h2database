@@ -1,18 +1,20 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.engine;
 
 import java.util.HashMap;
+
+import org.h2.api.ErrorCode;
 import org.h2.message.DbException;
 import org.h2.util.Utils;
 
 /**
  * This class contains various database-level settings. To override the
  * documented default value for a database, append the setting in the database
- * URL: "jdbc:h2:test;ALIAS_COLUMN_NAME=TRUE" when opening the first connection
+ * URL: "jdbc:h2:./test;ALIAS_COLUMN_NAME=TRUE" when opening the first connection
  * to the database. The settings can not be changed once the database is open.
  * <p>
  * Some settings are a last resort and temporary solution to work around a
@@ -24,6 +26,11 @@ import org.h2.util.Utils;
 public class DbSettings extends SettingsBase {
 
     private static DbSettings defaultSettings;
+
+    /**
+     * The initial size of the hash table.
+     */
+    static final int TABLE_SIZE = 64;
 
     /**
      * Database setting <code>ALIAS_COLUMN_NAME</code> (default: false).<br />
@@ -56,14 +63,27 @@ public class DbSettings extends SettingsBase {
     public final int analyzeSample = get("ANALYZE_SAMPLE", 10_000);
 
     /**
-     * Database setting <code>DATABASE_TO_UPPER</code> (default: true).<br />
-     * Database short names are converted to uppercase for the DATABASE()
-     * function, and in the CATALOG column of all database meta data methods.
-     * Setting this to "false" is experimental. When set to false, all
-     * identifier names (table names, column names) are case sensitive (except
-     * aggregate, built-in functions, data types, and keywords).
+     * Database setting <code>DATABASE_TO_LOWER</code> (default: false).<br />
+     * When set to true unquoted identifiers and short name of database are
+     * converted to lower case. Value of this setting should not be changed
+     * after creation of database. Setting this to "true" is experimental.
      */
-    public final boolean databaseToUpper = get("DATABASE_TO_UPPER", true);
+    public final boolean databaseToLower;
+
+    /**
+     * Database setting <code>DATABASE_TO_UPPER</code> (default: true).<br />
+     * When set to true unquoted identifiers and short name of database are
+     * converted to upper case.
+     */
+    public final boolean databaseToUpper;
+
+    /**
+     * Database setting <code>CASE_INSENSITIVE_IDENTIFIERS</code> (default:
+     * false).<br />
+     * When set to true, all identifier names (table names, column names) are
+     * case insensitive. Setting this to "true" is experimental.
+     */
+    public final boolean caseInsensitiveIdentifiers = get("CASE_INSENSITIVE_IDENTIFIERS", false);
 
     /**
      * Database setting <code>DB_CLOSE_ON_EXIT</code> (default: true).<br />
@@ -207,12 +227,6 @@ public class DbSettings extends SettingsBase {
     public final boolean optimizeInSelect = get("OPTIMIZE_IN_SELECT", true);
 
     /**
-     * Database setting <code>OPTIMIZE_IS_NULL</code> (default: false).<br />
-     * Use an index for condition of the form columnName IS NULL.
-     */
-    public final boolean optimizeIsNull = get("OPTIMIZE_IS_NULL", true);
-
-    /**
      * Database setting <code>OPTIMIZE_OR</code> (default: true).<br />
      * Convert (C=? OR C=?) to (C IN(?, ?)).
      */
@@ -291,12 +305,6 @@ public class DbSettings extends SettingsBase {
     public final boolean reuseSpace = get("REUSE_SPACE", true);
 
     /**
-     * Database setting <code>ROWID</code> (default: true).<br />
-     * If set, each table has a pseudo-column _ROWID_.
-     */
-    public final boolean rowId = get("ROWID", true);
-
-    /**
      * Database setting <code>SHARE_LINKED_CONNECTIONS</code>
      * (default: true).<br />
      * Linked connections should be shared, that means connections to the same
@@ -328,21 +336,44 @@ public class DbSettings extends SettingsBase {
     public final boolean compressData = get("COMPRESS", false);
 
     /**
-     * Database setting <code>STANDARD_DROP_TABLE_RESTRICT</code> (default:
-     * false).<br />
-     * <code>true</code> if DROP TABLE RESTRICT should fail if there's any
-     * foreign key referencing the table to be dropped. <code>false</code> if
-     * foreign keys referencing the table to be dropped should be silently
-     * dropped as well.
+     * Database setting <code>IGNORE_CATALOGS</code>
+     * (default: false).<br />
+     * If set, all catalog names in identifiers are silently accepted
+     * without comparing them with the short name of the database.
      */
-    public final boolean standardDropTableRestrict = get(
-            "STANDARD_DROP_TABLE_RESTRICT", false);
+    public final boolean ignoreCatalogs = get("IGNORE_CATALOGS", false);
 
     private DbSettings(HashMap<String, String> s) {
         super(s);
         if (s.get("NESTED_JOINS") != null || Utils.getProperty("h2.nestedJoins", null) != null) {
             throw DbException.getUnsupportedException("NESTED_JOINS setting is not available since 1.4.197");
         }
+        boolean lower = get("DATABASE_TO_LOWER", false);
+        boolean upperSet = containsKey("DATABASE_TO_UPPER");
+        boolean upper = get("DATABASE_TO_UPPER", true);
+        if (lower && upper) {
+            if (upperSet) {
+                throw DbException.get(ErrorCode.UNSUPPORTED_SETTING_COMBINATION,
+                        "DATABASE_TO_LOWER & DATABASE_TO_UPPER");
+            }
+            upper = false;
+        }
+        databaseToLower = lower;
+        databaseToUpper = upper;
+        HashMap<String, String> settings = getSettings();
+        settings.put("DATABASE_TO_LOWER", Boolean.toString(lower));
+        settings.put("DATABASE_TO_UPPER", Boolean.toString(upper));
+    }
+
+    /**
+     * Sets the database engine setting.
+     *
+     * @param mvStore
+     *            true for MVStore engine, false for PageStore engine
+     */
+    void setMvStore(boolean mvStore) {
+        this.mvStore = mvStore;
+        set("MV_STORE", mvStore);
     }
 
     /**
@@ -364,7 +395,7 @@ public class DbSettings extends SettingsBase {
      */
     public static DbSettings getDefaultSettings() {
         if (defaultSettings == null) {
-            defaultSettings = new DbSettings(new HashMap<String, String>());
+            defaultSettings = new DbSettings(new HashMap<String, String>(TABLE_SIZE));
         }
         return defaultSettings;
     }

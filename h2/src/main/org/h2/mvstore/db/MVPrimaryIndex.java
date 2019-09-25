@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.mvstore.db;
@@ -20,6 +20,8 @@ import org.h2.index.Cursor;
 import org.h2.index.IndexType;
 import org.h2.index.SingleRowCursor;
 import org.h2.message.DbException;
+import org.h2.mvstore.DataUtils;
+import org.h2.mvstore.MVMap;
 import org.h2.mvstore.tx.Transaction;
 import org.h2.mvstore.tx.TransactionMap;
 import org.h2.mvstore.type.DataType;
@@ -33,11 +35,12 @@ import org.h2.table.TableFilter;
 import org.h2.value.Value;
 import org.h2.value.ValueLong;
 import org.h2.value.ValueNull;
+import org.h2.value.VersionedValue;
 
 /**
  * A table stored in a MVStore.
  */
-public class MVPrimaryIndex extends BaseIndex
+public class MVPrimaryIndex extends BaseIndex implements MVIndex
 {
     private final MVTable                  mvTable;
     private final String                   mapName;
@@ -51,7 +54,7 @@ public class MVPrimaryIndex extends BaseIndex
         this.mvTable = table;
         DataType valueType = table.getRowFactory().getDataType();
         mapName = "table." + getId();
-        assert db.isStarting() || !db.getStore().getMvStore().getMetaMap().containsKey("name." + mapName);
+        assert db.isStarting() || !db.getStore().getMvStore().getMetaMap().containsKey(DataUtils.META_NAME + mapName);
         Transaction t = mvTable.getTransactionBegin();
         dataMap = t.openMap(mapName, LongDataType.INSTANCE, valueType);
         dataMap.map.setVolatile(!table.isPersistData() || !indexType.isPersistent());
@@ -67,7 +70,7 @@ public class MVPrimaryIndex extends BaseIndex
 
     @Override
     public String getPlanSQL() {
-        return table.getSQL() + ".tableScan";
+        return table.getSQL(new StringBuilder(), false).append(".tableScan").toString();
     }
 
     public void setMainIndexColumn(int mainIndexColumn) {
@@ -122,11 +125,12 @@ public class MVPrimaryIndex extends BaseIndex
                     sql += "(" + indexColumns[mainIndexColumn].getSQL() + ")";
                 }
                 int errorCode = ErrorCode.CONCURRENT_UPDATE_1;
-                if (map.get(rowKey) != null) {
+                if (map.getImmediate(rowKey) != null) {
                     // committed
                     errorCode = ErrorCode.DUPLICATE_KEY_1;
                 }
-                DbException e = DbException.get(errorCode, sql);
+                DbException e = DbException.get(errorCode,
+                        getDuplicatePrimaryKeyMessage(mainIndexColumn).append(' ').append(oldValue).toString());
                 e.setSource(this);
                 throw e;
             }
@@ -155,8 +159,9 @@ public class MVPrimaryIndex extends BaseIndex
         try {
             Row result = map.remove(row.getKey());
             if (result == null) {
-                throw DbException.get(ErrorCode.ROW_NOT_FOUND_WHEN_DELETING_1,
-                        getSQL() + ": " + row.getKey());
+                StringBuilder builder = new StringBuilder();
+                getSQL(builder, false).append(": ").append(row.getKey());
+                throw DbException.get(ErrorCode.ROW_NOT_FOUND_WHEN_DELETING_1, builder.toString());
             }
         } catch (IllegalStateException e) {
             throw mvTable.convertException(e);
@@ -195,8 +200,9 @@ public class MVPrimaryIndex extends BaseIndex
         try {
             Row old = map.put(key, newRow);
             if (old == null) {
-                throw DbException.get(ErrorCode.ROW_NOT_FOUND_WHEN_DELETING_1,
-                        getSQL() + ": " + key);
+                StringBuilder builder = new StringBuilder();
+                getSQL(builder, false).append(": ").append(key);
+                throw DbException.get(ErrorCode.ROW_NOT_FOUND_WHEN_DELETING_1, builder.toString());
             }
         } catch (IllegalStateException e) {
             throw mvTable.convertException(e);
@@ -218,6 +224,13 @@ public class MVPrimaryIndex extends BaseIndex
         }
     }
 
+    /**
+     * Lock a single row.
+     *
+     * @param session database session
+     * @param row to lock
+     * @return row object if it exists
+     */
     Row lockRow(Session session, Row row) {
         TransactionMap<Long, Row> map = getMap(session);
         long key = row.getKey();
@@ -265,10 +278,10 @@ public class MVPrimaryIndex extends BaseIndex
     @Override
     public Row getRow(Session session, long key) {
         TransactionMap<Long,Row> map = getMap(session);
-        Row row = map.get(key);
+        Row row = map.getFromSnapshot(key);
         if (row == null) {
             throw DbException.get(ErrorCode.ROW_NOT_FOUND_IN_PRIMARY_INDEX,
-                    getSQL(), String.valueOf(key));
+                    getSQL(false), String.valueOf(key));
         }
         return row;
     }
@@ -326,7 +339,7 @@ public class MVPrimaryIndex extends BaseIndex
         if (rowId == null) {
             return new MVStoreCursor(Collections.<Entry<Long,Row>> emptyIterator());
         }
-        Row value = map.get(rowId);
+        Row value = map.getFromSnapshot(rowId);
         Entry<Long,Row> e = new AbstractMap.SimpleImmutableEntry<>(rowId, value);
         List<Entry<Long,Row>> list = Collections.singletonList(e);
         MVStoreCursor c = new MVStoreCursor(list.iterator());
@@ -351,11 +364,7 @@ public class MVPrimaryIndex extends BaseIndex
      * @return the maximum number of rows
      */
     public long getRowCountMax() {
-        try {
-            return dataMap.sizeAsLongMax();
-        } catch (IllegalStateException e) {
-            throw DbException.get(ErrorCode.OBJECT_CLOSED, e);
-        }
+        return dataMap.sizeAsLongMax();
     }
 
     @Override
@@ -375,6 +384,16 @@ public class MVPrimaryIndex extends BaseIndex
     @Override
     public void checkRename() {
         // ok
+    }
+
+    @Override
+    public void addRowsToBuffer(List<Row> rows, String bufferName) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void addBufferedRows(List<String> bufferNames) {
+        throw new UnsupportedOperationException();
     }
 
     /**
@@ -436,6 +455,10 @@ public class MVPrimaryIndex extends BaseIndex
         return dataMap.getInstance(t);
     }
 
+    @Override
+    public MVMap<Value, VersionedValue> getMVMap() {
+        return dataMap.map;
+    }
 
     /**
      * A cursor.

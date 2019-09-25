@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.engine;
@@ -10,11 +10,14 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
@@ -40,7 +43,11 @@ import org.h2.message.DbException;
 import org.h2.message.Trace;
 import org.h2.message.TraceSystem;
 import org.h2.mvstore.MVStore;
+import org.h2.mvstore.db.LobStorageMap;
 import org.h2.mvstore.db.MVTableEngine;
+import org.h2.pagestore.PageStore;
+import org.h2.pagestore.WriterThread;
+import org.h2.pagestore.db.LobStorageBackend;
 import org.h2.result.LocalResultFactory;
 import org.h2.result.Row;
 import org.h2.result.RowFactory;
@@ -55,12 +62,8 @@ import org.h2.store.FileLock;
 import org.h2.store.FileLockMethod;
 import org.h2.store.FileStore;
 import org.h2.store.InDoubtTransaction;
-import org.h2.store.LobStorageBackend;
 import org.h2.store.LobStorageFrontend;
 import org.h2.store.LobStorageInterface;
-import org.h2.store.LobStorageMap;
-import org.h2.store.PageStore;
-import org.h2.store.WriterThread;
 import org.h2.store.fs.FileUtils;
 import org.h2.table.Column;
 import org.h2.table.IndexColumn;
@@ -72,19 +75,22 @@ import org.h2.table.TableType;
 import org.h2.table.TableView;
 import org.h2.tools.DeleteDbFiles;
 import org.h2.tools.Server;
+import org.h2.util.CurrentTimestamp;
 import org.h2.util.JdbcUtils;
 import org.h2.util.MathUtils;
 import org.h2.util.NetUtils;
+import org.h2.util.NetworkConnectionInfo;
 import org.h2.util.SmallLRUCache;
 import org.h2.util.SourceCompiler;
 import org.h2.util.StringUtils;
 import org.h2.util.TempFileDeleter;
 import org.h2.util.Utils;
+import org.h2.value.CaseInsensitiveConcurrentMap;
 import org.h2.value.CaseInsensitiveMap;
 import org.h2.value.CompareMode;
-import org.h2.value.NullableKeyConcurrentMap;
 import org.h2.value.Value;
 import org.h2.value.ValueInt;
+import org.h2.value.ValueTimestampTimeZone;
 
 /**
  * There is one database object per open database.
@@ -94,7 +100,7 @@ import org.h2.value.ValueInt;
  *
  * @since 2004-04-15 22:49
  */
-public class Database implements DataHandler {
+public class Database implements DataHandler, CastDataProvider {
 
     private static int initialPowerOffCount;
 
@@ -135,14 +141,15 @@ public class Database implements DataHandler {
     private final byte[] filePasswordHash;
     private final byte[] fileEncryptionKey;
 
-    private final HashMap<String, Role> roles = new HashMap<>();
-    private final HashMap<String, User> users = new HashMap<>();
-    private final HashMap<String, Setting> settings = new HashMap<>();
-    private final HashMap<String, Schema> schemas = new HashMap<>();
-    private final HashMap<String, Right> rights = new HashMap<>();
-    private final HashMap<String, Domain> domains = new HashMap<>();
-    private final HashMap<String, UserAggregate> aggregates = new HashMap<>();
-    private final HashMap<String, Comment> comments = new HashMap<>();
+    private final ConcurrentHashMap<String, Role> roles = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, User> users = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Setting> settings = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Schema> schemas = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Right> rights = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Domain> domains = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, UserAggregate> aggregates = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Comment> comments = new ConcurrentHashMap<>();
+
     private final HashMap<String, TableEngine> tableEngines = new HashMap<>();
 
     private final Set<Session> userSessions =
@@ -232,6 +239,7 @@ public class Database implements DataHandler {
     private QueryStatisticsData queryStatisticsData;
     private RowFactory rowFactory = RowFactory.getRowFactory();
     private LocalResultFactory resultFactory = LocalResultFactory.DEFAULT;
+    private boolean ignoreCatalogs;
 
     private Authenticator authenticator;
 
@@ -310,6 +318,8 @@ public class Database implements DataHandler {
                 TraceSystem.DEFAULT_TRACE_LEVEL_SYSTEM_OUT);
         this.cacheType = StringUtils.toUpperEnglish(
                 ci.removeProperty("CACHE_TYPE", Constants.CACHE_TYPE_DEFAULT));
+        this.ignoreCatalogs = ci.getProperty("IGNORE_CATALOGS",
+                dbSettings.ignoreCatalogs);
         this.lockMode = ci.getProperty("LOCK_MODE", Constants.DEFAULT_LOCK_MODE);
         this.writeDelay = ci.getProperty("WRITE_DELAY", Constants.DEFAULT_WRITE_DELAY);
         openDatabase(traceLevelFile, traceLevelSystemOut, closeAtVmShutdown, ci);
@@ -410,12 +420,12 @@ public class Database implements DataHandler {
      */
     public boolean areEqual(Value a, Value b) {
         // can not use equals because ValueDecimal 0.0 is not equal to 0.00.
-        return a.compareTo(b, mode, compareMode) == 0;
+        return a.compareTo(b, this, compareMode) == 0;
     }
 
     /**
-     * Compare two values with the current comparison mode. The values may not
-     * be of the same type.
+     * Compare two values with the current comparison mode. The values may have
+     * different data types including NULL.
      *
      * @param a the first value
      * @param b the second value
@@ -423,7 +433,22 @@ public class Database implements DataHandler {
      *         1 otherwise
      */
     public int compare(Value a, Value b) {
-        return a.compareTo(b, mode, compareMode);
+        return a.compareTo(b, this, compareMode);
+    }
+
+    /**
+     * Compare two values with the current comparison mode. The values may have
+     * different data types including NULL.
+     *
+     * @param a the first value
+     * @param b the second value
+     * @param forEquality perform only check for equality (= or &lt;&gt;)
+     * @return 0 if both values are equal, -1 if the first value is smaller, 1
+     *         if the second value is larger, {@link Integer#MIN_VALUE} if order
+     *         is not defined due to NULL comparison
+     */
+    public int compareWithNull(Value a, Value b, boolean forEquality) {
+        return a.compareWithNull(b, forEquality, this, compareMode);
     }
 
     /**
@@ -436,7 +461,7 @@ public class Database implements DataHandler {
      *         1 otherwise
      */
     public int compareTypeSafe(Value a, Value b) {
-        return a.compareTypeSafe(b, compareMode);
+        return a.compareTypeSafe(b, compareMode, this);
     }
 
     public long getModificationDataId() {
@@ -647,7 +672,8 @@ public class Database implements DataHandler {
         if (n == null || n.isEmpty()) {
             n = "unnamed";
         }
-        return dbSettings.databaseToUpper ? StringUtils.toUpperEnglish(n) : n;
+        return dbSettings.databaseToUpper ? StringUtils.toUpperEnglish(n)
+                : dbSettings.databaseToLower ? StringUtils.toLowerEnglish(n) : n;
     }
 
     private synchronized void open(int traceLevelFile, int traceLevelSystemOut, ConnectionInfo ci) {
@@ -672,7 +698,7 @@ public class Database implements DataHandler {
                 readOnly = true;
             }
             if (existsPage && !existsMv) {
-                dbSettings.mvStore = false;
+                dbSettings.setMvStore(false);
                 // Need to re-init this because the first time we do it we don't
                 // know if we have an mvstore or a pagestore.
                 multiThreaded = ci.getProperty("MULTI_THREADED", false);
@@ -755,11 +781,6 @@ public class Database implements DataHandler {
                 getPageStore();
             }
             starting = false;
-            if (store == null) {
-                writer = WriterThread.create(this, writeDelay);
-            } else {
-                setWriteDelay(writeDelay);
-            }
         } else {
             if (autoServerMode) {
                 throw DbException.getUnsupportedException(
@@ -771,16 +792,34 @@ public class Database implements DataHandler {
                 getPageStore();
             }
         }
-        if(store != null) {
+        if (store != null) {
             store.getTransactionStore().init();
         }
+        if (dbSettings.mvStore) {
+            // MVStore
+            for (Iterator<String> i = dbSettings.getSettings().keySet().iterator(); i.hasNext();) {
+                if (i.next().startsWith("PAGE_STORE_")) {
+                    i.remove();
+                }
+            }
+        } else if (store == null) {
+            // PageStore without additional MVStore for spatial features
+            for (Iterator<String> i = dbSettings.getSettings().keySet().iterator(); i.hasNext();) {
+                String name = i.next();
+                if ("COMPRESS".equals(name) || "REUSE_SPACE".equals(name)) {
+                    i.remove();
+                }
+            }
+        }
         systemUser = new User(this, 0, SYSTEM_USER_NAME, true);
-        mainSchema = new Schema(this, 0, Constants.SCHEMA_MAIN, systemUser, true);
-        infoSchema = new Schema(this, -1, "INFORMATION_SCHEMA", systemUser, true);
+        mainSchema = new Schema(this, Constants.MAIN_SCHEMA_ID, sysIdentifier(Constants.SCHEMA_MAIN), systemUser,
+                true);
+        infoSchema = new Schema(this, Constants.INFORMATION_SCHEMA_ID, sysIdentifier("INFORMATION_SCHEMA"), systemUser,
+                true);
         schemas.put(mainSchema.getName(), mainSchema);
         schemas.put(infoSchema.getName(), infoSchema);
-        publicRole = new Role(this, 0, Constants.PUBLIC_ROLE_NAME, true);
-        roles.put(Constants.PUBLIC_ROLE_NAME, publicRole);
+        publicRole = new Role(this, 0, sysIdentifier(Constants.PUBLIC_ROLE_NAME), true);
+        roles.put(publicRole.getName(), publicRole);
         systemUser.setAdmin(true);
         systemSession = new Session(this, systemUser, ++nextSessionId);
         lobSession = new Session(this, systemUser, ++nextSessionId);
@@ -840,6 +879,8 @@ public class Database implements DataHandler {
                 lockMeta(systemSession);
                 addDatabaseObject(systemSession, setting);
             }
+            setSortSetting(SetTypes.BINARY_COLLATION, SysProperties.SORT_BINARY_UNSIGNED, true);
+            setSortSetting(SetTypes.UUID_COLLATION, SysProperties.SORT_UUID_UNSIGNED, false);
             // mark all ids used in the page store
             if (pageStore != null) {
                 BitSet f = pageStore.getObjectIds();
@@ -855,11 +896,42 @@ public class Database implements DataHandler {
         systemSession.commit(true);
 
         trace.info("opened {0}", databaseName);
+        if (persistent) {
+            if (store == null) {
+                writer = WriterThread.create(this, writeDelay);
+            } else {
+                setWriteDelay(writeDelay);
+            }
+        }
         if (checkpointAllowed > 0) {
             afterWriting();
         }
     }
 
+    /**
+     * Preserves a current default value of a sorting setting if it is not the
+     * same as default for older versions of H2 and if it was not modified by
+     * user.
+     *
+     * @param type
+     *            setting type
+     * @param defValue
+     *            current default value (may be modified via system properties)
+     * @param oldDefault
+     *            default value for old versions
+     */
+    private void setSortSetting(int type, boolean defValue, boolean oldDefault) {
+        if (defValue == oldDefault) {
+            return;
+        }
+        String name = SetTypes.getTypeName(type);
+        if (settings.get(name) == null) {
+            Setting setting = new Setting(this, allocateObjectId(), name);
+            setting.setStringValue(defValue ? CompareMode.UNSIGNED : CompareMode.SIGNED);
+            lockMeta(systemSession);
+            addDatabaseObject(systemSession, setting);
+        }
+    }
 
     private void handleUpgradeIssues() {
         if (store != null && !isReadOnly()) {
@@ -1054,9 +1126,11 @@ public class Database implements DataHandler {
      * @param session the session
      */
     public void unlockMeta(Session session) {
-        unlockMetaDebug(session);
-        meta.unlock(session);
-        session.unlock(meta);
+        if (meta != null) {
+            unlockMetaDebug(session);
+            meta.unlock(session);
+            session.unlock(meta);
+        }
     }
 
     /**
@@ -1089,10 +1163,8 @@ public class Database implements DataHandler {
             try {
                 Cursor cursor = metaIdIndex.find(session, r, r);
                 if (cursor.next()) {
-                    if (SysProperties.CHECK) {
-                        if (lockMode != Constants.LOCK_MODE_OFF && !wasLocked) {
-                            throw DbException.throwInternalError();
-                        }
+                    if (lockMode != Constants.LOCK_MODE_OFF && !wasLocked) {
+                        throw DbException.throwInternalError();
                     }
                     Row found = cursor.get();
                     meta.removeRow(session, found);
@@ -1123,6 +1195,10 @@ public class Database implements DataHandler {
         }
     }
 
+    /**
+     * Mark some database ids as unused.
+     * @param idsToRelease the ids to release
+     */
     void releaseDatabaseObjectIds(BitSet idsToRelease) {
         synchronized (objectIds) {
             objectIds.andNot(idsToRelease);
@@ -1130,8 +1206,8 @@ public class Database implements DataHandler {
     }
 
     @SuppressWarnings("unchecked")
-    private HashMap<String, DbObject> getMap(int type) {
-        HashMap<String, ? extends DbObject> result;
+    private Map<String, DbObject> getMap(int type) {
+        Map<String, ? extends DbObject> result;
         switch (type) {
         case DbObject.USER:
             result = users;
@@ -1160,7 +1236,7 @@ public class Database implements DataHandler {
         default:
             throw DbException.throwInternalError("type=" + type);
         }
-        return (HashMap<String, DbObject>) result;
+        return (Map<String, DbObject>) result;
     }
 
     /**
@@ -1192,7 +1268,7 @@ public class Database implements DataHandler {
         if (id > 0 && !starting) {
             checkWritingAllowed();
         }
-        HashMap<String, DbObject> map = getMap(obj.getType());
+        Map<String, DbObject> map = getMap(obj.getType());
         if (obj.getType() == DbObject.USER) {
             User user = (User) obj;
             if (user.isAdmin() && systemUser.getName().equals(SYSTEM_USER_NAME)) {
@@ -1240,7 +1316,7 @@ public class Database implements DataHandler {
      * @return the role or null
      */
     public Role findRole(String roleName) {
-        return roles.get(roleName);
+        return roles.get(StringUtils.toUpperEnglish(roleName));
     }
 
     /**
@@ -1250,6 +1326,9 @@ public class Database implements DataHandler {
      * @return the schema or null
      */
     public Schema findSchema(String schemaName) {
+        if (schemaName == null) {
+            return null;
+        }
         Schema schema = schemas.get(schemaName);
         if (schema == infoSchema) {
             initMetaTables();
@@ -1274,7 +1353,7 @@ public class Database implements DataHandler {
      * @return the user or null
      */
     public User findUser(String name) {
-        return users.get(name);
+        return users.get(StringUtils.toUpperEnglish(name));
     }
 
     /**
@@ -1307,10 +1386,11 @@ public class Database implements DataHandler {
      * Create a session for the given user.
      *
      * @param user the user
+     * @param networkConnectionInfo the network connection information, or {@code null}
      * @return the session, or null if the database is currently closing
      * @throws DbException if the database is in exclusive mode
      */
-    synchronized Session createSession(User user) {
+    synchronized Session createSession(User user, NetworkConnectionInfo networkConnectionInfo) {
         if (closing) {
             return null;
         }
@@ -1318,6 +1398,7 @@ public class Database implements DataHandler {
             throw DbException.get(ErrorCode.DATABASE_IS_IN_EXCLUSIVE_MODE);
         }
         Session session = new Session(this, user, ++nextSessionId);
+        session.setNetworkConnectionInfo(networkConnectionInfo);
         userSessions.add(session);
         trace.info("connecting session #{0} to {1}", session.getId(), databaseName);
         if (delayedCloser != null) {
@@ -1360,18 +1441,45 @@ public class Database implements DataHandler {
         }
     }
 
-    private synchronized void closeAllSessionsException(Session except) {
+    private synchronized void closeAllSessionsExcept(Session except) {
         Session[] all = userSessions.toArray(EMPTY_SESSION_ARRAY);
         for (Session s : all) {
             if (s != except) {
-                try {
-                    // must roll back, otherwise the session is removed and
-                    // the transaction log that contains its uncommitted
-                    // operations as well
-                    s.rollback();
-                    s.close();
-                } catch (DbException e) {
-                    trace.error(e, "disconnecting session #{0}", s.getId());
+                // indicate that session need to be closed ASAP
+                s.suspend();
+            }
+        }
+
+        int timeout = 2 * getLockTimeout();
+        long start = System.currentTimeMillis();
+        boolean done = false;
+        while (!done) {
+            long sleep = timeout / 20;
+            try {
+                // although nobody going to notify us
+                // it is vital to give up lock on a database
+                wait(sleep);
+            } catch (InterruptedException e1) {
+                // ignore
+            }
+            if (System.currentTimeMillis() - start > timeout) {
+                for (Session s : all) {
+                    if (s != except && !s.isClosed()) {
+                        try {
+                            // this will rollback outstanding transaction
+                            s.close();
+                        } catch (Throwable e) {
+                            trace.error(e, "disconnecting session #{0}", s.getId());
+                        }
+                    }
+                }
+                break;
+            }
+            done = true;
+            for (Session s : all) {
+                if (s != except && !s.isClosed()) {
+                    done = false;
+                    break;
                 }
             }
         }
@@ -1384,12 +1492,27 @@ public class Database implements DataHandler {
      *            hook
      */
     void close(boolean fromShutdownHook) {
+        DbException b = backgroundException.getAndSet(null);
+        try {
+            closeImpl(fromShutdownHook);
+        } catch (Throwable t) {
+            if (b != null) {
+                t.addSuppressed(b);
+            }
+            throw t;
+        }
+        if (b != null) {
+            // wrap the exception, so we see it was thrown here
+            throw DbException.get(b.getErrorCode(), b, b.getMessage());
+        }
+    }
+
+    private void closeImpl(boolean fromShutdownHook) {
         try {
             synchronized (this) {
                 if (closing) {
                     return;
                 }
-                throwLastBackgroundException();
                 if (fileLockMethod == FileLockMethod.SERIALIZED &&
                         !reconnectChangePending) {
                     // another connection may have written something - don't write
@@ -1408,7 +1531,7 @@ public class Database implements DataHandler {
                         return;
                     }
                     trace.info("closing {0} from shutdown hook", databaseName);
-                    closeAllSessionsException(null);
+                    closeAllSessionsExcept(null);
                 }
                 trace.info("closing {0}", databaseName);
                 if (eventListener != null) {
@@ -1555,18 +1678,7 @@ public class Database implements DataHandler {
                             compactMode == CommandInterface.SHUTDOWN_COMPACT ||
                             compactMode == CommandInterface.SHUTDOWN_DEFRAG ||
                             getSettings().defragAlways;
-                    if (!compactFully && !mvStore.isReadOnly()) {
-                        if (dbSettings.maxCompactTime > 0) {
-                            try {
-                                store.compactFile(dbSettings.maxCompactTime);
-                            } catch (Throwable t) {
-                                trace.error(t, "compactFile");
-                            }
-                        } else {
-                            mvStore.commit();
-                        }
-                    }
-                    store.close(compactFully);
+                    store.close(compactFully ? -1 : dbSettings.maxCompactTime);
                 }
             }
             if (systemSession != null) {
@@ -1645,6 +1757,15 @@ public class Database implements DataHandler {
             objectIds.set(i);
         }
         return i;
+    }
+
+    /**
+     * Returns main schema (usually PUBLIC).
+     *
+     * @return main schema (usually PUBLIC)
+     */
+    public Schema getMainSchema() {
+        return mainSchema;
     }
 
     public ArrayList<UserAggregate> getAllAggregates() {
@@ -1751,21 +1872,21 @@ public class Database implements DataHandler {
         return list;
     }
 
-    public ArrayList<Schema> getAllSchemas() {
+    public Collection<Schema> getAllSchemas() {
         initMetaTables();
-        return new ArrayList<>(schemas.values());
+        return schemas.values();
     }
 
-    public ArrayList<Setting> getAllSettings() {
-        return new ArrayList<>(settings.values());
+    public Collection<Setting> getAllSettings() {
+        return settings.values();
     }
 
-    public ArrayList<Domain> getAllDomains() {
-        return new ArrayList<>(domains.values());
+    public Collection<Domain> getAllDomains() {
+        return domains.values();
     }
 
-    public ArrayList<User> getAllUsers() {
-        return new ArrayList<>(users.values());
+    public Collection<User> getAllUsers() {
+        return users.values();
     }
 
     public String getCacheType() {
@@ -1847,7 +1968,7 @@ public class Database implements DataHandler {
                 }
             }
         } else {
-            lockMeta(session);
+            boolean metaWasLocked = lockMeta(session);
             synchronized (this) {
                 int id = obj.getId();
                 removeMeta(session, id);
@@ -1856,6 +1977,9 @@ public class Database implements DataHandler {
                 if(id > 0) {
                     objectIds.set(id);
                 }
+            }
+            if (!metaWasLocked) {
+                unlockMeta(session);
             }
         }
     }
@@ -1902,7 +2026,7 @@ public class Database implements DataHandler {
             DbObject obj, String newName) {
         checkWritingAllowed();
         int type = obj.getType();
-        HashMap<String, DbObject> map = getMap(type);
+        Map<String, DbObject> map = getMap(type);
         if (SysProperties.CHECK) {
             if (!map.containsKey(obj.getName())) {
                 DbException.throwInternalError("not found: " + obj.getName());
@@ -1930,8 +2054,7 @@ public class Database implements DataHandler {
             if (!persistent) {
                 name = "memFS:" + name;
             }
-            return FileUtils.createTempFile(name,
-                    Constants.SUFFIX_TEMP_FILE, true, inTempDir);
+            return FileUtils.createTempFile(name, Constants.SUFFIX_TEMP_FILE, inTempDir);
         } catch (IOException e) {
             throw DbException.convertIOException(e, databaseName);
         }
@@ -1973,7 +2096,7 @@ public class Database implements DataHandler {
         checkWritingAllowed();
         String objName = obj.getName();
         int type = obj.getType();
-        HashMap<String, DbObject> map = getMap(type);
+        Map<String, DbObject> map = getMap(type);
         if (SysProperties.CHECK && !map.containsKey(objName)) {
             DbException.throwInternalError("not found: " + objName);
         }
@@ -2065,8 +2188,7 @@ public class Database implements DataHandler {
                 Table t = getDependentTable(obj, null);
                 if (t != null) {
                     obj.getSchema().add(obj);
-                    throw DbException.get(ErrorCode.CANNOT_DROP_2, obj.getSQL(),
-                            t.getSQL());
+                    throw DbException.get(ErrorCode.CANNOT_DROP_2, obj.getSQL(false), t.getSQL(false));
                 }
                 obj.removeChildrenAndResources(session);
             }
@@ -2077,7 +2199,7 @@ public class Database implements DataHandler {
     /**
      * Check if this database is disk-based.
      *
-     * @return true if it is disk-based, false it it is in-memory only.
+     * @return true if it is disk-based, false if it is in-memory only.
      */
     public boolean isPersistent() {
         return persistent;
@@ -2240,11 +2362,17 @@ public class Database implements DataHandler {
         session.setAllCommitted();
     }
 
-    private void throwLastBackgroundException() {
-        DbException b = backgroundException.getAndSet(null);
-        if (b != null) {
-            // wrap the exception, so we see it was thrown here
-            throw DbException.get(b.getErrorCode(), b, b.getMessage());
+    /**
+     * If there is a background store thread, and if there wasn an exception in
+     * that thread, throw it now.
+     */
+    void throwLastBackgroundException() {
+        if (store == null || !store.getMvStore().isBackgroundThread()) {
+            DbException b = backgroundException.getAndSet(null);
+            if (b != null) {
+                // wrap the exception, so we see it was thrown here
+                throw DbException.get(b.getErrorCode(), b, b.getMessage());
+            }
         }
     }
 
@@ -2442,6 +2570,15 @@ public class Database implements DataHandler {
         return ignoreCase;
     }
 
+    public void setIgnoreCatalogs(boolean b) {
+        ignoreCatalogs = b;
+    }
+
+    public boolean getIgnoreCatalogs() {
+        return ignoreCatalogs;
+    }
+
+
     public synchronized void setDeleteFilesOnDisconnect(boolean b) {
         this.deleteFilesOnDisconnect = b;
     }
@@ -2564,6 +2701,7 @@ public class Database implements DataHandler {
         this.mode = mode;
     }
 
+    @Override
     public Mode getMode() {
         return mode;
     }
@@ -2602,12 +2740,26 @@ public class Database implements DataHandler {
      *
      * @param session the session
      * @param closeOthers whether other sessions are closed
+     * @return true if success, false otherwise
      */
-    public void setExclusiveSession(Session session, boolean closeOthers) {
-        this.exclusiveSession.set(session);
-        if (closeOthers) {
-            closeAllSessionsException(session);
+    public boolean setExclusiveSession(Session session, boolean closeOthers) {
+        if (!exclusiveSession.compareAndSet(null, session)) {
+            return false;
         }
+        if (closeOthers) {
+            closeAllSessionsExcept(session);
+        }
+        return true;
+    }
+
+    /**
+     * Stop exclusive access the database by provided session.
+     *
+     * @param session the session
+     * @return true if success, false otherwise
+     */
+    public boolean unsetExclusiveSession(Session session) {
+        return exclusiveSession.compareAndSet(session, null);
     }
 
     @Override
@@ -2718,8 +2870,8 @@ public class Database implements DataHandler {
                     continue;
                 }
                 // exclude the LOB_MAP that the Recover tool creates
-                if (table.getName().equals("LOB_BLOCKS") && table.getSchema()
-                        .getName().equals("INFORMATION_SCHEMA")) {
+                if (table.getSchema().getId() == Constants.INFORMATION_SCHEMA_ID
+                        && table.getName().equalsIgnoreCase("LOB_BLOCKS")) {
                     continue;
                 }
                 return table;
@@ -2797,7 +2949,7 @@ public class Database implements DataHandler {
         }
         long now = System.nanoTime();
         if (now > reconnectCheckNext + reconnectCheckDelayNs) {
-            if (SysProperties.CHECK && checkpointAllowed < 0) {
+            if (checkpointAllowed < 0) {
                 DbException.throwInternalError(Integer.toString(checkpointAllowed));
             }
             synchronized (reconnectSync) {
@@ -2866,8 +3018,7 @@ public class Database implements DataHandler {
         }
         synchronized (reconnectSync) {
             if (reconnectModified(true)) {
-                checkpointAllowed++;
-                if (SysProperties.CHECK && checkpointAllowed > 20) {
+                if (++checkpointAllowed > 20) {
                     throw DbException.throwInternalError(Integer.toString(checkpointAllowed));
                 }
                 return true;
@@ -2889,7 +3040,7 @@ public class Database implements DataHandler {
         synchronized (reconnectSync) {
             checkpointAllowed--;
         }
-        if (SysProperties.CHECK && checkpointAllowed < 0) {
+        if (checkpointAllowed < 0) {
             throw DbException.throwInternalError(Integer.toString(checkpointAllowed));
         }
     }
@@ -3000,9 +3151,7 @@ public class Database implements DataHandler {
      * @return the hash map
      */
     public <V> HashMap<String, V> newStringMap() {
-        return dbSettings.databaseToUpper ?
-                new HashMap<String, V>() :
-                new CaseInsensitiveMap<V>();
+        return dbSettings.caseInsensitiveIdentifiers ? new CaseInsensitiveMap<V>() : new HashMap<String, V>();
     }
 
     /**
@@ -3013,7 +3162,8 @@ public class Database implements DataHandler {
      * @return the hash map
      */
     public <V> ConcurrentHashMap<String, V> newConcurrentStringMap() {
-        return new NullableKeyConcurrentMap<>(!dbSettings.databaseToUpper);
+        return dbSettings.caseInsensitiveIdentifiers ? new CaseInsensitiveConcurrentMap<V>()
+                : new ConcurrentHashMap<String, V>();
     }
 
     /**
@@ -3025,7 +3175,33 @@ public class Database implements DataHandler {
      * @return true if they match
      */
     public boolean equalsIdentifiers(String a, String b) {
-        return a.equals(b) || (!dbSettings.databaseToUpper && a.equalsIgnoreCase(b));
+        return a.equals(b) || dbSettings.caseInsensitiveIdentifiers && a.equalsIgnoreCase(b);
+    }
+
+    /**
+     * Returns identifier in upper or lower case depending on database settings.
+     *
+     * @param upperName
+     *            identifier in the upper case
+     * @return identifier in upper or lower case
+     */
+    public String sysIdentifier(String upperName) {
+        assert isUpperSysIdentifier(upperName);
+        return dbSettings.databaseToLower ? StringUtils.toLowerEnglish(upperName) : upperName;
+    }
+
+    private static boolean isUpperSysIdentifier(String upperName) {
+        int l = upperName.length();
+        if (l == 0) {
+            return false;
+        }
+        for (int i = 0; i < l; i++) {
+            int ch = upperName.charAt(i);
+            if (ch < 'A' || ch > 'Z' && ch != '_') {
+                return false;
+            }
+        }
+        return true;
     }
 
     @Override
@@ -3120,4 +3296,14 @@ public class Database implements DataHandler {
         }
         this.authenticator=authenticator;
     }
+
+    @Override
+    public ValueTimestampTimeZone currentTimestamp() {
+        /*
+         * This method shouldn't be used in this class, but return a value for
+         * safety.
+         */
+        return CurrentTimestamp.get();
+    }
+
 }

@@ -1,14 +1,16 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.value;
 
+import java.math.BigDecimal;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 
 import org.h2.api.ErrorCode;
+import org.h2.engine.CastDataProvider;
 import org.h2.message.DbException;
 
 /**
@@ -106,12 +108,17 @@ public class ValueFloat extends Value {
     }
 
     @Override
-    public int getType() {
-        return Value.FLOAT;
+    public TypeInfo getType() {
+        return TypeInfo.TYPE_FLOAT;
     }
 
     @Override
-    public int compareTypeSafe(Value o, CompareMode mode) {
+    public int getValueType() {
+        return FLOAT;
+    }
+
+    @Override
+    public int compareTypeSafe(Value o, CompareMode mode, CastDataProvider provider) {
         return Float.compare(value, ((ValueFloat) o).value);
     }
 
@@ -126,18 +133,23 @@ public class ValueFloat extends Value {
     }
 
     @Override
+    public double getDouble() {
+        return value;
+    }
+
+    @Override
+    public BigDecimal getBigDecimal() {
+        if (Math.abs(value) <= Float.MAX_VALUE) {
+            // better rounding behavior than BigDecimal.valueOf(f)
+            return new BigDecimal(Float.toString(value));
+        }
+        // Infinite or NaN
+        throw DbException.get(ErrorCode.DATA_CONVERSION_ERROR_1, Float.toString(value));
+    }
+
+    @Override
     public String getString() {
         return Float.toString(value);
-    }
-
-    @Override
-    public long getPrecision() {
-        return PRECISION;
-    }
-
-    @Override
-    public int getScale() {
-        return 0;
     }
 
     @Override
@@ -179,16 +191,11 @@ public class ValueFloat extends Value {
     }
 
     @Override
-    public int getDisplaySize() {
-        return DISPLAY_SIZE;
-    }
-
-    @Override
     public boolean equals(Object other) {
         if (!(other instanceof ValueFloat)) {
             return false;
         }
-        return compareTypeSafe((ValueFloat) other, null) == 0;
+        return compareTypeSafe((ValueFloat) other, null, null) == 0;
     }
 
 }

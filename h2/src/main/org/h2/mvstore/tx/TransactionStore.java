@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.mvstore.tx;
@@ -17,6 +17,7 @@ import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.MVMap;
 import org.h2.mvstore.MVStore;
 import org.h2.mvstore.Page;
+import org.h2.mvstore.RootReference;
 import org.h2.mvstore.WriteBuffer;
 import org.h2.mvstore.db.DBMetaType;
 import org.h2.mvstore.rtree.MVRTreeMap;
@@ -25,6 +26,7 @@ import org.h2.mvstore.type.LongDataType;
 import org.h2.mvstore.type.ObjectDataType;
 import org.h2.mvstore.type.StringDataType;
 import org.h2.util.StringUtils;
+import org.h2.value.VersionedValue;
 
 /**
  * A store that supports concurrent MVCC read-committed transactions.
@@ -60,7 +62,7 @@ public class TransactionStore {
      * Key: opId, value: [ mapId, key, oldValue ].
      */
     @SuppressWarnings("unchecked")
-    final MVMap<Long,Record> undoLogs[] = (MVMap<Long,Record>[])new MVMap[MAX_OPEN_TRANSACTIONS];
+    final MVMap<Long,Record>[] undoLogs = (MVMap<Long,Record>[])new MVMap[MAX_OPEN_TRANSACTIONS];
     private final MVMap.Builder<Long, Record> undoLogBuilder;
 
     private final DataType dataType;
@@ -97,11 +99,16 @@ public class TransactionStore {
     private final AtomicReferenceArray<Transaction> transactions =
                                                         new AtomicReferenceArray<>(MAX_OPEN_TRANSACTIONS + 1);
 
-
     private static final String TYPE_REGISTRY_NAME = "_";
 
-    private static final String UNDO_LOG_NAME_PREFIX = "undoLog";
-    private static final char UNDO_LOG_COMMITTED = '-'; // must come before open in lexicographical order
+    /**
+     * The prefix for undo log entries.
+     */
+    public static final String UNDO_LOG_NAME_PREFIX = "undoLog";
+
+    // must come before open in lexicographical order
+    private static final char UNDO_LOG_COMMITTED = '-';
+
     private static final char UNDO_LOG_OPEN = '.';
 
     /**
@@ -110,10 +117,19 @@ public class TransactionStore {
     // TODO: introduce constructor parameter instead of a static field, driven by URL parameter
     private static final int MAX_OPEN_TRANSACTIONS = 65535;
 
+    // -1 is a bogus map id
+    private static final Object[] COMMIT_MARKER = new Object[] {-1, null, null};
 
-    public static String getUndoLogName(boolean committed, int transactionId) {
-        return UNDO_LOG_NAME_PREFIX +
-                (committed ? UNDO_LOG_COMMITTED : UNDO_LOG_OPEN) +
+
+    /**
+     * Generate a string used to name undo log map for a specific transaction.
+     * This name will contain transaction id.
+     *
+     * @param transactionId of the corresponding transaction
+     * @return undo log name
+     */
+    public static String getUndoLogName(int transactionId) {
+        return UNDO_LOG_NAME_PREFIX + UNDO_LOG_OPEN +
                 (transactionId > 0 ? String.valueOf(transactionId) : "");
     }
 
@@ -163,8 +179,10 @@ public class TransactionStore {
                     // Unexpectedly short name may be encountered upon upgrade from older version
                     // where undo log was persisted as a single map, remove it.
                     if (mapName.length() > UNDO_LOG_NAME_PREFIX.length()) {
+                        // make a decision about tx status based on a log name
+                        // to handle upgrade from a previous versions
                         boolean committed = mapName.charAt(UNDO_LOG_NAME_PREFIX.length()) == UNDO_LOG_COMMITTED;
-                        if (store.hasData(mapName) || committed) {
+                        if (store.hasData(mapName)) {
                             int transactionId = StringUtils.parseUInt31(mapName, UNDO_LOG_NAME_PREFIX.length() + 1,
                                     mapName.length());
                             VersionedBitSet openTxBitSet = openTransactions.get();
@@ -179,17 +197,28 @@ public class TransactionStore {
                                     status = (Integer) data[0];
                                     name = (String) data[1];
                                 }
-                                if (committed) {
-                                    status = Transaction.STATUS_COMMITTED;
-                                }
                                 MVMap<Long, Record> undoLog = store.openMap(mapName, undoLogBuilder);
                                 undoLogs[transactionId] = undoLog;
                                 Long lastUndoKey = undoLog.lastKey();
-                                assert committed || lastUndoKey != null;
-                                assert committed || getTransactionId(lastUndoKey) == transactionId;
-                                long logId = lastUndoKey == null ? 0 : getLogId(lastUndoKey) + 1;
+                                assert lastUndoKey != null;
+                                assert getTransactionId(lastUndoKey) == transactionId;
+                                long logId = getLogId(lastUndoKey) + 1;
+                                if (committed) {
+                                    // give it a proper name and used marker record instead
+                                    store.renameMap(undoLog, getUndoLogName(transactionId));
+                                    markUndoLogAsCommitted(transactionId);
+                                } else {
+                                    committed = logId > LOG_ID_MASK;
+                                }
+                                if (committed) {
+                                    status = Transaction.STATUS_COMMITTED;
+                                    lastUndoKey = undoLog.lowerKey(lastUndoKey);
+                                    assert lastUndoKey == null || getTransactionId(lastUndoKey) == transactionId;
+                                    logId = lastUndoKey == null ? 0 : getLogId(lastUndoKey) + 1;
+                                }
                                 registerTransaction(transactionId, status, name, logId, timeoutMillis, 0,
-                                        RollbackListener.NONE);
+                                        ROLLBACK_LISTENER_NONE);
+                                continue;
                             }
                         }
                     }
@@ -201,6 +230,10 @@ public class TransactionStore {
             }
             init = true;
         }
+    }
+
+    private void markUndoLogAsCommitted(int transactionId) {
+        addUndoLogRecord(transactionId, LOG_ID_MASK, COMMIT_MARKER);
     }
 
     /**
@@ -295,7 +328,6 @@ public class TransactionStore {
         while((transactionId = bitSet.nextSetBit(transactionId + 1)) > 0) {
             Transaction transaction = getTransaction(transactionId);
             if(transaction != null) {
-                transaction = new Transaction(transaction);
                 if(transaction.getStatus() != Transaction.STATUS_CLOSED) {
                     list.add(transaction);
                 }
@@ -317,7 +349,7 @@ public class TransactionStore {
      * @return the transaction
      */
     public Transaction begin() {
-        return begin(RollbackListener.NONE, timeoutMillis, 0);
+        return begin(ROLLBACK_LISTENER_NONE, timeoutMillis, 0);
     }
 
     /**
@@ -370,7 +402,7 @@ public class TransactionStore {
         transactions.set(transactionId, transaction);
 
         if (undoLogs[transactionId] == null) {
-            String undoName = getUndoLogName(status == Transaction.STATUS_COMMITTED, transactionId);
+            String undoName = getUndoLogName(transactionId);
             MVMap<Long, Record> undoLog = store.openMap(undoName, undoLogBuilder);
             undoLogs[transactionId] = undoLog;
         }
@@ -399,8 +431,16 @@ public class TransactionStore {
      * @param record Record(mapId, key, previousValue) to add
      */
     long addUndoLogRecord(int transactionId, long logId, Record record) {
+        MVMap<Long, Object[]> undoLog = undoLogs[transactionId];
         long undoKey = getOperationId(transactionId, logId);
-        undoLogs[transactionId].append(undoKey, record);
+        if (logId == 0 && !undoLog.isEmpty()) {
+            throw DataUtils.newIllegalStateException(
+                    DataUtils.ERROR_TOO_MANY_OPEN_TRANSACTIONS,
+                    "An old transaction with the same id " +
+                    "is still open: {0}",
+                    transactionId);
+        }
+        undoLog.append(undoKey, record);
         return undoKey;
     }
 
@@ -415,12 +455,10 @@ public class TransactionStore {
     /**
      * Remove the given map.
      *
-     * @param <K> the key type
-     * @param <V> the value type
      * @param map the map
      */
-    <K, V> void removeMap(TransactionMap<K, V> map) {
-        store.removeMap(map.map, false);
+    void removeMap(TransactionMap<?,?> map) {
+        store.removeMap(map.map);
     }
 
     /**
@@ -432,6 +470,19 @@ public class TransactionStore {
     void commit(Transaction t, boolean recovery) {
         if (!store.isClosed()) {
             int transactionId = t.transactionId;
+            // First, mark log as "committed".
+            // It does not change the way this transaction is treated by others,
+            // but preserves fact of commit in case of abrupt termination.
+            MVMap<Long, Object[]> undoLog = undoLogs[transactionId];
+            Cursor<Long, Object[]> cursor;
+            if(recovery) {
+                removeUndoLogRecord(transactionId);
+                cursor = undoLog.cursor(null);
+            } else {
+                cursor = undoLog.cursor(null);
+                markUndoLogAsCommitted(transactionId);
+            }
+
             // this is an atomic action that causes all changes
             // made by this transaction, to be considered as "committed"
             flipCommittingTransactionsBit(transactionId, true);
@@ -560,6 +611,46 @@ public class TransactionStore {
         }
     }
 
+    /**
+     * Get the root references (snapshots) for undo-log maps.
+     * Those snapshots can potentially be used to optimize TransactionMap.size().
+     *
+     * @return the array of root references or null if snapshotting is not possible
+     */
+    RootReference[] collectUndoLogRootReferences() {
+        BitSet opentransactions = openTransactions.get();
+        RootReference[] undoLogRootReferences = new RootReference[opentransactions.length()];
+        for (int i = opentransactions.nextSetBit(0); i >= 0; i = opentransactions.nextSetBit(i+1)) {
+            MVMap<Long, Object[]> undoLog = undoLogs[i];
+            if (undoLog != null) {
+                RootReference rootReference = undoLog.getRoot();
+                if (rootReference.needFlush()) {
+                    // abort attempt to collect snapshots for all undo logs
+                    // because map's append buffer can't be flushed from a non-owning thread
+                    return null;
+                }
+                undoLogRootReferences[i] = rootReference;
+            }
+        }
+        return undoLogRootReferences;
+    }
+
+    /**
+     * Calculate the size for undo log entries.
+     *
+     * @param undoLogRootReferences the root references
+     * @return the number of key-value pairs
+     */
+    static long calculateUndoLogsTotalSize(RootReference[] undoLogRootReferences) {
+        long undoLogsTotalSize = 0;
+        for (RootReference rootReference : undoLogRootReferences) {
+            if (rootReference != null) {
+                undoLogsTotalSize += rootReference.getTotalCount();
+            }
+        }
+        return undoLogsTotalSize;
+    }
+
     private boolean isUndoEmpty() {
         BitSet openTrans = openTransactions.get();
         for (int i = openTrans.nextSetBit(0); i >= 0; i = openTrans.nextSetBit(i + 1)) {
@@ -571,6 +662,12 @@ public class TransactionStore {
         return true;
     }
 
+    /**
+     * Get Transaction object for a transaction id.
+     *
+     * @param transactionId id for an open transaction
+     * @return Transaction object.
+     */
     Transaction getTransaction(int transactionId) {
         return transactions.get(transactionId);
     }
@@ -630,7 +727,7 @@ public class TransactionStore {
                     MVMap<Object, VersionedValue> m = openMap(mapId);
                     if (m != null) { // could be null if map was removed later on
                         VersionedValue oldValue = op.oldValue;
-                        current = new Change(m.getName(), op.key, oldValue == null ? null : oldValue.value);
+                        current = new Change(m.getName(), op.key, oldValue == null ? null : oldValue.getCurrentValue());
                         return;
                     }
                 }
@@ -700,14 +797,6 @@ public class TransactionStore {
      */
     public interface RollbackListener {
 
-        RollbackListener NONE = new RollbackListener() {
-            @Override
-            public void onRollback(MVMap<Object, VersionedValue> map, Object key,
-                                    VersionedValue existingValue, VersionedValue restoredValue) {
-                // do nothing
-            }
-        };
-
         /**
          * Notified of a single map change (add/update/remove)
          * @param map modified
@@ -719,6 +808,13 @@ public class TransactionStore {
                         VersionedValue existingValue, VersionedValue restoredValue);
     }
 
+    private static final RollbackListener ROLLBACK_LISTENER_NONE = new RollbackListener() {
+        @Override
+        public void onRollback(MVMap<Object, VersionedValue> map, Object key,
+                                VersionedValue existingValue, VersionedValue restoredValue) {
+            // do nothing
+        }
+    };
 
     private static final class TxMapBuilder<K,V> extends MVMap.Builder<K,V> {
 
@@ -832,5 +928,95 @@ public class TransactionStore {
                 return buff.toString();
             }
         }
+    }
+
+    /**
+     * A data type that contains an array of objects with the specified data
+     * types.
+     */
+    public static class ArrayType implements DataType {
+
+        private final int arrayLength;
+        private final DataType[] elementTypes;
+
+        ArrayType(DataType[] elementTypes) {
+            this.arrayLength = elementTypes.length;
+            this.elementTypes = elementTypes;
+        }
+
+        @Override
+        public int getMemory(Object obj) {
+            Object[] array = (Object[]) obj;
+            int size = 0;
+            for (int i = 0; i < arrayLength; i++) {
+                DataType t = elementTypes[i];
+                Object o = array[i];
+                if (o != null) {
+                    size += t.getMemory(o);
+                }
+            }
+            return size;
+        }
+
+        @Override
+        public int compare(Object aObj, Object bObj) {
+            if (aObj == bObj) {
+                return 0;
+            }
+            Object[] a = (Object[]) aObj;
+            Object[] b = (Object[]) bObj;
+            for (int i = 0; i < arrayLength; i++) {
+                DataType t = elementTypes[i];
+                int comp = t.compare(a[i], b[i]);
+                if (comp != 0) {
+                    return comp;
+                }
+            }
+            return 0;
+        }
+
+        @Override
+        public void read(ByteBuffer buff, Object[] obj,
+                int len, boolean key) {
+            for (int i = 0; i < len; i++) {
+                obj[i] = read(buff);
+            }
+        }
+
+        @Override
+        public void write(WriteBuffer buff, Object[] obj,
+                int len, boolean key) {
+            for (int i = 0; i < len; i++) {
+                write(buff, obj[i]);
+            }
+        }
+
+        @Override
+        public void write(WriteBuffer buff, Object obj) {
+            Object[] array = (Object[]) obj;
+            for (int i = 0; i < arrayLength; i++) {
+                DataType t = elementTypes[i];
+                Object o = array[i];
+                if (o == null) {
+                    buff.put((byte) 0);
+                } else {
+                    buff.put((byte) 1);
+                    t.write(buff, o);
+                }
+            }
+        }
+
+        @Override
+        public Object read(ByteBuffer buff) {
+            Object[] array = new Object[arrayLength];
+            for (int i = 0; i < arrayLength; i++) {
+                DataType t = elementTypes[i];
+                if (buff.get() == 1) {
+                    array[i] = t.read(buff);
+                }
+            }
+            return array;
+        }
+
     }
 }

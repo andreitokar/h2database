@@ -1,5 +1,5 @@
--- Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
--- and the EPL 1.0 (http://h2database.com/html/license.html).
+-- Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+-- and the EPL 1.0 (https://h2database.com/html/license.html).
 -- Initial Developer: H2 Group
 --
 
@@ -36,14 +36,13 @@ explain with recursive r(n) as (
     (select 1) union all (select n+1 from r where n < 3)
 )
 select n from r;
->> WITH RECURSIVE PUBLIC.R(N) AS ( (SELECT 1 FROM SYSTEM_RANGE(1, 1) /* PUBLIC.RANGE_INDEX */) UNION ALL (SELECT (N + 1) FROM PUBLIC.R /* PUBLIC.R.tableScan */ WHERE N < 3) ) SELECT N FROM PUBLIC.R R /* null */
+>> WITH RECURSIVE "PUBLIC"."R"("N") AS ( (SELECT 1 FROM SYSTEM_RANGE(1, 1) /* range index */) UNION ALL (SELECT ("N" + 1) FROM "PUBLIC"."R" /* PUBLIC.R.tableScan */ WHERE "N" < 3) ) SELECT "N" FROM "PUBLIC"."R" "R" /* null */
 
 explain with recursive "r"(n) as (
     (select 1) union all (select n+1 from "r" where n < 3)
 )
 select n from "r";
->> WITH RECURSIVE PUBLIC."r"(N) AS ( (SELECT 1 FROM SYSTEM_RANGE(1, 1) /* PUBLIC.RANGE_INDEX */) UNION ALL (SELECT (N + 1) FROM PUBLIC."r" /* PUBLIC."r".tableScan */ WHERE N < 3) ) SELECT N FROM PUBLIC."r" "r" /* null */
-
+>> WITH RECURSIVE "PUBLIC"."r"("N") AS ( (SELECT 1 FROM SYSTEM_RANGE(1, 1) /* range index */) UNION ALL (SELECT ("N" + 1) FROM "PUBLIC"."r" /* PUBLIC.r.tableScan */ WHERE "N" < 3) ) SELECT "N" FROM "PUBLIC"."r" "r" /* null */
 
 select sum(n) from (
     with recursive r(n) as (
@@ -80,6 +79,7 @@ select 0 from (
 > 0
 > -
 > rows: 0
+
 with
     r0(n,k) as (select -1, 0),
     r1(n,k) as ((select 1, 0) union all (select n+1,k+1 from r1 where n <= 3)),
@@ -130,3 +130,63 @@ WITH CTE_TEST AS (SELECT 1, 2) ((SELECT * FROM CTE_TEST));
 > - -
 > 1 2
 > rows: 1
+
+CREATE TABLE TEST(A INT, B INT) AS SELECT 1, 2;
+> ok
+
+WITH CTE_TEST AS (TABLE TEST) ((SELECT * FROM CTE_TEST));
+> A B
+> - -
+> 1 2
+> rows: 1
+
+WITH CTE_TEST AS (TABLE TEST) ((TABLE CTE_TEST));
+> A B
+> - -
+> 1 2
+> rows: 1
+
+WITH CTE_TEST AS (VALUES (1, 2)) ((SELECT * FROM CTE_TEST));
+> C1 C2
+> -- --
+> 1  2
+> rows: 1
+
+WITH CTE_TEST AS (TABLE TEST) ((SELECT A, B FROM CTE_TEST2));
+> exception TABLE_OR_VIEW_NOT_FOUND_1
+
+WITH CTE_TEST AS (TABLE TEST) ((SELECT A, B, C FROM CTE_TEST));
+> exception COLUMN_NOT_FOUND_1
+
+DROP TABLE TEST;
+> ok
+
+WITH RECURSIVE V(V1, V2) AS (
+    SELECT 0 V1, 1 V2
+    UNION ALL
+    SELECT V1 + 1, V2 + 1 FROM V WHERE V2 < 4
+)
+SELECT V1, V2, COUNT(*) FROM V
+LEFT JOIN (SELECT T1 / T2 R FROM (VALUES (10, 0)) T(T1, T2) WHERE T2*T2*T2*T2*T2*T2 <> 0) X ON X.R > V.V1 AND X.R < V.V2
+GROUP BY V1, V2;
+> V1 V2 COUNT(*)
+> -- -- --------
+> 0  1  1
+> 1  2  1
+> 2  3  1
+> 3  4  1
+> rows: 4
+
+EXPLAIN WITH RECURSIVE V(V1, V2) AS (
+    SELECT 0 V1, 1 V2
+    UNION ALL
+    SELECT V1 + 1, V2 + 1 FROM V WHERE V2 < 10
+)
+SELECT V1, V2, COUNT(*) FROM V
+LEFT JOIN (SELECT T1 / T2 R FROM (VALUES (10, 0)) T(T1, T2) WHERE T2*T2*T2*T2*T2*T2 <> 0) X ON X.R > V.V1 AND X.R < V.V2
+GROUP BY V1, V2;
+>> WITH RECURSIVE "PUBLIC"."V"("V1", "V2") AS ( (SELECT 0 AS "V1", 1 AS "V2" FROM SYSTEM_RANGE(1, 1) /* range index */) UNION ALL (SELECT ("V1" + 1), ("V2" + 1) FROM "PUBLIC"."V" /* PUBLIC.V.tableScan */ WHERE "V2" < 10) ) SELECT "V1", "V2", COUNT(*) FROM "PUBLIC"."V" "V" /* null */ LEFT OUTER JOIN ( SELECT ("T1" / "T2") AS "R" FROM (VALUES (10, 0)) "T"("T1", "T2") WHERE ((((("T2" * "T2") * "T2") * "T2") * "T2") * "T2") <> 0 ) "X" /* SELECT (T1 / T2) AS R FROM (VALUES (10, 0)) T(T1, T2) /++ table scan ++/ WHERE ((((((T2 * T2) * T2) * T2) * T2) * T2) <> 0) _LOCAL_AND_GLOBAL_ (((T1 / T2) >= ?1) AND ((T1 / T2) <= ?2)): R > V.V1 AND R < V.V2 */ ON ("X"."R" > "V"."V1") AND ("X"."R" < "V"."V2") GROUP BY "V1", "V2"
+
+-- Workaround for a leftover view after EXPLAIN WITH
+DROP VIEW V;
+> ok

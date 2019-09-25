@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.jmx;
@@ -11,7 +11,7 @@ import java.sql.Timestamp;
 import java.util.HashMap;
 import java.util.Hashtable;
 import java.util.Map;
-import java.util.TreeMap;
+import java.util.Map.Entry;
 import javax.management.JMException;
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
@@ -20,8 +20,9 @@ import org.h2.engine.ConnectionInfo;
 import org.h2.engine.Constants;
 import org.h2.engine.Database;
 import org.h2.engine.Session;
-import org.h2.store.PageStore;
+import org.h2.pagestore.PageStore;
 import org.h2.table.Table;
+import org.h2.util.NetworkConnectionInfo;
 
 /**
  * The MBean implementation.
@@ -223,18 +224,16 @@ public class DatabaseInfo implements DatabaseInfoMBean {
 
     @Override
     public String getVersion() {
-        return Constants.getFullVersion();
+        return Constants.FULL_VERSION;
     }
 
     @Override
     public String listSettings() {
-        StringBuilder buff = new StringBuilder();
-        for (Map.Entry<String, String> e :
-                new TreeMap<>(
-                database.getSettings().getSettings()).entrySet()) {
-            buff.append(e.getKey()).append(" = ").append(e.getValue()).append('\n');
+        StringBuilder builder = new StringBuilder();
+        for (Entry<String, String> e : database.getSettings().getSortedSettings()) {
+            builder.append(e.getKey()).append(" = ").append(e.getValue()).append('\n');
         }
-        return buff.toString();
+        return builder.toString();
     }
 
     @Override
@@ -245,6 +244,15 @@ public class DatabaseInfo implements DatabaseInfoMBean {
             buff.append(" user: ").
                     append(session.getUser().getName()).
                     append('\n');
+            NetworkConnectionInfo networkConnectionInfo = session.getNetworkConnectionInfo();
+            if (networkConnectionInfo != null) {
+                buff.append("server: ").append(networkConnectionInfo.getServer()).append('\n') //
+                        .append("clientAddr: ").append(networkConnectionInfo.getClient()).append('\n');
+                String clientInfo = networkConnectionInfo.getClientInfo();
+                if (clientInfo != null) {
+                    buff.append("clientInfo: ").append(clientInfo).append('\n');
+                }
+            }
             buff.append("connected: ").
                     append(new Timestamp(session.getSessionStart())).
                     append('\n');
@@ -257,18 +265,15 @@ public class DatabaseInfo implements DatabaseInfoMBean {
                         .append(session.getCurrentCommandStart().getString())
                         .append('\n');
             }
-            Table[] t = session.getLocks();
-            if (t.length > 0) {
-                for (Table table : session.getLocks()) {
-                    if (table.isLockedExclusivelyBy(session)) {
-                        buff.append("write lock on ");
-                    } else {
-                        buff.append("read lock on ");
-                    }
-                    buff.append(table.getSchema().getName()).
-                            append('.').append(table.getName()).
-                            append('\n');
+            for (Table table : session.getLocks()) {
+                if (table.isLockedExclusivelyBy(session)) {
+                    buff.append("write lock on ");
+                } else {
+                    buff.append("read lock on ");
                 }
+                buff.append(table.getSchema().getName()).
+                        append('.').append(table.getName()).
+                        append('\n');
             }
             buff.append('\n');
         }

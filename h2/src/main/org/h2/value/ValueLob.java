@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.value;
@@ -12,8 +12,9 @@ import java.io.InputStream;
 import java.io.Reader;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+
+import org.h2.engine.CastDataProvider;
 import org.h2.engine.Constants;
-import org.h2.engine.Mode;
 import org.h2.engine.SysProperties;
 import org.h2.message.DbException;
 import org.h2.store.DataHandler;
@@ -98,8 +99,8 @@ public class ValueLob extends Value {
      * @return result of comparison
      */
     static int compare(Value v1, Value v2) {
-        int valueType = v1.getType();
-        assert valueType == v2.getType();
+        int valueType = v1.getValueType();
+        assert valueType == v2.getValueType();
         if (v1 instanceof ValueLobDb && v2 instanceof ValueLobDb) {
             byte[] small1 = v1.getSmall(), small2 = v2.getSmall();
             if (small1 != null && small2 != null) {
@@ -110,7 +111,7 @@ public class ValueLob extends Value {
                 }
             }
         }
-        long minPrec = Math.min(v1.getPrecision(), v2.getPrecision());
+        long minPrec = Math.min(v1.getType().getPrecision(), v2.getType().getPrecision());
         if (valueType == Value.BLOB) {
             try (InputStream is1 = v1.getInputStream();
                     InputStream is2 = v2.getInputStream()) {
@@ -184,6 +185,7 @@ public class ValueLob extends Value {
      * either Value.BLOB or Value.CLOB
      */
     private final int valueType;
+    private TypeInfo type;
     private final long precision;
     private final DataHandler handler;
     private int tableId;
@@ -208,7 +210,7 @@ public class ValueLob extends Value {
 
     private static String getFileName(DataHandler handler, int tableId,
             int objectId) {
-        if (SysProperties.CHECK && tableId == 0 && objectId == 0) {
+        if (tableId == 0 && objectId == 0) {
             DbException.throwInternalError("0 LOB");
         }
         String table = tableId < 0 ? ".temp" : ".t" + tableId;
@@ -365,25 +367,24 @@ public class ValueLob extends Value {
      * Convert a lob to another data type. The data is fully read in memory
      * except when converting to BLOB or CLOB.
      *
-     * @param t the new type
-     * @param precision the precision of the column to convert this value to.
-     *        The special constant <code>-1</code> is used to indicate that
-     *        the precision plays no role when converting the value
-     * @param mode the database mode
-     * @param column the column (if any), used for to improve the error message if conversion fails
+     * @param targetType the new type
      * @param extTypeInfo the extended data type information, or null
+     * @param provider the cast information provider
+     * @param forComparison if {@code true}, perform cast for comparison operation
+     * @param column the column (if any), used for to improve the error message if conversion fails
      * @return the converted value
      */
     @Override
-    public Value convertTo(int t, int precision, Mode mode, Object column, ExtTypeInfo extTypeInfo) {
-        if (t == valueType) {
+    protected Value convertTo(int targetType, ExtTypeInfo extTypeInfo, CastDataProvider provider,
+            boolean forComparison, Object column) {
+        if (targetType == valueType) {
             return this;
-        } else if (t == Value.CLOB) {
+        } else if (targetType == Value.CLOB) {
             return ValueLobDb.createTempClob(getReader(), -1, handler);
-        } else if (t == Value.BLOB) {
+        } else if (targetType == Value.BLOB) {
             return ValueLobDb.createTempBlob(getInputStream(), -1, handler);
         }
-        return super.convertTo(t, precision, mode, column, null);
+        return super.convertTo(targetType, null, provider, forComparison, column);
     }
 
     @Override
@@ -448,13 +449,17 @@ public class ValueLob extends Value {
     }
 
     @Override
-    public int getType() {
-        return valueType;
+    public TypeInfo getType() {
+        TypeInfo type = this.type;
+        if (type == null) {
+            this.type = type = new TypeInfo(valueType, precision, 0, MathUtils.convertLongToInt(precision), null);
+        }
+        return type;
     }
 
     @Override
-    public long getPrecision() {
-        return precision;
+    public int getValueType() {
+        return valueType;
     }
 
     @Override
@@ -514,7 +519,7 @@ public class ValueLob extends Value {
     }
 
     @Override
-    public int compareTypeSafe(Value v, CompareMode mode) {
+    public int compareTypeSafe(Value v, CompareMode mode, CastDataProvider provider) {
         return compare(this, v);
     }
 
@@ -558,7 +563,7 @@ public class ValueLob extends Value {
     @Override
     public void set(PreparedStatement prep, int parameterIndex)
             throws SQLException {
-        long p = getPrecision();
+        long p = precision;
         if (p > Integer.MAX_VALUE || p <= 0) {
             p = -1;
         }
@@ -584,9 +589,9 @@ public class ValueLob extends Value {
     public String getTraceSQL() {
         StringBuilder buff = new StringBuilder();
         if (valueType == Value.CLOB) {
-            buff.append("SPACE(").append(getPrecision());
+            buff.append("SPACE(").append(precision);
         } else {
-            buff.append("CAST(REPEAT('00', ").append(getPrecision()).append(") AS BINARY");
+            buff.append("CAST(REPEAT('00', ").append(precision).append(") AS BINARY");
         }
         buff.append(" /* ").append(fileName).append(" */)");
         return buff.toString();
@@ -603,15 +608,10 @@ public class ValueLob extends Value {
     }
 
     @Override
-    public int getDisplaySize() {
-        return MathUtils.convertLongToInt(getPrecision());
-    }
-
-    @Override
     public boolean equals(Object other) {
         if (other instanceof ValueLob) {
             ValueLob o = (ValueLob) other;
-            return valueType == o.valueType && compareTypeSafe(o, null) == 0;
+            return valueType == o.valueType && compareTypeSafe(o, null, null) == 0;
         }
         return false;
     }
@@ -675,7 +675,7 @@ public class ValueLob extends Value {
     }
 
     @Override
-    public Value convertPrecision(long precision, boolean force) {
+    public Value convertPrecision(long precision) {
         if (this.precision <= precision) {
             return this;
         }

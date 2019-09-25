@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.engine;
@@ -28,12 +28,16 @@ public class Domain extends DbObjectBase {
 
     @Override
     public String getDropSQL() {
-        return "DROP DOMAIN IF EXISTS " + getSQL();
+        StringBuilder builder = new StringBuilder("DROP DOMAIN IF EXISTS ");
+        return getSQL(builder, true).toString();
     }
 
     @Override
     public String getCreateSQL() {
-        return "CREATE DOMAIN " + getSQL() + " AS " + column.getCreateSQL();
+        StringBuilder builder = new StringBuilder("CREATE DOMAIN ");
+        getSQL(builder, true).append(" AS ");
+        builder.append(column.getCreateSQL());
+        return builder.toString();
     }
 
     public Column getColumn() {

@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.test.unit;
@@ -11,11 +11,11 @@ import java.sql.Time;
 import java.util.concurrent.TimeUnit;
 
 import org.h2.api.JavaObjectSerializer;
+import org.h2.pagestore.db.LobStorageBackend;
 import org.h2.result.SimpleResult;
 import org.h2.store.Data;
 import org.h2.store.DataHandler;
 import org.h2.store.FileStore;
-import org.h2.store.LobStorageBackend;
 import org.h2.test.TestBase;
 import org.h2.util.SmallLRUCache;
 import org.h2.util.TempFileDeleter;
@@ -72,7 +72,7 @@ public class TestDataPage extends TestBase implements DataHandler {
     }
 
     private static void testPerformance() {
-        Data data = Data.create(null, 1024);
+        Data data = Data.create(null, 1024, false);
         for (int j = 0; j < 4; j++) {
             long time = System.nanoTime();
             for (int i = 0; i < 100000; i++) {
@@ -165,12 +165,12 @@ public class TestDataPage extends TestBase implements DataHandler {
             }
             testValue(ValueDecimal.get(new BigDecimal(i * i)));
         }
-        testValue(ValueDate.get(new Date(System.currentTimeMillis())));
-        testValue(ValueDate.get(new Date(0)));
-        testValue(ValueTime.get(new Time(System.currentTimeMillis())));
-        testValue(ValueTime.get(new Time(0)));
-        testValue(ValueTimestamp.fromMillis(System.currentTimeMillis()));
-        testValue(ValueTimestamp.fromMillis(0));
+        testValue(ValueDate.get(null, new Date(System.currentTimeMillis())));
+        testValue(ValueDate.get(null, new Date(0)));
+        testValue(ValueTime.get(null, new Time(System.currentTimeMillis())));
+        testValue(ValueTime.get(null, new Time(0)));
+        testValue(ValueTimestamp.fromMillis(System.currentTimeMillis(), 0));
+        testValue(ValueTimestamp.fromMillis(0, 0));
         testValue(ValueTimestampTimeZone.parse("2000-01-01 10:00:00"));
         testValue(ValueJavaObject.getNoCopy(null, new byte[0], this));
         testValue(ValueJavaObject.getNoCopy(null, new byte[100], this));
@@ -208,8 +208,8 @@ public class TestDataPage extends TestBase implements DataHandler {
                 ValueInt.get(10) }));
 
         SimpleResult rs = new SimpleResult();
-        rs.addColumn("ID", "ID", Value.INT, 0, 0, ValueInt.DISPLAY_SIZE);
-        rs.addColumn("NAME", "NAME", Value.STRING, 255, 0, 255);
+        rs.addColumn("ID", "ID", Value.INT, 0, 0);
+        rs.addColumn("NAME", "NAME", Value.STRING, 255, 0);
         rs.addRow(ValueInt.get(1), ValueString.get("Hello"));
         rs.addRow(ValueInt.get(2), ValueString.get("World"));
         rs.addRow(ValueInt.get(3), ValueString.get("Peace"));
@@ -217,19 +217,29 @@ public class TestDataPage extends TestBase implements DataHandler {
     }
 
     private void testValue(Value v) {
-        Data data = Data.create(null, 1024);
-        data.checkCapacity((int) v.getPrecision());
+        testValue(v, false);
+        switch (v.getValueType()) {
+        case Value.DATE:
+        case Value.TIME:
+        case Value.TIMESTAMP:
+            testValue(v, true);
+        }
+    }
+
+    private void testValue(Value v, boolean storeLocalTime) {
+        Data data = Data.create(null, 1024, storeLocalTime);
+        data.checkCapacity((int) v.getType().getPrecision());
         data.writeValue(v);
         data.writeInt(123);
         data.reset();
         Value v2 = data.readValue();
-        assertEquals(v.getType(), v2.getType());
+        assertEquals(v.getValueType(), v2.getValueType());
         assertEquals(0, v.compareTo(v2, null, compareMode));
         assertEquals(123, data.readInt());
     }
 
     private void testAll() {
-        Data page = Data.create(this, 128);
+        Data page = Data.create(this, 128, false);
 
         char[] data = new char[0x10000];
         for (int i = 0; i < data.length; i++) {

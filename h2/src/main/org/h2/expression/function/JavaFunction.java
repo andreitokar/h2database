@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.expression.function;
@@ -14,9 +14,9 @@ import org.h2.expression.ExpressionVisitor;
 import org.h2.expression.ValueExpression;
 import org.h2.table.ColumnResolver;
 import org.h2.table.TableFilter;
-import org.h2.value.DataType;
+import org.h2.value.TypeInfo;
 import org.h2.value.Value;
-import org.h2.value.ValueArray;
+import org.h2.value.ValueCollectionBase;
 import org.h2.value.ValueNull;
 import org.h2.value.ValueResultSet;
 
@@ -41,7 +41,12 @@ public class JavaFunction extends Expression implements FunctionCall {
     }
 
     @Override
-    public int getType() {
+    public TypeInfo getType() {
+        return TypeInfo.getTypeInfo(javaMethod.getDataType());
+    }
+
+    @Override
+    public int getValueType() {
         return javaMethod.getDataType();
     }
 
@@ -76,29 +81,14 @@ public class JavaFunction extends Expression implements FunctionCall {
     }
 
     @Override
-    public int getScale() {
-        return DataType.getDataType(getType()).defaultScale;
-    }
-
-    @Override
-    public long getPrecision() {
-        return Integer.MAX_VALUE;
-    }
-
-    @Override
-    public int getDisplaySize() {
-        return Integer.MAX_VALUE;
-    }
-
-    @Override
-    public StringBuilder getSQL(StringBuilder builder) {
+    public StringBuilder getSQL(StringBuilder builder, boolean alwaysQuote) {
         // TODO always append the schema once FUNCTIONS_IN_SCHEMA is enabled
         if (functionAlias.getDatabase().getSettings().functionsInSchema ||
-                !functionAlias.getSchema().getName().equals(Constants.SCHEMA_MAIN)) {
-            Parser.quoteIdentifier(builder, functionAlias.getSchema().getName()).append('.');
+                functionAlias.getSchema().getId() != Constants.MAIN_SCHEMA_ID) {
+            Parser.quoteIdentifier(builder, functionAlias.getSchema().getName(), alwaysQuote).append('.');
         }
-        Parser.quoteIdentifier(builder, functionAlias.getName()).append('(');
-        writeExpressions(builder, this.args);
+        Parser.quoteIdentifier(builder, functionAlias.getName(), alwaysQuote).append('(');
+        writeExpressions(builder, this.args, alwaysQuote);
         return builder.append(')');
     }
 
@@ -166,19 +156,15 @@ public class JavaFunction extends Expression implements FunctionCall {
 
     @Override
     public Expression[] getExpressionColumns(Session session) {
-        switch (getType()) {
+        switch (getValueType()) {
         case Value.RESULT_SET:
             ValueResultSet rs = getValueForColumnList(session, getArgs());
             return getExpressionColumns(session, rs.getResult());
         case Value.ARRAY:
-            return getExpressionColumns(session, (ValueArray) getValue(session));
+        case Value.ROW:
+            return getExpressionColumns(session, (ValueCollectionBase) getValue(session));
         }
         return super.getExpressionColumns(session);
-    }
-
-    @Override
-    public boolean isBufferResultSetToLocalTemp() {
-        return functionAlias.isBufferResultSetToLocalTemp();
     }
 
     @Override

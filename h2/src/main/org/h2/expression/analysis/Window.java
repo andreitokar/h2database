@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.expression.analysis;
@@ -8,6 +8,7 @@ package org.h2.expression.analysis;
 import java.util.ArrayList;
 
 import org.h2.api.ErrorCode;
+import org.h2.command.dml.Select;
 import org.h2.command.dml.SelectOrderBy;
 import org.h2.engine.Session;
 import org.h2.expression.Expression;
@@ -16,7 +17,7 @@ import org.h2.result.SortOrder;
 import org.h2.table.ColumnResolver;
 import org.h2.table.TableFilter;
 import org.h2.value.Value;
-import org.h2.value.ValueArray;
+import org.h2.value.ValueRow;
 
 /**
  * Window clause.
@@ -38,8 +39,10 @@ public final class Window {
      *            string builder
      * @param orderBy
      *            ORDER BY clause, or null
+     * @param alwaysQuote
+     *            quote all identifiers
      */
-    public static void appendOrderBy(StringBuilder builder, ArrayList<SelectOrderBy> orderBy) {
+    public static void appendOrderBy(StringBuilder builder, ArrayList<SelectOrderBy> orderBy, boolean alwaysQuote) {
         if (orderBy != null && !orderBy.isEmpty()) {
             if (builder.charAt(builder.length() - 1) != '(') {
                 builder.append(' ');
@@ -50,7 +53,7 @@ public final class Window {
                 if (i > 0) {
                     builder.append(", ");
                 }
-                o.expression.getSQL(builder);
+                o.expression.getSQL(builder, alwaysQuote);
                 SortOrder.typeToString(builder, o.sortType);
             }
         }
@@ -66,7 +69,7 @@ public final class Window {
      * @param orderBy
      *            ORDER BY clause, or null
      * @param frame
-     *            window frame clause
+     *            window frame clause, or null
      */
     public Window(String parent, ArrayList<Expression> partitionBy, ArrayList<SelectOrderBy> orderBy,
             WindowFrame frame) {
@@ -97,13 +100,20 @@ public final class Window {
                 o.expression.mapColumns(resolver, level, Expression.MAP_IN_WINDOW);
             }
         }
+        if (frame != null) {
+            frame.mapColumns(resolver, level, Expression.MAP_IN_WINDOW);
+        }
     }
 
     private void resolveWindows(ColumnResolver resolver) {
         if (parent != null) {
-            Window p = resolver.getSelect().getWindow(parent);
-            if (p == null) {
-                throw DbException.get(ErrorCode.WINDOW_NOT_FOUND_1, parent);
+            Select select = resolver.getSelect();
+            Window p;
+            while ((p = select.getWindow(parent)) == null) {
+                select = select.getParentSelect();
+                if (select == null) {
+                    throw DbException.get(ErrorCode.WINDOW_NOT_FOUND_1, parent);
+                }
             }
             p.resolveWindows(resolver);
             if (partitionBy == null) {
@@ -135,6 +145,9 @@ public final class Window {
             for (SelectOrderBy o : orderBy) {
                 o.expression = o.expression.optimize(session);
             }
+        }
+        if (frame != null) {
+            frame.optimize(session);
         }
     }
 
@@ -180,6 +193,29 @@ public final class Window {
     }
 
     /**
+     * Returns {@code true} if window ordering clause is specified or ROWS unit
+     * is used.
+     *
+     * @return {@code true} if window ordering clause is specified or ROWS unit
+     *         is used
+     */
+    public boolean isOrdered() {
+        if (orderBy != null) {
+            return true;
+        }
+        if (frame != null && frame.getUnits() == WindowFrameUnits.ROWS) {
+            if (frame.getStarting().getType() == WindowFrameBoundType.UNBOUNDED_PRECEDING) {
+                WindowFrameBound following = frame.getFollowing();
+                if (following != null && following.getType() == WindowFrameBoundType.UNBOUNDED_FOLLOWING) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /**
      * Returns the key for the current group.
      *
      * @param session
@@ -200,7 +236,7 @@ public final class Window {
                 Expression expr = partitionBy.get(i);
                 keyValues[i] = expr.getValue(session);
             }
-            return ValueArray.get(keyValues);
+            return ValueRow.get(keyValues);
         }
     }
 
@@ -209,10 +245,12 @@ public final class Window {
      *
      * @param builder
      *            string builder
+     * @param alwaysQuote
+     *            quote all identifiers
      * @return the specified string builder
-     * @see Expression#getSQL(StringBuilder)
+     * @see Expression#getSQL(StringBuilder, boolean)
      */
-    public StringBuilder getSQL(StringBuilder builder) {
+    public StringBuilder getSQL(StringBuilder builder, boolean alwaysQuote) {
         builder.append("OVER (");
         if (partitionBy != null) {
             builder.append("PARTITION BY ");
@@ -220,15 +258,15 @@ public final class Window {
                 if (i > 0) {
                     builder.append(", ");
                 }
-                partitionBy.get(i).getUnenclosedSQL(builder);
+                partitionBy.get(i).getUnenclosedSQL(builder, alwaysQuote);
             }
         }
-        appendOrderBy(builder, orderBy);
+        appendOrderBy(builder, orderBy, alwaysQuote);
         if (frame != null) {
             if (builder.charAt(builder.length() - 1) != '(') {
                 builder.append(' ');
             }
-            frame.getSQL(builder);
+            frame.getSQL(builder, alwaysQuote);
         }
         return builder.append(')');
     }
@@ -253,11 +291,14 @@ public final class Window {
                 o.expression.updateAggregate(session, stage);
             }
         }
+        if (frame != null) {
+            frame.updateAggregate(session, stage);
+        }
     }
 
     @Override
     public String toString() {
-        return getSQL(new StringBuilder()).toString();
+        return getSQL(new StringBuilder(), false).toString();
     }
 
 }

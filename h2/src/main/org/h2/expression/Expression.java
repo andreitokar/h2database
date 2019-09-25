@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.expression;
@@ -13,8 +13,9 @@ import org.h2.result.ResultInterface;
 import org.h2.table.Column;
 import org.h2.table.ColumnResolver;
 import org.h2.table.TableFilter;
+import org.h2.value.TypeInfo;
 import org.h2.value.Value;
-import org.h2.value.ValueArray;
+import org.h2.value.ValueCollectionBase;
 
 /**
  * An expression is a operation, a value, or a function in a query.
@@ -40,16 +41,31 @@ public abstract class Expression {
 
     private boolean addedToFilter;
 
-    public static void writeExpressions(StringBuilder builder, List<? extends Expression> expressions) {
+    /**
+     * Get the SQL snippet for a list of expressions.
+     *
+     * @param builder the builder to append the SQL to
+     * @param expressions the list of expressions
+     * @param alwaysQuote quote all identifiers
+     */
+    public static void writeExpressions(StringBuilder builder, List<? extends Expression> expressions,
+            boolean alwaysQuote) {
         for (int i = 0, length = expressions.size(); i < length; i++) {
             if (i > 0) {
                 builder.append(", ");
             }
-            expressions.get(i).getSQL(builder);
+            expressions.get(i).getSQL(builder, alwaysQuote);
         }
     }
 
-    public static void writeExpressions(StringBuilder builder, Expression[] expressions) {
+    /**
+     * Get the SQL snippet for an array of expressions.
+     *
+     * @param builder the builder to append the SQL to
+     * @param expressions the list of expressions
+     * @param alwaysQuote quote all identifiers
+     */
+    public static void writeExpressions(StringBuilder builder, Expression[] expressions, boolean alwaysQuote) {
         for (int i = 0, length = expressions.length; i < length; i++) {
             if (i > 0) {
                 builder.append(", ");
@@ -58,7 +74,7 @@ public abstract class Expression {
             if (e == null) {
                 builder.append("DEFAULT");
             } else {
-                e.getSQL(builder);
+                e.getSQL(builder, alwaysQuote);
             }
         }
     }
@@ -72,12 +88,12 @@ public abstract class Expression {
     public abstract Value getValue(Session session);
 
     /**
-     * Return the data type. The data type may not be known before the
+     * Returns the data type. The data type may not be known before the
      * optimization phase.
      *
-     * @return the type
+     * @return the data type
      */
-    public abstract int getType();
+    public abstract TypeInfo getType();
 
     /**
      * Map the columns of the resolver to expression columns.
@@ -107,35 +123,15 @@ public abstract class Expression {
     public abstract void setEvaluatable(TableFilter tableFilter, boolean value);
 
     /**
-     * Get the scale of this expression.
-     *
-     * @return the scale
-     */
-    public abstract int getScale();
-
-    /**
-     * Get the precision of this expression.
-     *
-     * @return the precision
-     */
-    public abstract long getPrecision();
-
-    /**
-     * Get the display size of this expression.
-     *
-     * @return the display size
-     */
-    public abstract int getDisplaySize();
-
-    /**
      * Get the SQL statement of this expression.
      * This may not always be the original SQL statement,
      * specially after optimization.
      *
+     * @param alwaysQuote quote all identifiers
      * @return the SQL statement
      */
-    public String getSQL() {
-        return getSQL(new StringBuilder()).toString();
+    public String getSQL(boolean alwaysQuote) {
+        return getSQL(new StringBuilder(), alwaysQuote).toString();
     }
 
     /**
@@ -145,9 +141,10 @@ public abstract class Expression {
      *
      * @param builder
      *            string builder
+     * @param alwaysQuote quote all identifiers
      * @return the specified string builder
      */
-    public abstract StringBuilder getSQL(StringBuilder builder);
+    public abstract StringBuilder getSQL(StringBuilder builder, boolean alwaysQuote);
 
     /**
      * Appends the SQL statement of this expression to the specified builder.
@@ -156,11 +153,13 @@ public abstract class Expression {
      *
      * @param builder
      *            string builder
+     * @param alwaysQuote
+     *            quote all identifiers
      * @return the specified string builder
      */
-    public StringBuilder getUnenclosedSQL(StringBuilder builder) {
+    public StringBuilder getUnenclosedSQL(StringBuilder builder, boolean alwaysQuote) {
         int first = builder.length();
-        int last = getSQL(builder).length() - 1;
+        int last = getSQL(builder, alwaysQuote).length() - 1;
         if (last > first && builder.charAt(first) == '(' && builder.charAt(last) == ')') {
             builder.setLength(last);
             builder.deleteCharAt(first);
@@ -221,6 +220,15 @@ public abstract class Expression {
     }
 
     /**
+     * Check if this expression will always return the NULL value.
+     *
+     * @return if the expression is constant NULL value
+     */
+    public boolean isNullConstant() {
+        return false;
+    }
+
+    /**
      * Is the value of a parameter set.
      *
      * @return true if set
@@ -235,16 +243,6 @@ public abstract class Expression {
      * @return true if it is an auto-increment column
      */
     public boolean isAutoIncrement() {
-        return false;
-    }
-
-    /**
-     * Check if this expression is an auto-generated key expression such as next
-     * value from a sequence.
-     *
-     * @return whether this expression is an auto-generated key expression
-     */
-    public boolean isGeneratedKey() {
         return false;
     }
 
@@ -324,7 +322,7 @@ public abstract class Expression {
      * @return the alias name
      */
     public String getAlias() {
-        return getUnenclosedSQL(new StringBuilder()).toString();
+        return getUnenclosedSQL(new StringBuilder(), false).toString();
     }
 
     /**
@@ -340,11 +338,9 @@ public abstract class Expression {
      * Add conditions to a table filter if they can be evaluated.
      *
      * @param filter the table filter
-     * @param outerJoin if the expression is part of an outer join
      */
-    public void addFilterConditions(TableFilter filter, boolean outerJoin) {
-        if (!addedToFilter && !outerJoin &&
-                isEverything(ExpressionVisitor.EVALUATABLE_VISITOR)) {
+    public void addFilterConditions(TableFilter filter) {
+        if (!addedToFilter && isEverything(ExpressionVisitor.EVALUATABLE_VISITOR)) {
             filter.addFilterCondition(this, false);
             addedToFilter = true;
         }
@@ -357,7 +353,7 @@ public abstract class Expression {
      */
     @Override
     public String toString() {
-        return getSQL();
+        return getSQL(false);
     }
 
     /**
@@ -378,14 +374,12 @@ public abstract class Expression {
      * @param value the value to extract columns from
      * @return array of expression columns
      */
-    protected static Expression[] getExpressionColumns(Session session, ValueArray value) {
+    protected static Expression[] getExpressionColumns(Session session, ValueCollectionBase value) {
         Value[] list = value.getList();
         ExpressionColumn[] expr = new ExpressionColumn[list.length];
         for (int i = 0, len = list.length; i < len; i++) {
             Value v = list[i];
-            Column col = new Column("C" + (i + 1), v.getType(),
-                    v.getPrecision(), v.getScale(),
-                    v.getDisplaySize());
+            Column col = new Column("C" + (i + 1), v.getType());
             expr[i] = new ExpressionColumn(session.getDatabase(), col);
         }
         return expr;
@@ -404,11 +398,8 @@ public abstract class Expression {
         Database db = session == null ? null : session.getDatabase();
         for (int i = 0; i < columnCount; i++) {
             String name = result.getColumnName(i);
-            int type = result.getColumnType(i);
-            long precision = result.getColumnPrecision(i);
-            int scale = result.getColumnScale(i);
-            int displaySize = result.getDisplaySize(i);
-            Column col = new Column(name, type, precision, scale, displaySize);
+            TypeInfo type = result.getColumnType(i);
+            Column col = new Column(name, type);
             Expression expr = new ExpressionColumn(db, col);
             expressions[i] = expr;
         }
@@ -428,7 +419,7 @@ public abstract class Expression {
      * Returns subexpression with specified index.
      *
      * @param index 0-based index
-     * @return subexpression with specified index
+     * @return subexpression with specified index, may be null
      * @throws IndexOutOfBoundsException if specified index is not valid
      */
     public Expression getSubexpression(int index) {

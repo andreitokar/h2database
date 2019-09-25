@@ -8,6 +8,7 @@
 22004=#Numeric value out of range: {0} in column {1}
 22007=Nemožem rozobrať {0} konštantu {1}
 22012=Delenie nulou: {0}
+22013=#Invalid PRECEDING or FOLLOWING size in window function: {0}
 22018=Chyba konverzie dát pre {0}
 22025=Chyba v LIKE ESCAPE: {0}
 22030=#Value not permitted for column {0}: {1}
@@ -25,6 +26,7 @@
 40001=Mŕtvy bod (deadlock) detegovaný. Aktuálna transakcia bude odvolaná (rolled back). Podrobnosti: {0}
 42000=Syntaktická chyba v SQL príkaze {0}
 42001=Syntaktická chyba v SQL príkaze {0}; očakávané {1}
+42602=#Invalid name {0}
 42S01=Tabuľka {0} už existuje
 42S02=Tabuľka {0} nenájdená
 42S11=Index {0} už existuje
@@ -176,6 +178,8 @@
 90143=#Row {1} not found in primary index {0}
 90144=#Authenticator not enabled on database {0}
 90145=#FOR UPDATE is not allowed in DISTINCT or grouped select
+90146=#Database {0} not found, and IFEXISTS=true, so we can't auto-create it
+90147=#Method {0} is not allowed when connection is in auto-commit mode
 HY000=Všeobecná chyba: {0}
 HY004=Neznámy dátový typ: {0}
 HYC00=Vlastnosť nie je podporovaná: {0}

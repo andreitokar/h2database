@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.value;
@@ -10,6 +10,7 @@ import java.sql.SQLException;
 import java.util.UUID;
 
 import org.h2.api.ErrorCode;
+import org.h2.engine.CastDataProvider;
 import org.h2.message.DbException;
 import org.h2.util.Bits;
 import org.h2.util.MathUtils;
@@ -23,13 +24,13 @@ public class ValueUuid extends Value {
     /**
      * The precision of this value in number of bytes.
      */
-    private static final int PRECISION = 16;
+    static final int PRECISION = 16;
 
     /**
      * The display size of the textual representation of a UUID.
      * Example: cd38d882-7ada-4589-b5fb-7da0ca559d9a
      */
-    private static final int DISPLAY_SIZE = 36;
+    static final int DISPLAY_SIZE = 36;
 
     private final long high, low;
 
@@ -132,20 +133,18 @@ public class ValueUuid extends Value {
     }
 
     @Override
-    public int getType() {
-        return Value.UUID;
+    public TypeInfo getType() {
+        return TypeInfo.TYPE_UUID;
     }
 
     @Override
-    public long getPrecision() {
-        return PRECISION;
+    public int getMemory() {
+        return 32;
     }
 
-    private static void appendHex(StringBuilder buff, long x, int bytes) {
-        for (int i = bytes * 8 - 4; i >= 0; i -= 8) {
-            buff.append(Integer.toHexString((int) (x >> i) & 0xf)).
-                append(Integer.toHexString((int) (x >> (i - 4)) & 0xf));
-        }
+    @Override
+    public int getValueType() {
+        return UUID;
     }
 
     @Override
@@ -154,33 +153,43 @@ public class ValueUuid extends Value {
     }
 
     private StringBuilder addString(StringBuilder builder) {
-        appendHex(builder, high >> 32, 4);
-        builder.append('-');
-        appendHex(builder, high >> 16, 2);
-        builder.append('-');
-        appendHex(builder, high, 2);
-        builder.append('-');
-        appendHex(builder, low >> 48, 2);
-        builder.append('-');
-        appendHex(builder, low, 6);
-        return builder;
+        StringUtils.appendHex(builder, high >> 32, 4).append('-');
+        StringUtils.appendHex(builder, high >> 16, 2).append('-');
+        StringUtils.appendHex(builder, high, 2).append('-');
+        StringUtils.appendHex(builder, low >> 48, 2).append('-');
+        return StringUtils.appendHex(builder, low, 6);
     }
 
     @Override
-    public int compareTypeSafe(Value o, CompareMode mode) {
+    public int compareTypeSafe(Value o, CompareMode mode, CastDataProvider provider) {
         if (o == this) {
             return 0;
         }
         ValueUuid v = (ValueUuid) o;
-        if (high == v.high) {
-            return Long.compare(low, v.low);
+        long v1 = high, v2 = v.high;
+        if (v1 == v2) {
+            v1 = low;
+            v2 = v.low;
+            if (mode.isUuidUnsigned()) {
+                v1 += Long.MIN_VALUE;
+                v2 += Long.MIN_VALUE;
+            }
+            return Long.compare(v1, v2);
         }
-        return high > v.high ? 1 : -1;
+        if (mode.isUuidUnsigned()) {
+            v1 += Long.MIN_VALUE;
+            v2 += Long.MIN_VALUE;
+        }
+        return v1 > v2 ? 1 : -1;
     }
 
     @Override
     public boolean equals(Object other) {
-        return other instanceof ValueUuid && compareTypeSafe((Value) other, null) == 0;
+        if (!(other instanceof ValueUuid)) {
+            return false;
+        }
+        ValueUuid v = (ValueUuid) other;
+        return high == v.high && low == v.low;
     }
 
     @Override
@@ -215,11 +224,6 @@ public class ValueUuid extends Value {
      */
     public long getLow() {
         return low;
-    }
-
-    @Override
-    public int getDisplaySize() {
-        return DISPLAY_SIZE;
     }
 
 }

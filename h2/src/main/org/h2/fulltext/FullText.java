@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.fulltext;
@@ -36,7 +36,6 @@ import org.h2.jdbc.JdbcConnection;
 import org.h2.message.DbException;
 import org.h2.tools.SimpleResultSet;
 import org.h2.util.IOUtils;
-import org.h2.util.StatementBuilder;
 import org.h2.util.StringUtils;
 import org.h2.util.Utils;
 
@@ -110,8 +109,8 @@ public class FullText {
         stat.execute("CREATE SCHEMA IF NOT EXISTS " + SCHEMA);
         stat.execute("CREATE TABLE IF NOT EXISTS " + SCHEMA +
                 ".INDEXES(ID INT AUTO_INCREMENT PRIMARY KEY, " +
-                "SCHEMA VARCHAR, TABLE VARCHAR, COLUMNS VARCHAR, " +
-                "UNIQUE(SCHEMA, TABLE))");
+                "SCHEMA VARCHAR, `TABLE` VARCHAR, COLUMNS VARCHAR, " +
+                "UNIQUE(SCHEMA, `TABLE`))");
         stat.execute("CREATE TABLE IF NOT EXISTS " + SCHEMA +
                 ".WORDS(ID INT AUTO_INCREMENT PRIMARY KEY, " +
                 "NAME VARCHAR, UNIQUE(NAME))");
@@ -176,7 +175,7 @@ public class FullText {
             String table, String columnList) throws SQLException {
         init(conn);
         PreparedStatement prep = conn.prepareStatement("INSERT INTO " + SCHEMA
-                + ".INDEXES(SCHEMA, TABLE, COLUMNS) VALUES(?, ?, ?)");
+                + ".INDEXES(SCHEMA, `TABLE`, COLUMNS) VALUES(?, ?, ?)");
         prep.setString(1, schema);
         prep.setString(2, table);
         prep.setString(3, columnList);
@@ -221,7 +220,7 @@ public class FullText {
             throws SQLException {
         init(conn);
         PreparedStatement prep = conn.prepareStatement("SELECT ID FROM " + SCHEMA
-                + ".INDEXES WHERE SCHEMA=? AND TABLE=?");
+                + ".INDEXES WHERE SCHEMA=? AND `TABLE`=?");
         prep.setString(1, schema);
         prep.setString(2, table);
         ResultSet rs = prep.executeQuery();
@@ -619,7 +618,7 @@ public class FullText {
             if (wId == null) {
                 continue;
             }
-            prepSelectMapByWordId.setInt(1, wId.intValue());
+            prepSelectMapByWordId.setInt(1, wId);
             ResultSet rs = prepSelectMapByWordId.executeQuery();
             while (rs.next()) {
                 Integer rId = rs.getInt(1);
@@ -929,7 +928,7 @@ public class FullText {
             ArrayList<String> indexList = Utils.newSmallArrayList();
             PreparedStatement prep = conn.prepareStatement(
                     "SELECT ID, COLUMNS FROM " + SCHEMA + ".INDEXES" +
-                    " WHERE SCHEMA=? AND TABLE=?");
+                    " WHERE SCHEMA=? AND `TABLE`=?");
             prep.setString(1, schemaName);
             prep.setString(2, tableName);
             rs = prep.executeQuery();
@@ -1145,18 +1144,22 @@ public class FullText {
         }
 
         private String getKey(Object[] row) throws SQLException {
-            StatementBuilder buff = new StatementBuilder();
-            for (int columnIndex : index.keys) {
-                buff.appendExceptFirst(" AND ");
-                StringUtils.quoteIdentifier(buff.builder(), index.columns[columnIndex]);
+            StringBuilder builder = new StringBuilder();
+            int[] keys = index.keys;
+            for (int i = 0, l = keys.length; i < l; i++) {
+                if (i > 0) {
+                    builder.append(" AND ");
+                }
+                int columnIndex = keys[i];
+                StringUtils.quoteIdentifier(builder, index.columns[columnIndex]);
                 Object o = row[columnIndex];
                 if (o == null) {
-                    buff.append(" IS NULL");
+                    builder.append(" IS NULL");
                 } else {
-                    buff.append('=').append(quoteSQL(o, columnTypes[columnIndex]));
+                    builder.append('=').append(quoteSQL(o, columnTypes[columnIndex]));
                 }
             }
-            return buff.toString();
+            return builder.toString();
         }
 
         private PreparedStatement getStatement(Connection conn, int index) throws SQLException {

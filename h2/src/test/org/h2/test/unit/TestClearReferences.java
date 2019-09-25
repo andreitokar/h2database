@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.test.unit;
@@ -38,16 +38,24 @@ public class TestClearReferences extends TestBase {
         "org.h2.tools.CompressTool.cachedBuffer",
         "org.h2.util.CloseWatcher.queue",
         "org.h2.util.CloseWatcher.refs",
-        "org.h2.util.DateTimeUtils.timeZone",
+        "org.h2.util.DateTimeUtils.LOCAL",
         "org.h2.util.MathUtils.cachedSecureRandom",
         "org.h2.util.NetUtils.cachedLocalAddress",
         "org.h2.util.StringUtils.softCache",
+        "org.h2.util.TimeZoneProvider.CACHE",
         "org.h2.util.JdbcUtils.allowedClassNames",
         "org.h2.util.JdbcUtils.allowedClassNamePrefixes",
         "org.h2.util.JdbcUtils.userClassFactories",
         "org.h2.util.Task.counter",
         "org.h2.value.CompareMode.lastUsed",
         "org.h2.value.Value.softCache",
+        "org.h2.value.ValueBytes.type",
+        "org.h2.value.ValueCollectionBase.type",
+        "org.h2.value.ValueDecimal.type",
+        "org.h2.value.ValueInterval.type",
+        "org.h2.value.ValueLob.type",
+        "org.h2.value.ValueLobDb.type",
+        "org.h2.value.ValueString.type",
     };
 
     /**

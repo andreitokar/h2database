@@ -1,5 +1,5 @@
--- Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
--- and the EPL 1.0 (http://h2database.com/html/license.html).
+-- Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+-- and the EPL 1.0 (https://h2database.com/html/license.html).
 -- Initial Developer: H2 Group
 --
 CREATE TABLE PARENT(ID INT, NAME VARCHAR, PRIMARY KEY(ID) );
@@ -29,7 +29,7 @@ EXPLAIN PLAN
             UPDATE SET P.NAME = S.NAME WHERE 2 = 2 WHEN NOT
         MATCHED THEN
             INSERT (ID, NAME) VALUES (S.ID, S.NAME);
->> MERGE INTO PUBLIC.PARENT USING SELECT X AS ID, ('Coco' || X) AS NAME FROM SYSTEM_RANGE(1, 2) /* PUBLIC.RANGE_INDEX */
+>> MERGE INTO "PUBLIC"."PARENT" USING SELECT "X" AS "ID", ('Coco' || "X") AS "NAME" FROM SYSTEM_RANGE(1, 2) /* range index */
 
 DROP TABLE PARENT;
 > ok
@@ -321,4 +321,44 @@ SELECT * FROM T;
 > rows: 2
 
 DROP TABLE T, S;
+> ok
+
+CREATE TABLE T(ID INT, A INT, B INT) AS VALUES (1, 1, 1), (2, 1, 2);
+> ok
+
+CREATE TABLE S(ID INT, A INT, B INT) AS VALUES (1, 1, 3), (2, 1, 4);
+> ok
+
+MERGE INTO T USING S ON T.A = S.A WHEN MATCHED THEN UPDATE SET B = S.B;
+> exception DUPLICATE_KEY_1
+
+CREATE TABLE S2(ID INT, A INT, B INT) AS VALUES (3, 3, 3);
+> ok
+
+MERGE INTO T USING (SELECT * FROM S UNION SELECT * FROM S2) S ON T.ID = S.ID
+    WHEN MATCHED THEN UPDATE SET A = S.A, B = S.B
+    WHEN NOT MATCHED THEN INSERT VALUES (S.ID, S.A, S.B);
+> update count: 3
+
+TABLE T;
+> ID A B
+> -- - -
+> 1  1 3
+> 2  1 4
+> 3  3 3
+> rows: 3
+
+MERGE INTO T USING (S) ON T.ID = S.ID
+    WHEN MATCHED THEN UPDATE SET B = S.B + 1;
+> update count: 2
+
+TABLE T;
+> ID A B
+> -- - -
+> 1  1 4
+> 2  1 5
+> 3  3 3
+> rows: 3
+
+DROP TABLE T, S, S2 CASCADE;
 > ok

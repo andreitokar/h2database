@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.expression;
@@ -15,6 +15,7 @@ import org.h2.table.Column;
 import org.h2.table.ColumnResolver;
 import org.h2.table.TableFilter;
 import org.h2.util.StringUtils;
+import org.h2.value.TypeInfo;
 import org.h2.value.Value;
 
 /**
@@ -67,7 +68,7 @@ public class Wildcard extends Expression {
     }
 
     @Override
-    public int getType() {
+    public TypeInfo getType() {
         throw DbException.throwInternalError(toString());
     }
 
@@ -91,21 +92,6 @@ public class Wildcard extends Expression {
     }
 
     @Override
-    public int getScale() {
-        throw DbException.throwInternalError(toString());
-    }
-
-    @Override
-    public long getPrecision() {
-        throw DbException.throwInternalError(toString());
-    }
-
-    @Override
-    public int getDisplaySize() {
-        throw DbException.throwInternalError(toString());
-    }
-
-    @Override
     public String getTableAlias() {
         return table;
     }
@@ -116,14 +102,14 @@ public class Wildcard extends Expression {
     }
 
     @Override
-    public StringBuilder getSQL(StringBuilder builder) {
+    public StringBuilder getSQL(StringBuilder builder, boolean alwaysQuote) {
         if (table != null) {
             StringUtils.quoteIdentifier(builder, table).append('.');
         }
         builder.append('*');
         if (exceptColumns != null) {
             builder.append(" EXCEPT (");
-            writeExpressions(builder, exceptColumns);
+            writeExpressions(builder, exceptColumns, alwaysQuote);
             builder.append(')');
         }
         return builder;

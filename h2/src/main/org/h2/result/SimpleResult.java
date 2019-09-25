@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.result;
@@ -10,38 +10,43 @@ import java.util.ArrayList;
 
 import org.h2.engine.SessionInterface;
 import org.h2.util.Utils;
+import org.h2.value.TypeInfo;
 import org.h2.value.Value;
 
 /**
  * Simple in-memory result.
  */
-public class SimpleResult implements ResultInterface {
+public class SimpleResult implements ResultInterface, ResultTarget {
 
+    /**
+     *  Column info for the simple result.
+     */
     static final class Column {
-
+        /** Column alias. */
         final String alias;
 
+        /** Column name. */
         final String columnName;
 
-        final int columnType;
+        /** Column type. */
+        final TypeInfo columnType;
 
-        final long columnPrecision;
+        Column(String alias, String columnName, int columnType, long columnPrecision, int columnScale) {
+            if (alias == null || columnName == null) {
+                throw new NullPointerException();
+            }
+            this.alias = alias;
+            this.columnName = columnName;
+            this.columnType = TypeInfo.getTypeInfo(columnType, columnPrecision, columnScale, null);
+        }
 
-        final int columnScale;
-
-        final int displaySize;
-
-        Column(String alias, String columnName, int columnType, long columnPrecision, int columnScale,
-                int displaySize) {
+        Column(String alias, String columnName, TypeInfo columnType) {
             if (alias == null || columnName == null) {
                 throw new NullPointerException();
             }
             this.alias = alias;
             this.columnName = columnName;
             this.columnType = columnType;
-            this.columnPrecision = columnPrecision;
-            this.columnScale = columnScale;
-            this.displaySize = displaySize;
         }
 
         @Override
@@ -94,16 +99,41 @@ public class SimpleResult implements ResultInterface {
         this.rowId = -1;
     }
 
-    public void addColumn(String alias, String columnName, int columnType, long columnPrecision, int columnScale,
-            int displaySize) {
-        addColumn(new Column(alias, columnName, columnType, columnPrecision, columnScale, displaySize));
+    /**
+     * Add column to the result.
+     *
+     * @param alias Column's alias.
+     * @param columnName Column's name.
+     * @param columnType Column's value type.
+     * @param columnPrecision Column's  precision.
+     * @param columnScale Column's scale.
+     */
+    public void addColumn(String alias, String columnName, int columnType, long columnPrecision, int columnScale) {
+        addColumn(new Column(alias, columnName, columnType, columnPrecision, columnScale));
     }
 
+    /**
+     * Add column to the result.
+     *
+     * @param alias Column's alias.
+     * @param columnName Column's name.
+     * @param columnType Column's type.
+     */
+    public void addColumn(String alias, String columnName, TypeInfo columnType) {
+        addColumn(new Column(alias, columnName, columnType));
+    }
+
+    /**
+     * Add column to the result.
+     *
+     * @param column Column info.
+     */
     void addColumn(Column column) {
         assert rows.isEmpty();
         columns.add(column);
     }
 
+    @Override
     public void addRow(Value... values) {
         assert values.length == columns.size();
         rows.add(values);
@@ -184,23 +214,8 @@ public class SimpleResult implements ResultInterface {
     }
 
     @Override
-    public int getColumnType(int i) {
+    public TypeInfo getColumnType(int i) {
         return columns.get(i).columnType;
-    }
-
-    @Override
-    public long getColumnPrecision(int i) {
-        return columns.get(i).columnPrecision;
-    }
-
-    @Override
-    public int getColumnScale(int i) {
-        return columns.get(i).columnScale;
-    }
-
-    @Override
-    public int getDisplaySize(int i) {
-        return columns.get(i).displaySize;
     }
 
     @Override
@@ -236,6 +251,11 @@ public class SimpleResult implements ResultInterface {
     @Override
     public ResultInterface createShallowCopy(SessionInterface targetSession) {
         return new SimpleResult(columns, rows);
+    }
+
+    @Override
+    public void limitsWereApplied() {
+        // Nothing to do
     }
 
 }

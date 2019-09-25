@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.mvstore;
@@ -161,6 +161,32 @@ public final class DataUtils {
      */
     public static final int PAGE_LARGE = 2 * 1024 * 1024;
 
+    // The following are key prefixes used in meta map
+
+    /**
+     * The prefix for chunks ("chunk."). This, plus the chunk id (hex encoded)
+     * is the key, and the serialized chunk metadata is the value.
+     */
+    public static final String META_CHUNK = "chunk.";
+
+    /**
+     * The prefix for names ("name."). This, plus the name of the map, is the
+     * key, and the map id (hey encoded) is the value.
+     */
+    public static final String META_NAME = "name.";
+
+    /**
+     * The prefix for maps ("map."). This, plus the map id (hex encoded) is the
+     * key, and the serialized in the map metadata is the value.
+     */
+    public static final String META_MAP = "map.";
+
+    /**
+     * The prefix for root positions of maps ("root."). This, plus the map id
+     * (hex encoded) is the key, and the position (hex encoded) is the value.
+     */
+    public static final String META_ROOT = "root.";
+
     /**
      * Get the length of the variable size int.
      *
@@ -259,10 +285,11 @@ public final class DataUtils {
      *
      * @param out the output stream
      * @param x the value
+     * @throws IOException if some data could not be written
      */
     public static void writeVarInt(OutputStream out, int x) throws IOException {
         while ((x & ~0x7f) != 0) {
-            out.write((byte) (0x80 | (x & 0x7f)));
+            out.write((byte) (x | 0x80));
             x >>>= 7;
         }
         out.write((byte) x);
@@ -276,7 +303,7 @@ public final class DataUtils {
      */
     public static void writeVarInt(ByteBuffer buff, int x) {
         while ((x & ~0x7f) != 0) {
-            buff.put((byte) (0x80 | (x & 0x7f)));
+            buff.put((byte) (x | 0x80));
             x >>>= 7;
         }
         buff.put((byte) x);
@@ -310,6 +337,16 @@ public final class DataUtils {
      * Read a string.
      *
      * @param buff the source buffer
+     * @return the value
+     */
+    public static String readString(ByteBuffer buff) {
+        return readString(buff, readVarInt(buff));
+    }
+
+    /**
+     * Read a string.
+     *
+     * @param buff the source buffer
      * @param len the number of characters
      * @return the value
      */
@@ -337,7 +374,7 @@ public final class DataUtils {
      */
     public static void writeVarLong(ByteBuffer buff, long x) {
         while ((x & ~0x7f) != 0) {
-            buff.put((byte) (0x80 | (x & 0x7f)));
+            buff.put((byte) (x | 0x80));
             x >>>= 7;
         }
         buff.put((byte) x);
@@ -348,11 +385,12 @@ public final class DataUtils {
      *
      * @param out the output stream
      * @param x the value
+     * @throws IOException if some data could not be written
      */
     public static void writeVarLong(OutputStream out, long x)
             throws IOException {
         while ((x & ~0x7f) != 0) {
-            out.write((byte) (0x80 | (x & 0x7f)));
+            out.write((byte) (x | 0x80));
             x >>>= 7;
         }
         out.write((byte) x);
@@ -424,9 +462,9 @@ public final class DataUtils {
             }
             throw newIllegalStateException(
                     ERROR_READING_FAILED,
-                    "Reading from {0} failed; file length {1} " +
-                    "read length {2} at {3}",
-                    file, size, dst.remaining(), pos, e);
+                    "Reading from file {0} failed at {1} (length {2}), " +
+                    "read {3}, remaining {4}",
+                    file, pos, size, dst.position(), dst.remaining(), e);
         }
     }
 
@@ -496,14 +534,24 @@ public final class DataUtils {
     }
 
     /**
-     * Get the maximum length for the given code.
-     * For the code 31, PAGE_LARGE is returned.
+     * Get the maximum length for the given page position.
      *
      * @param pos the position
      * @return the maximum length
      */
     public static int getPageMaxLength(long pos) {
         int code = (int) ((pos >> 1) & 31);
+        return decodePageLength(code);
+    }
+
+    /**
+     * Get the maximum length for the given code.
+     * For the code 31, PAGE_LARGE is returned.
+     *
+     * @param code encoded page length
+     * @return the maximum length
+     */
+    public static int decodePageLength(int code) {
         if (code == 31) {
             return PAGE_LARGE;
         }
@@ -531,13 +579,33 @@ public final class DataUtils {
     }
 
     /**
+     * Determines whether specified file position corresponds to a leaf page
+     * @param pos the position
+     * @return true if it is a leaf, false otherwise
+     */
+    public static boolean isLeafPosition(long pos) {
+        return getPageType(pos) == PAGE_TYPE_LEAF;
+    }
+
+    /**
      * Find out if page was saved.
      *
      * @param pos the position
      * @return true if page has been saved
      */
     public static boolean isPageSaved(long pos) {
-        return pos != 0;
+        return (pos & ~1L) != 0;
+    }
+
+    /**
+     * Find out if page was removed.
+     *
+     * @param pos the position
+     * @return true if page has been removed (no longer accessible from the
+     *         current root of the tree)
+     */
+    static boolean isPageRemoved(long pos) {
+        return pos == 1L;
     }
 
     /**
@@ -714,9 +782,9 @@ public final class DataUtils {
      *
      * @param bytes encoded map
      * @return the map without mapping for {@code "fletcher"}, or {@code null} if checksum is wrong
-     * @throws IllegalStateException if parsing failed
+     *              or parameter do not represent a properly formatted map serialization
      */
-    public static HashMap<String, String> parseChecksummedMap(byte[] bytes) {
+    static HashMap<String, String> parseChecksummedMap(byte[] bytes) {
         int start = 0, end = bytes.length;
         while (start < end && bytes[start] <= ' ') {
             start++;
@@ -731,7 +799,8 @@ public final class DataUtils {
             int startKey = i;
             i = s.indexOf(':', i);
             if (i < 0) {
-                throw newIllegalStateException(ERROR_FILE_CORRUPT, "Not a map: {0}", s);
+                // Corrupted map
+                return null;
             }
             if (i - startKey == 8 && s.regionMatches(startKey, "fletcher", 0, 8)) {
                 parseMapValue(buff, s, i + 1, size);

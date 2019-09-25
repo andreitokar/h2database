@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.mode;
@@ -16,11 +16,12 @@ import org.h2.expression.function.FunctionInfo;
  * mode.
  */
 public final class FunctionsMSSQLServer extends FunctionsBase {
+
     private static final HashMap<String, FunctionInfo> FUNCTIONS = new HashMap<>();
 
     static {
         copyFunction(FUNCTIONS, "LOCATE", "CHARINDEX");
-        copyFunction(FUNCTIONS, "CURRENT_DATE", "GETDATE");
+        copyFunction(FUNCTIONS, "LOCALTIMESTAMP", "GETDATE");
         copyFunction(FUNCTIONS, "LENGTH", "LEN");
         copyFunction(FUNCTIONS, "RANDOM_UUID", "NEWID");
     }
@@ -42,4 +43,5 @@ public final class FunctionsMSSQLServer extends FunctionsBase {
     private FunctionsMSSQLServer(Database database, FunctionInfo info) {
         super(database, info);
     }
+
 }

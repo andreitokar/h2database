@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.test.jdbc;
@@ -176,7 +176,7 @@ public class TestMetaData extends TestDb {
 
         Statement stat = conn.createStatement();
         stat.execute("create table a(x array)");
-        stat.execute("insert into a values((1, 2))");
+        stat.execute("insert into a values(ARRAY[1, 2])");
         rs = stat.executeQuery("SELECT x[1] FROM a");
         ResultSetMetaData rsMeta = rs.getMetaData();
         assertEquals(Types.NULL, rsMeta.getColumnType(1));
@@ -333,8 +333,7 @@ public class TestMetaData extends TestDb {
         checkCrossRef(rs);
         rs = meta.getExportedKeys(null, "PUBLIC", "PARENT");
         checkCrossRef(rs);
-        stat.execute("DROP TABLE PARENT");
-        stat.execute("DROP TABLE CHILD");
+        stat.execute("DROP TABLE PARENT, CHILD");
         conn.close();
     }
 
@@ -457,13 +456,22 @@ public class TestMetaData extends TestDb {
 
         assertEquals(ResultSet.CLOSE_CURSORS_AT_COMMIT,
                 meta.getResultSetHoldability());
-        assertEquals(DatabaseMetaData.sqlStateSQL99,
-                meta.getSQLStateType());
+        assertEquals(DatabaseMetaData.sqlStateSQL, meta.getSQLStateType());
         assertFalse(meta.locatorsUpdateCopy());
 
         assertEquals("schema", meta.getSchemaTerm());
         assertEquals("\\", meta.getSearchStringEscape());
-        assertEquals("INTERSECTS,LIMIT,MINUS,OFFSET,ROWNUM,SYSDATE,SYSTIME,SYSTIMESTAMP,TODAY,TOP",
+        assertEquals("CURRENT_CATALOG," //
+                + "CURRENT_SCHEMA," //
+                + "GROUPS," //
+                + "IF,ILIKE,INTERSECTS," //
+                + "LIMIT," //
+                + "MINUS," //
+                + "OFFSET," //
+                + "QUALIFY," //
+                + "REGEXP,_ROWID_,ROWNUM," //
+                + "SYSDATE,SYSTIME,SYSTIMESTAMP," //
+                + "TODAY,TOP", //
                 meta.getSQLKeywords());
 
         assertTrue(meta.getURL().startsWith("jdbc:h2:"));
@@ -520,7 +528,7 @@ public class TestMetaData extends TestDb {
         assertFalse(meta.storesLowerCaseIdentifiers());
         assertFalse(meta.storesLowerCaseQuotedIdentifiers());
         assertFalse(meta.storesMixedCaseIdentifiers());
-        assertTrue(meta.storesMixedCaseQuotedIdentifiers());
+        assertFalse(meta.storesMixedCaseQuotedIdentifiers());
         assertTrue(meta.storesUpperCaseIdentifiers());
         assertFalse(meta.storesUpperCaseQuotedIdentifiers());
         assertTrue(meta.supportsAlterTableWithAddColumn());
@@ -1193,11 +1201,18 @@ public class TestMetaData extends TestDb {
         stat.execute("DROP TABLE TEST");
 
         rs = stat.executeQuery("SELECT * FROM INFORMATION_SCHEMA.SETTINGS");
+        int mvStoreSettingsCount = 0, pageStoreSettingsCount = 0;
         while (rs.next()) {
             String name = rs.getString("NAME");
-            String value = rs.getString("VALUE");
-            trace(name + "=" + value);
+            trace(name + '=' + rs.getString("VALUE"));
+            if ("COMPRESS".equals(name) || "REUSE_SPACE".equals(name)) {
+                mvStoreSettingsCount++;
+            } else if (name.startsWith("PAGE_STORE_")) {
+                pageStoreSettingsCount++;
+            }
         }
+        assertEquals(config.mvStore ? 2 : 0, mvStoreSettingsCount);
+        assertEquals(config.mvStore ? 0 : 3, pageStoreSettingsCount);
 
         testMore();
 

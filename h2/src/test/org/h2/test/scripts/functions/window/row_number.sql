@@ -1,5 +1,5 @@
--- Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
--- and the EPL 1.0 (http://h2database.com/html/license.html).
+-- Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+-- and the EPL 1.0 (https://h2database.com/html/license.html).
 -- Initial Developer: H2 Group
 --
 
@@ -22,13 +22,11 @@ SELECT *,
     ROW_NUMBER() OVER () RN,
     ROUND(PERCENT_RANK() OVER (), 2) PR,
     ROUND(CUME_DIST() OVER (), 2) CD,
-
     ROW_NUMBER() OVER (ORDER BY ID) RNO,
     RANK() OVER (ORDER BY ID) RKO,
     DENSE_RANK() OVER (ORDER BY ID) DRO,
     ROUND(PERCENT_RANK() OVER (ORDER BY ID), 2) PRO,
     ROUND(CUME_DIST() OVER (ORDER BY ID), 2) CDO
-
     FROM TEST;
 > ID CATEGORY VALUE RN PR  CD  RNO RKO DRO PRO  CDO
 > -- -------- ----- -- --- --- --- --- --- ---- ----
@@ -82,6 +80,33 @@ SELECT *,
 > 8  3        33    3  3  3  1.0 1.0
 > 9  4        41    1  1  1  0.0 1.0
 > rows: 9
+
+SELECT *,
+    ROW_NUMBER() OVER W RN,
+    RANK() OVER W RK,
+    DENSE_RANK() OVER W DR,
+    ROUND(PERCENT_RANK() OVER W, 2) PR,
+    ROUND(CUME_DIST() OVER W, 2) CD
+    FROM TEST WINDOW W AS (PARTITION BY CATEGORY ORDER BY ID) QUALIFY ROW_NUMBER() OVER W = 2;
+> ID CATEGORY VALUE RN RK DR PR  CD
+> -- -------- ----- -- -- -- --- ----
+> 2  1        12    2  2  2  0.5 0.67
+> 5  2        22    2  2  2  1.0 1.0
+> 7  3        32    2  2  2  0.5 0.67
+> rows: 3
+
+SELECT *,
+    ROW_NUMBER() OVER (PARTITION BY CATEGORY ORDER BY ID) RN,
+    RANK() OVER (PARTITION BY CATEGORY ORDER BY ID) RK,
+    DENSE_RANK() OVER (PARTITION BY CATEGORY ORDER BY ID) DR,
+    ROUND(PERCENT_RANK() OVER (PARTITION BY CATEGORY ORDER BY ID), 2) PR,
+    ROUND(CUME_DIST() OVER (PARTITION BY CATEGORY ORDER BY ID), 2) CD
+    FROM TEST QUALIFY RN = 3;
+> ID CATEGORY VALUE RN RK DR PR  CD
+> -- -------- ----- -- -- -- --- ---
+> 3  1        13    3  3  3  1.0 1.0
+> 8  3        33    3  3  3  1.0 1.0
+> rows: 2
 
 SELECT
     ROW_NUMBER() OVER (ORDER BY CATEGORY) RN,

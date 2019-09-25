@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  */
 package org.h2.util;
 
@@ -66,7 +66,7 @@ public class ColumnNamer {
                 columnName = getColumnName(columnExp.getColumnName(), DEFAULT_COLUMN_NAME);
                 if (columnName == null) {
                     // try a name derived from the column expression plan SQL
-                    columnName = getColumnName(columnExp.getSQL(), DEFAULT_COLUMN_NAME);
+                    columnName = getColumnName(columnExp.getSQL(false), DEFAULT_COLUMN_NAME);
                     // go with a innocuous default name pattern
                     if (columnName == null) {
                         columnName = configuration.getDefaultColumnNamePattern()

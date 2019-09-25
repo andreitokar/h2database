@@ -8,6 +8,7 @@
 22004=#Numeric value out of range: {0} in column {1}
 22007=Impossible d''analyser {0} constante {1}
 22012=Division par zéro: {0}
+22013=#Invalid PRECEDING or FOLLOWING size in window function: {0}
 22018=Erreur lors de la conversion de données {0}
 22025=Erreur dans LIKE ESCAPE: {0}
 22030=Valeur non permise pour la colonne {0}: {1}
@@ -25,6 +26,7 @@
 40001=Deadlock détecté. La transaction courante a été annulée. Détails: {0}
 42000=Erreur de syntaxe dans l''instruction SQL {0}
 42001=Erreur de syntaxe dans l''instruction SQL {0}; attendu {1}
+42602=#Invalid name {0}
 42S01=La table {0} existe déjà
 42S02=Table {0} non trouvée
 42S11=L''index {0} existe déjà
@@ -176,6 +178,8 @@
 90143=#Row {1} not found in primary index {0}
 90144=#Authenticator not enabled on database {0}
 90145=#FOR UPDATE is not allowed in DISTINCT or grouped select
+90146=#Database {0} not found, and IFEXISTS=true, so we can't auto-create it
+90147=#Method {0} is not allowed when connection is in auto-commit mode
 HY000=Erreur générale: {0}
 HY004=Type de données inconnu: {0}
 HYC00=Fonctionnalité non supportée: {0}

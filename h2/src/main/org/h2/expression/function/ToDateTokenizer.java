@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: Daniel Gredler
  */
 package org.h2.expression.function;
@@ -10,11 +10,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.TimeZone;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.h2.api.ErrorCode;
 import org.h2.message.DbException;
+import org.h2.util.TimeZoneProvider;
 
 /**
  * Emulates Oracle's TO_DATE function. This class knows all about the
@@ -430,7 +430,7 @@ class ToDateTokenizer {
             case TZR:
             case TZD:
                 String tzName = params.getInputStr();
-                params.setTimeZone(TimeZone.getTimeZone(tzName));
+                params.setTimeZone(TimeZoneProvider.ofId(tzName));
                 inputFragmentStr = tzName;
                 break;
             default:
@@ -549,7 +549,7 @@ class ToDateTokenizer {
         YYY(PARSLET_YEAR),
         // 2-digit year
         YY(PARSLET_YEAR),
-        // Two-digit century with with sign (- = B.C.)
+        // Two-digit century with sign (- = B.C.)
         SCC(PARSLET_YEAR),
         // Two-digit century.
         CC(PARSLET_YEAR),

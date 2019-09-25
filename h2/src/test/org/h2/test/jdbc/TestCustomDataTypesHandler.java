@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.test.jdbc;
@@ -16,7 +16,7 @@ import java.text.DecimalFormat;
 import java.util.Locale;
 import org.h2.api.CustomDataTypesHandler;
 import org.h2.api.ErrorCode;
-import org.h2.engine.Mode;
+import org.h2.engine.CastDataProvider;
 import org.h2.message.DbException;
 import org.h2.store.DataHandler;
 import org.h2.test.TestBase;
@@ -26,6 +26,7 @@ import org.h2.util.StringUtils;
 import org.h2.value.CompareMode;
 import org.h2.value.DataType;
 import org.h2.value.ExtTypeInfo;
+import org.h2.value.TypeInfo;
 import org.h2.value.Value;
 import org.h2.value.ValueBytes;
 import org.h2.value.ValueDouble;
@@ -82,6 +83,11 @@ public class TestCustomDataTypesHandler extends TestDb {
             rs.next();
             assertTrue(rs.getObject(1).equals(new ComplexNumber(2, 0)));
 
+            //Test IS OF
+            rs = stat.executeQuery("select CAST('1-1i' AS complex) IS OF (complex)");
+            rs.next();
+            assertTrue(rs.getBoolean(1));
+
             //Test create table
             stat.execute("create table t(id int, val complex)");
             rs = conn.getMetaData().getColumns(null, null, "T", "VAL");
@@ -118,11 +124,13 @@ public class TestCustomDataTypesHandler extends TestDb {
 
             for (int id = 0; id < expected.length; ++id) {
                 PreparedStatement prepStat = conn.prepareStatement(
-                        "select id from t where val = ?");
+                        "select id, val is of (complex), val is of (double) from t where val = ?");
                 prepStat.setObject(1, expected[id]);
                 rs = prepStat.executeQuery();
                 assertTrue(rs.next());
                 assertEquals(rs.getInt(1), id);
+                assertTrue(rs.getBoolean(2));
+                assertFalse(rs.getBoolean(3));
             }
 
             // Repeat selects with index
@@ -193,7 +201,6 @@ public class TestCustomDataTypesHandler extends TestDb {
             if (name.toLowerCase(Locale.ENGLISH).equals(COMPLEX_DATA_TYPE_NAME)) {
                 return complexDataType;
             }
-
             return null;
         }
 
@@ -203,6 +210,11 @@ public class TestCustomDataTypesHandler extends TestDb {
                 return complexDataType;
             }
             return null;
+        }
+
+        @Override
+        public TypeInfo getTypeInfoById(int type, long precision, int scale, ExtTypeInfo extTypeInfo) {
+            return new TypeInfo(type, 0, 0, ValueDouble.DISPLAY_SIZE * 2 + 1, null);
         }
 
         @Override
@@ -224,11 +236,11 @@ public class TestCustomDataTypesHandler extends TestDb {
 
         @Override
         public Value convert(Value source, int targetType) {
-            if (source.getType() == targetType) {
+            if (source.getValueType() == targetType) {
                 return source;
             }
             if (targetType == COMPLEX_DATA_TYPE_ID) {
-                switch (source.getType()) {
+                switch (source.getValueType()) {
                     case Value.JAVA_OBJECT: {
                         assert source instanceof ValueJavaObject;
                         return ValueComplex.get((ComplexNumber)
@@ -278,13 +290,13 @@ public class TestCustomDataTypesHandler extends TestDb {
         @Override
         public Object getObject(Value value, Class<?> cls) {
             if (cls.equals(ComplexNumber.class)) {
-                if (value.getType() == COMPLEX_DATA_TYPE_ID) {
+                if (value.getValueType() == COMPLEX_DATA_TYPE_ID) {
                     return value.getObject();
                 }
                 return convert(value, COMPLEX_DATA_TYPE_ID).getObject();
             }
             throw DbException.get(
-                    ErrorCode.UNKNOWN_DATA_TYPE_1, "type:" + value.getType());
+                    ErrorCode.UNKNOWN_DATA_TYPE_1, "type:" + value.getValueType());
         }
 
         @Override
@@ -345,18 +357,13 @@ public class TestCustomDataTypesHandler extends TestDb {
         }
 
         @Override
-        public int getType() {
+        public TypeInfo getType() {
+            return TypeInfo.getTypeInfo(TestOnlyCustomDataTypesHandler.COMPLEX_DATA_TYPE_ID);
+        }
+
+        @Override
+        public int getValueType() {
             return TestOnlyCustomDataTypesHandler.COMPLEX_DATA_TYPE_ID;
-        }
-
-        @Override
-        public long getPrecision() {
-            return 0;
-        }
-
-        @Override
-        public int getDisplaySize() {
-            return 0;
         }
 
         @Override
@@ -376,7 +383,7 @@ public class TestCustomDataTypesHandler extends TestDb {
         }
 
         @Override
-        public int compareTypeSafe(Value v, CompareMode mode) {
+        public int compareTypeSafe(Value v, CompareMode mode, CastDataProvider provider) {
             return val.compare((ComplexNumber) v.getObject());
         }
 
@@ -398,8 +405,9 @@ public class TestCustomDataTypesHandler extends TestDb {
         }
 
         @Override
-        public Value convertTo(int targetType, int precision, Mode mode, Object column, ExtTypeInfo extTypeInfo) {
-            if (getType() == targetType) {
+        protected Value convertTo(int targetType, ExtTypeInfo extTypeInfo, CastDataProvider provider,
+                boolean forComparison, Object column) {
+            if (getValueType() == targetType) {
                 return this;
             }
             switch (targetType) {

@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.result;
@@ -15,6 +15,7 @@ import org.h2.table.TableFilter;
 import org.h2.util.Utils;
 import org.h2.value.Value;
 import org.h2.value.ValueNull;
+import org.h2.value.ValueRow;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -113,9 +114,10 @@ public class SortOrder implements Comparator<Value[]> {
      *
      * @param list the expression list
      * @param visible the number of columns in the select list
+     * @param alwaysQuote quote all identifiers
      * @return the SQL snippet
      */
-    public String getSQL(Expression[] list, int visible) {
+    public String getSQL(Expression[] list, int visible, boolean alwaysQuote) {
         StringBuilder builder = new StringBuilder();
         int i = 0;
         for (int idx : queryColumnIndexes) {
@@ -126,7 +128,7 @@ public class SortOrder implements Comparator<Value[]> {
                 builder.append(idx + 1);
             } else {
                 builder.append('=');
-                list[idx].getUnenclosedSQL(builder);
+                list[idx].getUnenclosedSQL(builder, alwaysQuote);
             }
             typeToString(builder, sortTypes[i++]);
         }
@@ -135,7 +137,7 @@ public class SortOrder implements Comparator<Value[]> {
 
     /**
      * Appends type information (DESC, NULLS FIRST, NULLS LAST) to the specified statement builder.
-     * @param builder statement builder
+     * @param builder string builder
      * @param type sort type
      */
     public static void typeToString(StringBuilder builder, int type) {
@@ -216,15 +218,13 @@ public class SortOrder implements Comparator<Value[]> {
      */
     public void sort(ArrayList<Value[]> rows, int offset, int limit) {
         int rowsSize = rows.size();
-        if (rows.isEmpty() || offset >= rowsSize || limit == 0) {
+        if (rowsSize == 0 || offset >= rowsSize || limit == 0) {
             return;
         }
         if (offset < 0) {
             offset = 0;
         }
-        if (offset + limit > rowsSize) {
-            limit = rowsSize - offset;
-        }
+        limit = Math.min(limit, rowsSize - offset);
         if (limit == 1 && offset == 0) {
             rows.set(0, Collections.min(rows, this));
             return;
@@ -303,6 +303,20 @@ public class SortOrder implements Comparator<Value[]> {
             sortTypes[i] = addExplicitNullPosition(sortTypes[i]);
         }
         return sortTypes;
+    }
+
+    /**
+     * Returns comparator for row values.
+     *
+     * @return comparator for row values.
+     */
+    public Comparator<Value> getRowValueComparator() {
+        return new Comparator<Value>() {
+            @Override
+            public int compare(Value o1, Value o2) {
+                return SortOrder.this.compare(((ValueRow) o1).getList(), ((ValueRow) o2).getList());
+            }
+        };
     }
 
     /**

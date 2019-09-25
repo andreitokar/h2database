@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.fulltext;
@@ -47,7 +47,6 @@ import org.h2.jdbc.JdbcConnection;
 import org.h2.message.DbException;
 import org.h2.store.fs.FileUtils;
 import org.h2.tools.SimpleResultSet;
-import org.h2.util.StatementBuilder;
 import org.h2.util.StringUtils;
 import org.h2.util.Utils;
 
@@ -77,11 +76,21 @@ public class FullTextLucene extends FullText {
      */
     private static final String IN_MEMORY_PREFIX = "mem:";
 
-    private static final java.lang.reflect.Field TOTAL_HITS;
+    /**
+     * TopDocs.totalHits field. May have int, long, or TotalHits type.
+     */
+    private static final java.lang.reflect.Field TOP_DOCS_TOTAL_HITS;
+
+    /**
+     * TotalHits.value field of type long (Lucene 8.0.0+), or null.
+     */
+    private static final java.lang.reflect.Field TOTAL_HITS_VALUE;
 
     static {
         try {
-            TOTAL_HITS = TopDocs.class.getField("totalHits");
+            TOP_DOCS_TOTAL_HITS = TopDocs.class.getField("totalHits");
+            Class<?> type = TOP_DOCS_TOTAL_HITS.getType();
+            TOTAL_HITS_VALUE = type.isPrimitive() ? null : type.getField("value");
         } catch (ReflectiveOperationException e) {
             throw DbException.get(ErrorCode.GENERAL_ERROR_1, e,
                     "Field org.apache.lucene.search.TopDocs.totalHits is not found");
@@ -114,8 +123,8 @@ public class FullTextLucene extends FullText {
         try (Statement stat = conn.createStatement()) {
             stat.execute("CREATE SCHEMA IF NOT EXISTS " + SCHEMA);
             stat.execute("CREATE TABLE IF NOT EXISTS " + SCHEMA +
-                    ".INDEXES(SCHEMA VARCHAR, TABLE VARCHAR, " +
-                    "COLUMNS VARCHAR, PRIMARY KEY(SCHEMA, TABLE))");
+                    ".INDEXES(SCHEMA VARCHAR, `TABLE` VARCHAR, " +
+                    "COLUMNS VARCHAR, PRIMARY KEY(SCHEMA, `TABLE`))");
             stat.execute("CREATE ALIAS IF NOT EXISTS FTL_CREATE_INDEX FOR \"" +
                     FullTextLucene.class.getName() + ".createIndex\"");
             stat.execute("CREATE ALIAS IF NOT EXISTS FTL_DROP_INDEX FOR \"" +
@@ -144,7 +153,7 @@ public class FullTextLucene extends FullText {
             String table, String columnList) throws SQLException {
         init(conn);
         PreparedStatement prep = conn.prepareStatement("INSERT INTO " + SCHEMA
-                + ".INDEXES(SCHEMA, TABLE, COLUMNS) VALUES(?, ?, ?)");
+                + ".INDEXES(SCHEMA, `TABLE`, COLUMNS) VALUES(?, ?, ?)");
         prep.setString(1, schema);
         prep.setString(2, table);
         prep.setString(3, columnList);
@@ -166,7 +175,7 @@ public class FullTextLucene extends FullText {
         init(conn);
 
         PreparedStatement prep = conn.prepareStatement("DELETE FROM " + SCHEMA
-                + ".INDEXES WHERE SCHEMA=? AND TABLE=?");
+                + ".INDEXES WHERE SCHEMA=? AND `TABLE`=?");
         prep.setString(1, schema);
         prep.setString(2, table);
         int rowCount = prep.executeUpdate();
@@ -443,14 +452,14 @@ public class FullTextLucene extends FullText {
                 // will trigger writing results to disk.
                 int maxResults = (limit == 0 ? 100 : limit) + offset;
                 TopDocs docs = searcher.search(query, maxResults);
+                long totalHits = TOTAL_HITS_VALUE != null ? TOTAL_HITS_VALUE.getLong(TOP_DOCS_TOTAL_HITS.get(docs))
+                        : TOP_DOCS_TOTAL_HITS.getLong(docs);
                 if (limit == 0) {
-                    // TopDocs.totalHits is long now
-                    // (https://issues.apache.org/jira/browse/LUCENE-7872)
-                    // but in this context it's safe to cast
-                    limit = (int) TOTAL_HITS.getLong(docs);
+                    // in this context it's safe to cast
+                    limit = (int) totalHits;
                 }
                 for (int i = 0, len = docs.scoreDocs.length; i < limit
-                        && i + offset < docs.totalHits
+                        && i + offset < totalHits
                         && i + offset < len; i++) {
                     ScoreDoc sd = docs.scoreDocs[i + offset];
                     Document doc = searcher.doc(sd.doc);
@@ -548,7 +557,7 @@ public class FullTextLucene extends FullText {
             ArrayList<String> indexList = Utils.newSmallArrayList();
             PreparedStatement prep = conn.prepareStatement(
                     "SELECT COLUMNS FROM " + SCHEMA
-                    + ".INDEXES WHERE SCHEMA=? AND TABLE=?");
+                    + ".INDEXES WHERE SCHEMA=? AND `TABLE`=?");
             prep.setString(1, schemaName);
             prep.setString(2, tableName);
             rs = prep.executeQuery();
@@ -632,8 +641,9 @@ public class FullTextLucene extends FullText {
             doc.add(new Field(LUCENE_FIELD_MODIFIED,
                     DateTools.timeToString(time, DateTools.Resolution.SECOND),
                     TextField.TYPE_STORED));
-            StatementBuilder buff = new StatementBuilder();
-            for (int index : indexColumns) {
+            StringBuilder builder = new StringBuilder();
+            for (int i = 0, length = indexColumns.length; i < length; i++) {
+                int index = indexColumns[i];
                 String columnName = columns[index];
                 String data = asString(row[index], columnTypes[index]);
                 // column names that start with _
@@ -643,12 +653,14 @@ public class FullTextLucene extends FullText {
                     columnName = LUCENE_FIELD_COLUMN_PREFIX + columnName;
                 }
                 doc.add(new Field(columnName, data, TextField.TYPE_NOT_STORED));
-                buff.appendExceptFirst(" ");
-                buff.append(data);
+                if (i > 0) {
+                    builder.append(' ');
+                }
+                builder.append(data);
             }
             FieldType dataFieldType = STORE_DOCUMENT_TEXT_IN_INDEX ?
                     TextField.TYPE_STORED : TextField.TYPE_NOT_STORED;
-            doc.add(new Field(LUCENE_FIELD_DATA, buff.toString(), dataFieldType));
+            doc.add(new Field(LUCENE_FIELD_DATA, builder.toString(), dataFieldType));
             try {
                 indexAccess.writer.addDocument(doc);
                 if (commitIndex) {

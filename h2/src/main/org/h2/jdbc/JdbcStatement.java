@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.jdbc;
@@ -123,7 +123,7 @@ public class JdbcStatement extends TraceObject implements Statement, JdbcStateme
     public int executeUpdate(String sql) throws SQLException {
         try {
             debugCodeCall("executeUpdate", sql);
-            return executeUpdateInternal(sql, false);
+            return executeUpdateInternal(sql, null);
         } catch (Exception e) {
             throw logAndConvert(e);
         }
@@ -151,7 +151,7 @@ public class JdbcStatement extends TraceObject implements Statement, JdbcStateme
     public long executeLargeUpdate(String sql) throws SQLException {
         try {
             debugCodeCall("executeLargeUpdate", sql);
-            return executeUpdateInternal(sql, false);
+            return executeUpdateInternal(sql, null);
         } catch (Exception e) {
             throw logAndConvert(e);
         }
@@ -167,7 +167,7 @@ public class JdbcStatement extends TraceObject implements Statement, JdbcStateme
                 setExecutingStatement(command);
                 try {
                     ResultWithGeneratedKeys result = command.executeUpdate(
-                            conn.scopeGeneratedKeys() ? false : generatedKeysRequest);
+                            conn.scopeGeneratedKeys() ? null : generatedKeysRequest);
                     updateCount = result.getUpdateCount();
                     ResultInterface gk = result.getGeneratedKeys();
                     if (gk != null) {
@@ -231,7 +231,7 @@ public class JdbcStatement extends TraceObject implements Statement, JdbcStateme
                     } else {
                         returnsResultSet = false;
                         ResultWithGeneratedKeys result = command.executeUpdate(
-                                conn.scopeGeneratedKeys() ? false : generatedKeysRequest);
+                                conn.scopeGeneratedKeys() ? null : generatedKeysRequest);
                         updateCount = result.getUpdateCount();
                         ResultInterface gk = result.getGeneratedKeys();
                         if (gk != null) {
@@ -769,27 +769,25 @@ public class JdbcStatement extends TraceObject implements Statement, JdbcStateme
                 }
                 int size = batchCommands.size();
                 int[] result = new int[size];
-                boolean error = false;
-                SQLException next = null;
+                SQLException first = null;
+                SQLException last = null;
                 for (int i = 0; i < size; i++) {
                     String sql = batchCommands.get(i);
                     try {
-                        result[i] = executeUpdateInternal(sql, false);
+                        result[i] = executeUpdateInternal(sql, null);
                     } catch (Exception re) {
                         SQLException e = logAndConvert(re);
-                        if (next == null) {
-                            next = e;
+                        if (last == null) {
+                            first = last = e;
                         } else {
-                            e.setNextException(next);
-                            next = e;
+                            last.setNextException(e);
                         }
                         result[i] = Statement.EXECUTE_FAILED;
-                        error = true;
                     }
                 }
                 batchCommands = null;
-                if (error) {
-                    throw new JdbcBatchUpdateException(next, result);
+                if (first != null) {
+                    throw new JdbcBatchUpdateException(first, result);
                 }
                 return result;
             } finally {
@@ -818,46 +816,34 @@ public class JdbcStatement extends TraceObject implements Statement, JdbcStateme
     }
 
     /**
-     * Return a result set with generated keys from the latest executed command or
-     * an empty result set if keys were not generated or were not requested with
-     * {@link Statement#RETURN_GENERATED_KEYS}, column indexes, or column names.
+     * Return a result set with generated keys from the latest executed command
+     * or an empty result set if keys were not generated or were not requested
+     * with {@link Statement#RETURN_GENERATED_KEYS}, column indexes, or column
+     * names.
      * <p>
-     * Generated keys are only returned from inserted rows from {@code INSERT},
-     * {@code MERGE INTO}, and {@code MERGE INTO ... USING} commands. Generated keys
-     * are not returned if exact values of generated columns were specified
-     * explicitly in SQL command. All columns with inserted generated values are
-     * included in the result if command was executed with
-     * {@link Statement#RETURN_GENERATED_KEYS} parameter.
+     * Generated keys are only returned from from {@code INSERT},
+     * {@code UPDATE}, {@code MERGE INTO}, and {@code MERGE INTO ... USING}
+     * commands.
      * </p>
      * <p>
-     * If SQL command inserts multiple rows with generated keys each such inserted
-     * row is returned. Batch methods are also supported. When multiple rows are
-     * returned each row contains only generated values for this row. It's possible
-     * to insert several rows with generated values in different columns with some
-     * specific commands, in this special case the returned result set contains all
-     * used columns, but each row will contain only generated values, columns that
-     * were not generated for this row will contain {@code null} values.
+     * If SQL command inserts or updates multiple rows with generated keys each
+     * such inserted or updated row is returned. Batch methods are also
+     * supported.
      * </p>
      * <p>
-     * H2 treats inserted value as generated in the following cases:
+     * When {@link Statement#RETURN_GENERATED_KEYS} is used H2 chooses columns
+     * to return automatically. The following columns are chosen:
      * </p>
      * <ul>
      * <li>Columns with sequences including {@code IDENTITY} columns and columns
-     * with {@code AUTO_INCREMENT} if value was generated automatically (not
-     * specified in command).</li>
-     * <li>Columns with other default values that are not evaluated into constant
-     * expressions (like {@code DEFAULT RANDOM_UUID()}) also only if default value
-     * was inserted.</li>
-     * <li>Columns that were set by triggers.</li>
-     * <li>Columns with values specified in command with invocation of some sequence
-     * (like {@code INSERT INTO ... VALUES (NEXT VALUE FOR ...)}).</li>
+     * with {@code AUTO_INCREMENT}.</li>
+     * <li>Columns with other default values that are not evaluated into
+     * constant expressions (like {@code DEFAULT RANDOM_UUID()}).</li>
+     * <li>Columns that are included into the PRIMARY KEY constraint.</li>
      * </ul>
      * <p>
      * Exact required columns for the returning result set may be specified on
-     * execution of command with names or indexes of columns to limit output or
-     * reorder columns in result set. Specifying of some column has no effect on
-     * treatment of inserted values as generated or not. If some value is not
-     * determined to be generated it will not be returned even on explicit request.
+     * execution of command with names or indexes of columns.
      * </p>
      *
      * @return the possibly empty result set with generated keys
@@ -1383,27 +1369,54 @@ public class JdbcStatement extends TraceObject implements Statement, JdbcStateme
 
     /**
      * @param identifier
-     *            identifier to quote if required
+     *            identifier to quote if required, may be quoted or unquoted
      * @param alwaysQuote
      *            if {@code true} identifier will be quoted unconditionally
-     * @return specified identifier quoted if required or explicitly requested
+     * @return specified identifier quoted if required, explicitly requested, or
+     *         if it was already quoted
+     * @throws NullPointerException
+     *             if identifier is {@code null}
+     * @throws SQLException
+     *             if identifier is not a valid identifier
      */
     @Override
     public String enquoteIdentifier(String identifier, boolean alwaysQuote) throws SQLException {
-        if (alwaysQuote || !isSimpleIdentifier(identifier)) {
-            return StringUtils.quoteIdentifier(identifier);
+        if (isSimpleIdentifier(identifier)) {
+            return alwaysQuote ? '"' + identifier + '"': identifier;
         }
-        return identifier;
+        try {
+            int length = identifier.length();
+            if (length > 0 && identifier.charAt(0) == '"') {
+                boolean quoted = true;
+                for (int i = 1; i < length; i++) {
+                    if (identifier.charAt(i) == '"') {
+                        quoted = !quoted;
+                    } else if (!quoted) {
+                        throw DbException.get(ErrorCode.INVALID_NAME_1, identifier);
+                    }
+                }
+                if (quoted) {
+                    throw DbException.get(ErrorCode.INVALID_NAME_1, identifier);
+                }
+                return identifier;
+            }
+            return StringUtils.quoteIdentifier(identifier);
+        } catch (Exception e) {
+            throw logAndConvert(e);
+        }
     }
 
     /**
      * @param identifier
      *            identifier to check
      * @return is specified identifier may be used without quotes
+     * @throws NullPointerException
+     *             if identifier is {@code null}
      */
     @Override
     public boolean isSimpleIdentifier(String identifier) throws SQLException {
-        return ParserUtil.isSimpleIdentifier(identifier);
+        JdbcConnection.Settings settings = conn.getSettings();
+        return ParserUtil.isSimpleIdentifier(identifier, settings.databaseToUpper, settings.databaseToLower);
     }
 
     /**

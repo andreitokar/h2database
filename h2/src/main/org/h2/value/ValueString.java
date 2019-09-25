@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.value;
@@ -8,6 +8,7 @@ package org.h2.value;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 
+import org.h2.engine.CastDataProvider;
 import org.h2.engine.SysProperties;
 import org.h2.util.MathUtils;
 import org.h2.util.StringUtils;
@@ -29,6 +30,8 @@ public class ValueString extends Value {
      */
     protected final String value;
 
+    private TypeInfo type;
+
     protected ValueString(String value) {
         this.value = value;
     }
@@ -45,18 +48,13 @@ public class ValueString extends Value {
     }
 
     @Override
-    public int compareTypeSafe(Value o, CompareMode mode) {
+    public int compareTypeSafe(Value o, CompareMode mode, CastDataProvider provider) {
         return mode.compareString(value, ((ValueString) o).value, false);
     }
 
     @Override
     public String getString() {
         return value;
-    }
-
-    @Override
-    public long getPrecision() {
-        return value.length();
     }
 
     @Override
@@ -71,21 +69,21 @@ public class ValueString extends Value {
     }
 
     @Override
-    public int getDisplaySize() {
-        return value.length();
-    }
-
-    @Override
     public int getMemory() {
-        return value.length() * 2 + 48;
+        /*
+         * Java 11 with -XX:-UseCompressedOops
+         * Empty string: 88 bytes
+         * 1 to 4 UTF-16 chars: 96 bytes
+         */
+        return value.length() * 2 + 94;
     }
 
     @Override
-    public Value convertPrecision(long precision, boolean force) {
-        if (precision == 0 || value.length() <= precision) {
+    public Value convertPrecision(long precision) {
+        int p = MathUtils.convertLongToInt(precision);
+        if (value.length() <= p) {
             return this;
         }
-        int p = MathUtils.convertLongToInt(precision);
         return getNew(value.substring(0, p));
     }
 
@@ -122,8 +120,18 @@ public class ValueString extends Value {
     }
 
     @Override
-    public int getType() {
-        return Value.STRING;
+    public final TypeInfo getType() {
+        TypeInfo type = this.type;
+        if (type == null) {
+            int length = value.length();
+            this.type = type = new TypeInfo(getValueType(), length, 0, length, null);
+        }
+        return type;
+    }
+
+    @Override
+    public int getValueType() {
+        return STRING;
     }
 
     /**
@@ -133,20 +141,19 @@ public class ValueString extends Value {
      * @return the value
      */
     public static Value get(String s) {
-        return get(s, false);
+        return get(s, null);
     }
 
     /**
      * Get or create a string value for the given string.
      *
      * @param s the string
-     * @param treatEmptyStringsAsNull whether or not to treat empty strings as
-     *            NULL
+     * @param provider the cast information provider, or {@code null}
      * @return the value
      */
-    public static Value get(String s, boolean treatEmptyStringsAsNull) {
+    public static Value get(String s, CastDataProvider provider) {
         if (s.isEmpty()) {
-            return treatEmptyStringsAsNull ? ValueNull.INSTANCE : EMPTY;
+            return provider != null && provider.getMode().treatEmptyStringsAsNull ? ValueNull.INSTANCE : EMPTY;
         }
         ValueString obj = new ValueString(StringUtils.cache(s));
         if (s.length() > SysProperties.OBJECT_CACHE_MAX_PER_ELEMENT_SIZE) {

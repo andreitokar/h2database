@@ -4,10 +4,10 @@
 
   <groupId>com.h2database</groupId>
   <artifactId>h2</artifactId>
-  <version>1.4.197-SNAPSHOT</version>
+  <version>1.4.200-SNAPSHOT</version>
   <packaging>jar</packaging>
   <name>H2 Database Engine</name>
-  <url>http://www.h2database.com</url>
+  <url>https://h2database.com</url>
   <description>H2 Database Engine</description>
 
   <licenses>
@@ -39,7 +39,6 @@
   <properties>
     <maven.compiler.source>1.7</maven.compiler.source>
     <maven.compiler.target>1.8</maven.compiler.target>
-    <hsqldb.version>2.4.0</hsqldb.version>
     <osgi.version>4.2.0</osgi.version>
     <slf4j.version>1.6.0</slf4j.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -88,31 +87,14 @@
       <artifactId>jts-core</artifactId>
       <version>1.15.0</version>
     </dependency>
-
-    <dependency>
-        <groupId>com.sun</groupId>
-        <artifactId>rt</artifactId>
-        <version>1.8</version>
-        <scope>system</scope>
-        <systemPath>${rt.jar}</systemPath>
-    </dependency>
-
     <!-- END COMPILE DEPENDENCIES !-->
 
 
     <!-- START TEST DEPENDENCIES !-->
-<!--
     <dependency>
       <groupId>org.slf4j</groupId>
-      <artifactId>slf4j-simple</artifactId>
+      <artifactId>slf4j-nop</artifactId>
       <version>${slf4j.version}</version>
-      <scope>test</scope>
-    </dependency>
--->
-    <dependency>
-      <groupId>org.hsqldb</groupId>
-      <artifactId>hsqldb</artifactId>
-      <version>${hsqldb.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>
@@ -127,16 +109,13 @@
       <version>4.12</version>
       <scope>test</scope>
     </dependency>
-    <!-- END TEST DEPENDENCIES !-->
-
-    <!--  JDK dependencies  -->
     <dependency>
-      <groupId>com.sun</groupId>
-      <artifactId>tools</artifactId>
-      <version>1.8</version>
-      <scope>system</scope>
-      <systemPath>${tools.jar}</systemPath>
+      <groupId>org.ow2.asm</groupId>
+      <artifactId>asm</artifactId>
+      <version>7.0</version>
+      <scope>test</scope>
     </dependency>
+    <!-- END TEST DEPENDENCIES !-->
   </dependencies>
 
   <!-- The test code creates proxy files using javac or tools.jar. Through maven we need to tell it
@@ -156,26 +135,13 @@
           <exists>${java.home}/../lib/tools.jar</exists>
         </file>
       </activation>
-<!--
-        <properties>
-          <tools.jar>${java.home}/../lib/tools.jar</tools.jar>
-          <rt.jar>${java.home}/lib/rt.jar</rt.jar>
-        </properties>
--->
       <dependencies>
         <dependency>
           <groupId>com.sun</groupId>
           <artifactId>tools</artifactId>
           <scope>system</scope>
-          <version>1.8</version>
+          <version>1.7</version>
           <systemPath>${java.home}/../lib/tools.jar</systemPath>
-        </dependency>
-        <dependency>
-          <groupId>com.sun</groupId>
-          <artifactId>rt</artifactId>
-          <scope>system</scope>
-          <version>1.8</version>
-          <systemPath>${java.home}/lib/rt.jar</systemPath>
         </dependency>
       </dependencies>
     </profile>
@@ -220,8 +186,15 @@
         </includes>
       </resource>
       <resource>
+        <directory>src/java8/precompiled</directory>
+      </resource>
+      <resource>
         <directory>src/java9/precompiled</directory>
         <targetPath>META-INF/versions/9</targetPath>
+      </resource>
+      <resource>
+        <directory>src/java10/precompiled</directory>
+        <targetPath>META-INF/versions/10</targetPath>
       </resource>
     </resources>
     <testResources>
@@ -229,7 +202,7 @@
     <directory>src/test</directory>
       <includes>
         <include>org/h2/test/bench/test.properties</include>
-        <include>org/h2/test/scripts/testSimple.in.txt</include>
+        <include>org/h2/test/script/testScrip.sql</include>
         <include>org/h2/test/scripts/**/*.sql</include>
         <include>org/h2/samples/newsfeed.sql</include>
         <include>org/h2/samples/optimizations.sql</include>

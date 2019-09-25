@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.expression;
@@ -10,8 +10,12 @@ import org.h2.message.DbException;
 import org.h2.schema.Sequence;
 import org.h2.table.ColumnResolver;
 import org.h2.table.TableFilter;
+import org.h2.value.TypeInfo;
 import org.h2.value.Value;
+import org.h2.value.ValueDecimal;
 import org.h2.value.ValueLong;
+
+import java.math.BigDecimal;
 
 /**
  * Wraps a sequence when used in a statement.
@@ -20,20 +24,31 @@ public class SequenceValue extends Expression {
 
     private final Sequence sequence;
 
-    public SequenceValue(Sequence sequence) {
+    private final boolean current;
+
+    public SequenceValue(Sequence sequence, boolean current) {
         this.sequence = sequence;
+        this.current = current;
     }
 
     @Override
     public Value getValue(Session session) {
-        ValueLong value = ValueLong.get(sequence.getNext(session));
-        session.setLastIdentity(value);
+        long longValue = current ? sequence.getCurrentValue() : sequence.getNext(session);
+        Value value;
+        if (sequence.getDatabase().getMode().decimalSequences) {
+            value = ValueDecimal.get(BigDecimal.valueOf(longValue));
+        } else {
+            value = ValueLong.get(longValue);
+        }
+        if (!current) {
+            session.setLastIdentity(value);
+        }
         return value;
     }
 
     @Override
-    public int getType() {
-        return Value.LONG;
+    public TypeInfo getType() {
+        return sequence.getDatabase().getMode().decimalSequences ? TypeInfo.TYPE_DECIMAL : TypeInfo.TYPE_LONG;
     }
 
     @Override
@@ -52,24 +67,9 @@ public class SequenceValue extends Expression {
     }
 
     @Override
-    public int getScale() {
-        return 0;
-    }
-
-    @Override
-    public long getPrecision() {
-        return ValueLong.PRECISION;
-    }
-
-    @Override
-    public int getDisplaySize() {
-        return ValueLong.DISPLAY_SIZE;
-    }
-
-    @Override
-    public StringBuilder getSQL(StringBuilder builder) {
-        builder.append("(NEXT VALUE FOR ");
-        return builder.append(sequence.getSQL()).append(')');
+    public StringBuilder getSQL(StringBuilder builder, boolean alwaysQuote) {
+        builder.append(current ? "CURRENT" : "NEXT").append(" VALUE FOR ");
+        return sequence.getSQL(builder, alwaysQuote);
     }
 
     @Override
@@ -87,7 +87,6 @@ public class SequenceValue extends Expression {
         case ExpressionVisitor.GET_COLUMNS2:
             return true;
         case ExpressionVisitor.DETERMINISTIC:
-        case ExpressionVisitor.READONLY:
         case ExpressionVisitor.INDEPENDENT:
         case ExpressionVisitor.QUERY_COMPARABLE:
             return false;
@@ -97,6 +96,8 @@ public class SequenceValue extends Expression {
         case ExpressionVisitor.GET_DEPENDENCIES:
             visitor.addDependency(sequence);
             return true;
+        case ExpressionVisitor.READONLY:
+            return current;
         default:
             throw DbException.throwInternalError("type="+visitor.getType());
         }
@@ -105,11 +106,6 @@ public class SequenceValue extends Expression {
     @Override
     public int getCost() {
         return 1;
-    }
-
-    @Override
-    public boolean isGeneratedKey() {
-        return true;
     }
 
 }

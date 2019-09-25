@@ -1,23 +1,26 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.command;
 
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import org.h2.api.ErrorCode;
 import org.h2.engine.Constants;
 import org.h2.engine.Database;
+import org.h2.engine.DbObject;
 import org.h2.engine.Session;
 import org.h2.expression.ParameterInterface;
 import org.h2.message.DbException;
 import org.h2.message.Trace;
 import org.h2.result.ResultInterface;
 import org.h2.result.ResultWithGeneratedKeys;
+import org.h2.result.ResultWithPaddedStrings;
 import org.h2.util.MathUtils;
 
 /**
@@ -101,12 +104,16 @@ public abstract class Command implements CommandInterface {
      * Execute an updating statement (for example insert, delete, or update), if
      * this is possible.
      *
-     * @return the update count
+     * @param generatedKeysRequest
+     *            {@code false} if generated keys are not needed, {@code true} if
+     *            generated keys should be configured automatically, {@code int[]}
+     *            to specify column indices to return generated keys from, or
+     *            {@code String[]} to specify column names to return generated keys
+     *            from
+     * @return the update count and generated keys, if any
      * @throws DbException if the command is not an updating statement
      */
-    public int update() {
-        throw DbException.get(ErrorCode.METHOD_NOT_ALLOWED_FOR_QUERY);
-    }
+    public abstract ResultWithGeneratedKeys update(Object generatedKeysRequest);
 
     /**
      * Execute a query statement, if this is possible.
@@ -115,9 +122,7 @@ public abstract class Command implements CommandInterface {
      * @return the local result set
      * @throws DbException if the command is not a query
      */
-    public ResultInterface query(@SuppressWarnings("unused") int maxrows) {
-        throw DbException.get(ErrorCode.METHOD_ONLY_ALLOWED_FOR_QUERY);
-    }
+    public abstract ResultInterface query(int maxrows);
 
     @Override
     public final ResultInterface getMetaData() {
@@ -151,7 +156,6 @@ public abstract class Command implements CommandInterface {
 
     @Override
     public void stop() {
-        session.setCurrentCommand(null, false);
         if (!isTransactional()) {
             session.commit(true);
         } else if (session.getAutoCommit()) {
@@ -159,7 +163,6 @@ public abstract class Command implements CommandInterface {
         } else {
             session.unlockReadLocks();
         }
-        session.endStatement();
         if (trace.isInfoEnabled() && startTimeNanos > 0) {
             long timeMillis = (System.nanoTime() - startTimeNanos) / 1000 / 1000;
             if (timeMillis > Constants.SLOW_QUERY_LIMIT_MS) {
@@ -192,14 +195,16 @@ public abstract class Command implements CommandInterface {
         }
         //noinspection SynchronizationOnLocalVariableOrMethodParameter
         synchronized (sync) {
-            session.startStatementWithinTransaction();
-            session.setCurrentCommand(this, false);
+            session.startStatementWithinTransaction(this);
             try {
                 while (true) {
                     database.checkPowerOff();
                     try {
                         ResultInterface result = query(maxrows);
                         callStop = !result.isLazy();
+                        if (database.getMode().padFixedLengthStrings) {
+                            return ResultWithPaddedStrings.get(result);
+                        }
                         return result;
                     } catch (DbException e) {
                         start = filterConcurrentUpdate(e, start);
@@ -227,6 +232,7 @@ public abstract class Command implements CommandInterface {
                 database.checkPowerOff();
                 throw e;
             } finally {
+                session.endStatement();
                 if (callStop) {
                     stop();
                 }
@@ -253,19 +259,13 @@ public abstract class Command implements CommandInterface {
         //noinspection SynchronizationOnLocalVariableOrMethodParameter
         synchronized (sync) {
             Session.Savepoint rollback = session.setSavepoint();
-            session.startStatementWithinTransaction();
-            session.setCurrentCommand(this, generatedKeysRequest);
+            session.startStatementWithinTransaction(this);
             DbException ex = null;
             try {
                 while (true) {
                     database.checkPowerOff();
                     try {
-                        int updateCount = update();
-                        if (!Boolean.FALSE.equals(generatedKeysRequest)) {
-                            return new ResultWithGeneratedKeys.WithKeys(updateCount,
-                                    session.getGeneratedKeys().getKeys(session));
-                        }
-                        return ResultWithGeneratedKeys.of(updateCount);
+                        return update(generatedKeysRequest);
                     } catch (DbException e) {
                         database.unlockMetaDebug(session);
                         start = filterConcurrentUpdate(e, start);
@@ -304,22 +304,20 @@ public abstract class Command implements CommandInterface {
                 ex = e;
                 throw e;
             } finally {
-                if (!database.isClosing() &&
-                        (database.getStore() == null || !database.getStore().isClosed())) {
-                    try {
-                        if (callStop) {
-                            stop();
-                        }
-                    } catch (Throwable nested) {
-                        if (ex == null) {
-                            throw nested;
-                        } else {
-                            ex.addSuppressed(nested);
-                        }
-                    } finally {
-                        if (writing) {
-                            database.afterWriting();
-                        }
+                try {
+                    session.endStatement();
+                    if (callStop) {
+                        stop();
+                    }
+                } catch (Throwable nested) {
+                    if (ex == null) {
+                        throw nested;
+                    } else {
+                        ex.addSuppressed(nested);
+                    }
+                } finally {
+                    if (writing) {
+                        database.afterWriting();
                     }
                 }
             }
@@ -405,4 +403,6 @@ public abstract class Command implements CommandInterface {
     public void setCanReuse(boolean canReuse) {
         this.canReuse = canReuse;
     }
+
+    public abstract Set<DbObject> getDependencies();
 }

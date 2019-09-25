@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.mvstore.db;
@@ -14,7 +14,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
 
 import org.h2.api.ErrorCode;
 import org.h2.api.TableEngine;
@@ -73,6 +72,10 @@ public class MVTableEngine implements TableEngine {
                     String dir = FileUtils.getParent(fileName);
                     FileUtils.createDirectories(dir);
                 }
+                int autoCompactFillRate = db.getSettings().maxCompactCount;
+                if (autoCompactFillRate <= 100) {
+                    builder.autoCompactFillRate(autoCompactFillRate);
+                }
             }
             if (key != null) {
                 encrypted = true;
@@ -91,6 +94,10 @@ public class MVTableEngine implements TableEngine {
                 }
 
             });
+            // always start without background thread first, and if necessary,
+            // it will be set up later, after db has been fully started,
+            // otherwise background thread would compete for store lock
+            // with maps opening procedure
             builder.autoCommitDisabled().autoCommitBufferSize(1024);
         }
         store.open(db, builder, encrypted);
@@ -98,6 +105,12 @@ public class MVTableEngine implements TableEngine {
         return store;
     }
 
+    /**
+     * Convert password from byte[] to char[].
+     *
+     * @param key password as byte[]
+     * @return password as char[].
+     */
     static char[] decodePassword(byte[] key) {
         char[] password = new char[key.length / 2];
         for (int i = 0; i < password.length; i++) {
@@ -162,6 +175,7 @@ public class MVTableEngine implements TableEngine {
                 if (!db.getSettings().reuseSpace) {
                     mvStore.setReuseSpace(false);
                 }
+                mvStore.setVersionsToKeep(0);
                 this.transactionStore = new TransactionStore(mvStore,
                                                 new DBMetaType(db, mvStore.backgroundExceptionHandler),
                                                 new ValueDataType(db, null),
@@ -184,7 +198,11 @@ public class MVTableEngine implements TableEngine {
          */
         DbException convertIllegalStateException(IllegalStateException e) {
             int errorCode = DataUtils.getErrorCode(e.getMessage());
-            if (errorCode == DataUtils.ERROR_FILE_CORRUPT) {
+            if (errorCode == DataUtils.ERROR_CLOSED) {
+                throw DbException.get(
+                        ErrorCode.DATABASE_IS_CLOSED,
+                        e, fileName);
+            } else if (errorCode == DataUtils.ERROR_FILE_CORRUPT) {
                 if (encrypted) {
                     throw DbException.get(
                             ErrorCode.FILE_ENCRYPTION_ERROR_1,
@@ -198,6 +216,10 @@ public class MVTableEngine implements TableEngine {
                 throw DbException.get(
                         ErrorCode.IO_EXCEPTION_1,
                         e, fileName);
+            } else if (errorCode == DataUtils.ERROR_TRANSACTION_ILLEGAL_STATE) {
+                throw DbException.get(
+                        ErrorCode.GENERAL_ERROR_1,
+                        e, e.getMessage());
             } else if (errorCode == DataUtils.ERROR_INTERNAL) {
                 throw DbException.get(
                         ErrorCode.GENERAL_ERROR_1,
@@ -217,6 +239,12 @@ public class MVTableEngine implements TableEngine {
             return transactionStore;
         }
 
+        /**
+         * Get MVTable by table name.
+         *
+         * @param tableName table name
+         * @return MVTable
+         */
         public MVTable getTable(String tableName) {
             return tableMap.get(tableName);
         }
@@ -350,56 +378,53 @@ public class MVTableEngine implements TableEngine {
          * @param maxCompactTime the maximum time in milliseconds to compact
          */
         public void compactFile(long maxCompactTime) {
-            mvStore.setRetentionTime(0);
-            long start = System.nanoTime();
-            while (mvStore.compact(95, 16 * 1024 * 1024)) {
-                mvStore.sync();
-                mvStore.compactMoveChunks(95, 16 * 1024 * 1024);
-                long time = System.nanoTime() - start;
-                if (time > TimeUnit.MILLISECONDS.toNanos(maxCompactTime)) {
-                    break;
-                }
-            }
+            mvStore.compactFile(maxCompactTime);
         }
 
         /**
-         * Close the store. Pending changes are persisted. Chunks with a low
-         * fill rate are compacted, but old chunks are kept for some time, so
-         * most likely the database file will not shrink.
+         * Close the store. Pending changes are persisted.
+         * If time is allocated for housekeeping, chunks with a low
+         * fill rate are compacted, and some chunks are put next to each other.
+         * If time is unlimited then full compaction is performed, which uses
+         * different algorithm - opens alternative temp store and writes all live
+         * data there, then replaces this store with a new one.
          *
-         * @param compactFully true if storage need to be compacted after closer
+         * @param allowedCompactionTime time (in milliseconds) alloted for file
+         *                              compaction activity, 0 means no compaction,
+         *                              -1 means unlimited time (full compaction)
          */
-        public void close(boolean compactFully) {
-            if (!isClosed()) {
-                try {
-                    FileStore fileStore = mvStore.getFileStore();
-                    if (!mvStore.isClosed() && fileStore != null) {
-                        if (fileStore.isReadOnly()) {
-                            compactFully = false;
-                        } else {
-                            transactionStore.close();
-                        }
-                        String fileName = fileStore.getFileName();
-                        mvStore.close();
-                        if (compactFully && FileUtils.exists(fileName)) {
-                            // the file could have been deleted concurrently,
-                            // so only compact if the file still exists
-                            MVStoreTool.compact(fileName, true);
-                        }
+        public void close(long allowedCompactionTime) {
+            try {
+                FileStore fileStore = mvStore.getFileStore();
+                if (!mvStore.isClosed() && fileStore != null) {
+                    boolean compactFully = allowedCompactionTime == -1;
+                    if (fileStore.isReadOnly()) {
+                        compactFully = false;
+                    } else {
+                        transactionStore.close();
                     }
-                } catch (IllegalStateException e) {
-                    int errorCode = DataUtils.getErrorCode(e.getMessage());
-                    if (errorCode == DataUtils.ERROR_WRITING_FAILED) {
-                        // disk full - ok
-                    } else if (errorCode == DataUtils.ERROR_FILE_CORRUPT) {
-                        // wrong encryption key - ok
+                    if (compactFully) {
+                        allowedCompactionTime = 0;
                     }
-                    mvStore.closeImmediately();
-                    throw DbException.get(ErrorCode.IO_EXCEPTION_1, e, "Closing");
-                } finally {
-                    transactionStore = null;
-                    mvStore = null;
+
+                    mvStore.close(allowedCompactionTime);
+
+                    String fileName = fileStore.getFileName();
+                    if (compactFully && FileUtils.exists(fileName)) {
+                        // the file could have been deleted concurrently,
+                        // so only compact if the file still exists
+                        MVStoreTool.compact(fileName, true);
+                    }
                 }
+            } catch (IllegalStateException e) {
+                int errorCode = DataUtils.getErrorCode(e.getMessage());
+                if (errorCode == DataUtils.ERROR_WRITING_FAILED) {
+                    // disk full - ok
+                } else if (errorCode == DataUtils.ERROR_FILE_CORRUPT) {
+                    // wrong encryption key - ok
+                }
+                mvStore.closeImmediately();
+                throw DbException.get(ErrorCode.IO_EXCEPTION_1, e, "Closing");
             }
         }
 

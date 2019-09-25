@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.expression.function;
@@ -41,14 +41,15 @@ public final class FunctionInfo {
     public final boolean deterministic;
 
     /**
-     * Should the return value ResultSet be buffered in a local temporary file?
-     */
-    final boolean bufferResultSetToLocalTemp;
-
-    /**
      * Should the no-arg function require parentheses.
      */
     final boolean requireParentheses;
+
+    /**
+     * If arguments cannot be evaluated in normal way with
+     * {@link org.h2.expression.Expression#getValue(org.h2.engine.Session)}.
+     */
+    final boolean specialArguments;
 
     /**
      * Creates new instance of built-in function information.
@@ -67,22 +68,22 @@ public final class FunctionInfo {
      * @param deterministic
      *            if this function always returns the same value for the same
      *            parameters
-     * @param bufferResultSetToLocalTemp
-     *            should the return value ResultSet be buffered in a local
-     *            temporary file?
      * @param requireParentheses
      *            should the no-arg function require parentheses
+     * @param specialArguments
+     *            if arguments cannot be evaluated in normal way with
+     *            {@link org.h2.expression.Expression#getValue(org.h2.engine.Session)}.
      */
     public FunctionInfo(String name, int type, int parameterCount, int returnDataType, boolean nullIfParameterIsNull,
-            boolean deterministic, boolean bufferResultSetToLocalTemp, boolean requireParentheses) {
+            boolean deterministic, boolean requireParentheses, boolean specialArguments) {
         this.name = name;
         this.type = type;
         this.parameterCount = parameterCount;
         this.returnDataType = returnDataType;
         this.nullIfParameterIsNull = nullIfParameterIsNull;
         this.deterministic = deterministic;
-        this.bufferResultSetToLocalTemp = bufferResultSetToLocalTemp;
         this.requireParentheses = requireParentheses;
+        this.specialArguments = specialArguments;
     }
 
     /**
@@ -101,8 +102,8 @@ public final class FunctionInfo {
         parameterCount = source.parameterCount;
         nullIfParameterIsNull = source.nullIfParameterIsNull;
         deterministic = source.deterministic;
-        bufferResultSetToLocalTemp = source.bufferResultSetToLocalTemp;
         requireParentheses = true;
+        specialArguments = source.specialArguments;
     }
 
 }

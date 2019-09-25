@@ -1,6 +1,6 @@
 /*
- * Copyright 2004-2018 H2 Group. Multiple-Licensed under the MPL 2.0,
- * and the EPL 1.0 (http://h2database.com/html/license.html).
+ * Copyright 2004-2019 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
 package org.h2.command.dml;
@@ -257,7 +257,22 @@ public class SetTypes {
      */
     public static final int LOCAL_RESULT_FACTORY = 49;
 
-    private static final int COUNT = LOCAL_RESULT_FACTORY + 1;
+    /**
+     * The type of a SET UUID_COLLATION statement.
+     */
+    public static final int UUID_COLLATION = 50;
+
+    /**
+     * The type of a SET IGNORE_CATALOGS statement.
+     */
+    public static final int IGNORE_CATALOGS = 51;
+
+    /**
+     * The type of a SET CATALOG statement.
+     */
+    public static final int CATALOG = 52;
+
+    private static final int COUNT = CATALOG + 1;
 
     private static final ArrayList<String> TYPES;
 
@@ -317,6 +332,9 @@ public class SetTypes {
         list.add(COLUMN_NAME_RULES, "COLUMN_NAME_RULES");
         list.add(AUTHENTICATOR, "AUTHENTICATOR");
         list.add(LOCAL_RESULT_FACTORY, "LOCAL_RESULT_FACTORY");
+        list.add(UUID_COLLATION, "UUID_COLLATION");
+        list.add(IGNORE_CATALOGS, "IGNORE_CATALOGS");
+        list.add(CATALOG, "CATALOG");
         TYPES = list;
     }
 
