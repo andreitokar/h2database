@@ -8,6 +8,7 @@ package org.h2.result;
 import org.h2.engine.Constants;
 import org.h2.value.Value;
 import org.h2.value.ValueLong;
+import org.h2.value.ValueNull;
 
 /**
  * The default implementation of a row in a table.
@@ -15,15 +16,24 @@ import org.h2.value.ValueLong;
 public class DefaultRow extends Row {
 
     protected final Value[] data;
+    private         int     memory;
+
+    public static final int MEMORY_CALCULATE = -1;
+
+
+    DefaultRow(int columnCount) {
+        this.data = new Value[columnCount];
+        this.memory = MEMORY_CALCULATE;
+    }
 
     public DefaultRow(Value[] data) {
-        super(MEMORY_CALCULATE);
         this.data = data;
+        this.memory = MEMORY_CALCULATE;
     }
 
     public DefaultRow(Value[] data, int memory) {
-        super(memory);
         this.data = data;
+        this.memory = memory;
     }
 
     @Override
@@ -38,6 +48,30 @@ public class DefaultRow extends Row {
         } else {
             data[i] = v;
         }
+    }
+
+    @Override
+    public int getMemory() {
+        if (memory != MEMORY_CALCULATE) {
+            return memory;
+        }
+        return memory = calculateMemory();
+    }
+
+    @Override
+    public boolean isNull(int indx) {
+        return data == null || data[indx] == null || data[indx] == ValueNull.INSTANCE;
+    }
+
+    public boolean isEmpty() {
+        if (data != null) {
+            for (int i = 0; i < getColumnCount(); i++) {
+                if(getValue(i) != null) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     @Override
@@ -58,7 +92,6 @@ public class DefaultRow extends Row {
         return builder.append(')').toString();
     }
 
-    @Override
     protected int calculateMemory() {
         int m = Constants.MEMORY_ROW + Constants.MEMORY_ARRAY + data.length * Constants.MEMORY_POINTER;
         for (Value v : data) {
@@ -79,4 +112,53 @@ public class DefaultRow extends Row {
         return other instanceof DefaultRow && data == ((DefaultRow) other).data;
     }
 
+    @Override
+    public void copyFrom(SearchRow source) {
+        setKey(source.getKey());
+        for (int i = 0; i < getColumnCount(); i++) {
+            setValue(i, source.getValue(i));
+        }
+    }
+
+    public static final class Sparse extends DefaultRow {
+        private final int   columnCount;
+        private final int[] map;
+
+        Sparse(int columnCount, int capacity, int[] map) {
+            super(new Value[capacity]);
+            this.columnCount = columnCount;
+            this.map = map;
+        }
+
+        @Override
+        public int getColumnCount() {
+            return columnCount;
+        }
+
+        @Override
+        public Value getValue(int i) {
+            if (i == ROWID_INDEX) {
+                return ValueLong.get(getKey());
+            }
+            int indx = map[i];
+            return indx > 0 ? super.getValue(indx - 1) : null;
+        }
+
+        @Override
+        public void setValue(int i, Value v) {
+            if (i == ROWID_INDEX) {
+                setKey(v.getLong());
+            }
+            int indx = map[i];
+            if (indx > 0) {
+                super.setValue(indx - 1, v);
+            }
+        }
+
+        @Override
+        public boolean isNull(int i) {
+            int indx = map[i];
+            return indx <= 0 || super.isNull(indx - 1);
+        }
+    }
 }

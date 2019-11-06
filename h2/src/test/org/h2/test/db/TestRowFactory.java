@@ -21,7 +21,7 @@ import org.h2.engine.Mode;
 import org.h2.mvstore.type.DataType;
 import org.h2.result.Row;
 import org.h2.result.RowFactory;
-import org.h2.result.RowImpl;
+import org.h2.result.DefaultRow;
 import org.h2.result.SearchRow;
 import org.h2.result.SortOrder;
 import org.h2.table.Column;
@@ -219,8 +219,8 @@ public class TestRowFactory extends TestDb {
     }
 
     private void compareImplementations(RowFactory base, RowFactory test, Value[] initargs) {
-        SearchRow brow = initargs == null ? base.createRow() : base.createRow(initargs, Row.MEMORY_CALCULATE);
-        SearchRow trow = initargs == null ? test.createRow() : test.createRow(initargs, Row.MEMORY_CALCULATE);
+        SearchRow brow = initargs == null ? base.createRow() : base.createRow(initargs, DefaultRow.MEMORY_CALCULATE);
+        SearchRow trow = initargs == null ? test.createRow() : test.createRow(initargs, DefaultRow.MEMORY_CALCULATE);
         compareRows(brow, trow);
         assertEquals(0, test.getDataType().compare(trow, trow));
         assertEquals(0, base.getDataType().compare(brow, trow));
@@ -284,7 +284,7 @@ public class TestRowFactory extends TestDb {
         @Override
         public Row createRow(Value[] data, int memory) {
             COUNTER.incrementAndGet();
-            return new RowImpl(data, memory);
+            return new DefaultRow(data, memory);
         }
 
         @Override

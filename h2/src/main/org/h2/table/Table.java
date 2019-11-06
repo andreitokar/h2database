@@ -695,7 +695,7 @@ public abstract class Table extends SchemaObjectBase {
     }
 
     public Row getTemplateRow() {
-        return createRow(new Value[getColumns().length], SearchRow.MEMORY_CALCULATE);
+        return createRow(new Value[getColumns().length], DefaultRow.MEMORY_CALCULATE);
     }
 
     /**

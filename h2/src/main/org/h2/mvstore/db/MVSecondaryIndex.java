@@ -5,6 +5,7 @@
  */
 package org.h2.mvstore.db;
 
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.PriorityQueue;
@@ -16,7 +17,6 @@ import org.h2.engine.Session;
 import org.h2.index.BaseIndex;
 import org.h2.index.Cursor;
 import org.h2.index.IndexType;
-import org.h2.index.SingleRowCursor;
 import org.h2.message.DbException;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.MVMap;
@@ -205,7 +205,8 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
     }
 
     private void checkUnique(TransactionMap<SearchRow,Value> map, SearchRow row, long newKey) {
-        Iterator<SearchRow> it = map.keyIterator(convertToKey(row, Boolean.FALSE), convertToKey(row, Boolean.TRUE), true);
+        Iterator<SearchRow> it = map.keyIteratorUncommitted(convertToKey(row, Boolean.FALSE),
+                                                            convertToKey(row, Boolean.TRUE));
         while (it.hasNext()) {
             SearchRow k = it.next();
             if (newKey != k.getKey()) {
@@ -265,7 +266,7 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
         SearchRow min = convertToKey(first, bigger);
         TransactionMap<SearchRow,Value> map = getMap(session);
         SearchRow max = convertToKey(last, Boolean.TRUE);
-        return new MVStoreCursor(session, map.keyIterator(min, max, false), mvTable);
+        return new MVStoreCursor(session, map.keyIterator(min, max), mvTable);
     }
 
     private SearchRow convertToKey(SearchRow r, Boolean minmax) {

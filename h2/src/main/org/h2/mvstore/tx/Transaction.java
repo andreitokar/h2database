@@ -189,19 +189,6 @@ public class Transaction {
         this.listener = listener;
     }
 
-    Transaction(Transaction tx) {
-        this.store = tx.store;
-        this.transactionId = tx.transactionId;
-        this.sequenceNum = tx.sequenceNum;
-        this.statusAndLogId = new AtomicLong(tx.statusAndLogId.get());
-        this.name = tx.name;
-        this.timeoutMillis = tx.timeoutMillis;
-        this.blockingTransaction = tx.blockingTransaction;
-        this.ownerId = tx.ownerId;
-        this.txCounter = tx.txCounter;
-        this.listener = TransactionStore.ROLLBACK_LISTENER_NONE;
-    }
-
     public int getId() {
         return transactionId;
     }

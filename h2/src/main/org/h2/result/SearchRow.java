@@ -5,27 +5,32 @@
  */
 package org.h2.result;
 
+import org.h2.engine.CastDataProvider;
+import org.h2.value.CompareMode;
+import org.h2.value.TypeInfo;
 import org.h2.value.Value;
+import org.h2.value.ValueNull;
 
 /**
  * The base class for rows stored in a table, and for partial rows stored in the
  * index.
  */
-public abstract class SearchRow {
-
+public abstract class SearchRow extends Value
+{
     /**
      * Index of a virtual "_ROWID_" column within a row or a table
      */
     public static final int ROWID_INDEX = -1;
 
-    public static final int MEMORY_CALCULATE = -1;
-
-    long MATCH_ALL_ROW_KEY = Long.MIN_VALUE + 1;
+    public static long MATCH_ALL_ROW_KEY = Long.MIN_VALUE + 1;
 
     /**
      * An empty array of SearchRow objects.
      */
-    SearchRow[] EMPTY_ARRAY = {};
+    public static SearchRow[] EMPTY_ARRAY = {};
+
+
+    protected long key;
 
     /**
      * Get the column count.
@@ -39,7 +44,10 @@ public abstract class SearchRow {
      * @param indx column index
      * @return true if NULL
      */
-    public abstract boolean isNull(int indx);
+    public boolean isNull(int indx) {
+        return getValue(indx) == ValueNull.INSTANCE;
+    }
+
 
     /**
      * Get the value for the column
@@ -62,14 +70,18 @@ public abstract class SearchRow {
      *
      * @param key the key
      */
-    public abstract void setKey(long key);
+    public void setKey(long key) {
+        this.key = key;
+    }
 
     /**
      * Get the unique key of the row.
      *
      * @return the key
      */
-    public abstract long getKey();
+    public long getKey() {
+        return key;
+    }
 
     /**
      * Get the estimated memory used for this row, in bytes.
@@ -83,4 +95,53 @@ public abstract class SearchRow {
      * @param source of column values
      */
     public abstract void copyFrom(SearchRow source);
+
+    @Override
+    public TypeInfo getType() {
+        return TypeInfo.TYPE_ROW;
+    }
+
+    @Override
+    public int getValueType() {
+        return Value.ROW;
+    }
+
+    @Override
+    public StringBuilder getSQL(StringBuilder builder) {
+        builder.append("(");
+        for (int indx = 0; indx < getColumnCount(); ++indx) {
+            if(indx != 0) {
+                builder.append(", ");
+            }
+            Value value = getValue(indx);
+            builder.append(value.getSQL());
+        }
+        builder.append(")");
+        return builder;
+    }
+
+    @Override
+    public String getString() {
+        return getSQL();
+    }
+
+    @Override
+    public Object getObject() {
+        return this;
+    }
+
+    @Override
+    public int hashCode() {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public boolean equals(Object other) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public int compareTypeSafe(Value v, CompareMode mode, CastDataProvider provider) {
+        throw new UnsupportedOperationException();
+    }
 }

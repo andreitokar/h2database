@@ -358,8 +358,9 @@ public abstract class Value extends VersionedValue {
      * @param prep the prepared statement
      * @param parameterIndex the parameter index
      */
-    public abstract void set(PreparedStatement prep, int parameterIndex)
-            throws SQLException;
+    public void set(PreparedStatement prep, int parameterIndex) throws SQLException {
+        throw new UnsupportedOperationException();
+    }
 
     @Override
     public abstract int hashCode();

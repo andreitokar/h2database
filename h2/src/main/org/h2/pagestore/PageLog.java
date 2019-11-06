@@ -16,8 +16,8 @@ import org.h2.compress.CompressLZF;
 import org.h2.engine.Session;
 import org.h2.message.DbException;
 import org.h2.message.Trace;
+import org.h2.result.DefaultRow;
 import org.h2.result.Row;
-import org.h2.result.SearchRow;
 import org.h2.store.Data;
 import org.h2.store.DataReader;
 import org.h2.store.InDoubtTransaction;
@@ -470,7 +470,7 @@ public class PageLog {
         for (int i = 0; i < columnCount; i++) {
             values[i] = data.readValue();
         }
-        return Row.get(values, SearchRow.MEMORY_CALCULATE, key);
+        return Row.get(values, DefaultRow.MEMORY_CALCULATE, key);
     }
 
     /**

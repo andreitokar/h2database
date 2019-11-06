@@ -19,10 +19,12 @@ import org.h2.value.Value;
  * Creates rows.
  *
  * @author Sergi Vladykin
+ * @author <a href='mailto:andrei.tokar@gmail.com'>Andrei Tokar</a>
  */
-public abstract class RowFactory {
-
-    private static final class Holder {
+public abstract class RowFactory
+{
+    private static final class Holder
+    {
         private static final RowFactory EFFECTIVE = DefaultRowFactory.INSTANCE;
 //        private static final RowFactory EFFECTIVE = new CompactRowFactory();
     }
@@ -60,15 +62,15 @@ public abstract class RowFactory {
     public static final class DefaultRowFactory extends RowFactory {
         private final RowDataType dataType;
         private final int         columnCount;
-        private final int         map[];
+        private final int[]       map;
 
         public static final DefaultRowFactory INSTANCE = new DefaultRowFactory();
 
-        protected DefaultRowFactory() {
+        DefaultRowFactory() {
             this(new RowDataType(null, CompareMode.getInstance(null, 0), Mode.getRegular(), null, null, null), 0, null);
         }
 
-        private DefaultRowFactory(RowDataType dataType, int columnCount, int indexes[]) {
+        private DefaultRowFactory(RowDataType dataType, int columnCount, int[] indexes) {
             this.dataType = dataType;
             this.columnCount = columnCount;
             this.map = indexes == null ? null : new int[columnCount];
@@ -80,10 +82,11 @@ public abstract class RowFactory {
         }
 
         @Override
-        public RowFactory createRowFactory(CastDataProvider provider, CompareMode compareMode, Mode mode, DataHandler handler,
-                                           Column[] columns, IndexColumn[] indexColumns) {
-            int indexes[] = null;
-            int sortTypes[];
+        public RowFactory createRowFactory(CastDataProvider provider, CompareMode compareMode,
+                                            Mode mode, DataHandler handler,
+                                            Column[] columns, IndexColumn[] indexColumns) {
+            int[] indexes = null;
+            int[] sortTypes;
             int columnCount = columns.length;
             if (indexColumns == null) {
                 sortTypes = new int[columnCount];
@@ -103,7 +106,8 @@ public abstract class RowFactory {
             return createRowFactory(provider, compareMode, mode, handler, sortTypes, indexes, columnCount);
         }
 
-        public RowFactory createRowFactory(CastDataProvider provider, CompareMode compareMode, Mode mode, DataHandler handler,
+        public RowFactory createRowFactory(CastDataProvider provider, CompareMode compareMode,
+                                           Mode mode, DataHandler handler,
                                            int[] sortTypes, int[] indexes, int columnCount) {
             RowDataType dataType = new RowDataType(provider, compareMode, mode, handler, sortTypes, indexes);
             DefaultRowFactory defaultRowFactory = new DefaultRowFactory(dataType, columnCount, indexes);
@@ -113,18 +117,18 @@ public abstract class RowFactory {
 
         @Override
         public Row createRow(Value[] data, int memory) {
-            return new RowImpl(data, memory);
+            return new DefaultRow(data, memory);
         }
 
         @Override
         public SearchRow createRow() {
             int[] indexes = dataType.getIndexes();
             if (indexes == null) {
-                return new RowImpl(columnCount);
+                return new DefaultRow(columnCount);
             } else if (indexes.length == 1) {
                 return new SimpleRowValue(columnCount, indexes[0]);
             } else {
-                return new SimpleRow.Sparse(columnCount, indexes.length, map);
+                return new DefaultRow.Sparse(columnCount, indexes.length, map);
             }
         }
 

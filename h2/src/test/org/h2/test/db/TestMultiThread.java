@@ -53,21 +53,7 @@ public class TestMultiThread extends TestDb implements Runnable {
      * @param a ignored
      */
     public static void main(String... a) throws Exception {
-        TestAll config = new TestAll();
-        config.memory = true;
-        config.multiThreaded = true;
-//        config.networked = true;
-//        config.smallLog = true;
-//        config.ssl = true;
-        System.out.println(config);
-        TestBase test = createCaller().init(config);
-        for (int i = 0; i < 10; i++) {
-            System.out.println("Pass #" + i);
-            test.config.beforeTest();
-            test.test();
-            test.config.afterTest();
-        }
-//        TestBase.createCaller().init().test();
+        TestBase.createCaller().init().test();
     }
 
     @Override

@@ -5,8 +5,6 @@
  */
 package org.h2.mvstore.db;
 
-import static org.h2.mvstore.DataUtils.readString;
-
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
@@ -117,7 +115,7 @@ public class ValueDataType extends BasicDataType<Value> {
 
     private final DataHandler handler;
     protected final CastDataProvider provider;
-    final CompareMode compareMode;
+    private final CompareMode compareMode;
     protected final Mode mode;
     protected final int[] sortTypes;
     private SpatialDataType spatialType;

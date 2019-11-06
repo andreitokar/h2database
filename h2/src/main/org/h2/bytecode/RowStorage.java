@@ -31,16 +31,13 @@ import java.util.Arrays;
  *
  * @author <a href='mailto:andrei.tokar@gmail.com'>Andrei Tokar</a>
  */
-public class RowStorage extends Value implements Row, Cloneable {
+public class RowStorage extends Row implements Cloneable {
 
-    private static final int DELETED_BIT_MASK = Integer.MIN_VALUE;
     private static final byte[] NULL_BYTES = {};
     private static final String NULL_STRING = new String(NULL_BYTES);
     private static final BigDecimal NULL_BIG_DECIMAL = new BigDecimal(0);
 
-    private long key;
-    private int  version;
-    private int  sessionId;
+//    private long key;
 
     public RowStorage() {}   // keep it for auto-generated subclasses
 
@@ -186,46 +183,11 @@ public class RowStorage extends Value implements Row, Cloneable {
         }
     }
 
-    @Override
-    public void setKey(SearchRow old) {
-
-    }
-
+    @SuppressWarnings("unused")
     protected void set(int index, Value v) {
 //        throw new IllegalArgumentException(getClass().getSimpleName()+".setValue("+index+", ..)");
     }
 
-
-//    @Override
-//    public final void setKeyAndVersion(SearchRow row) {
-//        key = row.getKey();
-//        version = row.getVersion();
-//    }
-
-//    @Override
-//    public final int getVersion() {
-//        return version;
-//    }
-
-//    @Override
-//    public final void setVersion(int version) {
-//        this.version = version;
-//    }
-
-    @Override
-    public final long getKey() {
-        return key;
-    }
-
-    @Override
-    public final void setKey(long key) {
-        this.key = key;
-    }
-
-//    @Override
-//    public final Row getCopy() {
-//        return clone();
-//    }
 
     public RowStorage clone() {
         try {
@@ -236,7 +198,7 @@ public class RowStorage extends Value implements Row, Cloneable {
     }
 
 
-    @Override
+//    @Override
     public final int getByteCount(Data dummy) {
         int size = 0;
         for (int indx = 0; indx < getColumnCount(); ++indx) {
@@ -245,7 +207,7 @@ public class RowStorage extends Value implements Row, Cloneable {
         return size;
     }
 
-    @Override
+//    @Override
     public final boolean isEmpty() {
         for (int indx = 0; indx < getColumnCount(); ++indx) {
             Value value = getValue(indx);
@@ -256,17 +218,7 @@ public class RowStorage extends Value implements Row, Cloneable {
         return false;
     }
 
-    @Override
-    public final void setDeleted(boolean deleted) {
-        sessionId = deleted ? sessionId | DELETED_BIT_MASK : sessionId & ~DELETED_BIT_MASK;
-    }
-
-    @Override
-    public final boolean isDeleted() {
-        return (sessionId & DELETED_BIT_MASK) != 0;
-    }
-
-    @Override
+//    @Override
     public final Value[] getValueList() {
         Value[] values = new Value[getColumnCount()];
         for (int indx = 0; indx < getColumnCount(); ++indx) {
@@ -275,70 +227,11 @@ public class RowStorage extends Value implements Row, Cloneable {
         return values;
     }
 
-    @Override
+//    @Override
     public boolean hasSharedData(Row other) {
         return false;
     }
 
-
-    @Override
-    public int getValueType() {
-        return Value.ROW;
-    }
-
-//    @Override
-//    public long getPrecision() {
-//        long p = 0;
-//        for (int indx = 0; indx < getColumnCount(); ++indx) {
-//            Value value = getValue(indx);
-//            p += value == null ? 0 : value.getType().getPrecision();
-//        }
-//        return p;
-//    }
-
-    @Override
-    public StringBuilder getSQL(StringBuilder builder) {
-        builder.append("(");
-        for (int indx = 0; indx < getColumnCount(); ++indx) {
-            if(indx != 0) {
-                builder.append(", ");
-            }
-            Value value = getValue(indx);
-            builder.append(value.getSQL());
-        }
-        builder.append(")");
-        return builder;
-    }
-
-    @Override
-    public TypeInfo getType() {
-        return null;
-    }
-
-//    @Override
-//    public int getDisplaySize() {
-//        int res = 0;
-//        for (int indx = 0; indx < getColumnCount(); ++indx) {
-//            Value value = getValue(indx);
-//            res += value.getDisplaySize();
-//        }
-//        return res;
-//    }
-
-    @Override
-    public String getString() {
-        return getSQL();
-    }
-
-    @Override
-    public Object getObject() {
-        return this;
-    }
-
-    @Override
-    public void set(PreparedStatement prep, int parameterIndex) throws SQLException {
-        throw new UnsupportedOperationException();
-    }
 
     @Override
     public boolean equals(Object o) {
@@ -347,7 +240,7 @@ public class RowStorage extends Value implements Row, Cloneable {
 
         RowStorage other = (RowStorage) o;
         int columnCount = getColumnCount();
-        if (key != other.key || version != other.version) return false;
+        if (key != other.key) return false;
         for (int indx = 0; indx < columnCount; ++indx) {
             Value value = getValue(indx);
             Value otherValue = other.getValue(indx);
@@ -371,7 +264,6 @@ public class RowStorage extends Value implements Row, Cloneable {
     @Override
     public int hashCode() {
         int result = (int) (key ^ (key >>> 32));
-        result = 31 * result + version;
         int columnCount = getColumnCount();
         for (int indx = 0; indx < columnCount; ++indx) {
             Value value = getValue(indx);
@@ -383,8 +275,8 @@ public class RowStorage extends Value implements Row, Cloneable {
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder();
-        sb.append("Row{").append(key).append('/').append(version);
-        String separator = " ";
+        sb.append("Row{").append(key);
+        String separator = ":";
         for (int indx = 0; indx < getColumnCount(); ++indx) {
             sb.append(separator).append(getValue(indx));
             separator = ", ";
