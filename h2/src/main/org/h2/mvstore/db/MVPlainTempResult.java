@@ -72,11 +72,11 @@ class MVPlainTempResult extends MVTempResult {
      *            virtual columns for ORDER BY clause
      */
     MVPlainTempResult(Database database, Expression[] expressions, int visibleColumnCount, int resultColumnCount) {
-        super(database, expressions.length, visibleColumnCount, int resultColumnCount);
+        super(database, expressions, visibleColumnCount, resultColumnCount);
         DataType keyType = LongDataType.INSTANCE;
-        valueType = new ValueDataType(database.getCompareMode(), database.getMode(),
+        valueType = new ValueDataType(database, database.getCompareMode(), database.getMode(),
                                         database, new int[expressions.length]);
-        Builder<Long, ValueArray> builder = new MVMap.Builder<Long, ValueArray>().keyType(keyType)
+        Builder<Long, ValueRow> builder = new MVMap.Builder<Long, ValueRow>().keyType(keyType)
                 .valueType(valueType).singleWriter();
         map = store.openMap("tmp", builder);
     }

@@ -450,8 +450,8 @@ public abstract class Table extends SchemaObjectBase {
             }
             columnMap.put(columnName, col);
         }
-        rowFactory = database.getRowFactory().createRowFactory(database.getCompareMode(), database.getMode(),
-                                                                database, columns, null);
+        rowFactory = database.getRowFactory().createRowFactory(database, database.getCompareMode(),
+                database.getMode(), database, columns, null);
     }
 
     /**
@@ -557,7 +557,7 @@ public abstract class Table extends SchemaObjectBase {
             } catch (DbException e) {
                 if (e.getErrorCode() == ErrorCode.CONCURRENT_UPDATE_1) {
                     session.rollbackTo(rollback);
-                    session.startStatementWithinTransaction();
+                    session.startStatementWithinTransaction(null);
 //                    rollback = session.setSavepoint();
                 }
                 throw e;

@@ -53,7 +53,6 @@ public class TestMVStore extends TestBase {
 
     @Override
     public void test() throws Exception {
-        testBulkInsert();
         testRemoveMapRollback();
         testProvidedFileStoreNotOpenedAndClosed();
         testVolatileMap();
@@ -113,26 +112,6 @@ public class TestMVStore extends TestBase {
 
         // longer running tests
         testLargerThan2G();
-    }
-
-    private void testBulkInsert() {
-        String fileName = getBaseDir() + "/" + getTestName();
-        FileUtils.delete(fileName);
-        MVStore store = new MVStore.Builder().
-                autoCommitDisabled().
-                fileName(fileName).
-                open();
-        MVMap<Integer,String> map = store.openMap("test");
-        MVMap.BufferingAgent<Integer, String> agent = map.getBufferingAgent();
-        for (int i = 0; i < 200000; i++) {
-            agent.put(i, "v"+i);
-        }
-        agent.close();
-        assertEquals(200000, map.size());
-        assertEquals("v55", map.get(55));
-        assertEquals("v7300", map.get(7300));
-        assertFalse(map.containsKey(200000));
-        store.close();
     }
 
     private void testRemoveMapRollback() {
@@ -1544,7 +1523,6 @@ public class TestMVStore extends TestBase {
 
         s = openStore(fileName);
         s.setRetentionTime(45000);
-        assertEquals(1, s.getLastStoredVersion());
         assertEquals(2, s.getCurrentVersion());
         meta = s.getMetaMap();
         m = s.openMap("data");
@@ -1559,8 +1537,6 @@ public class TestMVStore extends TestBase {
         assertEquals("Hallo", m1.get("1"));
         assertTrue(s.hasUnsavedChanges());
         s.rollbackTo(v2);
-        assertEquals(1, s.getLastStoredVersion());
-        assertEquals(1, meta.getVersion());
         assertFalse(s.hasUnsavedChanges());
         assertNull(meta.get(DataUtils.META_NAME+"data1"));
         assertNull(m0.get("1"));

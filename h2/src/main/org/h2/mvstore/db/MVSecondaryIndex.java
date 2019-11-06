@@ -5,7 +5,6 @@
  */
 package org.h2.mvstore.db;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
@@ -57,8 +56,8 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
         }
         // always store the row key in the map key,
         // even for unique indexes, as some of the index columns could be null
-        rowFactory = database.getRowFactory().createRowFactory(db.getCompareMode(), db.getMode(), db,
-                                                                table.getColumns(), columns);
+        rowFactory = database.getRowFactory().createRowFactory(db, db.getCompareMode(), db.getMode(),
+                db, table.getColumns(), columns);
         DataType keyType = rowFactory.getDataType();
         DataType valueType = ObjectDataType.NoneType.INSTANCE;
         String mapName = "index." + getId();
@@ -114,18 +113,17 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
             return currentRowData;
         }
 
-        public static final class Comparator implements java.util.Comparator<Source> {
-            private final Database database;
-            private final CompareMode compareMode;
+        static final class Comparator implements java.util.Comparator<Source> {
 
-            public Comparator(Database database, CompareMode compareMode) {
-                this.database = database;
-                this.compareMode = compareMode;
+            private final DataType type;
+
+            public Comparator(DataType type) {
+                this.type = type;
             }
 
             @Override
             public int compare(Source one, Source two) {
-                return one.currentRowData.compareTo(two.currentRowData, database, compareMode);
+                return type.compare(one.currentRowData, two.currentRowData);
             }
         }
     }
@@ -134,7 +132,7 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
     public void addBufferedRows(List<String> bufferNames) {
         int buffersCount = bufferNames.size();
         Queue<Source> queue = new PriorityQueue<>(buffersCount,
-                new Source.Comparator(database, database.getCompareMode()));
+                                new Source.Comparator(rowFactory.getDataType()));
         for (String bufferName : bufferNames) {
             Iterator<SearchRow> iter = openMap(bufferName).keyIterator(null);
             if (iter.hasNext()) {
@@ -151,16 +149,15 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
                     checkUnique(dataMap, row, Long.MIN_VALUE);
                 }
 
-                agent.put(row, ValueNull.INSTANCE);
+                dataMap.putCommitted(row, ValueNull.INSTANCE);
 
                 if (s.hasNext()) {
                     queue.offer(s);
                 }
             }
         } finally {
-            agent.close();
             MVStore mvStore = database.getStore().getMvStore();
-            for (String tempMapName : mapNames) {
+            for (String tempMapName : bufferNames) {
                 mvStore.removeMap(tempMapName);
             }
         }
@@ -401,7 +398,7 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
     }
 
     @Override
-    public MVMap<Value, VersionedValue> getMVMap() {
+    public MVMap<SearchRow, VersionedValue> getMVMap() {
         return dataMap.map;
     }
 

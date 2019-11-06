@@ -1,5 +1,6 @@
 package org.h2.bytecode;
 
+import org.h2.engine.CastDataProvider;
 import org.h2.engine.Database;
 import org.h2.engine.Mode;
 import org.h2.mvstore.BasicDataType;
@@ -88,18 +89,18 @@ public class RowStorage extends Value implements Row, Cloneable {
     protected void nullify(int indx) {}
     protected void clearNull(int indx) {}
 
-    protected int compareToSecure(RowStorage other, CompareMode mode) {
+    protected int compareToSecure(RowStorage other, CompareMode mode, CastDataProvider provider) {
         return 0;
     }
 
-    protected int compareToSecure(RowStorage other, CompareMode mode, int index) {
+    protected int compareToSecure(RowStorage other, CompareMode mode, CastDataProvider provider, int index) {
         return 0;
     }
 
     public void copyFrom(RowStorage other, int index) {
     }
 
-    protected final int compareTo(RowStorage other, int index, CompareMode compareMode, int sortType) {
+    protected final int compareTo(RowStorage other, int index, CompareMode compareMode, CastDataProvider provider, int sortType) {
         boolean isNull = isNull(index);
         boolean otherIsNull = other.isNull(index);
         if (isNull && otherIsNull) {
@@ -109,8 +110,9 @@ public class RowStorage extends Value implements Row, Cloneable {
             return SortOrder.compareNull(isNull, sortType);
         }
 
-        int res = compareToSecure(other, compareMode, index);
-        assert normalizeCompare(res) == normalizeCompare(getValue(index).compareTypeSafe(other.getValue(index), compareMode)) : res;
+        int res = compareToSecure(other, compareMode, provider, index);
+        assert normalizeCompare(res) == normalizeCompare(getValue(index)
+                .compareTypeSafe(other.getValue(index), compareMode, null)) : res;
 
         if ((sortType & SortOrder.DESCENDING) != 0) {
             res = -res;
@@ -184,26 +186,31 @@ public class RowStorage extends Value implements Row, Cloneable {
         }
     }
 
+    @Override
+    public void setKey(SearchRow old) {
+
+    }
+
     protected void set(int index, Value v) {
 //        throw new IllegalArgumentException(getClass().getSimpleName()+".setValue("+index+", ..)");
     }
 
 
-    @Override
-    public final void setKeyAndVersion(SearchRow row) {
-        key = row.getKey();
-        version = row.getVersion();
-    }
+//    @Override
+//    public final void setKeyAndVersion(SearchRow row) {
+//        key = row.getKey();
+//        version = row.getVersion();
+//    }
 
-    @Override
-    public final int getVersion() {
-        return version;
-    }
+//    @Override
+//    public final int getVersion() {
+//        return version;
+//    }
 
-    @Override
-    public final void setVersion(int version) {
-        this.version = version;
-    }
+//    @Override
+//    public final void setVersion(int version) {
+//        this.version = version;
+//    }
 
     @Override
     public final long getKey() {
@@ -215,10 +222,10 @@ public class RowStorage extends Value implements Row, Cloneable {
         this.key = key;
     }
 
-    @Override
-    public final Row getCopy() {
-        return clone();
-    }
+//    @Override
+//    public final Row getCopy() {
+//        return clone();
+//    }
 
     public RowStorage clone() {
         try {
@@ -268,21 +275,26 @@ public class RowStorage extends Value implements Row, Cloneable {
         return values;
     }
 
+    @Override
+    public boolean hasSharedData(Row other) {
+        return false;
+    }
+
 
     @Override
-    public int getType() {
+    public int getValueType() {
         return Value.ROW;
     }
 
-    @Override
-    public long getPrecision() {
-        long p = 0;
-        for (int indx = 0; indx < getColumnCount(); ++indx) {
-            Value value = getValue(indx);
-            p += value == null ? 0 : value.getPrecision();
-        }
-        return p;
-    }
+//    @Override
+//    public long getPrecision() {
+//        long p = 0;
+//        for (int indx = 0; indx < getColumnCount(); ++indx) {
+//            Value value = getValue(indx);
+//            p += value == null ? 0 : value.getType().getPrecision();
+//        }
+//        return p;
+//    }
 
     @Override
     public StringBuilder getSQL(StringBuilder builder) {
@@ -299,14 +311,19 @@ public class RowStorage extends Value implements Row, Cloneable {
     }
 
     @Override
-    public int getDisplaySize() {
-        int res = 0;
-        for (int indx = 0; indx < getColumnCount(); ++indx) {
-            Value value = getValue(indx);
-            res += value.getDisplaySize();
-        }
-        return res;
+    public TypeInfo getType() {
+        return null;
     }
+
+//    @Override
+//    public int getDisplaySize() {
+//        int res = 0;
+//        for (int indx = 0; indx < getColumnCount(); ++indx) {
+//            Value value = getValue(indx);
+//            res += value.getDisplaySize();
+//        }
+//        return res;
+//    }
 
     @Override
     public String getString() {
@@ -321,16 +338,6 @@ public class RowStorage extends Value implements Row, Cloneable {
     @Override
     public void set(PreparedStatement prep, int parameterIndex) throws SQLException {
         throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public int compareTypeSafe(Value o, CompareMode mode) {
-        if(this == o) return 0;
-        if(getClass() != o.getClass()) {
-            return Integer.compare(System.identityHashCode(this), System.identityHashCode(o));
-        }
-        RowStorage other = (RowStorage)o;
-        return compareToSecure(other, mode);
     }
 
     @Override
@@ -349,6 +356,16 @@ public class RowStorage extends Value implements Row, Cloneable {
             }
         }
         return true;
+    }
+
+    @Override
+    public int compareTypeSafe(Value o, CompareMode mode, CastDataProvider provider) {
+        if(this == o) return 0;
+        if(getClass() != o.getClass()) {
+            return Integer.compare(System.identityHashCode(this), System.identityHashCode(o));
+        }
+        RowStorage other = (RowStorage)o;
+        return compareToSecure(other, mode, provider);
     }
 
     @Override
@@ -428,11 +445,11 @@ public class RowStorage extends Value implements Row, Cloneable {
         return Integer.compare(res, 0);
     }
 
-    protected static int compare(Value one, Value two, Mode databaseMode, CompareMode compareMode) {
+    protected static int compare(Value one, Value two, CastDataProvider castDataProvider, CompareMode compareMode) {
         int res = one == two  ?  0 :
                   one == null ? -1 :
                   two == null ?  1 :
-                                one.compareTo(two, databaseMode, compareMode);
+                                one.compareTo(two, castDataProvider, compareMode);
         return res;
     }
 
@@ -549,15 +566,17 @@ public class RowStorage extends Value implements Row, Cloneable {
 
     public static final class Type extends BasicDataType<RowStorage> implements StatefulDataType {
 
-        private final ValueDataType valueDataType;
-        private final CompareMode   compareMode;
-        private final int[]         sortTypes;
-        private final int[]         indexes;
+        private final ValueDataType    valueDataType;
+        private final CompareMode      compareMode;
+        private final CastDataProvider castDataProvider;
+        private final int[]            sortTypes;
+        private final int[]            indexes;
 
 
-        public Type(CompareMode compareMode, Mode mode, DataHandler handler, int[] sortTypes, int[] indexes) {
-            this.valueDataType = new ValueDataType(compareMode, mode, handler, sortTypes);
+        public Type(CastDataProvider castDataProvider, CompareMode compareMode, Mode mode, DataHandler handler, int[] sortTypes, int[] indexes) {
+            this.valueDataType = new ValueDataType(castDataProvider, compareMode, mode, handler, sortTypes);
             this.compareMode = compareMode;
+            this.castDataProvider = castDataProvider;
             this.sortTypes = sortTypes;
             this.indexes = indexes;
         }
@@ -601,13 +620,14 @@ public class RowStorage extends Value implements Row, Cloneable {
             assert a.getColumnCount() == b.getColumnCount();
 //            int[] indexes = a.getIndexes();
 //            assert Arrays.equals(indexes, b.getIndexes());
-            int comp = compare(a, b, compareMode, sortTypes, indexes);
+            int comp = compare(a, b, compareMode, castDataProvider, sortTypes, indexes);
 //            int _comp = _compare(a, b, compareMode, sortTypes, indexes);
 //            assert comp == _comp;
             return comp;
         }
 
-        public int compare(RowStorage a, RowStorage b, CompareMode compareMode, int sortTypes[], int indexes[]) {
+        public int compare(RowStorage a, RowStorage b, CompareMode compareMode,
+                           CastDataProvider castDataProvider, int[] sortTypes, int[] indexes) {
             int limit = indexes == null ? a.getColumnCount() : indexes.length;
             for (int i = 0; i < limit; i++) {
                 int indx = indexes == null ? i : indexes[i];
@@ -636,7 +656,7 @@ public class RowStorage extends Value implements Row, Cloneable {
                     return SortOrder.compareNull(aIsNull, sortType);
                 }
                 if (!aIsNull) { // && !bIsNull
-                    int res = a.compareToSecure(b, compareMode, indx);
+                    int res = a.compareToSecure(b, compareMode, castDataProvider, indx);
                     if (res != 0) {
                         if ((sortType & SortOrder.DESCENDING) != 0) {
                             res = -res;
@@ -651,14 +671,15 @@ public class RowStorage extends Value implements Row, Cloneable {
                                    || bKey == SearchRow.MATCH_ALL_ROW_KEY ? 0 : Long.compare(aKey, bKey);
         }
 
-        private int _compare(RowStorage a, RowStorage b, CompareMode compareMode, int sortTypes[], int indexes[]) {
+        private int _compare(RowStorage a, RowStorage b, CompareMode compareMode,
+                             CastDataProvider castDataProvider, int sortTypes[], int indexes[]) {
             if (indexes == null) {
                 int columnCount = a.getColumnCount();
                 for (int i = 0; i < columnCount; i++) {
                     if (a.isEmpty(i) || b.isEmpty(i)) {
                         return 0;
                     }
-                    int res = a.compareTo(b, i, compareMode,
+                    int res = a.compareTo(b, i, compareMode, castDataProvider,
                             sortTypes == null ? SortOrder.ASCENDING : sortTypes[i]);
                     if(res != 0) {
                         return Integer.compare(res, 0);
@@ -672,7 +693,7 @@ public class RowStorage extends Value implements Row, Cloneable {
                     if (a.isEmpty(indx) || b.isEmpty(indx)) {
                         break;
                     }
-                    int res = a.compareTo(b, indx, compareMode, sortTypes[i]);
+                    int res = a.compareTo(b, indx, compareMode, castDataProvider, sortTypes[i]);
                     if(res != 0) {
                         return Integer.compare(res, 0);
                     }
@@ -810,7 +831,7 @@ public class RowStorage extends Value implements Row, Cloneable {
                 int[] indexes = readIntArray(buff);
                 CompareMode compareMode = database == null ? CompareMode.getInstance(null, 0) : database.getCompareMode();
                 Mode mode = database == null ? Mode.getRegular() : database.getMode();
-                return new Type(compareMode, mode, database, sortTypes, indexes);
+                return new Type(database, compareMode, mode, database, sortTypes, indexes);
             }
 
             private static int[] readIntArray(ByteBuffer buff) {

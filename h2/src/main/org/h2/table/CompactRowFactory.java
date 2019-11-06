@@ -2,6 +2,7 @@ package org.h2.table;
 
 import org.h2.bytecode.RowStorage;
 import org.h2.bytecode.RowStorageGenerator;
+import org.h2.engine.CastDataProvider;
 import org.h2.engine.Mode;
 import org.h2.mvstore.type.DataType;
 import org.h2.result.Row;
@@ -34,7 +35,7 @@ public final class CompactRowFactory extends RowFactory {
     }
 
     @Override
-    public RowFactory createRowFactory(CompareMode compareMode, Mode mode, DataHandler handler, Column[] columns, IndexColumn[] indexColumns) {
+    public RowFactory createRowFactory(CastDataProvider provider, CompareMode compareMode, Mode mode, DataHandler handler, Column[] columns, IndexColumn[] indexColumns) {
         int indexes[] = null;
         int sortTypes[] = null;
         if (indexColumns != null) {
@@ -49,7 +50,7 @@ public final class CompactRowFactory extends RowFactory {
         }
         int types[] = new int[columns.length];
         for (int i = 0; i < types.length; i++) {
-            types[i] = columns[i].getType();
+            types[i] = columns[i].getType().getValueType();
         }
         Class<? extends RowStorage> clazz = RowStorageGenerator.generateStorageClass(types, indexes);
         RowStorage templateRow;
@@ -63,7 +64,7 @@ public final class CompactRowFactory extends RowFactory {
                 templateRow.setValue(index, ValueNull.INSTANCE);
             }
         }
-        RowStorage.Type dataType = new RowStorage.Type(compareMode, mode, handler, sortTypes, indexes);
+        RowStorage.Type dataType = new RowStorage.Type(provider, compareMode, mode, handler, sortTypes, indexes);
         CompactRowFactory factory = new CompactRowFactory(templateRow, dataType);
         dataType.setRowFactory(factory);
         return factory;

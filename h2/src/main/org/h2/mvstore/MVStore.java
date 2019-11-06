@@ -249,7 +249,7 @@ public class MVStore implements AutoCloseable
 
     private final boolean recoveryMode;
 
-    private final UncaughtExceptionHandler backgroundExceptionHandler;
+    public final UncaughtExceptionHandler backgroundExceptionHandler;
 
     private volatile long currentVersion;
 
@@ -557,7 +557,7 @@ public class MVStore implements AutoCloseable
         return map;
     }
 
-    private <M extends MVMap<K, V>, K, V> M openMap(int id, MVMap.MapBuilder<M, K, V> builder) {
+    public <M extends MVMap<K, V>, K, V> M openMap(int id, MVMap.MapBuilder<M, K, V> builder) {
         storeLock.lock();
         try {
             @SuppressWarnings("unchecked")

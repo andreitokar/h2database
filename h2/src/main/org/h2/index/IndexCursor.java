@@ -210,10 +210,10 @@ public class IndexCursor implements Cursor {
         Column column = columnId == SearchRow.ROWID_INDEX ?
                                 table.getRowIdColumn() :
                                 table.getColumn(columnId);
-        int vType = v.getType();
-        int resType = Value.getHigherOrder(column.getType(), vType);
+        int vType = v.getValueType();
+        int resType = Value.getHigherOrder(column.getType().getValueType(), vType);
         if(vType != resType) {
-            v = column.convert(v, session.getDatabase().getMode());
+            v = column.convert(v, true);
         }
         if (row == null) {
             row = table.getTemplateRow();

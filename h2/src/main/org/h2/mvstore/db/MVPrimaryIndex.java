@@ -120,17 +120,13 @@ public class MVPrimaryIndex extends BaseIndex implements MVIndex
         try {
             Row old = map.putIfAbsent(rowKey, row);
             if (old != null) {
-                String sql = "PRIMARY KEY ON " + table.getSQL();
-                if (mainIndexColumn >= 0 && mainIndexColumn < indexColumns.length) {
-                    sql += "(" + indexColumns[mainIndexColumn].getSQL() + ")";
-                }
                 int errorCode = ErrorCode.CONCURRENT_UPDATE_1;
                 if (map.getImmediate(rowKey) != null) {
                     // committed
                     errorCode = ErrorCode.DUPLICATE_KEY_1;
                 }
                 DbException e = DbException.get(errorCode,
-                        getDuplicatePrimaryKeyMessage(mainIndexColumn).append(' ').append(oldValue).toString());
+                        getDuplicatePrimaryKeyMessage(mainIndexColumn).append(' ').append(old).toString());
                 e.setSource(this);
                 throw e;
             }
@@ -456,7 +452,7 @@ public class MVPrimaryIndex extends BaseIndex implements MVIndex
     }
 
     @Override
-    public MVMap<Value, VersionedValue> getMVMap() {
+    public MVMap<Long, VersionedValue> getMVMap() {
         return dataMap.map;
     }
 

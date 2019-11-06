@@ -188,7 +188,7 @@ public class Transaction {
         this.blockingTransaction = tx.blockingTransaction;
         this.ownerId = tx.ownerId;
         this.txCounter = tx.txCounter;
-        this.listener = TransactionStore.RollbackListener.NONE;
+        this.listener = TransactionStore.ROLLBACK_LISTENER_NONE;
     }
 
     public int getId() {

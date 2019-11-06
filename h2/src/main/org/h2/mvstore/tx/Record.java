@@ -10,6 +10,7 @@ import org.h2.mvstore.BasicDataType;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.MVMap;
 import org.h2.mvstore.WriteBuffer;
+import org.h2.value.VersionedValue;
 import java.nio.ByteBuffer;
 
 /**

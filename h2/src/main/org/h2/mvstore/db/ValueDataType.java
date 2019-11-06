@@ -6,8 +6,6 @@
 package org.h2.mvstore.db;
 
 import static org.h2.mvstore.DataUtils.readString;
-import static org.h2.mvstore.DataUtils.readVarInt;
-import static org.h2.mvstore.DataUtils.readVarLong;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -20,7 +18,6 @@ import org.h2.engine.CastDataProvider;
 import org.h2.engine.Database;
 import org.h2.engine.Mode;
 import org.h2.bytecode.RowStorage;
-import org.h2.engine.Mode;
 import org.h2.message.DbException;
 import org.h2.mvstore.BasicDataType;
 import org.h2.mvstore.DataUtils;
@@ -132,7 +129,7 @@ public class ValueDataType extends BasicDataType<Value> {
         this(database, database.getCompareMode(), database.getMode(), database, sortTypes);
     }
 
-    private ValueDataType(CastDataProvider provider, CompareMode compareMode, Mode mode, DataHandler handler,
+    public ValueDataType(CastDataProvider provider, CompareMode compareMode, Mode mode, DataHandler handler,
             int[] sortTypes) {
         this.provider = provider;
         this.compareMode = compareMode;
@@ -150,9 +147,9 @@ public class ValueDataType extends BasicDataType<Value> {
 
     public RowFactory getRowFactory() {
         return rowFactory != null ? rowFactory :
-                                    RowFactory.getDefaultRowFactory().createRowFactory(
-                                            compareMode, mode, handler,
-                                            sortTypes, null, sortTypes.length);
+                                    RowFactory.getDefaultRowFactory().createRowFactory(provider,
+                                            compareMode, mode,
+                                            handler, sortTypes, null, sortTypes.length);
     }
 
     public void setRowFactory(RowFactory rowFactory) {
@@ -447,8 +444,8 @@ public class ValueDataType extends BasicDataType<Value> {
             }
             break;
         }
-        case Value.ARRAY:
-        case Value.ROW: {
+        case Value.ARRAY:/*
+        case Value.ROW:*/ {
             Value[] list = ((ValueCollectionBase) v).getList();
             buff.put(type == Value.ARRAY ? ARRAY : ROW)
                     .putVarInt(list.length);

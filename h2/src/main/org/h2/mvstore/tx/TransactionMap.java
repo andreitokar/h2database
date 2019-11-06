@@ -250,20 +250,20 @@ public class TransactionMap<K, V> extends AbstractMap<K, V> {
         return set(key, decisionMaker);
     }
 
-    public MVMap.BufferingAgent<K,V> getBufferingAgent() {
-        final MVMap.BufferingAgent<K, VersionedValue> agent = map.getBufferingAgent();
-        return new MVMap.BufferingAgent<K, V>() {
-            @Override
-            public void put(K key, V value) {
-                agent.put(key, VersionedValue.getInstance(value));
-            }
-
-            @Override
-            public void close() {
-                agent.close();
-            }
-        };
-    }
+//    public MVMap.BufferingAgent<K,V> getBufferingAgent() {
+//        final MVMap.BufferingAgent<K, VersionedValue> agent = map.getBufferingAgent();
+//        return new MVMap.BufferingAgent<K, V>() {
+//            @Override
+//            public void put(K key, V value) {
+//                agent.put(key, VersionedValue.getInstance(value));
+//            }
+//
+//            @Override
+//            public void close() {
+//                agent.close();
+//            }
+//        };
+//    }
 
     /**
      * Update the value for the given key, without adding an undo log entry.

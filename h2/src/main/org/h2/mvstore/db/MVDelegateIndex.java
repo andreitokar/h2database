@@ -53,7 +53,7 @@ public class MVDelegateIndex extends BaseIndex implements MVIndex {
     }
 
     @Override
-    public MVMap<Value, VersionedValue> getMVMap() {
+    public MVMap<Long, VersionedValue> getMVMap() {
         return mainIndex.getMVMap();
     }
 

@@ -10,6 +10,7 @@ import org.h2.store.Data;
 import org.h2.value.Value;
 import org.h2.value.ValueLong;
 import org.h2.value.ValueNull;
+import java.util.Arrays;
 
 /**
  * Default row implementation.
@@ -36,14 +37,14 @@ public class RowImpl implements Row {
      *
      * @return a new row with the same data
      */
-    @Override
-    public Row getCopy() {
-        Value[] d2 = Arrays.copyOf(data, data.length);
-        RowImpl r2 = new RowImpl(d2, memory);
-        r2.key = key;
-        r2.version = version + 1;
-        return r2;
-    }
+//    @Override
+//    public Row getCopy() {
+//        Value[] d2 = Arrays.copyOf(data, data.length);
+//        RowImpl r2 = new RowImpl(d2, memory);
+//        r2.key = key;
+//        r2.version = version + 1;
+//        return r2;
+//    }
 
     @Override
     public void setKey(SearchRow row) {

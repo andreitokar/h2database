@@ -5,9 +5,10 @@
  */
 package org.h2.mvstore.rtree;
 
+import org.h2.engine.CastDataProvider;
 import org.h2.value.CompareMode;
+import org.h2.value.TypeInfo;
 import org.h2.value.Value;
-
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.Arrays;
@@ -103,18 +104,13 @@ public class SpatialKey extends Value {
     }
 
     @Override
-    public int getType() {
+    public TypeInfo getType() {
+        return TypeInfo.TYPE_GEOMETRY;
+    }
+
+    @Override
+    public int getValueType() {
         return Value.GEOMETRY;
-    }
-
-    @Override
-    public long getPrecision() {
-        return 0;
-    }
-
-    @Override
-    public int getDisplaySize() {
-        return 0;
     }
 
     @Override
@@ -133,7 +129,7 @@ public class SpatialKey extends Value {
     }
 
     @Override
-    public int compareTypeSafe(Value v, CompareMode mode) {
+    public int compareTypeSafe(Value v, CompareMode mode, CastDataProvider provider) {
         return 0;
     }
 

@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceArray;
+import org.h2.mvstore.Cursor;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.MVMap;
 import org.h2.mvstore.MVStore;
@@ -118,7 +119,7 @@ public class TransactionStore {
     private static final int MAX_OPEN_TRANSACTIONS = 65535;
 
     // -1 is a bogus map id
-    private static final Object[] COMMIT_MARKER = new Object[] {-1, null, null};
+    private static final Record COMMIT_MARKER = new Record(-1, null, null);
 
 
     /**
@@ -431,7 +432,7 @@ public class TransactionStore {
      * @param record Record(mapId, key, previousValue) to add
      */
     long addUndoLogRecord(int transactionId, long logId, Record record) {
-        MVMap<Long, Object[]> undoLog = undoLogs[transactionId];
+        MVMap<Long, Record> undoLog = undoLogs[transactionId];
         long undoKey = getOperationId(transactionId, logId);
         if (logId == 0 && !undoLog.isEmpty()) {
             throw DataUtils.newIllegalStateException(
@@ -473,8 +474,8 @@ public class TransactionStore {
             // First, mark log as "committed".
             // It does not change the way this transaction is treated by others,
             // but preserves fact of commit in case of abrupt termination.
-            MVMap<Long, Object[]> undoLog = undoLogs[transactionId];
-            Cursor<Long, Object[]> cursor;
+            MVMap<Long, Record> undoLog = undoLogs[transactionId];
+            Cursor<Long, Record> cursor;
             if(recovery) {
                 removeUndoLogRecord(transactionId);
                 cursor = undoLog.cursor(null);
@@ -487,22 +488,24 @@ public class TransactionStore {
             // made by this transaction, to be considered as "committed"
             flipCommittingTransactionsBit(transactionId, true);
 
+            CommitDecisionMaker commitDecisionMaker = new CommitDecisionMaker();
             try {
-                MVMap<Long, Record> undoLog = undoLogs[transactionId];
-                if(!recovery) {
-                    store.renameMap(undoLog, getUndoLogName(true, transactionId));
+                while (cursor.hasNext()) {
+                    Long undoKey = cursor.next();
+                    Record op = cursor.getValue();
+                    int mapId = op.mapId;
+                    MVMap<Object, VersionedValue> map = openMap(mapId);
+                    if (map != null) { // might be null if map was removed later
+                        Object key = op.key;
+                        commitDecisionMaker.setUndoKey(undoKey);
+                        // although second parameter (value) is not really
+                        // used by CommitDecisionMaker, MVRTreeMap has weird
+                        // traversal logic based on it, and any non-null
+                        // value will do, to signify update, not removal
+                        map.operate(key, VersionedValue.DUMMY, commitDecisionMaker);
+                    }
                 }
-                try {
-                    MVMap.RootReference rootReference = undoLog.getRoot();
-                    Page rootPage = rootReference.root;
-                    CommitEntryProcessor committProcessor = new CommitEntryProcessor(this, transactionId,
-                            rootPage.getTotalCount() > 32);
-                    MVMap.process(rootPage, null, committProcessor);
-                    committProcessor.flush();
-                    undoLog.clear();
-                } finally {
-                    store.renameMap(undoLog, getUndoLogName(false, transactionId));
-                }
+                undoLog.clear();
             } finally {
                 flipCommittingTransactionsBit(transactionId, false);
             }
@@ -531,7 +534,7 @@ public class TransactionStore {
      */
     <K> MVMap<K, VersionedValue> openMap(String name,
             DataType keyType, DataType valueType) {
-        VersionedValue.Type vt = valueType == null ? null : new VersionedValue.Type(valueType);
+        VersionedValueType vt = valueType == null ? null : new VersionedValueType(valueType);
         MVMap.Builder<K, VersionedValue> builder = new TxMapBuilder<K,VersionedValue>(typeRegistry, dataType)
                 .keyType(keyType).valueType(vt);
         MVMap<K, VersionedValue> map = store.openMap(name, builder);
@@ -621,7 +624,7 @@ public class TransactionStore {
         BitSet opentransactions = openTransactions.get();
         RootReference[] undoLogRootReferences = new RootReference[opentransactions.length()];
         for (int i = opentransactions.nextSetBit(0); i >= 0; i = opentransactions.nextSetBit(i+1)) {
-            MVMap<Long, Object[]> undoLog = undoLogs[i];
+            MVMap<Long, Record> undoLog = undoLogs[i];
             if (undoLog != null) {
                 RootReference rootReference = undoLog.getRoot();
                 if (rootReference.needFlush()) {
@@ -808,7 +811,7 @@ public class TransactionStore {
                         VersionedValue existingValue, VersionedValue restoredValue);
     }
 
-    private static final RollbackListener ROLLBACK_LISTENER_NONE = new RollbackListener() {
+    static final RollbackListener ROLLBACK_LISTENER_NONE = new RollbackListener() {
         @Override
         public void onRollback(MVMap<Object, VersionedValue> map, Object key,
                                 VersionedValue existingValue, VersionedValue restoredValue) {
@@ -875,7 +878,7 @@ public class TransactionStore {
                 registerDataType(getKeyType());
             }
             if (getValueType() == null) {
-                setValueType(new VersionedValue.Type(defaultDataType));
+                setValueType(new VersionedValueType(defaultDataType));
                 registerDataType(getValueType());
             }
 
@@ -928,95 +931,5 @@ public class TransactionStore {
                 return buff.toString();
             }
         }
-    }
-
-    /**
-     * A data type that contains an array of objects with the specified data
-     * types.
-     */
-    public static class ArrayType implements DataType {
-
-        private final int arrayLength;
-        private final DataType[] elementTypes;
-
-        ArrayType(DataType[] elementTypes) {
-            this.arrayLength = elementTypes.length;
-            this.elementTypes = elementTypes;
-        }
-
-        @Override
-        public int getMemory(Object obj) {
-            Object[] array = (Object[]) obj;
-            int size = 0;
-            for (int i = 0; i < arrayLength; i++) {
-                DataType t = elementTypes[i];
-                Object o = array[i];
-                if (o != null) {
-                    size += t.getMemory(o);
-                }
-            }
-            return size;
-        }
-
-        @Override
-        public int compare(Object aObj, Object bObj) {
-            if (aObj == bObj) {
-                return 0;
-            }
-            Object[] a = (Object[]) aObj;
-            Object[] b = (Object[]) bObj;
-            for (int i = 0; i < arrayLength; i++) {
-                DataType t = elementTypes[i];
-                int comp = t.compare(a[i], b[i]);
-                if (comp != 0) {
-                    return comp;
-                }
-            }
-            return 0;
-        }
-
-        @Override
-        public void read(ByteBuffer buff, Object[] obj,
-                int len, boolean key) {
-            for (int i = 0; i < len; i++) {
-                obj[i] = read(buff);
-            }
-        }
-
-        @Override
-        public void write(WriteBuffer buff, Object[] obj,
-                int len, boolean key) {
-            for (int i = 0; i < len; i++) {
-                write(buff, obj[i]);
-            }
-        }
-
-        @Override
-        public void write(WriteBuffer buff, Object obj) {
-            Object[] array = (Object[]) obj;
-            for (int i = 0; i < arrayLength; i++) {
-                DataType t = elementTypes[i];
-                Object o = array[i];
-                if (o == null) {
-                    buff.put((byte) 0);
-                } else {
-                    buff.put((byte) 1);
-                    t.write(buff, o);
-                }
-            }
-        }
-
-        @Override
-        public Object read(ByteBuffer buff) {
-            Object[] array = new Object[arrayLength];
-            for (int i = 0; i < arrayLength; i++) {
-                DataType t = elementTypes[i];
-                if (buff.get() == 1) {
-                    array[i] = t.read(buff);
-                }
-            }
-            return array;
-        }
-
     }
 }

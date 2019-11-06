@@ -10,7 +10,6 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 import org.h2.compress.Compressor;
-import org.h2.mvstore.type.DataType;
 import org.h2.mvstore.type.ExtendedDataType;
 import org.h2.util.Utils;
 import static org.h2.engine.Constants.MEMORY_ARRAY;
@@ -430,12 +429,11 @@ public abstract class Page implements Cloneable
     /**
      * Append additional key/value mappings to this Page.
      * New mappings suppose to be in correct key order.
-     *
-     * @param extraKeyCount number of mappings to be added
+     *  @param extraKeyCount number of mappings to be added
      * @param extraKeys to be added
      * @param extraValues to be added
      */
-    abstract void expand(int extraKeyCount, Object[] extraKeys, Object[] extraValues);
+    abstract void expand(int extraKeyCount, Object extraKeys, Object extraValues);
 
     /**
      * Expand the keys array.
@@ -443,9 +441,9 @@ public abstract class Page implements Cloneable
      * @param extraKeyCount number of extra key entries to create
      * @param extraKeys extra key values
      */
-    final void expandKeys(int extraKeyCount, Object[] extraKeys) {
+    final void expandKeys(int extraKeyCount, Object extraKeys) {
         int keyCount = getKeyCount();
-        Object[] newKeys = createKeyStorage(keyCount + extraKeyCount);
+        Object newKeys = createKeyStorage(keyCount + extraKeyCount);
         System.arraycopy(keys, 0, newKeys, 0, keyCount);
         System.arraycopy(extraKeys, 0, newKeys, keyCount, extraKeyCount);
         keys = newKeys;
@@ -1125,7 +1123,7 @@ public abstract class Page implements Cloneable
         }
 
         @Override
-        public void expand(int keyCount, Object[] extraKeys, Object[] extraValues) {
+        public void expand(int keyCount, Object extraKeys, Object extraValues) {
             throw new UnsupportedOperationException();
         }
 
@@ -1469,11 +1467,11 @@ public abstract class Page implements Cloneable
         }
 
         @Override
-        public void expand(int extraKeyCount, Object[] extraKeys, Object[] extraValues) {
+        public void expand(int extraKeyCount, Object extraKeys, Object extraValues) {
             int keyCount = getKeyCount();
             expandKeys(extraKeyCount, extraKeys);
             if(values != null) {
-                Object[] newValues = createValueStorage(keyCount + extraKeyCount);
+                Object newValues = createValueStorage(keyCount + extraKeyCount);
                 System.arraycopy(values, 0, newValues, 0, keyCount);
                 System.arraycopy(extraValues, 0, newValues, keyCount, extraKeyCount);
                 values = newValues;
