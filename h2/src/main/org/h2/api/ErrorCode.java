@@ -317,7 +317,7 @@ public class ErrorCode {
      * sessions are also possible. To solve deadlock problems, an application
      * should lock tables always in the same order, such as always lock table A
      * before locking table B. For details, see <a
-     * href="http://en.wikipedia.org/wiki/Deadlock">Wikipedia Deadlock</a>.
+     * href="https://en.wikipedia.org/wiki/Deadlock">Wikipedia Deadlock</a>.
      */
     public static final int DEADLOCK_1 = 40001;
 
@@ -1010,15 +1010,7 @@ public class ErrorCode {
      */
     public static final int WRONG_PASSWORD_FORMAT = 90050;
 
-    /**
-     * The error with code <code>90051</code> is thrown when
-     * trying to use a scale that is > precision.
-     * Example:
-     * <pre>
-     * CREATE TABLE TABLE1 ( FAIL NUMBER(6,24) );
-     * </pre>
-     */
-    public static final int INVALID_VALUE_SCALE_PRECISION = 90051;
+    // 90051 was removed
 
     /**
      * The error with code <code>90052</code> is thrown when
@@ -2031,7 +2023,6 @@ public class ErrorCode {
     /**
      * The error with code <code>90143</code> is thrown when
      * trying to fetch a row from the primary index and the row is not there.
-     * Can happen in MULTI_THREADED=1 case.
      */
     public static final int ROW_NOT_FOUND_IN_PRIMARY_INDEX = 90143;
 
@@ -2061,13 +2052,12 @@ public class ErrorCode {
 
     /**
      * The error with code <code>90146</code> is thrown when trying to open a
-     * database that does not exist remotely without enabling remote database
-     * creation first, or using the flag IFEXISTS=TRUE
+     * database that does not exist using the flag IFEXISTS=TRUE
      * <pre>
      * jdbc:h2:./database_that_does_not_exist
      * </pre>
      */
-    public static final int DATABASE_NOT_FOUND_2 = 90146;
+    public static final int DATABASE_NOT_FOUND_WITH_IF_EXISTS_1 = 90146;
 
     /**
      * The error with code <code>90147</code> is thrown when trying to execute a
@@ -2078,8 +2068,48 @@ public class ErrorCode {
      */
     public static final int METHOD_DISABLED_ON_AUTOCOMMIT_TRUE = 90147;
 
+    /**
+     * The error with code <code>90148</code> is thrown when trying to access
+     * the current value of a sequence before execution of NEXT VALUE FOR
+     * sequenceName in the current session. Example:
+     *
+     * <pre>
+     * SELECT CURRENT VALUE FOR SEQUENCE XYZ;
+     * </pre>
+     */
+    public static final int CURRENT_SEQUENCE_VALUE_IS_NOT_DEFINED_IN_SESSION_1 = 90148;
 
-    // next is 90148
+    /**
+     * The error with code <code>90149</code> is thrown when trying to open a
+     * database that does not exist remotely without enabling remote database
+     * creation first.
+     * <pre>
+     * jdbc:h2:./database_that_does_not_exist
+     * </pre>
+     */
+    public static final int REMOTE_DATABASE_NOT_FOUND_1 = 90149;
+
+    /**
+     * The error with code <code>90150</code> is thrown when
+     * trying to use an invalid precision.
+     * Example:
+     * <pre>
+     * CREATE TABLE TABLE1 ( FAIL INTERVAL YEAR(20) );
+     * </pre>
+     */
+    public static final int INVALID_VALUE_PRECISION = 90150;
+
+    /**
+     * The error with code <code>90151</code> is thrown when
+     * trying to use an invalid scale or fractional seconds precision.
+     * Example:
+     * <pre>
+     * CREATE TABLE TABLE1 ( FAIL TIME(10) );
+     * </pre>
+     */
+    public static final int INVALID_VALUE_SCALE = 90151;
+
+    // next is 90152
 
     private ErrorCode() {
         // utility class

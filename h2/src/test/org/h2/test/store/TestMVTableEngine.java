@@ -6,6 +6,7 @@
 package org.h2.test.store;
 
 import java.io.ByteArrayInputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringReader;
@@ -77,7 +78,9 @@ public class TestMVTableEngine extends TestDb {
         testMinMaxWithNull();
         testTimeout();
         testExplainAnalyze();
-        testTransactionLogEmptyAfterCommit();
+        if (!config.memory) {
+            testTransactionLogEmptyAfterCommit();
+        }
         testShrinkDatabaseFile();
         testTwoPhaseCommit();
         testRecover();
@@ -203,7 +206,7 @@ public class TestMVTableEngine extends TestDb {
             rs.next();
             int pages = rs.getInt(2);
             // only one lob should remain (but it is small and compressed)
-            assertTrue("p:" + pages, pages < 4);
+            assertTrue("p:" + pages, pages < 7);
         }
     }
 
@@ -631,7 +634,8 @@ public class TestMVTableEngine extends TestDb {
             stat.execute("shutdown immediately");
         } catch (Exception ignore) {/**/}
 
-        String file = getTestName() + Constants.SUFFIX_MV_FILE;
+        String file = getBaseDir() + "/" + getTestName() + Constants.SUFFIX_MV_FILE;
+        assertTrue(new File(file).exists());
         try (MVStore store = MVStore.open(file)) {
             TransactionStore t = new TransactionStore(store);
             t.init();
@@ -1138,7 +1142,7 @@ public class TestMVTableEngine extends TestDb {
                 "by tinyint," +
                 "sm smallint," +
                 "bi bigint," +
-                "de decimal," +
+                "de decimal(5, 2)," +
                 "re real,"+
                 "do double," +
                 "ti time," +
@@ -1177,7 +1181,7 @@ public class TestMVTableEngine extends TestDb {
         assertEquals(0, rs.getByte(5));
         assertEquals(0, rs.getShort(6));
         assertEquals(0, rs.getLong(7));
-        assertEquals("9", rs.getBigDecimal(8).toString());
+        assertEquals("9.00", rs.getBigDecimal(8).toString());
         assertEquals(2d, rs.getDouble(9));
         assertEquals(3d, rs.getFloat(10));
         assertEquals("10:00:00", rs.getString(11));
@@ -1216,7 +1220,7 @@ public class TestMVTableEngine extends TestDb {
         assertEquals(-8, rs.getByte(5));
         assertEquals(-16, rs.getShort(6));
         assertEquals(-64, rs.getLong(7));
-        assertEquals("0", rs.getBigDecimal(8).toString());
+        assertEquals("0.00", rs.getBigDecimal(8).toString());
         assertEquals(0.0d, rs.getDouble(9));
         assertEquals(0.0d, rs.getFloat(10));
         assertEquals("10:00:00", rs.getString(11));
@@ -1235,7 +1239,7 @@ public class TestMVTableEngine extends TestDb {
         assertEquals(-8, rs.getByte(5));
         assertEquals(-16, rs.getShort(6));
         assertEquals(-64, rs.getLong(7));
-        assertEquals("1", rs.getBigDecimal(8).toString());
+        assertEquals("1.00", rs.getBigDecimal(8).toString());
         assertEquals(1.0d, rs.getDouble(9));
         assertEquals(1.0d, rs.getFloat(10));
         assertEquals("10:00:00", rs.getString(11));

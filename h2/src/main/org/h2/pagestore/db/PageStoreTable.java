@@ -404,7 +404,7 @@ public class PageStoreTable extends RegularTable {
             if (lockExclusiveSession == null) {
                 if (lockSharedSessions.isEmpty()) {
                     traceLock(session, exclusive, "added for");
-                    session.addLock(this);
+                    session.registerTableAsLocked(this);
                     lockExclusiveSession = session;
                     return true;
                 } else if (lockSharedSessions.size() == 1 &&
@@ -417,19 +417,12 @@ public class PageStoreTable extends RegularTable {
         } else {
             if (lockExclusiveSession == null) {
                 if (lockMode == Constants.LOCK_MODE_READ_COMMITTED) {
-                    if (!database.isMultiThreaded()) {
-                        // READ_COMMITTED: a read lock is acquired,
-                        // but released immediately after the operation
-                        // is complete.
-                        // When allowing only one thread, no lock is
-                        // required.
-                        // Row level locks work like read committed.
-                        return true;
-                    }
+                    // PageStore is single-threaded, no lock is required
+                    return true;
                 }
                 if (!lockSharedSessions.containsKey(session)) {
                     traceLock(session, exclusive, "ok");
-                    session.addLock(this);
+                    session.registerTableAsLocked(this);
                     lockSharedSessions.put(session, session);
                 }
                 return true;

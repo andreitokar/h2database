@@ -14,7 +14,6 @@ import org.h2.api.ErrorCode;
 import org.h2.engine.CastDataProvider;
 import org.h2.message.DbException;
 import org.h2.util.DateTimeUtils;
-import org.h2.util.JSR310;
 import org.h2.util.JSR310Utils;
 
 /**
@@ -37,7 +36,7 @@ public class ValueTimestamp extends Value {
     /**
      * The default scale for timestamps.
      */
-    static final int DEFAULT_SCALE = 6;
+    public static final int DEFAULT_SCALE = 6;
 
     /**
      * The maximum scale for timestamps.
@@ -158,7 +157,7 @@ public class ValueTimestamp extends Value {
     }
 
     @Override
-    public Timestamp getTimestamp(TimeZone timeZone) {
+    public Timestamp getTimestamp(CastDataProvider provider, TimeZone timeZone) {
         Timestamp ts = new Timestamp(DateTimeUtils.getMillis(timeZone, dateValue, timeNanos));
         ts.setNanos((int) (timeNanos % DateTimeUtils.NANOS_PER_SECOND));
         return ts;
@@ -181,20 +180,19 @@ public class ValueTimestamp extends Value {
 
     @Override
     public String getString() {
-        StringBuilder buff = new StringBuilder(MAXIMUM_PRECISION);
-        DateTimeUtils.appendDate(buff, dateValue);
-        buff.append(' ');
-        DateTimeUtils.appendTime(buff, timeNanos);
-        return buff.toString();
+        return toString(new StringBuilder(MAXIMUM_PRECISION)).toString();
     }
 
     @Override
     public StringBuilder getSQL(StringBuilder builder) {
-        builder.append("TIMESTAMP '");
+        return toString(builder.append("TIMESTAMP '")).append('\'');
+    }
+
+    private StringBuilder toString(StringBuilder builder) {
         DateTimeUtils.appendDate(builder, dateValue);
         builder.append(' ');
         DateTimeUtils.appendTime(builder, timeNanos);
-        return builder.append('\'');
+        return builder;
     }
 
     @Override
@@ -253,36 +251,44 @@ public class ValueTimestamp extends Value {
 
     @Override
     public Object getObject() {
-        return getTimestamp(null);
+        return getTimestamp(null, null);
     }
 
     @Override
     public void set(PreparedStatement prep, int parameterIndex) throws SQLException {
-        if (JSR310.PRESENT) {
-            try {
-                prep.setObject(parameterIndex, JSR310Utils.valueToLocalDateTime(this, null), Types.TIMESTAMP);
-                return;
-            } catch (SQLException ignore) {
-                // Nothing to do
-            }
+        try {
+            prep.setObject(parameterIndex, JSR310Utils.valueToLocalDateTime(this, null), Types.TIMESTAMP);
+            return;
+        } catch (SQLException ignore) {
+            // Nothing to do
         }
-        prep.setTimestamp(parameterIndex, getTimestamp(null));
+        prep.setTimestamp(parameterIndex, getTimestamp(null, null));
     }
 
     @Override
     public Value add(Value v) {
         ValueTimestamp t = (ValueTimestamp) v.convertTo(Value.TIMESTAMP);
-        long d1 = DateTimeUtils.absoluteDayFromDateValue(dateValue);
-        long d2 = DateTimeUtils.absoluteDayFromDateValue(t.dateValue);
-        return DateTimeUtils.normalizeTimestamp(d1 + d2, timeNanos + t.timeNanos);
+        long absoluteDay = DateTimeUtils.absoluteDayFromDateValue(dateValue)
+                + DateTimeUtils.absoluteDayFromDateValue(t.dateValue);
+        long nanos = timeNanos + t.timeNanos;
+        if (nanos >= DateTimeUtils.NANOS_PER_DAY) {
+            nanos -= DateTimeUtils.NANOS_PER_DAY;
+            absoluteDay++;
+        }
+        return ValueTimestamp.fromDateValueAndNanos(DateTimeUtils.dateValueFromAbsoluteDay(absoluteDay), nanos);
     }
 
     @Override
     public Value subtract(Value v) {
         ValueTimestamp t = (ValueTimestamp) v.convertTo(Value.TIMESTAMP);
-        long d1 = DateTimeUtils.absoluteDayFromDateValue(dateValue);
-        long d2 = DateTimeUtils.absoluteDayFromDateValue(t.dateValue);
-        return DateTimeUtils.normalizeTimestamp(d1 - d2, timeNanos - t.timeNanos);
+        long absoluteDay = DateTimeUtils.absoluteDayFromDateValue(dateValue)
+                - DateTimeUtils.absoluteDayFromDateValue(t.dateValue);
+        long nanos = timeNanos - t.timeNanos;
+        if (nanos < 0) {
+            nanos += DateTimeUtils.NANOS_PER_DAY;
+            absoluteDay--;
+        }
+        return ValueTimestamp.fromDateValueAndNanos(DateTimeUtils.dateValueFromAbsoluteDay(absoluteDay), nanos);
     }
 
 }

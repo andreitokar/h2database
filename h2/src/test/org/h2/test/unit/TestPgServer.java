@@ -21,18 +21,17 @@ import java.sql.Timestamp;
 import java.sql.Types;
 import java.util.Properties;
 import java.util.TimeZone;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 import org.h2.api.ErrorCode;
+import org.h2.store.Data;
 import org.h2.test.TestBase;
 import org.h2.test.TestDb;
 import org.h2.tools.Server;
 import org.h2.util.DateTimeUtils;
-import org.h2.util.JSR310;
 
 /**
  * Tests the PostgreSQL server protocol compliant implementation.
@@ -158,7 +157,7 @@ public class TestPgServer extends TestDb {
         try {
             Connection conn = DriverManager.getConnection(
                     "jdbc:postgresql://localhost:5535/pgserver", "sa", "sa");
-            final Statement stat = conn.createStatement();
+            Statement stat = conn.createStatement();
             stat.execute("create alias sleep for \"java.lang.Thread.sleep\"");
 
             // create a table with 200 rows (cancel interval is 127)
@@ -167,12 +166,7 @@ public class TestPgServer extends TestDb {
                 stat.execute("insert into test (id) values (rand())");
             }
 
-            Future<Boolean> future = executor.submit(new Callable<Boolean>() {
-                @Override
-                public Boolean call() throws SQLException {
-                    return stat.execute("select id, sleep(5) from test");
-                }
-            });
+            Future<Boolean> future = executor.submit(() -> stat.execute("select id, sleep(5) from test"));
 
             // give it a little time to start and then cancel it
             Thread.sleep(100);
@@ -421,7 +415,7 @@ public class TestPgServer extends TestDb {
                     "create table test(x1 varchar, x2 int, " +
                     "x3 smallint, x4 bigint, x5 double, x6 float, " +
                     "x7 real, x8 boolean, x9 char, x10 bytea, " +
-                    "x11 date, x12 time, x13 timestamp, x14 numeric)");
+                    "x11 date, x12 time, x13 timestamp, x14 numeric(25, 5))");
 
             PreparedStatement ps = conn.prepareStatement(
                     "insert into test values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
@@ -479,14 +473,13 @@ public class TestPgServer extends TestDb {
             return;
         }
         TimeZone old = TimeZone.getDefault();
-        if (JSR310.PRESENT) {
-            /*
-             * java.util.TimeZone doesn't support LMT, so perform this test with
-             * fixed time zone offset
-             */
-            TimeZone.setDefault(TimeZone.getTimeZone("GMT+01"));
-            DateTimeUtils.resetCalendar();
-        }
+        /*
+         * java.util.TimeZone doesn't support LMT, so perform this test with
+         * fixed time zone offset
+         */
+        TimeZone.setDefault(TimeZone.getTimeZone("GMT+01"));
+        DateTimeUtils.resetCalendar();
+        Data.resetCalendar();
         try {
             Server server = createPgServer(
                     "-ifNotExists", "-pgPort", "5535", "-pgDaemon", "-key", "pgserver", "mem:pgserver");
@@ -541,10 +534,9 @@ public class TestPgServer extends TestDb {
                 server.stop();
             }
         } finally {
-            if (JSR310.PRESENT) {
-                TimeZone.setDefault(old);
-                DateTimeUtils.resetCalendar();
-            }
+            TimeZone.setDefault(old);
+            DateTimeUtils.resetCalendar();
+            Data.resetCalendar();
         }
     }
 

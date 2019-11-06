@@ -16,8 +16,6 @@ import org.h2.message.Trace;
 import org.h2.security.auth.AuthenticationException;
 import org.h2.security.auth.AuthenticationInfo;
 import org.h2.security.auth.Authenticator;
-import org.h2.store.FileLock;
-import org.h2.store.FileLockMethod;
 import org.h2.util.MathUtils;
 import org.h2.util.ParserUtil;
 import org.h2.util.ThreadDeadlockDetector;
@@ -48,8 +46,7 @@ public class Engine implements SessionFactory {
         return INSTANCE;
     }
 
-    private Session openSession(ConnectionInfo ci, boolean ifExists,
-            String cipher) {
+    private Session openSession(ConnectionInfo ci, boolean ifExists, boolean forbidCreation, String cipher) {
         String name = ci.getName();
         Database database;
         ci.removeProperty("NO_UPGRADE", false);
@@ -63,8 +60,16 @@ public class Engine implements SessionFactory {
                 database = DATABASES.get(name);
             }
             if (database == null) {
-                if (ifExists && !Database.exists(name)) {
-                    throw DbException.get(ErrorCode.DATABASE_NOT_FOUND_2, name);
+                String p = ci.getProperty("MV_STORE");
+                boolean exists = p == null ? Database.exists(name)
+                        : Database.exists(name, Utils.parseBoolean(p, true, false));
+                if (!exists) {
+                    if (ifExists) {
+                        throw DbException.get(ErrorCode.DATABASE_NOT_FOUND_WITH_IF_EXISTS_1, name);
+                    }
+                    if (forbidCreation) {
+                        throw DbException.get(ErrorCode.REMOTE_DATABASE_NOT_FOUND_1, name);
+                    }
                 }
                 database = new Database(ci, cipher);
                 opened = true;
@@ -163,23 +168,8 @@ public class Engine implements SessionFactory {
 
     private Session createSessionAndValidate(ConnectionInfo ci) {
         try {
-            ConnectionInfo backup = null;
-            String lockMethodName = ci.getProperty("FILE_LOCK", null);
-            FileLockMethod fileLockMethod = FileLock.getFileLockMethod(lockMethodName);
-            if (fileLockMethod == FileLockMethod.SERIALIZED) {
-                // In serialized mode, database instance sharing is not possible
-                ci.setProperty("OPEN_NEW", "TRUE");
-                try {
-                    backup = ci.clone();
-                } catch (CloneNotSupportedException e) {
-                    throw DbException.convert(e);
-                }
-            }
             Session session = openSession(ci);
             validateUserAndPassword(true);
-            if (backup != null) {
-                session.setConnectionInfo(backup);
-            }
             return session;
         } catch (DbException e) {
             if (e.getErrorCode() == ErrorCode.WRONG_USER_OR_PASSWORD) {
@@ -191,6 +181,7 @@ public class Engine implements SessionFactory {
 
     private synchronized Session openSession(ConnectionInfo ci) {
         boolean ifExists = ci.removeProperty("IFEXISTS", false);
+        boolean forbidCreation = ci.removeProperty("FORBID_CREATION", false);
         boolean ignoreUnknownSetting = ci.removeProperty(
                 "IGNORE_UNKNOWN_SETTINGS", false);
         String cipher = ci.removeProperty("CIPHER", null);
@@ -198,7 +189,7 @@ public class Engine implements SessionFactory {
         Session session;
         long start = System.nanoTime();
         for (;;) {
-            session = openSession(ci, ifExists, cipher);
+            session = openSession(ci, ifExists, forbidCreation, cipher);
             if (session != null) {
                 break;
             }

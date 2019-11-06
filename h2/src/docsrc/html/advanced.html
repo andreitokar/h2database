@@ -87,8 +87,6 @@ Advanced
     Database Upgrade</a><br />
 <a href="#java_objects_serialization">
     Java Objects Serialization</a><br />
-<a href="#custom_data_types_handler_api">
-    Custom Data Types Handler API</a><br />
 <a href="#limits_limitations">
     Limits and Limitations</a><br />
 <a href="#glossary_links">
@@ -232,49 +230,78 @@ See the <a href="commands.html">Commands</a> for details.
 Transaction isolation is provided for all data manipulation language (DML) statements.
 </p>
 <p>
-Please note that with default MVStore storage engine table level locking is not used.
-Instead, rows are locked for update, and read committed is used in all cases
-except for explicitly selected read uncommitted transaction isolation level.
-</p>
-<p>
-This database supports the following transaction isolation levels:
+The default MVStore engine supports read uncommitted, read committed, repeatable read, snapshot,
+and serializable (partially, see below) isolation levels:
 </p>
 <ul>
-<li><b>Read Committed</b><br />
+<li><b>Read uncommitted</b><br />
+    Dirty reads, non-repeatable reads, and phantom reads are possible.
+    To enable, execute the SQL statement
+    <code>SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL READ UNCOMMITTED</code>
+</li>
+<li><b>Read committed</b><br />
     This is the default level.
-    Read locks are released immediately after executing the statement, but write locks are kept until the transaction commits.
-    Higher concurrency is possible when using this level.<br />
-    To enable, execute the SQL statement <code>SET LOCK_MODE 3</code><br />
-    or append <code>;LOCK_MODE=3</code> to the database URL: <code>jdbc:h2:~/test;LOCK_MODE=3</code>
-</li><li>
-<b>Serializable</b><br />
-    Both read locks and write locks are kept until the transaction commits.
-    To enable, execute the SQL statement <code>SET LOCK_MODE 1</code><br />
-    or append <code>;LOCK_MODE=1</code> to the database URL: <code>jdbc:h2:~/test;LOCK_MODE=1</code>
-</li><li><b>Read Uncommitted</b><br />
-    This level means that transaction isolation is disabled.
-    This level is not supported by PageStore engine if multi-threaded mode is enabled.
-    <br />
-    To enable, execute the SQL statement <code>SET LOCK_MODE 0</code><br />
-    or append <code>;LOCK_MODE=0</code> to the database URL: <code>jdbc:h2:~/test;LOCK_MODE=0</code>
+    Dirty reads aren't possible; non-repeatable reads and phantom reads are possible.
+    To enable, execute the SQL statement
+    <code>SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL READ COMMITTED</code>
+</li>
+<li><b>Repeatable read</b><br />
+    Dirty reads and non-repeatable reads aren't possible, phantom reads are possible.
+    To enable, execute the SQL statement
+    <code>SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL REPEATABLE READ</code>
+</li>
+<li><b>Snapshot</b><br />
+    Dirty reads, non-repeatable reads, and phantom reads aren't possible.
+    This isolation level is very expensive in databases with many tables.
+    To enable, execute the SQL statement
+    <code>SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL SNAPSHOT</code>
+</li>
+<li><b>Serializable</b><br />
+    Dirty reads, non-repeatable reads, and phantom reads aren't possible.
+    Note that this isolation level in H2 currently doesn't ensure equivalence of concurrent and serializable execution
+    of transactions that perform write operations.
+    This isolation level is very expensive in databases with many tables.
+    To enable, execute the SQL statement
+    <code>SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL SERIALIZABLE</code>
 </li>
 </ul>
 <p>
-When using the isolation level 'serializable', dirty reads, non-repeatable reads, and phantom reads are prohibited.
+The PageStore engine supports read uncommitted, read committed, and serializable isolation levels:
 </p>
 <ul>
-<li><b>Dirty Reads</b><br />
+<li><b>Read uncommitted</b><br />
+    This level means that transaction isolation is disabled.
+    This level is not supported by PageStore engine if multi-threaded mode is enabled.
+    To enable, execute the SQL statement
+    <code>SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL READ UNCOMMITTED</code>
+</li>
+<li><b>Read committed</b><br />
+    This is the default level.
+    Read locks are released immediately after executing the statement, but write locks are kept until the transaction commits.
+    To enable, execute the SQL statement
+    <code>SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL READ COMMITTED</code>
+</li>
+<li><b>Serializable</b><br />
+    Both read locks and write locks are kept until the transaction commits.
+    To enable, execute the SQL statement
+    <code>SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL SERIALIZABLE</code>
+</li>
+</ul>
+<p>If repeatable read isolation level is requested when using a PageStore engine it is replaced
+with serializable isolation level.</p>
+<ul>
+<li><b>Dirty reads</b><br />
     Means a connection can read uncommitted changes made by another connection.<br />
-    Possible with: read uncommitted
-</li><li><b>Non-Repeatable Reads</b><br />
+    Possible with: read uncommitted.
+</li><li><b>Non-repeatable reads</b><br />
     A connection reads a row, another connection changes a row and commits,
     and the first connection re-reads the same row and gets the new result.<br />
-    Possible with: read uncommitted, read committed
-</li><li><b>Phantom Reads</b><br />
+    Possible with: read uncommitted, read committed.
+</li><li><b>Phantom reads</b><br />
     A connection reads a set of rows using a condition, another connection
     inserts a row that falls in this condition and commits, then the first connection
     re-reads using the same condition and gets the new row.<br />
-    Possible with: read uncommitted, read committed
+    Possible with: read uncommitted, read committed, repeatable read.
 </li>
 </ul>
 
@@ -525,6 +552,8 @@ The following tokens are keywords in H2:
 <td>+</td><td>+</td><td>+</td><td>+</td><td>+</td><td>+</td><td>+</td></tr>
 <tr><td>CURRENT_USER</td>
 <td>+</td><td>+</td><td>+</td><td>+</td><td>+</td><td>+</td><td>+</td></tr>
+<tr><td>DAY</td>
+<td>+</td><td>+</td><td>+</td><td>+</td><td>+</td><td>+</td><td>+</td></tr>
 <tr><td>DISTINCT</td>
 <td>+</td><td>+</td><td>+</td><td>+</td><td>+</td><td>+</td><td>+</td></tr>
 <tr><td>EXCEPT</td>
@@ -550,6 +579,8 @@ The following tokens are keywords in H2:
 <tr><td>GROUPS</td>
 <td>CS</td><td>+</td><td>+</td><td></td><td></td><td></td><td></td></tr>
 <tr><td>HAVING</td>
+<td>+</td><td>+</td><td>+</td><td>+</td><td>+</td><td>+</td><td>+</td></tr>
+<tr><td>HOUR</td>
 <td>+</td><td>+</td><td>+</td><td>+</td><td>+</td><td>+</td><td>+</td></tr>
 <tr><td>IF</td>
 <td>+</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
@@ -583,6 +614,10 @@ The following tokens are keywords in H2:
 <td>+</td><td>+</td><td>+</td><td>+</td><td>+</td><td>+</td><td></td></tr>
 <tr><td>MINUS</td>
 <td>+</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+<tr><td>MINUTE</td>
+<td>+</td><td>+</td><td>+</td><td>+</td><td>+</td><td>+</td><td>+</td></tr>
+<tr><td>MONTH</td>
+<td>+</td><td>+</td><td>+</td><td>+</td><td>+</td><td>+</td><td>+</td></tr>
 <tr><td>NATURAL</td>
 <td>+</td><td>+</td><td>+</td><td>+</td><td>+</td><td>+</td><td>+</td></tr>
 <tr><td>NOT</td>
@@ -619,6 +654,8 @@ The following tokens are keywords in H2:
 <td>+</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
 <tr><td>ROWS</td>
 <td>CS</td><td>+</td><td>+</td><td>+</td><td>+</td><td>+</td><td>+</td></tr>
+<tr><td>SECOND</td>
+<td>+</td><td>+</td><td>+</td><td>+</td><td>+</td><td>+</td><td>+</td></tr>
 <tr><td>SELECT</td>
 <td>+</td><td>+</td><td>+</td><td>+</td><td>+</td><td>+</td><td>+</td></tr>
 <tr><td>SYSDATE</td>
@@ -652,6 +689,8 @@ The following tokens are keywords in H2:
 <tr><td>WINDOW</td>
 <td>+</td><td>+</td><td>+</td><td>+</td><td>+</td><td></td><td></td></tr>
 <tr><td>WITH</td>
+<td>+</td><td>+</td><td>+</td><td>+</td><td>+</td><td>+</td><td>+</td></tr>
+<tr><td>YEAR</td>
 <td>+</td><td>+</td><td>+</td><td>+</td><td>+</td><td>+</td><td>+</td></tr>
 </tbody>
 </table>
@@ -883,7 +922,7 @@ An implementation of the ADO.NET interface is available in the open source proje
 <h3>Using the JDBC API on .NET</h3>
 <ul><li>Install the .NET Framework from <a href="https://www.microsoft.com">Microsoft</a>.
     Mono has not yet been tested.
-</li><li>Install <a href="http://www.ikvm.net">IKVM.NET</a>.
+</li><li>Install <a href="https://www.ikvm.net">IKVM.NET</a>.
 </li><li>Copy the <code>h2*.jar</code> file to <code>ikvm/bin</code>
 </li><li>Run the H2 Console using:
     <code>ikvm -jar h2*.jar</code>
@@ -944,7 +983,8 @@ explicitly disabled.
 <p>
 For H2, as with most other database systems, the default isolation level is 'read committed'.
 This provides better performance, but also means that transactions are not completely isolated.
-H2 supports the transaction isolation levels 'serializable', 'read committed', and 'read uncommitted'.
+H2 supports the transaction isolation levels 'read uncommitted', 'read committed', 'repeatable read',
+and 'serializable'.
 </p>
 
 <h3>Durability</h3>
@@ -1721,7 +1761,7 @@ IPv4 and IPv6 address formats are supported.
 <p>
 This database supports a pluggable file system API.
 The file system implementation is selected using a file name prefix.
-Internally, the interfaces are very similar to the Java 7 NIO2 API, but do not (yet) use or require Java 7.
+Internally, the interfaces are very similar to the Java 7 NIO2 API.
 The following file systems are included:
 </p>
 <ul><li><code>zip:</code>  read-only zip-file based file system. Format: <code>zip:~/zipFileName!/fileName</code>.
@@ -1841,30 +1881,6 @@ Please note that this SQL statement can only be executed before any tables are d
 </p>
 </li>
 </ul>
-
-<h2 id="custom_data_types_handler_api">Custom Data Types Handler API</h2>
-<p>
-It is possible to extend the type system of the database by providing your own implementation
-of minimal required API basically consisting of type identification and conversion routines.
-</p>
-<p>
-In order to enable this feature, set the system property <code>h2.customDataTypesHandler</code> (default: null) to the fully qualified name of the class providing
-<a href="https://h2database.com/javadoc/org/h2/api/CustomDataTypesHandler.html">CustomDataTypesHandler</a> interface implementation. <br />
-The instance of that class will be created by H2 and used to:
-</p>
-<ul>
-<li>resolve the names and identifiers of extrinsic data types.
-</li>
-<li>convert values of extrinsic data types to and from values of built-in types.
-</li>
-<li>provide order of the data types.
-</li>
-</ul>
-<p>This is a system-level setting, i.e. affects all the databases.</p>
-
-<p><b>Note: </b>Please keep in mind that this feature may not possibly provide the same ABI stability level as other features as it exposes many of the H2 internals. You may be required to update your code occasionally due to internal changes in H2 if you are going to use this feature.
-</p>
-
 
 <h2 id="limits_limitations">Limits and Limitations</h2>
 <p>

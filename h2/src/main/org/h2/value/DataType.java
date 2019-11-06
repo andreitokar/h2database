@@ -15,12 +15,23 @@ import java.sql.Array;
 import java.sql.Blob;
 import java.sql.Clob;
 import java.sql.Date;
+import java.sql.JDBCType;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
+import java.sql.SQLType;
 import java.sql.Time;
 import java.sql.Timestamp;
 import java.sql.Types;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.OffsetDateTime;
+import java.time.OffsetTime;
+import java.time.Period;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.UUID;
@@ -28,7 +39,6 @@ import java.util.UUID;
 import org.h2.api.ErrorCode;
 import org.h2.api.Interval;
 import org.h2.api.IntervalQualifier;
-import org.h2.api.TimestampWithTimeZone;
 import org.h2.engine.Mode;
 import org.h2.engine.SessionInterface;
 import org.h2.engine.SysProperties;
@@ -38,9 +48,9 @@ import org.h2.jdbc.JdbcClob;
 import org.h2.jdbc.JdbcConnection;
 import org.h2.jdbc.JdbcLob;
 import org.h2.message.DbException;
-import org.h2.util.JSR310;
 import org.h2.util.JSR310Utils;
 import org.h2.util.JdbcUtils;
+import org.h2.util.StringUtils;
 import org.h2.util.Utils;
 
 /**
@@ -96,6 +106,11 @@ public class DataType {
      * best).
      */
     public int sqlTypePos;
+
+    /**
+     * The minimum supported precision.
+     */
+    public long minPrecision;
 
     /**
      * The maximum supported precision.
@@ -178,7 +193,7 @@ public class DataType {
         GEOMETRY_CLASS = g;
 
         DataType dataType = new DataType();
-        dataType.defaultPrecision = dataType.maxPrecision = ValueNull.PRECISION;
+        dataType.defaultPrecision = dataType.maxPrecision = dataType.minPrecision = ValueNull.PRECISION;
         add(Value.NULL, Types.NULL,
                 dataType,
                 new String[]{"NULL"}
@@ -252,6 +267,12 @@ public class DataType {
                         "TIME", true, ValueTime.DEFAULT_SCALE, ValueTime.MAXIMUM_SCALE),
                 new String[]{"TIME", "TIME WITHOUT TIME ZONE"}
         );
+        add(Value.TIME_TZ, Types.TIME_WITH_TIMEZONE,
+                createDate(ValueTimeTimeZone.MAXIMUM_PRECISION, ValueTimeTimeZone.DEFAULT_PRECISION,
+                        "TIME WITH TIME ZONE", true, ValueTime.DEFAULT_SCALE,
+                        ValueTime.MAXIMUM_SCALE),
+                new String[]{"TIME WITH TIME ZONE"}
+        );
         add(Value.DATE, Types.DATE,
                 createDate(ValueDate.PRECISION, ValueDate.PRECISION,
                         "DATE", false, 0, 0),
@@ -263,11 +284,7 @@ public class DataType {
                 new String[]{"TIMESTAMP", "TIMESTAMP WITHOUT TIME ZONE",
                         "DATETIME", "DATETIME2", "SMALLDATETIME"}
         );
-        // 2014 is the value of Types.TIMESTAMP_WITH_TIMEZONE
-        // use the value instead of the reference because the code has to
-        // compile (on Java 1.7). Can be replaced with
-        // Types.TIMESTAMP_WITH_TIMEZONE once Java 1.8 is required.
-        add(Value.TIMESTAMP_TZ, 2014,
+        add(Value.TIMESTAMP_TZ, Types.TIMESTAMP_WITH_TIMEZONE,
                 createDate(ValueTimestampTimeZone.MAXIMUM_PRECISION, ValueTimestampTimeZone.DEFAULT_PRECISION,
                         "TIMESTAMP WITH TIME ZONE", true, ValueTimestamp.DEFAULT_SCALE,
                         ValueTimestamp.MAXIMUM_SCALE),
@@ -287,7 +304,7 @@ public class DataType {
         );
         dataType = new DataType();
         dataType.prefix = dataType.suffix = "'";
-        dataType.defaultPrecision = dataType.maxPrecision = ValueUuid.PRECISION;
+        dataType.defaultPrecision = dataType.maxPrecision = dataType.minPrecision = ValueUuid.PRECISION;
         add(Value.UUID, Types.BINARY,
                 createString(false),
                 // UNIQUEIDENTIFIER is the MSSQL mode equivalent
@@ -331,9 +348,8 @@ public class DataType {
         for (int i = Value.INTERVAL_YEAR; i <= Value.INTERVAL_MINUTE_TO_SECOND; i++) {
             addInterval(i);
         }
-        // Maybe another suffix is needed
         add(Value.JSON, Types.OTHER,
-                createString(true, "'", "' FORMAT JSON"),
+                createString(true, "JSON '", "'"),
                 new String[]{"JSON"}
         );
         // Row value doesn't have a type name
@@ -348,14 +364,14 @@ public class DataType {
 
     private static void addDecimal() {
         add(Value.DECIMAL, Types.DECIMAL,
-                createNumeric(Integer.MAX_VALUE, ValueDecimal.DEFAULT_PRECISION, ValueDecimal.DEFAULT_SCALE),
+                createNumeric(),
                 new String[]{"DECIMAL", "DEC"}
         );
     }
 
     private static void addNumeric() {
         add(Value.DECIMAL, Types.NUMERIC,
-                createNumeric(Integer.MAX_VALUE, ValueDecimal.DEFAULT_PRECISION, ValueDecimal.DEFAULT_SCALE),
+                createNumeric(),
                 new String[]{"NUMERIC", "NUMBER"}
         );
     }
@@ -368,6 +384,7 @@ public class DataType {
         dataType.suffix = "' " + name;
         dataType.supportsPrecision = true;
         dataType.defaultPrecision = ValueInterval.DEFAULT_PRECISION;
+        dataType.minPrecision = 1;
         dataType.maxPrecision = ValueInterval.MAXIMUM_PRECISION;
         if (qualifier.hasSeconds()) {
             dataType.supportsScale = true;
@@ -391,6 +408,7 @@ public class DataType {
             dt.name = names[i];
             dt.autoIncrement = dataType.autoIncrement;
             dt.decimal = dataType.decimal;
+            dt.minPrecision = dataType.minPrecision;
             dt.maxPrecision = dataType.maxPrecision;
             dt.maxScale = dataType.maxScale;
             dt.minScale = dataType.minScale;
@@ -417,7 +435,7 @@ public class DataType {
     }
 
     /**
-     * Create a width numeric data type without parameters.
+     * Create a numeric data type without parameters.
      *
      * @param precision precision
      * @param scale scale
@@ -426,7 +444,7 @@ public class DataType {
      */
     public static DataType createNumeric(int precision, int scale, boolean autoInc) {
         DataType dataType = new DataType();
-        dataType.defaultPrecision = dataType.maxPrecision = precision;
+        dataType.defaultPrecision = dataType.maxPrecision = dataType.minPrecision = precision;
         dataType.defaultScale = dataType.maxScale = dataType.minScale = scale;
         dataType.decimal = true;
         dataType.autoIncrement = autoInc;
@@ -434,22 +452,21 @@ public class DataType {
     }
 
     /**
-     * Create a numeric data type.
+     * Create an exact numeric data type with parameters.
      *
-     * @param maxPrecision maximum supported precision
-     * @param defaultPrecision default precision
-     * @param defaultScale default scale
      * @return data type
      */
-    public static DataType createNumeric(int maxPrecision, int defaultPrecision, int defaultScale) {
+    private static DataType createNumeric() {
         DataType dataType = new DataType();
-        dataType.maxPrecision = maxPrecision;
-        dataType.defaultPrecision = defaultPrecision;
-        dataType.defaultScale = defaultScale;
+        dataType.minPrecision = 1;
+        dataType.maxPrecision = Integer.MAX_VALUE;
+        dataType.defaultPrecision = ValueDecimal.DEFAULT_PRECISION;
+        dataType.defaultScale = ValueDecimal.DEFAULT_SCALE;
+        dataType.maxScale = ValueDecimal.MAXIMUM_SCALE;
+        dataType.minScale = ValueDecimal.MINIMUM_SCALE;
         dataType.params = "PRECISION,SCALE";
         dataType.supportsPrecision = true;
         dataType.supportsScale = true;
-        dataType.maxScale = maxPrecision;
         dataType.decimal = true;
         return dataType;
     }
@@ -471,7 +488,7 @@ public class DataType {
         dataType.prefix = prefix + " '";
         dataType.suffix = "'";
         dataType.maxPrecision = maxPrecision;
-        dataType.defaultPrecision = precision;
+        dataType.defaultPrecision = dataType.minPrecision = precision;
         if (supportsScale) {
             dataType.params = "SCALE";
             dataType.supportsScale = true;
@@ -580,65 +597,70 @@ public class DataType {
                 break;
             }
             case Value.DATE: {
-                if (JSR310.PRESENT) {
-                    try {
-                        Object value = rs.getObject(columnIndex, JSR310.LOCAL_DATE);
-                        v = value == null ? ValueNull.INSTANCE : JSR310Utils.localDateToDateValue(value);
-                        break;
-                    } catch (SQLException ignore) {
-                        // Nothing to do
-                    }
+                try {
+                    Object value = rs.getObject(columnIndex, LocalDate.class);
+                    v = value == null ? ValueNull.INSTANCE : JSR310Utils.localDateToValue(value);
+                    break;
+                } catch (SQLException ignore) {
+                    // Nothing to do
                 }
                 Date value = rs.getDate(columnIndex);
                 v = value == null ? ValueNull.INSTANCE : ValueDate.get(null, value);
                 break;
             }
             case Value.TIME: {
-                if (JSR310.PRESENT) {
-                    try {
-                        Object value = rs.getObject(columnIndex, JSR310.LOCAL_TIME);
-                        v = value == null ? ValueNull.INSTANCE : JSR310Utils.localTimeToTimeValue(value);
-                        break;
-                    } catch (SQLException ignore) {
-                        // Nothing to do
-                    }
+                try {
+                    Object value = rs.getObject(columnIndex, LocalTime.class);
+                    v = value == null ? ValueNull.INSTANCE : JSR310Utils.localTimeToValue(value);
+                    break;
+                } catch (SQLException ignore) {
+                    // Nothing to do
                 }
                 Time value = rs.getTime(columnIndex);
                 v = value == null ? ValueNull.INSTANCE : ValueTime.get(null, value);
                 break;
             }
+            case Value.TIME_TZ: {
+                try {
+                    Object value = rs.getObject(columnIndex, OffsetTime.class);
+                    v = value == null ? ValueNull.INSTANCE : JSR310Utils.offsetTimeToValue(value);
+                    break;
+                } catch (SQLException ignore) {
+                    // Nothing to do
+                }
+                Object obj = rs.getObject(columnIndex);
+                if (obj == null) {
+                    v = ValueNull.INSTANCE;
+                } else {
+                    v = ValueTimeTimeZone.parse(obj.toString());
+                }
+                break;
+            }
             case Value.TIMESTAMP: {
-                if (JSR310.PRESENT) {
-                    try {
-                        Object value = rs.getObject(columnIndex, JSR310.LOCAL_DATE_TIME);
-                        v = value == null ? ValueNull.INSTANCE : JSR310Utils.localDateTimeToValue(value);
-                        break;
-                    } catch (SQLException ignore) {
-                        // Nothing to do
-                    }
+                try {
+                    Object value = rs.getObject(columnIndex, LocalDateTime.class);
+                    v = value == null ? ValueNull.INSTANCE : JSR310Utils.localDateTimeToValue(value);
+                    break;
+                } catch (SQLException ignore) {
+                    // Nothing to do
                 }
                 Timestamp value = rs.getTimestamp(columnIndex);
                 v = value == null ? ValueNull.INSTANCE : ValueTimestamp.get(null, value);
                 break;
             }
             case Value.TIMESTAMP_TZ: {
-                if (JSR310.PRESENT) {
-                    try {
-                        Object value = rs.getObject(columnIndex, JSR310.OFFSET_DATE_TIME);
-                        v = value == null ? ValueNull.INSTANCE : JSR310Utils.offsetDateTimeToValue(value);
-                        break;
-                    } catch (SQLException ignore) {
-                        // Nothing to do
-                    }
+                try {
+                    Object value = rs.getObject(columnIndex, OffsetDateTime.class);
+                    v = value == null ? ValueNull.INSTANCE : JSR310Utils.offsetDateTimeToValue(value);
+                    break;
+                } catch (SQLException ignore) {
+                    // Nothing to do
                 }
                 Object obj = rs.getObject(columnIndex);
                 if (obj == null) {
                     v = ValueNull.INSTANCE;
-                } else if (JSR310.PRESENT
-                        && JSR310.ZONED_DATE_TIME.isInstance(obj)) {
+                } else if (obj instanceof ZonedDateTime) {
                     v = JSR310Utils.zonedDateTimeToValue(obj);
-                } else if (obj instanceof TimestampWithTimeZone) {
-                    v = ValueTimestampTimeZone.get((TimestampWithTimeZone) obj);
                 } else {
                     v = ValueTimestampTimeZone.parse(obj.toString());
                 }
@@ -813,11 +835,6 @@ public class DataType {
                 }
             }
             default:
-                if (JdbcUtils.customDataTypesHandler != null) {
-                    return JdbcUtils.customDataTypesHandler.getValue(type,
-                        rs.getObject(columnIndex),
-                        session.getDataHandler());
-                }
                 throw DbException.throwInternalError("type="+type);
             }
             return v;
@@ -864,6 +881,9 @@ public class DataType {
         case Value.TIME:
             // "java.sql.Time";
             return Time.class.getName();
+        case Value.TIME_TZ:
+            // "java.time.OffsetTime";
+            return OffsetTime.class.getName();
         case Value.DATE:
             // "java.sql.Date";
             return Date.class.getName();
@@ -871,12 +891,8 @@ public class DataType {
             // "java.sql.Timestamp";
             return Timestamp.class.getName();
         case Value.TIMESTAMP_TZ:
-            if (SysProperties.RETURN_OFFSET_DATE_TIME && JSR310.PRESENT) {
-                // "java.time.OffsetDateTime";
-                return JSR310.OFFSET_DATE_TIME.getName();
-            }
-            // "org.h2.api.TimestampWithTimeZone";
-            return TimestampWithTimeZone.class.getName();
+            // "java.time.OffsetDateTime";
+            return OffsetDateTime.class.getName();
         case Value.BYTES:
         case Value.UUID:
         case Value.JSON:
@@ -930,9 +946,6 @@ public class DataType {
             // "org.h2.api.Interval"
             return Interval.class.getName();
         default:
-            if (JdbcUtils.customDataTypesHandler != null) {
-                return JdbcUtils.customDataTypesHandler.getDataTypeClassName(type);
-            }
             throw DbException.throwInternalError("type="+type);
         }
     }
@@ -949,12 +962,6 @@ public class DataType {
         }
         if (type >= Value.NULL && type < Value.TYPE_COUNT) {
             DataType dt = TYPES_BY_VALUE_TYPE[type];
-            if (dt != null) {
-                return dt;
-            }
-        }
-        if (JdbcUtils.customDataTypesHandler != null) {
-            DataType dt = JdbcUtils.customDataTypesHandler.getDataTypeById(type);
             if (dt != null) {
                 return dt;
             }
@@ -1019,6 +1026,21 @@ public class DataType {
      * @param sqlType the SQL type
      * @return the value type
      */
+    public static int convertSQLTypeToValueType(SQLType sqlType) {
+        if (sqlType instanceof JDBCType) {
+            return convertSQLTypeToValueType(sqlType.getVendorTypeNumber());
+        } else {
+            throw DbException.get(ErrorCode.UNKNOWN_DATA_TYPE_1, sqlType == null ? "<null>"
+                    : unknownSqlTypeToString(new StringBuilder(), sqlType).toString());
+        }
+    }
+
+    /**
+     * Convert a SQL type to a value type.
+     *
+     * @param sqlType the SQL type
+     * @return the value type
+     */
     public static int convertSQLTypeToValueType(int sqlType) {
         switch (sqlType) {
         case Types.CHAR:
@@ -1061,7 +1083,9 @@ public class DataType {
             return Value.TIME;
         case Types.TIMESTAMP:
             return Value.TIMESTAMP;
-        case 2014: // Types.TIMESTAMP_WITH_TIMEZONE
+        case Types.TIME_WITH_TIMEZONE:
+            return Value.TIME_TZ;
+        case Types.TIMESTAMP_WITH_TIMEZONE:
             return Value.TIMESTAMP_TZ;
         case Types.BLOB:
             return Value.BLOB;
@@ -1078,6 +1102,28 @@ public class DataType {
             throw DbException.get(
                     ErrorCode.UNKNOWN_DATA_TYPE_1, Integer.toString(sqlType));
         }
+    }
+
+    /**
+     * Convert a SQL type to a debug string.
+     *
+     * @param sqlType the SQL type
+     * @return the textual representation
+     */
+    public static String sqlTypeToString(SQLType sqlType) {
+        if (sqlType == null) {
+            return "null";
+        }
+        if (sqlType instanceof JDBCType) {
+            return "JDBCType." + sqlType.getName();
+        }
+        return unknownSqlTypeToString(new StringBuilder("/* "), sqlType).append(" */ null").toString();
+    }
+
+    private static StringBuilder unknownSqlTypeToString(StringBuilder builder, SQLType sqlType) {
+        return builder.append(StringUtils.quoteJavaString(sqlType.getVendor())).append('/')
+                .append(StringUtils.quoteJavaString(sqlType.getName())).append(" [")
+                .append(sqlType.getVendorTypeNumber()).append(']');
     }
 
     /**
@@ -1149,18 +1195,17 @@ public class DataType {
             return Value.ARRAY;
         } else if (isGeometryClass(x)) {
             return Value.GEOMETRY;
-        } else if (JSR310.LOCAL_DATE == x) {
+        } else if (LocalDate.class == x) {
             return Value.DATE;
-        } else if (JSR310.LOCAL_TIME == x) {
+        } else if (LocalTime.class == x) {
             return Value.TIME;
-        } else if (JSR310.LOCAL_DATE_TIME == x) {
+        } else if (OffsetTime.class == x) {
+            return Value.TIME_TZ;
+        } else if (LocalDateTime.class == x) {
             return Value.TIMESTAMP;
-        } else if (JSR310.OFFSET_DATE_TIME == x || JSR310.INSTANT == x) {
+        } else if (OffsetDateTime.class == x || ZonedDateTime.class == x || Instant.class == x) {
             return Value.TIMESTAMP_TZ;
         } else {
-            if (JdbcUtils.customDataTypesHandler != null) {
-                return JdbcUtils.customDataTypesHandler.getTypeIdFromClass(x);
-            }
             return Value.JAVA_OBJECT;
         }
     }
@@ -1277,37 +1322,33 @@ public class DataType {
             for (int i = 0; i < len; i++) {
                 v[i] = convertToValue(session, o[i], type);
             }
-            return ValueArray.get(clazz.getComponentType(), v);
+            return ValueArray.get(v);
         } else if (x instanceof Character) {
             return ValueStringFixed.get(((Character) x).toString());
         } else if (isGeometry(x)) {
             return ValueGeometry.getFromGeometry(x);
-        } else if (clazz == JSR310.LOCAL_DATE) {
-            return JSR310Utils.localDateToDateValue(x);
-        } else if (clazz == JSR310.LOCAL_TIME) {
-            return JSR310Utils.localTimeToTimeValue(x);
-        } else if (clazz == JSR310.LOCAL_DATE_TIME) {
+        } else if (clazz == LocalDate.class) {
+            return JSR310Utils.localDateToValue(x);
+        } else if (clazz == LocalTime.class) {
+            return JSR310Utils.localTimeToValue(x);
+        } else if (clazz == LocalDateTime.class) {
             return JSR310Utils.localDateTimeToValue(x);
-        } else if (clazz == JSR310.INSTANT) {
+        } else if (clazz == Instant.class) {
             return JSR310Utils.instantToValue(x);
-        } else if (clazz == JSR310.OFFSET_DATE_TIME) {
+        } else if (clazz == OffsetTime.class) {
+            return JSR310Utils.offsetTimeToValue(x);
+        } else if (clazz == OffsetDateTime.class) {
             return JSR310Utils.offsetDateTimeToValue(x);
-        } else if (clazz == JSR310.ZONED_DATE_TIME) {
+        } else if (clazz == ZonedDateTime.class) {
             return JSR310Utils.zonedDateTimeToValue(x);
-        } else if (x instanceof TimestampWithTimeZone) {
-            return ValueTimestampTimeZone.get((TimestampWithTimeZone) x);
         } else if (x instanceof Interval) {
             Interval i = (Interval) x;
             return ValueInterval.from(i.getQualifier(), i.isNegative(), i.getLeading(), i.getRemaining());
-        } else if (clazz == JSR310.PERIOD) {
+        } else if (clazz == Period.class) {
             return JSR310Utils.periodToValue(x);
-        } else if (clazz == JSR310.DURATION) {
+        } else if (clazz == Duration.class) {
             return JSR310Utils.durationToValue(x);
         } else {
-            if (JdbcUtils.customDataTypesHandler != null) {
-                return JdbcUtils.customDataTypesHandler.getValue(type, x,
-                        session.getDataHandler());
-            }
             return ValueJavaObject.getNoCopy(x, null, session.getDataHandler());
         }
     }
@@ -1350,9 +1391,6 @@ public class DataType {
         DataType result = mode.typeByNameMap.get(s);
         if (result == null) {
             result = TYPES_BY_NAME.get(s);
-            if (result == null && JdbcUtils.customDataTypesHandler != null) {
-                result = JdbcUtils.customDataTypesHandler.getDataTypeByName(s);
-            }
         }
         return result;
     }
@@ -1367,6 +1405,7 @@ public class DataType {
     public static boolean isDateTimeType(int type) {
         switch (type) {
         case Value.TIME:
+        case Value.TIME_TZ:
         case Value.DATE:
         case Value.TIMESTAMP:
         case Value.TIMESTAMP_TZ:
@@ -1561,29 +1600,7 @@ public class DataType {
         case Value.INTERVAL_HOUR_TO_SECOND:
         case Value.INTERVAL_MINUTE_TO_SECOND:
             return true;
-        case Value.BOOLEAN:
-        case Value.TIME:
-        case Value.DATE:
-        case Value.TIMESTAMP:
-        case Value.TIMESTAMP_TZ:
-        case Value.BYTES:
-        case Value.UUID:
-        case Value.STRING:
-        case Value.STRING_IGNORECASE:
-        case Value.STRING_FIXED:
-        case Value.BLOB:
-        case Value.CLOB:
-        case Value.NULL:
-        case Value.JAVA_OBJECT:
-        case Value.UNKNOWN:
-        case Value.ARRAY:
-        case Value.RESULT_SET:
-        case Value.GEOMETRY:
-            return false;
         default:
-            if (JdbcUtils.customDataTypesHandler != null) {
-                return JdbcUtils.customDataTypesHandler.supportsAdd(type);
-            }
             return false;
         }
     }
@@ -1625,44 +1642,7 @@ public class DataType {
             return Value.DECIMAL;
         case Value.SHORT:
             return Value.LONG;
-        case Value.BOOLEAN:
-        case Value.DECIMAL:
-        case Value.TIME:
-        case Value.DATE:
-        case Value.TIMESTAMP:
-        case Value.TIMESTAMP_TZ:
-        case Value.BYTES:
-        case Value.UUID:
-        case Value.STRING:
-        case Value.STRING_IGNORECASE:
-        case Value.STRING_FIXED:
-        case Value.BLOB:
-        case Value.CLOB:
-        case Value.DOUBLE:
-        case Value.NULL:
-        case Value.JAVA_OBJECT:
-        case Value.UNKNOWN:
-        case Value.ARRAY:
-        case Value.RESULT_SET:
-        case Value.GEOMETRY:
-        case Value.INTERVAL_YEAR:
-        case Value.INTERVAL_MONTH:
-        case Value.INTERVAL_DAY:
-        case Value.INTERVAL_HOUR:
-        case Value.INTERVAL_MINUTE:
-        case Value.INTERVAL_SECOND:
-        case Value.INTERVAL_YEAR_TO_MONTH:
-        case Value.INTERVAL_DAY_TO_HOUR:
-        case Value.INTERVAL_DAY_TO_MINUTE:
-        case Value.INTERVAL_DAY_TO_SECOND:
-        case Value.INTERVAL_HOUR_TO_MINUTE:
-        case Value.INTERVAL_HOUR_TO_SECOND:
-        case Value.INTERVAL_MINUTE_TO_SECOND:
-            return type;
         default:
-            if (JdbcUtils.customDataTypesHandler != null) {
-                return JdbcUtils.customDataTypesHandler.getAddProofType(type);
-            }
             return type;
         }
     }
@@ -1713,43 +1693,11 @@ public class DataType {
         } else if (paramClass == Array.class) {
             return new JdbcArray(conn, v, 0);
         }
-        switch (v.getValueType()) {
-        case Value.JAVA_OBJECT: {
+        if (v.getValueType() == Value.JAVA_OBJECT) {
             Object o = SysProperties.serializeJavaObject ? JdbcUtils.deserialize(v.getBytes(),
                     conn.getSession().getDataHandler()) : v.getObject();
             if (paramClass.isAssignableFrom(o.getClass())) {
                 return o;
-            }
-            break;
-        }
-        case Value.BOOLEAN:
-        case Value.BYTE:
-        case Value.SHORT:
-        case Value.INT:
-        case Value.LONG:
-        case Value.DECIMAL:
-        case Value.TIME:
-        case Value.DATE:
-        case Value.TIMESTAMP:
-        case Value.TIMESTAMP_TZ:
-        case Value.BYTES:
-        case Value.UUID:
-        case Value.STRING:
-        case Value.STRING_IGNORECASE:
-        case Value.STRING_FIXED:
-        case Value.BLOB:
-        case Value.CLOB:
-        case Value.DOUBLE:
-        case Value.FLOAT:
-        case Value.NULL:
-        case Value.UNKNOWN:
-        case Value.ARRAY:
-        case Value.RESULT_SET:
-        case Value.GEOMETRY:
-            break;
-        default:
-            if (JdbcUtils.customDataTypesHandler != null) {
-                return JdbcUtils.customDataTypesHandler.getObject(v, paramClass);
             }
         }
         throw DbException.getUnsupportedException("converting to class " + paramClass.getName());

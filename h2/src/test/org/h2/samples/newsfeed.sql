@@ -7,6 +7,7 @@
 CREATE TABLE VERSION(ID INT PRIMARY KEY, VERSION VARCHAR, CREATED VARCHAR);
 INSERT INTO VERSION VALUES
 
+(150, '1.4.200', '2019-10-14'),
 (149, '1.4.199', '2019-03-13'),
 (148, '1.4.198', '2019-02-22'),
 (147, '1.4.197', '2018-03-18'),
@@ -22,8 +23,7 @@ INSERT INTO VERSION VALUES
 (137, '1.4.187', '2015-04-10'),
 (136, '1.4.186', '2015-03-02'),
 (135, '1.4.185', '2015-01-16'),
-(134, '1.4.184', '2014-12-19'),
-(133, '1.4.183', '2014-12-13');
+(134, '1.4.184', '2014-12-19');
 
 CREATE TABLE CHANNEL(TITLE VARCHAR, LINK VARCHAR, DESC VARCHAR,
     LANGUAGE VARCHAR, PUB TIMESTAMP, LAST TIMESTAMP, AUTHOR VARCHAR);
@@ -118,7 +118,7 @@ $$<rdf:RDF xmlns="http://usefulinc.com/ns/doap#" xmlns:rdf="http://www.w3.org/19
             <location rdf:resource="https://github.com/h2database/h2database"/>
         </SVNRepository>
     </repository>
-    <mailing-list rdf:resource="http://groups.google.com/group/h2-database"/>
+    <mailing-list rdf:resource="https://groups.google.com/forum/#!forum/h2-database"/>
 $$ ||
     GROUP_CONCAT(
         XMLNODE('release', NULL,

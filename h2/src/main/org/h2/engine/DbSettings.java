@@ -125,13 +125,6 @@ public class DbSettings extends SettingsBase {
     public final boolean dropRestrict = get("DROP_RESTRICT", true);
 
     /**
-     * Database setting <code>EARLY_FILTER</code> (default: false).<br />
-     * This setting allows table implementations to apply filter conditions
-     * early on.
-     */
-    public final boolean earlyFilter = get("EARLY_FILTER", false);
-
-    /**
      * Database setting <code>ESTIMATED_FUNCTION_TABLE_ROWS</code> (default:
      * 1000).<br />
      * The estimated number of rows in a function table (for example, CSVREAD or
@@ -286,15 +279,6 @@ public class DbSettings extends SettingsBase {
      * Always recompile prepared statements.
      */
     public final boolean recompileAlways = get("RECOMPILE_ALWAYS", false);
-
-    /**
-     * Database setting <code>RECONNECT_CHECK_DELAY</code> (default: 200).<br />
-     * Check the .lock.db file every this many milliseconds to detect that the
-     * database was changed. The process writing to the database must first
-     * notify a change in the .lock.db file, then wait twice this many
-     * milliseconds before updating the database.
-     */
-    public final int reconnectCheckDelay = get("RECONNECT_CHECK_DELAY", 200);
 
     /**
      * Database setting <code>REUSE_SPACE</code> (default: true).<br />

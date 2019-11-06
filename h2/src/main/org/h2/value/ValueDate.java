@@ -15,7 +15,6 @@ import org.h2.api.ErrorCode;
 import org.h2.engine.CastDataProvider;
 import org.h2.message.DbException;
 import org.h2.util.DateTimeUtils;
-import org.h2.util.JSR310;
 import org.h2.util.JSR310Utils;
 
 /**
@@ -62,17 +61,6 @@ public class ValueDate extends Value {
     }
 
     /**
-     * Calculate the date value (in the default timezone) from a given time in
-     * milliseconds in UTC.
-     *
-     * @param ms the milliseconds
-     * @return the value
-     */
-    public static ValueDate fromMillis(long ms) {
-        return fromDateValue(DateTimeUtils.dateValueFromLocalMillis(ms + DateTimeUtils.getTimeZoneOffsetMillis(ms)));
-    }
-
-    /**
      * Parse a string to a ValueDate.
      *
      * @param s the string to parse
@@ -108,15 +96,14 @@ public class ValueDate extends Value {
 
     @Override
     public String getString() {
-        StringBuilder buff = new StringBuilder(PRECISION);
-        DateTimeUtils.appendDate(buff, dateValue);
-        return buff.toString();
+        StringBuilder builder = new StringBuilder(PRECISION);
+        DateTimeUtils.appendDate(builder, dateValue);
+        return builder.toString();
     }
 
     @Override
     public StringBuilder getSQL(StringBuilder builder) {
-        builder.append("DATE '");
-        DateTimeUtils.appendDate(builder, dateValue);
+        DateTimeUtils.appendDate(builder.append("DATE '"), dateValue);
         return builder.append('\'');
     }
 
@@ -146,13 +133,11 @@ public class ValueDate extends Value {
 
     @Override
     public void set(PreparedStatement prep, int parameterIndex) throws SQLException {
-        if (JSR310.PRESENT) {
-            try {
-                prep.setObject(parameterIndex, JSR310Utils.valueToLocalDate(this), Types.DATE);
-                return;
-            } catch (SQLException ignore) {
-                // Nothing to do
-            }
+        try {
+            prep.setObject(parameterIndex, JSR310Utils.valueToLocalDate(this), Types.DATE);
+            return;
+        } catch (SQLException ignore) {
+            // Nothing to do
         }
         prep.setDate(parameterIndex, getDate(null));
     }

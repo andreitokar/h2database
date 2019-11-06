@@ -15,6 +15,8 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.sql.Timestamp;
 import java.util.Arrays;
+import java.util.Calendar;
+import java.util.GregorianCalendar;
 
 import org.h2.api.ErrorCode;
 import org.h2.api.IntervalQualifier;
@@ -24,7 +26,6 @@ import org.h2.result.ResultInterface;
 import org.h2.result.SimpleResult;
 import org.h2.util.Bits;
 import org.h2.util.DateTimeUtils;
-import org.h2.util.JdbcUtils;
 import org.h2.util.MathUtils;
 import org.h2.util.Utils;
 import org.h2.value.TypeInfo;
@@ -54,6 +55,7 @@ import org.h2.value.ValueString;
 import org.h2.value.ValueStringFixed;
 import org.h2.value.ValueStringIgnoreCase;
 import org.h2.value.ValueTime;
+import org.h2.value.ValueTimeTimeZone;
 import org.h2.value.ValueTimestamp;
 import org.h2.value.ValueTimestampTimeZone;
 import org.h2.value.ValueUuid;
@@ -119,11 +121,21 @@ public class Data {
     private static final int LOCAL_TIME = 132;
     private static final int LOCAL_DATE = 133;
     private static final int LOCAL_TIMESTAMP = 134;
-    private static final int CUSTOM_DATA_TYPE = 135;
+    // 135 was used for CUSTOM_DATA_TYPE
     private static final int JSON = 136;
     private static final int TIMESTAMP_TZ_2 = 137;
+    private static final int TIME_TZ = 138;
 
     private static final long MILLIS_PER_MINUTE = 1000 * 60;
+
+    /**
+     * Raw offset doesn't change during DST transitions, but changes during
+     * other transitions that some time zones have. H2 1.4.193 and later
+     * versions use zone offset that is valid for startup time for performance
+     * reasons. Datetime storage code of PageStore has issues with all time zone
+     * transitions, so this buggy logic is preserved as is too.
+     */
+    private static int zoneOffsetMillis = new GregorianCalendar().get(Calendar.ZONE_OFFSET);
 
     /**
      * The data itself.
@@ -526,12 +538,21 @@ public class Data {
                 long millis = nanos / 1_000_000;
                 nanos -= millis * 1_000_000;
                 writeVarLong(millis);
-                writeVarLong(nanos);
+                writeVarInt((int) nanos);
             } else {
                 writeByte(TIME);
-                writeVarLong(DateTimeUtils.getTimeLocalWithoutDst(v.getTime(null)));
+                writeVarLong(v.getTime(null, null).getTime() + zoneOffsetMillis);
             }
             break;
+        case Value.TIME_TZ: {
+            writeByte((byte) TIME_TZ);
+            ValueTimeTimeZone ts = (ValueTimeTimeZone) v;
+            long nanosOfDay = ts.getNanos();
+            writeVarInt((int) (nanosOfDay / DateTimeUtils.NANOS_PER_SECOND));
+            writeVarInt((int) (nanosOfDay % DateTimeUtils.NANOS_PER_SECOND));
+            writeTimeZone(ts.getTimeZoneOffsetSeconds());
+            break;
+        }
         case Value.DATE: {
             if (storeLocalTime) {
                 writeByte((byte) LOCAL_DATE);
@@ -539,7 +560,7 @@ public class Data {
                 writeVarLong(x);
             } else {
                 writeByte(DATE);
-                long x = DateTimeUtils.getTimeLocalWithoutDst(v.getDate(null));
+                long x = v.getDate(null).getTime() + zoneOffsetMillis;
                 writeVarLong(x / MILLIS_PER_MINUTE);
             }
             break;
@@ -554,11 +575,11 @@ public class Data {
                 long millis = nanos / 1_000_000;
                 nanos -= millis * 1_000_000;
                 writeVarLong(millis);
-                writeVarLong(nanos);
+                writeVarInt((int) nanos);
             } else {
-                Timestamp ts = v.getTimestamp(null);
+                Timestamp ts = v.getTimestamp(null, null);
                 writeByte(TIMESTAMP);
-                writeVarLong(DateTimeUtils.getTimeLocalWithoutDst(ts));
+                writeVarLong(ts.getTime() + zoneOffsetMillis);
                 writeVarInt(ts.getNanos() % 1_000_000);
             }
             break;
@@ -774,14 +795,6 @@ public class Data {
             break;
         }
         default:
-            if (JdbcUtils.customDataTypesHandler != null) {
-                byte[] b = v.getBytesNoCopy();
-                writeByte((byte) CUSTOM_DATA_TYPE);
-                writeVarInt(type);
-                writeVarInt(b.length);
-                write(b, 0, b.length);
-                break;
-            }
             DbException.throwInternalError("type=" + v.getValueType());
         }
         assert pos - start == getValueLen(v)
@@ -833,31 +846,27 @@ public class Data {
             BigInteger b = new BigInteger(buff);
             return ValueDecimal.get(new BigDecimal(b, scale));
         }
-        case LOCAL_DATE: {
+        case LOCAL_DATE:
             return ValueDate.fromDateValue(readVarLong());
-        }
         case DATE: {
-            long x = readVarLong() * MILLIS_PER_MINUTE;
-            return ValueDate.fromMillis(DateTimeUtils.getTimeUTCWithoutDst(x));
+            long ms = readVarLong() * MILLIS_PER_MINUTE - zoneOffsetMillis;
+            return ValueDate.fromDateValue(DateTimeUtils.dateValueFromLocalMillis(
+                    ms + DateTimeUtils.getTimeZoneOffsetMillis(ms)));
         }
-        case LOCAL_TIME: {
-            long nanos = readVarLong() * 1_000_000 + readVarLong();
-            return ValueTime.fromNanos(nanos);
+        case LOCAL_TIME:
+            return ValueTime.fromNanos(readVarLong() * 1_000_000 + readVarInt());
+        case TIME: {
+            long ms = readVarLong() - zoneOffsetMillis;
+            return ValueTime.fromNanos(DateTimeUtils.nanosFromLocalMillis(
+                    ms + DateTimeUtils.getTimeZoneOffsetMillis(ms)));
         }
-        case TIME:
-            // need to normalize the year, month and day
-            return ValueTime.fromMillis(
-                    DateTimeUtils.getTimeUTCWithoutDst(readVarLong()));
-        case LOCAL_TIMESTAMP: {
-            long dateValue = readVarLong();
-            long nanos = readVarLong() * 1_000_000 + readVarLong();
-            return ValueTimestamp.fromDateValueAndNanos(dateValue, nanos);
-        }
-        case TIMESTAMP: {
-            return ValueTimestamp.fromMillis(
-                    DateTimeUtils.getTimeUTCWithoutDst(readVarLong()),
-                    readVarInt() % 1_000_000);
-        }
+        case TIME_TZ:
+            return ValueTimeTimeZone.fromNanos(readVarInt() * DateTimeUtils.NANOS_PER_SECOND + readVarInt(),
+                    readTimeZone());
+        case LOCAL_TIMESTAMP:
+            return ValueTimestamp.fromDateValueAndNanos(readVarLong(), readVarLong() * 1_000_000 + readVarInt());
+        case TIMESTAMP:
+            return ValueTimestamp.fromMillis(readVarLong() - zoneOffsetMillis, readVarInt() % 1_000_000);
         case TIMESTAMP_TZ: {
             long dateValue = readVarLong();
             long nanos = readVarLong();
@@ -974,18 +983,6 @@ public class Data {
             }
             return ValueInterval.from(IntervalQualifier.valueOf(ordinal), negative, readVarLong(),
                     ordinal < 5 ? 0 : readVarLong());
-        }
-        case CUSTOM_DATA_TYPE: {
-            if (JdbcUtils.customDataTypesHandler != null) {
-                int customType = readVarInt();
-                int len = readVarInt();
-                byte[] b = Utils.newBytes(len);
-                read(b, 0, len);
-                return JdbcUtils.customDataTypesHandler.convert(
-                        ValueBytes.getNoCopy(b), customType);
-            }
-            throw DbException.get(ErrorCode.UNKNOWN_DATA_TYPE_1,
-                    "No CustomDataTypesHandler has been set up");
         }
         case JSON: {
             int len = readVarInt();
@@ -1120,13 +1117,20 @@ public class Data {
                 nanos -= millis * 1_000_000;
                 return 1 + getVarLongLen(millis) + getVarLongLen(nanos);
             }
-            return 1 + getVarLongLen(DateTimeUtils.getTimeLocalWithoutDst(v.getTime(null)));
+            return 1 + getVarLongLen(v.getTime(null, null).getTime() + zoneOffsetMillis);
+        case Value.TIME_TZ: {
+            ValueTimeTimeZone ts = (ValueTimeTimeZone) v;
+            long nanosOfDay = ts.getNanos();
+            int tz = ts.getTimeZoneOffsetSeconds();
+            return 1 + getVarIntLen((int) (nanosOfDay / DateTimeUtils.NANOS_PER_SECOND))
+                    + getVarIntLen((int) (nanosOfDay % DateTimeUtils.NANOS_PER_SECOND)) + getTimeZoneLen(tz);
+        }
         case Value.DATE: {
             if (storeLocalTime) {
                 long dateValue = ((ValueDate) v).getDateValue();
                 return 1 + getVarLongLen(dateValue);
             }
-            long x = DateTimeUtils.getTimeLocalWithoutDst(v.getDate(null));
+            long x = v.getDate(null).getTime() + zoneOffsetMillis;
             return 1 + getVarLongLen(x / MILLIS_PER_MINUTE);
         }
         case Value.TIMESTAMP: {
@@ -1139,9 +1143,8 @@ public class Data {
                 return 1 + getVarLongLen(dateValue) + getVarLongLen(millis) +
                         getVarLongLen(nanos);
             }
-            Timestamp ts = v.getTimestamp(null);
-            return 1 + getVarLongLen(DateTimeUtils.getTimeLocalWithoutDst(ts)) +
-                    getVarIntLen(ts.getNanos() % 1_000_000);
+            Timestamp ts = v.getTimestamp(null, null);
+            return 1 + getVarLongLen(ts.getTime() + zoneOffsetMillis) + getVarIntLen(ts.getNanos() % 1_000_000);
         }
         case Value.TIMESTAMP_TZ: {
             ValueTimestampTimeZone ts = (ValueTimestampTimeZone) v;
@@ -1261,11 +1264,6 @@ public class Data {
             return 1 + getVarIntLen(b.length) + b.length;
         }
         default:
-            if (JdbcUtils.customDataTypesHandler != null) {
-                byte[] b = v.getBytesNoCopy();
-                return 1 + getVarIntLen(v.getValueType())
-                    + getVarIntLen(b.length) + b.length;
-            }
             throw DbException.throwInternalError("type=" + v.getValueType());
         }
     }
@@ -1527,6 +1525,14 @@ public class Data {
 
     public DataHandler getHandler() {
         return handler;
+    }
+
+    /**
+     * Reset the cached calendar for default timezone, for example after
+     * changing the default timezone.
+     */
+    public static void resetCalendar() {
+        zoneOffsetMillis = new GregorianCalendar().get(Calendar.ZONE_OFFSET);
     }
 
 }

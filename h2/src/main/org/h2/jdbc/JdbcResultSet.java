@@ -20,18 +20,28 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.RowId;
 import java.sql.SQLException;
+import java.sql.SQLType;
 import java.sql.SQLWarning;
 import java.sql.SQLXML;
 import java.sql.Statement;
 import java.sql.Time;
 import java.sql.Timestamp;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.OffsetDateTime;
+import java.time.OffsetTime;
+import java.time.Period;
+import java.time.ZonedDateTime;
 import java.util.Calendar;
+import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import org.h2.api.ErrorCode;
 import org.h2.api.Interval;
-import org.h2.api.TimestampWithTimeZone;
 import org.h2.command.CommandInterface;
 import org.h2.engine.SysProperties;
 import org.h2.message.DbException;
@@ -40,7 +50,6 @@ import org.h2.result.ResultInterface;
 import org.h2.result.UpdatableRow;
 import org.h2.util.DateTimeUtils;
 import org.h2.util.IOUtils;
-import org.h2.util.JSR310;
 import org.h2.util.JSR310Utils;
 import org.h2.util.StringUtils;
 import org.h2.value.CompareMode;
@@ -62,7 +71,6 @@ import org.h2.value.ValueShort;
 import org.h2.value.ValueString;
 import org.h2.value.ValueTime;
 import org.h2.value.ValueTimestamp;
-import org.h2.value.ValueTimestampTimeZone;
 
 /**
  * <p>
@@ -402,7 +410,7 @@ public class JdbcResultSet extends TraceObject implements ResultSet, JdbcResultS
     public Time getTime(int columnIndex) throws SQLException {
         try {
             debugCodeCall("getTime", columnIndex);
-            return get(columnIndex).getTime(null);
+            return get(columnIndex).getTime(conn, null);
         } catch (Exception e) {
             throw logAndConvert(e);
         }
@@ -420,7 +428,7 @@ public class JdbcResultSet extends TraceObject implements ResultSet, JdbcResultS
     public Timestamp getTimestamp(int columnIndex) throws SQLException {
         try {
             debugCodeCall("getTimestamp", columnIndex);
-            return get(columnIndex).getTimestamp(null);
+            return get(columnIndex).getTimestamp(conn, null);
         } catch (Exception e) {
             throw logAndConvert(e);
         }
@@ -474,7 +482,7 @@ public class JdbcResultSet extends TraceObject implements ResultSet, JdbcResultS
     public Time getTime(String columnLabel) throws SQLException {
         try {
             debugCodeCall("getTime", columnLabel);
-            return get(columnLabel).getTime(null);
+            return get(columnLabel).getTime(conn, null);
         } catch (Exception e) {
             throw logAndConvert(e);
         }
@@ -492,7 +500,7 @@ public class JdbcResultSet extends TraceObject implements ResultSet, JdbcResultS
     public Timestamp getTimestamp(String columnLabel) throws SQLException {
         try {
             debugCodeCall("getTimestamp", columnLabel);
-            return get(columnLabel).getTimestamp(null);
+            return get(columnLabel).getTimestamp(conn, null);
         } catch (Exception e) {
             throw logAndConvert(e);
         }
@@ -929,7 +937,7 @@ public class JdbcResultSet extends TraceObject implements ResultSet, JdbcResultS
             if (isDebugEnabled()) {
                 debugCode("getTime(" + columnIndex + ", calendar)");
             }
-            return get(columnIndex).getTime(calendar != null ? calendar.getTimeZone() : null);
+            return get(columnIndex).getTime(conn, calendar != null ? calendar.getTimeZone() : null);
         } catch (Exception e) {
             throw logAndConvert(e);
         }
@@ -951,7 +959,7 @@ public class JdbcResultSet extends TraceObject implements ResultSet, JdbcResultS
             if (isDebugEnabled()) {
                 debugCode("getTime(" + StringUtils.quoteJavaString(columnLabel) + ", calendar)");
             }
-            return get(columnLabel).getTime(calendar != null ? calendar.getTimeZone() : null);
+            return get(columnLabel).getTime(conn, calendar != null ? calendar.getTimeZone() : null);
         } catch (Exception e) {
             throw logAndConvert(e);
         }
@@ -973,7 +981,7 @@ public class JdbcResultSet extends TraceObject implements ResultSet, JdbcResultS
             if (isDebugEnabled()) {
                 debugCode("getTimestamp(" + columnIndex + ", calendar)");
             }
-            return get(columnIndex).getTimestamp(calendar != null ? calendar.getTimeZone() : null);
+            return get(columnIndex).getTimestamp(conn, calendar != null ? calendar.getTimeZone() : null);
         } catch (Exception e) {
             throw logAndConvert(e);
         }
@@ -994,7 +1002,7 @@ public class JdbcResultSet extends TraceObject implements ResultSet, JdbcResultS
             if (isDebugEnabled()) {
                 debugCode("getTimestamp(" + StringUtils.quoteJavaString(columnLabel) + ", calendar)");
             }
-            return get(columnLabel).getTimestamp(calendar != null ? calendar.getTimeZone() : null);
+            return get(columnLabel).getTimestamp(conn, calendar != null ? calendar.getTimeZone() : null);
         } catch (Exception e) {
             throw logAndConvert(e);
         }
@@ -2207,6 +2215,92 @@ public class JdbcResultSet extends TraceObject implements ResultSet, JdbcResultS
                 debugCode("updateObject("+quote(columnLabel)+", x);");
             }
             update(columnLabel, convertToUnknownValue(x));
+        } catch (Exception e) {
+            throw logAndConvert(e);
+        }
+    }
+
+    /**
+     * Updates a column in the current or insert row.
+     *
+     * @param columnIndex (1,2,...)
+     * @param x the value
+     * @param targetSqlType the SQL type
+     * @throws SQLException if the result set is closed or not updatable
+     */
+    @Override
+    public void updateObject(int columnIndex, Object x, SQLType targetSqlType) throws SQLException {
+        try {
+            if (isDebugEnabled()) {
+                debugCode("updateObject(" + columnIndex + ", x, " + DataType.sqlTypeToString(targetSqlType) + ");");
+            }
+            update(columnIndex, convertToValue(x, targetSqlType));
+        } catch (Exception e) {
+            throw logAndConvert(e);
+        }
+    }
+
+    /**
+     * Updates a column in the current or insert row.
+     *
+     * @param columnIndex (1,2,...)
+     * @param x the value
+     * @param targetSqlType the SQL type
+     * @param scaleOrLength is ignored
+     * @throws SQLException if the result set is closed or not updatable
+     */
+    @Override
+    public void updateObject(int columnIndex, Object x, SQLType targetSqlType, int scaleOrLength) throws SQLException {
+        try {
+            if (isDebugEnabled()) {
+                debugCode("updateObject(" + columnIndex + ", x, " + DataType.sqlTypeToString(targetSqlType) + ", "
+                        + scaleOrLength + ");");
+            }
+            update(columnIndex, convertToValue(x, targetSqlType));
+        } catch (Exception e) {
+            throw logAndConvert(e);
+        }
+    }
+
+    /**
+     * Updates a column in the current or insert row.
+     *
+     * @param columnLabel the column label
+     * @param x the value
+     * @param targetSqlType the SQL type
+     * @throws SQLException if the result set is closed or not updatable
+     */
+    @Override
+    public void updateObject(String columnLabel, Object x, SQLType targetSqlType) throws SQLException {
+        try {
+            if (isDebugEnabled()) {
+                debugCode("updateObject(" + quote(columnLabel) + ", x, " + DataType.sqlTypeToString(targetSqlType)
+                        + ");");
+            }
+            update(columnLabel, convertToValue(x, targetSqlType));
+        } catch (Exception e) {
+            throw logAndConvert(e);
+        }
+    }
+
+    /**
+     * Updates a column in the current or insert row.
+     *
+     * @param columnLabel the column label
+     * @param x the value
+     * @param targetSqlType the SQL type
+     * @param scaleOrLength is ignored
+     * @throws SQLException if the result set is closed or not updatable
+     */
+    @Override
+    public void updateObject(String columnLabel, Object x, SQLType targetSqlType, int scaleOrLength)
+            throws SQLException {
+        try {
+            if (isDebugEnabled()) {
+                debugCode("updateObject(" + quote(columnLabel) + ", x, " + DataType.sqlTypeToString(targetSqlType)
+                        + ", " + scaleOrLength + ");");
+            }
+            update(columnLabel, convertToValue(x, targetSqlType));
         } catch (Exception e) {
             throw logAndConvert(e);
         }
@@ -3880,14 +3974,15 @@ public class JdbcResultSet extends TraceObject implements ResultSet, JdbcResultS
         } else if (type == Date.class) {
             return (T) value.getDate(null);
         } else if (type == Time.class) {
-            return (T) value.getTime(null);
+            return (T) value.getTime(conn, null);
         } else if (type == Timestamp.class) {
-            return (T) value.getTimestamp(null);
+            return (T) value.getTimestamp(conn, null);
         } else if (type == java.util.Date.class) {
-            return (T) new java.util.Date(value.getTimestamp(null).getTime());
+            return (T) new java.util.Date(value.getTimestamp(conn, null).getTime());
         } else if (type == Calendar.class) {
-            Calendar calendar = DateTimeUtils.createGregorianCalendar();
-            calendar.setTime(value.getTimestamp(calendar.getTimeZone()));
+            GregorianCalendar calendar = new GregorianCalendar();
+            calendar.setGregorianChange(DateTimeUtils.PROLEPTIC_GREGORIAN_CHANGE);
+            calendar.setTime(value.getTimestamp(conn, calendar.getTimeZone()));
             return (T) calendar;
         } else if (type == UUID.class) {
             return (T) value.getObject();
@@ -3909,9 +4004,6 @@ public class JdbcResultSet extends TraceObject implements ResultSet, JdbcResultS
             int id = getNextId(TraceObject.RESULT_SET);
             return (T) new JdbcResultSet(conn, null, null,
                     ((ValueResultSet) value.convertTo(Value.RESULT_SET)).getResult(), id, false, true, false);
-        } else if (type == TimestampWithTimeZone.class) {
-            ValueTimestampTimeZone v = (ValueTimestampTimeZone) value.convertTo(Value.TIMESTAMP_TZ);
-            return (T) new TimestampWithTimeZone(v.getDateValue(), v.getTimeNanos(), v.getTimeZoneOffsetSeconds());
         } else if (type == Interval.class) {
             if (!(value instanceof ValueInterval)) {
                 value = value.convertTo(Value.INTERVAL_DAY_TO_SECOND);
@@ -3920,21 +4012,23 @@ public class JdbcResultSet extends TraceObject implements ResultSet, JdbcResultS
             return (T) new Interval(v.getQualifier(), false, v.getLeading(), v.getRemaining());
         } else if (DataType.isGeometryClass(type)) {
             return (T) value.convertTo(Value.GEOMETRY).getObject();
-        } else if (type == JSR310.LOCAL_DATE) {
+        } else if (type == LocalDate.class) {
             return (T) JSR310Utils.valueToLocalDate(value);
-        } else if (type == JSR310.LOCAL_TIME) {
-            return (T) JSR310Utils.valueToLocalTime(value);
-        } else if (type == JSR310.LOCAL_DATE_TIME) {
+        } else if (type == LocalTime.class) {
+            return (T) JSR310Utils.valueToLocalTime(value, conn);
+        } else if (type == LocalDateTime.class) {
             return (T) JSR310Utils.valueToLocalDateTime(value, conn);
-        } else if (type == JSR310.INSTANT) {
+        } else if (type == Instant.class) {
             return (T) JSR310Utils.valueToInstant(value, conn);
-        } else if (type == JSR310.OFFSET_DATE_TIME) {
+        } else if (type == OffsetTime.class) {
+            return (T) JSR310Utils.valueToOffsetTime(value, conn);
+        } else if (type == OffsetDateTime.class) {
             return (T) JSR310Utils.valueToOffsetDateTime(value, conn);
-        } else if (type == JSR310.ZONED_DATE_TIME) {
+        } else if (type == ZonedDateTime.class) {
             return (T) JSR310Utils.valueToZonedDateTime(value, conn);
-        } else if (type == JSR310.PERIOD) {
+        } else if (type == Period.class) {
             return (T) JSR310Utils.valueToPeriod(value);
-        } else if (type == JSR310.DURATION) {
+        } else if (type == Duration.class) {
             return (T) JSR310Utils.valueToDuration(value);
         } else {
             throw unsupported(type.getName());
@@ -3967,6 +4061,17 @@ public class JdbcResultSet extends TraceObject implements ResultSet, JdbcResultS
             patchedRows.remove(rowId);
         } else {
             patchedRows.put(rowId, row);
+        }
+    }
+
+    private Value convertToValue(Object x, SQLType targetSqlType) {
+        checkClosed();
+        if (x == null) {
+            return ValueNull.INSTANCE;
+        } else {
+            int type = DataType.convertSQLTypeToValueType(targetSqlType);
+            Value v = DataType.convertToValue(conn.getSession(), x, type);
+            return v.convertTo(type, conn, false);
         }
     }
 

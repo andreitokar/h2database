@@ -501,6 +501,7 @@ public class DbException extends RuntimeException {
         case METHOD_NOT_ALLOWED_FOR_PREPARED_STATEMENT:
         case ACCESS_DENIED_TO_CLASS_1:
         case RESULT_SET_READONLY:
+        case CURRENT_SEQUENCE_VALUE_IS_NOT_DEFINED_IN_SESSION_1:
             return new JdbcSQLNonTransientException(message, sql, state, errorCode, cause, stackTrace);
         case FEATURE_NOT_SUPPORTED_1:
             return new JdbcSQLFeatureNotSupportedException(message, sql, state, errorCode, cause, stackTrace);
@@ -525,7 +526,6 @@ public class DbException extends RuntimeException {
         case TRIGGER_NOT_FOUND_1:
         case ERROR_CREATING_TRIGGER_OBJECT_3:
         case CONSTRAINT_ALREADY_EXISTS_1:
-        case INVALID_VALUE_SCALE_PRECISION:
         case SUBQUERY_IS_NOT_SINGLE_COLUMN:
         case INVALID_USE_OF_AGGREGATE_FUNCTION_1:
         case CONSTRAINT_NOT_FOUND_1:
@@ -572,6 +572,8 @@ public class DbException extends RuntimeException {
         case PUBLIC_STATIC_JAVA_METHOD_NOT_FOUND_1:
         case JAVA_OBJECT_SERIALIZER_CHANGE_WITH_DATA_TABLE:
         case FOR_UPDATE_IS_NOT_ALLOWED_IN_DISTINCT_OR_GROUPED_SELECT:
+        case INVALID_VALUE_PRECISION:
+        case INVALID_VALUE_SCALE:
             return new JdbcSQLSyntaxErrorException(message, sql, state, errorCode, cause, stackTrace);
         case HEX_STRING_ODD_1:
         case HEX_STRING_WRONG_1:
@@ -589,7 +591,8 @@ public class DbException extends RuntimeException {
             return new JdbcSQLDataException(message, sql, state, errorCode, cause, stackTrace);
         case URL_RELATIVE_TO_CWD:
         case DATABASE_NOT_FOUND_1:
-        case DATABASE_NOT_FOUND_2:
+        case DATABASE_NOT_FOUND_WITH_IF_EXISTS_1:
+        case REMOTE_DATABASE_NOT_FOUND_1:
         case TRACE_CONNECTION_NOT_CLOSED:
         case DATABASE_ALREADY_OPEN_1:
         case FILE_CORRUPTED_1:

@@ -11,7 +11,6 @@ import java.util.Iterator;
 import java.util.Map;
 
 import org.h2.mvstore.CursorPos;
-import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.MVMap;
 import org.h2.mvstore.Page;
 import org.h2.mvstore.RootReference;
@@ -28,14 +27,14 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
     /**
      * The spatial key type.
      */
-    final SpatialDataType keyType;
+    private final SpatialDataType keyType;
 
     private boolean quadraticSplit;
 
     public MVRTreeMap(Map<String, Object> config) {
         super(config);
         keyType = (SpatialDataType) config.get("key");
-        quadraticSplit = Boolean.valueOf(String.valueOf(config.get("quadraticSplit")));
+        quadraticSplit = Boolean.parseBoolean(String.valueOf(config.get("quadraticSplit")));
     }
 
     private MVRTreeMap(MVRTreeMap<V> source) {
@@ -133,7 +132,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
     @Override
     public V operate(SpatialKey key, V value, DecisionMaker<? super V> decisionMaker) {
         int attempt = 0;
-        final Collection<Page> removedPages = isPersistent() ? new ArrayList<Page>() : null;
+        final Collection<Page> removedPages = isPersistent() ? new ArrayList<>() : null;
         while(true) {
             RootReference rootReference = flushAndGetRoot();
             if (attempt++ == 0 && !rootReference.isLockedByCurrentThread()) {
@@ -200,7 +199,7 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
     @SuppressWarnings("unchecked")
     private V operate(Page p, Object key, V value, DecisionMaker<? super V> decisionMaker,
                         Collection<Page> removedPages) {
-        V result = null;
+        V result;
         if (p.isLeaf()) {
             int index = -1;
             int keyCount = p.getKeyCount();
@@ -212,7 +211,9 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
             result = index < 0 ? null : (V)p.getValue(index);
             Decision decision = decisionMaker.decide(result, value);
             switch (decision) {
-                case ABORT: break;
+                case REPEAT:
+                case ABORT:
+                    break;
                 case REMOVE:
                     if(index >= 0) {
                         p.remove(index);
@@ -231,90 +232,58 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
             return result;
         }
 
-        // p is a node
-        if(value == null)
-        {
-            for (int i = 0; i < p.getKeyCount(); i++) {
-                if (contains(p, i, key)) {
-                    Page cOld = p.getChildPage(i);
-                    // this will mark the old page as deleted
-                    // so we need to update the parent in any case
-                    // (otherwise the old page might be deleted again)
-                    if (removedPages != null) {
-                        removedPages.add(cOld);
-                    }
-                    Page c = cOld.copy();
-                    long oldSize = c.getTotalCount();
-                    result = operate(c, key, value, decisionMaker, removedPages);
-                    p.setChild(i, c);
-                    if (oldSize == c.getTotalCount()) {
-                        decisionMaker.reset();
-                        continue;
-                    }
-                    if (c.getTotalCount() == 0) {
-                        // this child was deleted
-                        p.remove(i);
-                        if (removedPages != null) {
-                            removedPages.add(p);
-                        }
-                        break;
-                    }
-                    Object oldBounds = p.getKey(i);
-                    if (!keyType.isInside(key, oldBounds)) {
-                        p.setKey(i, getBounds(c));
-                    }
+        // p is an internal node
+        int index = -1;
+        for (int i = 0; i < p.getKeyCount(); i++) {
+            if (contains(p, i, key)) {
+                Page c = p.getChildPage(i);
+                if(get(c, key) != null) {
+                    index = i;
                     break;
                 }
+                if(index < 0) {
+                    index = i;
+                }
             }
-        } else {
-            int index = -1;
+        }
+        if (index < 0) {
+            // a new entry, we don't know where to add yet
+            float min = Float.MAX_VALUE;
             for (int i = 0; i < p.getKeyCount(); i++) {
-                if (contains(p, i, key)) {
-                    Page c = p.getChildPage(i);
-                    if(get(c, key) != null) {
-                        index = i;
-                        break;
-                    }
-                    if(index < 0) {
-                        index = i;
-                    }
+                Object k = p.getKey(i);
+                float areaIncrease = keyType.getAreaIncrease(k, key);
+                if (areaIncrease < min) {
+                    index = i;
+                    min = areaIncrease;
                 }
             }
-            if (index < 0) {
-                // a new entry, we don't know where to add yet
-                float min = Float.MAX_VALUE;
-                for (int i = 0; i < p.getKeyCount(); i++) {
-                    Object k = p.getKey(i);
-                    float areaIncrease = keyType.getAreaIncrease(k, key);
-                    if (areaIncrease < min) {
-                        index = i;
-                        min = areaIncrease;
-                    }
-                }
+        }
+        Page c = p.getChildPage(index);
+        if (removedPages != null) {
+            removedPages.add(c);
+        }
+        c = c.copy();
+        if (c.getKeyCount() > store.getKeysPerPage() || c.getMemory() > store.getMaxPageSize()
+                && c.getKeyCount() > 4) {
+            // split on the way down
+            Page split = split(c);
+            p.setKey(index, getBounds(c));
+            p.setChild(index, c);
+            p.insertNode(index, getBounds(split), split);
+            // now we are not sure where to add
+            result = operate(p, key, value, decisionMaker, removedPages);
+        } else {
+            result = operate(c, key, value, decisionMaker, removedPages);
+            Object bounds = p.getKey(index);
+            if (!keyType.contains(bounds, key)) {
+                bounds = keyType.createBoundingBox(bounds);
+                keyType.increaseBounds(bounds, key);
+                p.setKey(index, bounds);
             }
-            Page c = p.getChildPage(index);
-            if (removedPages != null) {
-                removedPages.add(c);
-            }
-            c = c.copy();
-            if (c.getKeyCount() > store.getKeysPerPage() || c.getMemory() > store.getMaxPageSize()
-                    && c.getKeyCount() > 4) {
-                // split on the way down
-                Page split = split(c);
-                p.setKey(index, getBounds(c));
+            if (c.getTotalCount() > 0) {
                 p.setChild(index, c);
-                p.insertNode(index, getBounds(split), split);
-                // now we are not sure where to add
-                result = operate(p, key, value, decisionMaker, removedPages);
             } else {
-                result = operate(c, key, value, decisionMaker, removedPages);
-                Object bounds = p.getKey(index);
-                if (!keyType.contains(bounds, key)) {
-                    bounds = keyType.createBoundingBox(bounds);
-                    keyType.increaseBounds(bounds, key);
-                    p.setKey(index, bounds);
-                }
-                p.setChild(index, c);
+                p.remove(index);
             }
         }
         return result;
@@ -545,16 +514,10 @@ public final class MVRTreeMap<V> extends MVMap<SpatialKey, V> {
             return c;
         }
 
-        @Override
-        public void remove() {
-            throw DataUtils.newUnsupportedOperationException(
-                    "Removing is not supported");
-        }
-
         /**
          * Fetch the next entry if there is one.
          */
-        protected void fetchNext() {
+        void fetchNext() {
             while (pos != null) {
                 Page p = pos.page;
                 if (p.isLeaf()) {

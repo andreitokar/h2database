@@ -708,7 +708,7 @@ public class TestTools extends TestDb {
         Connection conn = getConnection(url + ";TRACE_LEVEL_FILE=3", "sa", "sa");
         Statement stat = conn.createStatement();
         stat.execute(
-                "create table test(id int primary key, name varchar, amount decimal)");
+                "create table test(id int primary key, name varchar, amount decimal(4, 2))");
         PreparedStatement prep = conn.prepareStatement(
                 "insert into test values(?, ?, ?)");
         prep.setInt(1, 1);
@@ -1138,12 +1138,12 @@ public class TestTools extends TestDb {
             final int prt = tcpServerWithPassword.getPort();
             remainingServers.add(tcpServerWithPassword);
             // must not be able to create new db
-            new AssertThrows(ErrorCode.DATABASE_NOT_FOUND_2) {
+            new AssertThrows(ErrorCode.REMOTE_DATABASE_NOT_FOUND_1) {
                 @Override
                 public void test() throws SQLException {
                     getConnection("jdbc:h2:tcp://localhost:"+prt+"/test2", "sa", "");
             }};
-            new AssertThrows(ErrorCode.DATABASE_NOT_FOUND_2) {
+            new AssertThrows(ErrorCode.REMOTE_DATABASE_NOT_FOUND_1) {
                 @Override
                 public void test() throws SQLException {
                     getConnection("jdbc:h2:tcp://localhost:"+prt+"/test2;ifexists=false", "sa", "");

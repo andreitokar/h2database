@@ -3,12 +3,6 @@
 -- Initial Developer: H2 Group
 --
 --- special grammar and test cases ---------------------------------------------------------------------------------------------
-select * from dual join(select x from dual) on 1=1;
-> X X
-> - -
-> 1 1
-> rows: 1
-
 select 0 as x from system_range(1, 2) d group by d.x;
 > X
 > -
@@ -281,17 +275,14 @@ drop table test;
 select 2^2;
 > exception SYNTAX_ERROR_1
 
-create table test(d decimal(1, 2));
-> exception INVALID_VALUE_SCALE_PRECISION
-
 select * from dual where cast('xx' as varchar_ignorecase(1)) = 'X' and cast('x x ' as char(2)) = 'x';
-> X
-> -
-> 1
+>
+>
+>
 > rows: 1
 
 explain select -cast(0 as real), -cast(0 as double);
->> SELECT 0.0, 0.0 FROM SYSTEM_RANGE(1, 1) /* range index */
+>> SELECT 0.0, 0.0
 
 select (1) one;
 > ONE
@@ -395,7 +386,7 @@ drop table test;
 > ok
 
 explain analyze select 1;
->> SELECT 1 FROM SYSTEM_RANGE(1, 1) /* range index */ /* scanCount: 2 */
+>> SELECT 1
 
 create table test(id int);
 > ok
@@ -488,7 +479,7 @@ select count(*) from (select 1 union (select 2 intersect select 2)) x;
 create table test(id varchar(1) primary key) as select 'X';
 > ok
 
-select count(*) from (select 1 from dual where x in ((select 1 union select 1))) a;
+select count(*) from (select 1 from dual where 1 in ((select 1 union select 1))) a;
 > COUNT(*)
 > --------
 > 1
@@ -877,12 +868,6 @@ drop table test;
 alter table information_schema.help rename to information_schema.help2;
 > exception FEATURE_NOT_SUPPORTED_1
 
-CREATE TABLE test (id int(25) NOT NULL auto_increment, name varchar NOT NULL, PRIMARY KEY  (id,name));
-> ok
-
-drop table test;
-> ok
-
 CREATE TABLE test (id bigserial NOT NULL primary key);
 > ok
 
@@ -951,21 +936,15 @@ INSERT INTO p VALUES('-1-01-01'), ('0-01-01'), ('0001-01-01');
 > update count: 3
 
 select d, year(d), extract(year from d), cast(d as timestamp) from p;
-> D          YEAR(D) EXTRACT(YEAR FROM D) CAST(D AS TIMESTAMP)
-> ---------- ------- -------------------- --------------------
-> -1-01-01   -1      -1                   -1-01-01 00:00:00
-> 0-01-01    0       0                    0-01-01 00:00:00
-> 0001-01-01 1       1                    0001-01-01 00:00:00
+> D           YEAR(D) EXTRACT(YEAR FROM D) CAST(D AS TIMESTAMP)
+> ----------- ------- -------------------- --------------------
+> -0001-01-01 -1      -1                   -0001-01-01 00:00:00
+> 0000-01-01  0       0                    0000-01-01 00:00:00
+> 0001-01-01  1       1                    0001-01-01 00:00:00
 > rows: 3
 
 drop table p;
 > ok
-
-(SELECT X FROM DUAL ORDER BY X+2) UNION SELECT X FROM DUAL;
-> X
-> -
-> 1
-> rows: 1
 
 create table test(a int, b int default 1);
 > ok
@@ -1230,14 +1209,6 @@ having count(*) < 1000 order by dir_num asc;
 
 drop table multi_pages, b_holding;
 > ok
-
-select * from dual where x = 1000000000000000000000;
-> X
-> -
-> rows: 0
-
-select * from dual where x = 'Hello';
-> exception DATA_CONVERSION_ERROR_1
 
 create table test(id smallint primary key);
 > ok
@@ -1959,11 +1930,11 @@ create sequence "TestSchema"."TestSeq";
 create sequence "TestSchema"."ABC";
 > ok
 
-select currval('main_seq'), currval('TestSchema', 'TestSeq'), nextval('TestSchema', 'ABC');
-> CURRVAL('main_seq') CURRVAL('TestSchema', 'TestSeq') NEXTVAL('TestSchema', 'ABC')
-> ------------------- -------------------------------- ----------------------------
-> 0                   0                                1
-> rows: 1
+select currval('main_seq'), currval('TestSchema', 'TestSeq');
+> exception CURRENT_SEQUENCE_VALUE_IS_NOT_DEFINED_IN_SESSION_1
+
+select nextval('TestSchema', 'ABC');
+>> 1
 
 set autocommit off;
 > ok
@@ -2851,15 +2822,9 @@ drop table test;
 > ok
 
 call select 1.0/3.0*3.0, 100.0/2.0, -25.0/100.0, 0.0/3.0, 6.9/2.0, 0.72179425150347250912311550800000 / 5314251955.21;
-> SELECT 0.999999999999999999999999990, 5E+1, -0.25, 0, 3.45, 1.35822361752313607260107721120531135706133161972E-10 FROM SYSTEM_RANGE(1, 1) /* range index */ /* scanCount: 2 */
-> ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+> SELECT 0.999999999999999999999999990, 5E+1, -0.25, 0, 3.45, 1.35822361752313607260107721120531135706133161972E-10
+> -----------------------------------------------------------------------------------------------------------------
 > ROW (0.999999999999999999999999990, 5E+1, -0.25, 0, 3.45, 1.35822361752313607260107721120531135706133161972E-10)
-> rows: 1
-
-call (select x from dual where x is null);
-> SELECT X FROM SYSTEM_RANGE(1, 1) /* range index: X IS NULL */ /* scanCount: 1 */ WHERE X IS NULL
-> ------------------------------------------------------------------------------------------------
-> null
 > rows: 1
 
 create sequence test_seq;
@@ -3542,13 +3507,6 @@ DROP TABLE IF EXISTS CHILD;
 
 DROP TABLE IF EXISTS PARENT;
 > ok
-
-(SELECT * FROM DUAL) UNION ALL (SELECT * FROM DUAL);
-> X
-> -
-> 1
-> 1
-> rows: 2
 
 DECLARE GLOBAL TEMPORARY TABLE TEST(ID INT PRIMARY KEY);
 > ok
@@ -5793,15 +5751,15 @@ SELECT XD+1, XD-1, XD-XD FROM TEST;
 > null                  null                   null
 > rows: 4
 
-SELECT ID, CAST(XT AS DATE) T2D, CAST(XTS AS DATE) TS2D,
-CAST(XD AS TIME) D2T, CAST(XTS AS TIME(9)) TS2T,
+SELECT ID, CAST(XTS AS DATE) TS2D,
+CAST(XTS AS TIME(9)) TS2T,
 CAST(XD AS TIMESTAMP) D2TS FROM TEST;
-> ID   T2D        TS2D       D2T      TS2T               D2TS
-> ---- ---------- ---------- -------- ------------------ -------------------
-> 0    1970-01-01 0002-03-04 00:00:00 00:00:00           0001-02-03 00:00:00
-> 1    1970-01-01 0007-08-09 00:00:00 00:01:02           0004-05-06 00:00:00
-> 2    1970-01-01 1999-12-31 00:00:00 23:59:59.123456789 1999-12-31 00:00:00
-> null null       null       null     null               null
+> ID   TS2D       TS2T               D2TS
+> ---- ---------- ------------------ -------------------
+> 0    0002-03-04 00:00:00           0001-02-03 00:00:00
+> 1    0007-08-09 00:01:02           0004-05-06 00:00:00
+> 2    1999-12-31 23:59:59.123456789 1999-12-31 00:00:00
+> null null       null               null
 > rows: 4
 
 SCRIPT SIMPLE NOPASSWORDS NOSETTINGS;
@@ -7305,31 +7263,6 @@ drop table test;
 > ok
 
 --- test cases ---------------------------------------------------------------------------------------------
-create memory table word(word_id integer, name varchar);
-> ok
-
-alter table word alter column word_id integer(10) auto_increment;
-> ok
-
-insert into word(name) values('Hello');
-> update count: 1
-
-alter table word alter column word_id restart with 30872;
-> ok
-
-insert into word(name) values('World');
-> update count: 1
-
-select * from word;
-> WORD_ID NAME
-> ------- -----
-> 1       Hello
-> 30872   World
-> rows: 2
-
-drop table word;
-> ok
-
 create table test(id int, name varchar);
 > ok
 
@@ -7579,7 +7512,7 @@ drop schema z cascade;
 > ok
 
 ----- Issue#493 -----
-create table test (year int, action varchar(10));
+create table test ("YEAR" int, action varchar(10));
 > ok
 
 insert into test values (2015, 'order'), (2016, 'order'), (2014, 'order');
@@ -7588,7 +7521,7 @@ insert into test values (2015, 'order'), (2016, 'order'), (2014, 'order');
 insert into test values (2014, 'execution'), (2015, 'execution'), (2016, 'execution');
 > update count: 3
 
-select * from test where year in (select distinct year from test order by year desc limit 1 offset 0);
+select * from test where "YEAR" in (select distinct "YEAR" from test order by "YEAR" desc limit 1 offset 0);
 > YEAR ACTION
 > ---- ---------
 > 2016 execution

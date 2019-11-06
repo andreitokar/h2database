@@ -217,7 +217,7 @@ public class TableLink extends Table {
         } catch (Exception e) {
             // Some ODBC bridge drivers don't support it:
             // some combinations of "DataDirect SequeLink(R) for JDBC"
-            // http://www.datadirect.com/index.ssp
+            // https://www.progress.com/odbc/sequelink
         }
         try (ResultSet rs = meta.getIndexInfo(null, originalSchema, originalTable, false, true)) {
             readIndexes(rs, columnMap, pkName);
@@ -549,11 +549,6 @@ public class TableLink extends Table {
     @Override
     public void unlock(Session s) {
         // nothing to do
-    }
-
-    @Override
-    public void checkRename() {
-        // ok
     }
 
     @Override

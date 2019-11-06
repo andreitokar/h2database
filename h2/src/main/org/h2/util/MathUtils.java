@@ -66,7 +66,7 @@ public class MathUtils {
             return cachedSecureRandom;
         }
         // Workaround for SecureRandom problem as described in
-        // http://bugs.sun.com/bugdatabase/view_bug.do?bug_id=6202721
+        // https://bugs.java.com/bugdatabase/view_bug.do?bug_id=6202721
         // Can not do that in a static initializer block, because
         // threads are not started until after the initializer block exits
         try {
@@ -74,20 +74,17 @@ public class MathUtils {
             // On some systems, secureRandom.generateSeed() is very slow.
             // In this case it is initialized using our own seed implementation
             // and afterwards (in the thread) using the regular algorithm.
-            Runnable runnable = new Runnable() {
-                @Override
-                public void run() {
-                    try {
-                        SecureRandom sr = SecureRandom.getInstance("SHA1PRNG");
-                        byte[] seed = sr.generateSeed(20);
-                        synchronized (cachedSecureRandom) {
-                            cachedSecureRandom.setSeed(seed);
-                            seeded = true;
-                        }
-                    } catch (Exception e) {
-                        // NoSuchAlgorithmException
-                        warn("SecureRandom", e);
+            Runnable runnable = () -> {
+                try {
+                    SecureRandom sr = SecureRandom.getInstance("SHA1PRNG");
+                    byte[] seed = sr.generateSeed(20);
+                    synchronized (cachedSecureRandom) {
+                        cachedSecureRandom.setSeed(seed);
+                        seeded = true;
                     }
+                } catch (Exception e) {
+                    // NoSuchAlgorithmException
+                    warn("SecureRandom", e);
                 }
             };
 

@@ -12,8 +12,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
+import java.time.OffsetTime;
 import java.time.Period;
-import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 
@@ -26,6 +26,7 @@ import org.h2.value.Value;
 import org.h2.value.ValueDate;
 import org.h2.value.ValueInterval;
 import org.h2.value.ValueTime;
+import org.h2.value.ValueTimeTimeZone;
 import org.h2.value.ValueTimestamp;
 import org.h2.value.ValueTimestampTimeZone;
 
@@ -33,94 +34,6 @@ import org.h2.value.ValueTimestampTimeZone;
  * This utility class provides access to JSR 310 classes.
  */
 public class JSR310Utils {
-
-    private static final class WithTimeZone8 extends TimeZoneProvider.WithTimeZone {
-
-        private static final long EPOCH_SECONDS_HIGH = 31556889864403199L;
-
-        private static final long EPOCH_SECONDS_LOW = -31557014167219200L;
-
-        private final ZoneId zoneId;
-
-        WithTimeZone8(ZoneId timeZone) {
-            this.zoneId = timeZone;
-        }
-
-        @Override
-        public int getTimeZoneOffsetUTC(long epochSeconds) {
-            return zoneId.getRules().getOffset(epochSecondsForCalendar(epochSeconds)).getTotalSeconds();
-        }
-
-        @Override
-        int getTimeZoneOffsetLocal(int year, int month, int day, int hour, int minute, int second) {
-            year = yearForCalendar(year);
-            return ZonedDateTime.of(LocalDateTime.of(year, month, day, hour, minute, second), zoneId).getOffset()
-                    .getTotalSeconds();
-        }
-
-        @Override
-        long getEpochSecondsFromLocal(int year, int month, int day, int hour, int minute, int second) {
-            int yearForCalendar = yearForCalendar(year);
-            long epoch = ZonedDateTime.of(LocalDateTime.of(yearForCalendar, month, day, hour, minute, second), zoneId)
-                    .toOffsetDateTime().toEpochSecond();
-            return epoch + (year - yearForCalendar) * SECONDS_PER_YEAR;
-        }
-
-        @Override
-        public String getId() {
-            return zoneId.getId();
-        }
-
-        /**
-         * Returns a year within the range -999,999,999..999,999,999 for the
-         * given year. Too large and too small years are replaced with years
-         * within the range using the 400 years period of the Gregorian
-         * calendar.
-         *
-         * Because we need them only to calculate a time zone offset, it's safe
-         * to normalize them to such range.
-         *
-         * @param year
-         *            the year
-         * @return the specified year or the replacement year within the range
-         */
-        private static int yearForCalendar(int year) {
-            if (year > 999_999_999) {
-                year -= 400;
-            } else if (year < -999_999_999) {
-                year += 400;
-            }
-            return year;
-        }
-
-        /**
-         * Returns an Instant with EPOCH seconds within the range
-         * -31,557,014,167,219,200..31,556,889,864,403,199
-         * (-1000000000-01-01T00:00Z..1000000000-12-31T23:59:59.999999999Z). Too
-         * large and too small EPOCH seconds are replaced with EPOCH seconds
-         * within the range using the 400 years period of the Gregorian
-         * calendar.
-         *
-         * @param epochSeconds
-         *            the EPOCH seconds
-         * @return an Instant with specified or the replacement EPOCH seconds
-         *         within the range
-         */
-        private static Instant epochSecondsForCalendar(long epochSeconds) {
-            if (epochSeconds > EPOCH_SECONDS_HIGH) {
-                epochSeconds -= SECONDS_PER_PERIOD;
-            } else if (epochSeconds < EPOCH_SECONDS_LOW) {
-                epochSeconds += SECONDS_PER_PERIOD;
-            }
-            return Instant.ofEpochSecond(epochSeconds);
-        }
-
-        @Override
-        public String toString() {
-            return "TimeZoneProvider " + zoneId.getId();
-        }
-
-    }
 
     private static final long MIN_DATE_VALUE = (-999_999_999L << DateTimeUtils.SHIFT_YEAR)
             + (1 << DateTimeUtils.SHIFT_MONTH) + 1;
@@ -163,10 +76,12 @@ public class JSR310Utils {
      *
      * @param value
      *            the value to convert
+     * @param provider
+     *            the cast information provider
      * @return the LocalTime
      */
-    public static Object valueToLocalTime(Value value) {
-        return LocalTime.ofNanoOfDay(((ValueTime) value.convertTo(Value.TIME)).getNanos());
+    public static Object valueToLocalTime(Value value, CastDataProvider provider) {
+        return LocalTime.ofNanoOfDay(((ValueTime) value.convertTo(Value.TIME, provider, false)).getNanos());
     }
 
     /**
@@ -260,6 +175,23 @@ public class JSR310Utils {
     }
 
     /**
+     * Converts a value to a OffsetTime.
+     *
+     * This method should only be called from Java 8 or later version.
+     *
+     * @param value
+     *            the value to convert
+     * @param provider
+     *            the cast information provider
+     * @return the OffsetTime
+     */
+    public static Object valueToOffsetTime(Value value, CastDataProvider provider) {
+        ValueTimeTimeZone valueTimeTimeZone = (ValueTimeTimeZone) value.convertTo(Value.TIME_TZ, provider, false);
+        return OffsetTime.of(LocalTime.ofNanoOfDay(valueTimeTimeZone.getNanos()),
+                ZoneOffset.ofTotalSeconds(valueTimeTimeZone.getTimeZoneOffsetSeconds()));
+    }
+
+    /**
      * Converts a value to a Period.
      *
      * This method should only be called from Java 8 or later version.
@@ -313,7 +245,7 @@ public class JSR310Utils {
      *            the LocalDate to convert, not {@code null}
      * @return the value
      */
-    public static Value localDateToDateValue(Object localDate) {
+    public static Value localDateToValue(Object localDate) {
         LocalDate ld = (LocalDate) localDate;
         return ValueDate.fromDateValue(DateTimeUtils.dateValue(ld.getYear(), ld.getMonthValue(), ld.getDayOfMonth()));
     }
@@ -325,7 +257,7 @@ public class JSR310Utils {
      *            the LocalTime to convert, not {@code null}
      * @return the value
      */
-    public static Value localTimeToTimeValue(Object localTime) {
+    public static Value localTimeToValue(Object localTime) {
         return ValueTime.fromNanos(((LocalTime) localTime).toNanoOfDay());
     }
 
@@ -398,6 +330,18 @@ public class JSR310Utils {
                 localDate.getDayOfMonth());
         return ValueTimestampTimeZone.fromDateValueAndNanos(dateValue, localDateTime.toLocalTime().toNanoOfDay(),
                 z.getOffset().getTotalSeconds());
+    }
+
+    /**
+     * Converts a OffsetTime to a Value.
+     *
+     * @param offsetTime
+     *            the OffsetTime to convert, not {@code null}
+     * @return the value
+     */
+    public static ValueTimeTimeZone offsetTimeToValue(Object offsetTime) {
+        OffsetTime o = (OffsetTime) offsetTime;
+        return ValueTimeTimeZone.fromNanos(o.toLocalTime().toNanoOfDay(), o.getOffset().getTotalSeconds());
     }
 
     private static Object localDateTimeFromDateNanos(long dateValue, long timeNanos) {
@@ -483,26 +427,6 @@ public class JSR310Utils {
             seconds--;
         }
         return ValueInterval.from(IntervalQualifier.SECOND, negative, seconds, nano);
-    }
-
-    /**
-     * Returns a default time zone provider.
-     *
-     * @return the default time zone provider
-     */
-    public static TimeZoneProvider getDefaultTimeZoneProvider() {
-        return new WithTimeZone8(ZoneId.systemDefault());
-    }
-
-    /**
-     * Returns a time zone provider for a specified time zone ID.
-     *
-     * @param timeZoneId
-     *            the time zone ID
-     * @return the time zone provider
-     */
-    public static TimeZoneProvider getTimeZoneProvider(String timeZoneId) {
-        return new WithTimeZone8(ZoneId.of(timeZoneId, ZoneId.SHORT_IDS));
     }
 
 }

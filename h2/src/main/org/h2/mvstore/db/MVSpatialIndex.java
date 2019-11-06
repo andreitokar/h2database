@@ -139,7 +139,7 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
         if (indexType.isUnique()) {
             // this will detect committed entries only
             RTreeCursor cursor = spatialMap.findContainedKeys(key);
-            Iterator<SpatialKey> it = map.wrapIterator(cursor, false);
+            Iterator<SpatialKey> it = new SpatialKeyIterator(map, cursor, false);
             while (it.hasNext()) {
                 SpatialKey k = it.next();
                 if (k.equalsIgnoringId(key)) {
@@ -155,7 +155,7 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
         if (indexType.isUnique()) {
             // check if there is another (uncommitted) entry
             RTreeCursor cursor = spatialMap.findContainedKeys(key);
-            Iterator<SpatialKey> it = map.wrapIterator(cursor, true);
+            Iterator<SpatialKey> it = new SpatialKeyIterator(map, cursor, true);
             while (it.hasNext()) {
                 SpatialKey k = it.next();
                 if (k.equalsIgnoringId(key)) {
@@ -195,33 +195,22 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
     }
 
     @Override
-    public Cursor find(TableFilter filter, SearchRow first, SearchRow last) {
-        return find(filter.getSession());
-    }
-
-    @Override
     public Cursor find(Session session, SearchRow first, SearchRow last) {
-        return find(session);
-    }
-
-    private Cursor find(Session session) {
         Iterator<SpatialKey> cursor = spatialMap.keyIterator(null);
         TransactionMap<SpatialKey, Value> map = getMap(session);
-        Iterator<SpatialKey> it = map.wrapIterator(cursor, false);
+        Iterator<SpatialKey> it = new SpatialKeyIterator(map, cursor, false);
         return new MVStoreCursor(session, it, mvTable);
     }
 
     @Override
-    public Cursor findByGeometry(TableFilter filter, SearchRow first,
-            SearchRow last, SearchRow intersection) {
-        Session session = filter.getSession();
+    public Cursor findByGeometry(Session session, SearchRow first, SearchRow last, SearchRow intersection) {
         if (intersection == null) {
             return find(session, first, last);
         }
         Iterator<SpatialKey> cursor =
                 spatialMap.findIntersectingKeys(getKey(intersection));
         TransactionMap<SpatialKey, Value> map = getMap(session);
-        Iterator<SpatialKey> it = map.wrapIterator(cursor, false);
+        Iterator<SpatialKey> it = new SpatialKeyIterator(map, cursor, false);
         return new MVStoreCursor(session, it, mvTable);
     }
 
@@ -336,20 +325,6 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
     }
 
     @Override
-    public boolean canGetFirstOrLast() {
-        return true;
-    }
-
-    @Override
-    public Cursor findFirstOrLast(Session session, boolean first) {
-        if (!first) {
-            throw DbException.throwInternalError(
-                    "Spatial Index can only be fetch in ascending order");
-        }
-        return find(session);
-    }
-
-    @Override
     public boolean needRebuild() {
         try {
             return dataMap.sizeAsLongMax() == 0;
@@ -379,11 +354,6 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
         return 0;
     }
 
-    @Override
-    public void checkRename() {
-        // ok
-    }
-
     /**
      * Get the map to store the data.
      *
@@ -403,10 +373,11 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
         return dataMap.map;
     }
 
+
     /**
      * A cursor.
      */
-    public static class MVStoreCursor implements Cursor {
+    private static class MVStoreCursor implements Cursor {
 
         private final Session session;
         private final Iterator<SpatialKey> it;
@@ -415,7 +386,7 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
         private SearchRow searchRow;
         private Row row;
 
-        public MVStoreCursor(Session session, Iterator<SpatialKey> it, MVTable mvTable) {
+        MVStoreCursor(Session session, Iterator<SpatialKey> it, MVTable mvTable) {
             this.session = session;
             this.it = it;
             this.mvTable = mvTable;
@@ -443,15 +414,6 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
             return searchRow;
         }
 
-        /**
-         * Returns the current key.
-         *
-         * @return the current key
-         */
-        public SpatialKey getKey() {
-            return current;
-        }
-
         @Override
         public boolean next() {
             current = it.hasNext() ? it.next() : null;
@@ -465,6 +427,44 @@ public final class MVSpatialIndex extends BaseIndex implements SpatialIndex, MVI
             throw DbException.getUnsupportedException("previous");
         }
 
+    }
+
+    private static class SpatialKeyIterator implements Iterator<SpatialKey>
+    {
+        private final TransactionMap<SpatialKey, Value> map;
+        private final Iterator<SpatialKey> iterator;
+        private final boolean includeUncommitted;
+        private SpatialKey current;
+
+        SpatialKeyIterator(TransactionMap<SpatialKey, Value> map,
+                            Iterator<SpatialKey> iterator, boolean includeUncommitted) {
+            this.map = map;
+            this.iterator = iterator;
+            this.includeUncommitted = includeUncommitted;
+            fetchNext();
+        }
+
+        private void fetchNext() {
+            while (iterator.hasNext()) {
+                current = iterator.next();
+                if (includeUncommitted || map.containsKey(current)) {
+                    return;
+                }
+            }
+            current = null;
+        }
+
+        @Override
+        public boolean hasNext() {
+            return current != null;
+        }
+
+        @Override
+        public SpatialKey next() {
+            SpatialKey result = current;
+            fetchNext();
+            return result;
+        }
     }
 
     /**

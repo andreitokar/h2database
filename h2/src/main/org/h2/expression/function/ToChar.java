@@ -14,13 +14,16 @@ import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Currency;
 import java.util.Locale;
-import java.util.TimeZone;
 
 import org.h2.api.ErrorCode;
+import org.h2.engine.Session;
 import org.h2.message.DbException;
 import org.h2.util.DateTimeUtils;
 import org.h2.util.StringUtils;
+import org.h2.util.TimeZoneProvider;
 import org.h2.value.Value;
+import org.h2.value.ValueTimeTimeZone;
+import org.h2.value.ValueTimestamp;
 import org.h2.value.ValueTimestampTimeZone;
 
 /**
@@ -512,6 +515,8 @@ public class ToChar {
     /**
      * Returns time zone display name or ID for the specified date-time value.
      *
+     * @param session
+     *            the session
      * @param value
      *            value
      * @param tzd
@@ -520,17 +525,21 @@ public class ToChar {
      *            region)
      * @return time zone display name or ID
      */
-    private static String getTimeZone(Value value, boolean tzd) {
-        if (!(value instanceof ValueTimestampTimeZone)) {
-            TimeZone tz = TimeZone.getDefault();
+    private static String getTimeZone(Session session, Value value, boolean tzd) {
+        if (value instanceof ValueTimestampTimeZone) {
+            return DateTimeUtils.timeZoneNameFromOffsetSeconds(((ValueTimestampTimeZone) value)
+                    .getTimeZoneOffsetSeconds());
+        } else if (value instanceof ValueTimeTimeZone) {
+            return DateTimeUtils.timeZoneNameFromOffsetSeconds(((ValueTimeTimeZone) value)
+                    .getTimeZoneOffsetSeconds());
+        } else {
+            TimeZoneProvider tz = DateTimeUtils.getTimeZone();
             if (tzd) {
-                boolean daylight = tz.inDaylightTime(value.getTimestamp(null));
-                return tz.getDisplayName(daylight, TimeZone.SHORT);
+                ValueTimestamp v = (ValueTimestamp) value.convertTo(Value.TIMESTAMP, session, false);
+                return tz.getShortId(tz.getEpochSecondsFromLocal(v.getDateValue(), v.getTimeNanos()));
             }
-            return tz.getID();
+            return tz.getId();
         }
-        return DateTimeUtils.timeZoneNameFromOffsetSeconds(((ValueTimestampTimeZone) value)
-                .getTimeZoneOffsetSeconds());
     }
 
     /**
@@ -665,22 +674,25 @@ public class ToChar {
      * See also TO_CHAR(datetime) and datetime format models
      * in the Oracle documentation.
      *
+     * @param session the session
      * @param value the date-time value to format
      * @param format the format pattern to use (if any)
      * @param nlsParam the NLS parameter (if any)
+     *
      * @return the formatted timestamp
      */
-    public static String toCharDateTime(Value value, String format, @SuppressWarnings("unused") String nlsParam) {
-        long[] a = DateTimeUtils.dateAndTimeFromValue(value);
+    public static String toCharDateTime(Session session, Value value, String format,
+            @SuppressWarnings("unused") String nlsParam) {
+        long[] a = DateTimeUtils.dateAndTimeFromValue(value, session);
         long dateValue = a[0];
         long timeNanos = a[1];
         int year = DateTimeUtils.yearFromDateValue(dateValue);
         int monthOfYear = DateTimeUtils.monthFromDateValue(dateValue);
         int dayOfMonth = DateTimeUtils.dayFromDateValue(dateValue);
         int posYear = Math.abs(year);
-        long second = timeNanos / 1_000_000_000;
+        int second = (int) (timeNanos / 1_000_000_000);
         int nanos = (int) (timeNanos - second * 1_000_000_000);
-        int minute = (int) (second / 60);
+        int minute = second / 60;
         second -= minute * 60;
         int hour = minute / 60;
         minute -= hour * 60;
@@ -728,19 +740,14 @@ public class ToChar {
                 StringUtils.appendZeroPadded(output, 4, posYear);
                 i += 2;
             } else if (containsAt(format, i, "DS") != null) {
-                StringUtils.appendZeroPadded(output, 2, monthOfYear);
-                output.append('/');
-                StringUtils.appendZeroPadded(output, 2, dayOfMonth);
-                output.append('/');
+                StringUtils.appendTwoDigits(output, monthOfYear).append('/');
+                StringUtils.appendTwoDigits(output, dayOfMonth).append('/');
                 StringUtils.appendZeroPadded(output, 4, posYear);
                 i += 2;
             } else if (containsAt(format, i, "TS") != null) {
                 output.append(h12).append(':');
-                StringUtils.appendZeroPadded(output, 2, minute);
-                output.append(':');
-                StringUtils.appendZeroPadded(output, 2, second);
-                output.append(' ');
-                output.append(getDateNames(AM_PM)[isAM ? 0 : 1]);
+                StringUtils.appendTwoDigits(output, minute).append(':');
+                StringUtils.appendTwoDigits(output, second).append(' ').append(getDateNames(AM_PM)[isAM ? 0 : 1]);
                 i += 2;
 
                 // Day
@@ -749,7 +756,7 @@ public class ToChar {
                 output.append(DateTimeUtils.getDayOfYear(dateValue));
                 i += 3;
             } else if (containsAt(format, i, "DD") != null) {
-                StringUtils.appendZeroPadded(output, 2, dayOfMonth);
+                StringUtils.appendTwoDigits(output, dayOfMonth);
                 i += 2;
             } else if ((cap = containsAt(format, i, "DY")) != null) {
                 String day = getDateNames(SHORT_WEEKDAYS)[DateTimeUtils.getSundayDayOfWeek(dateValue)];
@@ -772,19 +779,19 @@ public class ToChar {
                 // Hours
 
             } else if (containsAt(format, i, "HH24") != null) {
-                StringUtils.appendZeroPadded(output, 2, hour);
+                StringUtils.appendTwoDigits(output, hour);
                 i += 4;
             } else if (containsAt(format, i, "HH12") != null) {
-                StringUtils.appendZeroPadded(output, 2, h12);
+                StringUtils.appendTwoDigits(output, h12);
                 i += 4;
             } else if (containsAt(format, i, "HH") != null) {
-                StringUtils.appendZeroPadded(output, 2, h12);
+                StringUtils.appendTwoDigits(output, h12);
                 i += 2;
 
                 // Minutes
 
             } else if (containsAt(format, i, "MI") != null) {
-                StringUtils.appendZeroPadded(output, 2, minute);
+                StringUtils.appendTwoDigits(output, minute);
                 i += 2;
 
                 // Seconds
@@ -794,7 +801,7 @@ public class ToChar {
                 output.append(seconds);
                 i += 5;
             } else if (containsAt(format, i, "SS") != null) {
-                StringUtils.appendZeroPadded(output, 2, second);
+                StringUtils.appendTwoDigits(output, second);
                 i += 2;
 
                 // Fractional seconds
@@ -812,19 +819,19 @@ public class ToChar {
                 // Time zone
 
             } else if (containsAt(format, i, "TZR") != null) {
-                output.append(getTimeZone(value, false));
+                output.append(getTimeZone(session, value, false));
                 i += 3;
             } else if (containsAt(format, i, "TZD") != null) {
-                output.append(getTimeZone(value, true));
+                output.append(getTimeZone(session, value, true));
                 i += 3;
 
                 // Week
 
             } else if (containsAt(format, i, "WW") != null) {
-                StringUtils.appendZeroPadded(output, 2, (DateTimeUtils.getDayOfYear(dateValue) - 1) / 7 + 1);
+                StringUtils.appendTwoDigits(output, (DateTimeUtils.getDayOfYear(dateValue) - 1) / 7 + 1);
                 i += 2;
             } else if (containsAt(format, i, "IW") != null) {
-                StringUtils.appendZeroPadded(output, 2, DateTimeUtils.getIsoWeekOfYear(dateValue));
+                StringUtils.appendTwoDigits(output, DateTimeUtils.getIsoWeekOfYear(dateValue));
                 i += 2;
             } else if (containsAt(format, i, "W") != null) {
                 output.append((dayOfMonth - 1) / 7 + 1);
@@ -855,10 +862,10 @@ public class ToChar {
                 StringUtils.appendZeroPadded(output, 3, Math.abs(DateTimeUtils.getIsoWeekYear(dateValue)) % 1000);
                 i += 3;
             } else if (containsAt(format, i, "YY", "RR") != null) {
-                StringUtils.appendZeroPadded(output, 2, posYear % 100);
+                StringUtils.appendTwoDigits(output, posYear % 100);
                 i += 2;
             } else if (containsAt(format, i, "IY") != null) {
-                StringUtils.appendZeroPadded(output, 2, Math.abs(DateTimeUtils.getIsoWeekYear(dateValue)) % 100);
+                StringUtils.appendTwoDigits(output, Math.abs(DateTimeUtils.getIsoWeekYear(dateValue)) % 100);
                 i += 2;
             } else if (containsAt(format, i, "Y") != null) {
                 output.append(posYear % 10);
@@ -881,7 +888,7 @@ public class ToChar {
                 output.append(cap.apply(month));
                 i += 3;
             } else if (containsAt(format, i, "MM") != null) {
-                StringUtils.appendZeroPadded(output, 2, monthOfYear);
+                StringUtils.appendTwoDigits(output, monthOfYear);
                 i += 2;
             } else if ((cap = containsAt(format, i, "RM")) != null) {
                 output.append(cap.apply(toRomanNumeral(monthOfYear)));

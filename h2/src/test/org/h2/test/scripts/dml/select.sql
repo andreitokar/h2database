@@ -221,18 +221,18 @@ EXPLAIN SELECT * FROM TEST ORDER BY A, B OFFSET 3 ROWS FETCH NEXT 1 PERCENT ROWS
 DROP TABLE TEST;
 > ok
 
-CREATE TABLE TEST(A NUMERIC, B NUMERIC);
+CREATE TABLE TEST(A VARCHAR_IGNORECASE, B VARCHAR_IGNORECASE);
 > ok
 
-INSERT INTO TEST VALUES (0, 1), (0.0, 2), (0, 3), (1, 4);
+INSERT INTO TEST VALUES ('A', 1), ('a', 2), ('A', 3), ('B', 4);
 > update count: 4
 
 SELECT A, B FROM TEST ORDER BY A FETCH FIRST 1 ROW WITH TIES;
-> A   B
-> --- -
-> 0   1
-> 0   3
-> 0.0 2
+> A B
+> - -
+> A 1
+> A 3
+> a 2
 > rows (partially ordered): 3
 
 DROP TABLE TEST;
@@ -910,3 +910,81 @@ EXPLAIN SELECT FALSE AND MAX(A) > 0 FROM TEST;
 
 DROP TABLE TEST;
 > ok
+
+CREATE TABLE TEST(A INT PRIMARY KEY) AS (VALUES 1, 2, 3);
+> ok
+
+SELECT A AS A1, A AS A2 FROM TEST GROUP BY A;
+> A1 A2
+> -- --
+> 1  1
+> 2  2
+> 3  3
+> rows: 3
+
+DROP TABLE TEST;
+> ok
+
+-- Tests for SELECT without columns
+
+EXPLAIN SELECT *;
+>> SELECT
+
+SELECT;
+>
+>
+>
+> rows: 1
+
+SELECT FROM DUAL;
+>
+>
+>
+> rows: 1
+
+SELECT * FROM DUAL JOIN (SELECT * FROM DUAL) ON 1 = 1;
+>
+>
+>
+> rows: 1
+
+EXPLAIN SELECT * FROM DUAL JOIN (SELECT * FROM DUAL) ON 1 = 1;
+>> SELECT FROM DUAL /* dual index */ INNER JOIN ( SELECT ) "_51" /* SELECT */ ON 1=1 WHERE TRUE
+
+SELECT WHERE FALSE;
+>
+>
+> rows: 0
+
+SELECT GROUP BY ();
+>
+>
+>
+> rows: 1
+
+SELECT HAVING FALSE;
+>
+>
+> rows: 0
+
+SELECT QUALIFY FALSE;
+>
+>
+> rows: 0
+
+SELECT ORDER BY (SELECT 1);
+>
+>
+>
+> rows (ordered): 1
+
+SELECT OFFSET 0 ROWS;
+>
+>
+>
+> rows: 1
+
+SELECT FETCH FIRST 0 ROWS ONLY;
+>
+>
+> rows: 0

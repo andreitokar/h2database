@@ -56,10 +56,10 @@ import org.h2.test.TestBase;
 import org.h2.test.TestDb;
 import org.h2.test.ap.TestAnnotationProcessor;
 import org.h2.tools.SimpleResultSet;
-import org.h2.util.DateTimeUtils;
 import org.h2.util.IOUtils;
 import org.h2.util.StringUtils;
 import org.h2.value.Value;
+import org.h2.value.ValueDecimal;
 import org.h2.value.ValueTimestamp;
 import org.h2.value.ValueTimestampTimeZone;
 
@@ -526,8 +526,8 @@ public class TestFunctions extends TestDb implements AggregateFunction {
         stat.execute("create aggregate agg_sum for \""+getClass().getName()+"\"");
         rs = stat.executeQuery("select agg_sum(1), sum(1.6) from dual");
         rs.next();
-        assertEquals(Integer.MAX_VALUE, rs.getMetaData().getScale(2));
-        assertEquals(Integer.MAX_VALUE, rs.getMetaData().getScale(1));
+        assertEquals(ValueDecimal.MAXIMUM_SCALE, rs.getMetaData().getScale(2));
+        assertEquals(ValueDecimal.MAXIMUM_SCALE, rs.getMetaData().getScale(1));
         stat.executeQuery("select * from information_schema.function_aliases");
         conn.close();
     }
@@ -682,11 +682,6 @@ public class TestFunctions extends TestDb implements AggregateFunction {
             return Types.VARCHAR;
         }
 
-        @Override
-        public void init(Connection conn) {
-            // nothing to do
-        }
-
     }
 
     /**
@@ -709,11 +704,6 @@ public class TestFunctions extends TestDb implements AggregateFunction {
         @Override
         public int getInternalType(int[] inputTypes) throws SQLException {
             return Value.STRING;
-        }
-
-        @Override
-        public void init(Connection conn) {
-            // nothing to do
         }
 
     }
@@ -1178,16 +1168,16 @@ public class TestFunctions extends TestDb implements AggregateFunction {
         stmt.setObject(1, new Integer[] { 1, 2 });
         rs = stmt.executeQuery();
         rs.next();
-        assertEquals(Integer[].class.getName(), rs.getObject(1).getClass()
+        assertEquals(Object[].class.getName(), rs.getObject(1).getClass()
                 .getName());
 
         CallableStatement call = conn.prepareCall("{ ? = call array_test(?) }");
         call.setObject(2, new Integer[] { 2, 1 });
         call.registerOutParameter(1, Types.ARRAY);
         call.execute();
-        assertEquals(Integer[].class.getName(), call.getArray(1).getArray()
+        assertEquals(Object[].class.getName(), call.getArray(1).getArray()
                 .getClass().getName());
-        assertEquals(new Integer[]{2, 1}, (Integer[]) call.getObject(1));
+        assertEquals(new Object[]{2, 1}, (Object[]) call.getObject(1));
 
         stat.execute("drop alias array_test");
 
@@ -1210,7 +1200,7 @@ public class TestFunctions extends TestDb implements AggregateFunction {
     }
 
     private void testToDate(Session session) {
-        GregorianCalendar calendar = DateTimeUtils.createGregorianCalendar();
+        GregorianCalendar calendar = new GregorianCalendar();
         int year = calendar.get(Calendar.YEAR);
         int month = calendar.get(Calendar.MONTH) + 1;
         // Default date in Oracle is the first day of the current month
@@ -1367,7 +1357,7 @@ public class TestFunctions extends TestDb implements AggregateFunction {
                 "(TIMESTAMP '-100-01-15 14:04:02.120')");
 
         assertResult("1979-11-12 08:12:34.56", stat, "SELECT X FROM T");
-        assertResult("-100-01-15 14:04:02.12", stat, "SELECT X FROM U");
+        assertResult("-0100-01-15 14:04:02.12", stat, "SELECT X FROM U");
         String expected = String.format("%tb", timestamp1979).toUpperCase();
         expected = stripTrailingPeriod(expected);
         assertResult("12-" + expected + "-79 08.12.34.560000000 AM", stat,
@@ -2325,11 +2315,6 @@ public class TestFunctions extends TestDb implements AggregateFunction {
             throw new RuntimeException("unexpected data type");
         }
         return Types.DECIMAL;
-    }
-
-    @Override
-    public void init(Connection conn) {
-        // ignore
     }
 
 }

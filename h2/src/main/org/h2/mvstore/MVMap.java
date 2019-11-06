@@ -339,7 +339,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * Get the smallest key that is larger than the given key, for the given
      * root page, or null if no such key exists.
      *
-     * @param page the root page
+     * @param p the root page
      * @param key the key
      * @return the result
      */
@@ -360,7 +360,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     /**
      * Get the smallest key that is larger or equal to this key, for the given root page.
      *
-     * @param page the root page
+     * @param p the root page
      * @param key the key
      * @return the result
      */
@@ -381,7 +381,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     /**
      * Get the largest key that is smaller or equal to this key, for the given root page.
      *
-     * @param page the root page
+     * @param p the root page
      * @param key the key
      * @return the result
      */
@@ -404,7 +404,7 @@ public class MVMap<K, V> extends AbstractMap<K, V>
      * Get the largest key that is smaller than the given key, for the given
      * root page, or null if no such key exists.
      *
-     * @param page the root page
+     * @param p the root page
      * @param key the key
      * @return the result
      */
@@ -794,6 +794,10 @@ public class MVMap<K, V> extends AbstractMap<K, V>
     }
 
     private boolean rewritePage(Page p) {
+        if (p.getKeyCount()==0) {
+            return true;
+        }
+
         @SuppressWarnings("unchecked")
         K key = (K) p.getKey(0);
         if (!isClosed()) {
@@ -831,12 +835,6 @@ public class MVMap<K, V> extends AbstractMap<K, V>
                     public Entry<K, V> next() {
                         K k = cursor.next();
                         return new SimpleImmutableEntry<>(k, cursor.getValue());
-                    }
-
-                    @Override
-                    public void remove() {
-                        throw DataUtils.newUnsupportedOperationException(
-                                "Removing is not supported");
                     }
                 };
 

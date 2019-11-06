@@ -54,8 +54,7 @@ public class NonUniqueHashIndex extends BaseIndex {
     }
 
     private void reset() {
-        rows = totalOrdering ? new HashMap<Value, ArrayList<Long>>()
-                : new TreeMap<Value, ArrayList<Long>>(database.getCompareMode());
+        rows = totalOrdering ? new HashMap<>() : new TreeMap<>(database.getCompareMode());
         rowCount = 0;
     }
 
@@ -156,23 +155,8 @@ public class NonUniqueHashIndex extends BaseIndex {
     }
 
     @Override
-    public void checkRename() {
-        // ok
-    }
-
-    @Override
     public boolean needRebuild() {
         return true;
-    }
-
-    @Override
-    public boolean canGetFirstOrLast() {
-        return false;
-    }
-
-    @Override
-    public Cursor findFirstOrLast(Session session, boolean first) {
-        throw DbException.getUnsupportedException("HASH");
     }
 
     @Override

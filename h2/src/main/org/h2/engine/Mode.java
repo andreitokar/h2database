@@ -22,7 +22,7 @@ import org.h2.value.Value;
 public class Mode {
 
     public enum ModeEnum {
-        REGULAR, DB2, Derby, MSSQLServer, HSQLDB, MySQL, Oracle, PostgreSQL, Ignite,
+        REGULAR, DB2, Derby, MSSQLServer, HSQLDB, MySQL, Oracle, PostgreSQL
     }
 
     /**
@@ -75,11 +75,6 @@ public class Mode {
      * key idx_name(name));</code>
      */
     public boolean indexDefinitionInCreateTable;
-
-    /**
-     * Meta data calls return identifiers in lower case.
-     */
-    public boolean lowerCaseIdentifiers;
 
     /**
      * Concatenation with NULL results in NULL. Usually, NULL is treated as an
@@ -181,11 +176,6 @@ public class Mode {
     public boolean allowEmptyInPredicate;
 
     /**
-     * Whether AFFINITY KEY keywords are supported.
-     */
-    public boolean allowAffinityKey;
-
-    /**
      * Whether to right-pad fixed strings with spaces.
      */
     public boolean padFixedLengthStrings;
@@ -258,6 +248,18 @@ public class Mode {
     public boolean allowEmptySchemaValuesAsDefaultSchema;
 
     /**
+     * If {@code true} all numeric data types may have precision and 'UNSIGNED'
+     * clause.
+     */
+    public boolean allNumericTypesHavePrecision;
+
+    /**
+     * If {@code true} 'FOR BIT DATA' clauses are allowed for character string
+     * data types.
+     */
+    public boolean forBitData;
+
+    /**
      * An optional Set of hidden/disallowed column types.
      * Certain DBMSs don't support all column types provided by H2, such as
      * "NUMBER" when using PostgreSQL mode.
@@ -291,6 +293,7 @@ public class Mode {
                 Pattern.compile("ApplicationName|ClientAccountingInformation|" +
                         "ClientUser|ClientCorrelationToken");
         mode.allowDB2TimestampFormat = true;
+        mode.forBitData = true;
         add(mode);
 
         mode = new Mode(ModeEnum.Derby);
@@ -300,15 +303,14 @@ public class Mode {
         mode.isolationLevelInSelectOrInsertStatement = true;
         // Derby does not support client info properties as of version 10.12.1.1
         mode.supportedClientInfoPropertiesRegEx = null;
+        mode.forBitData = true;
         add(mode);
 
         mode = new Mode(ModeEnum.HSQLDB);
         mode.nullConcatIsNull = true;
         mode.allowPlusForStringConcat = true;
         // HSQLDB does not support client info properties. See
-        // http://hsqldb.org/doc/apidocs/
-        //     org/hsqldb/jdbc/JDBCConnection.html#
-        //     setClientInfo%28java.lang.String,%20java.lang.String%29
+        // http://hsqldb.org/doc/apidocs/org/hsqldb/jdbc/JDBCConnection.html#setClientInfo-java.lang.String-java.lang.String-
         mode.supportedClientInfoPropertiesRegEx = null;
         add(mode);
 
@@ -342,15 +344,12 @@ public class Mode {
 
         mode = new Mode(ModeEnum.MySQL);
         mode.indexDefinitionInCreateTable = true;
-        mode.lowerCaseIdentifiers = true;
         // Next one is for MariaDB
         mode.regexpReplaceBackslashReferences = true;
         mode.onDuplicateKeyUpdate = true;
         mode.replaceInto = true;
         // MySQL allows to use any key for client info entries. See
-        // http://grepcode.com/file/repo1.maven.org/maven2/mysql/
-        //     mysql-connector-java/5.1.24/com/mysql/jdbc/
-        //     JDBC4CommentClientInfoProvider.java
+        // https://github.com/mysql/mysql-connector-j/blob/5.1.47/src/com/mysql/jdbc/JDBC4CommentClientInfoProvider.java
         mode.supportedClientInfoPropertiesRegEx =
                 Pattern.compile(".*");
         mode.charToBinaryInUtf8 = true;
@@ -359,6 +358,7 @@ public class Mode {
         mode.alterTableExtensionsMySQL = true;
         mode.alterTableModifyColumn = true;
         mode.truncateTableRestartIdentity = true;
+        mode.allNumericTypesHavePrecision = true;
         add(mode);
 
         mode = new Mode(ModeEnum.Oracle);
@@ -407,14 +407,6 @@ public class Mode {
         dt.sqlType = Types.NUMERIC;
         dt.name = "MONEY";
         mode.typeByNameMap.put("MONEY", dt);
-        mode.dateTimeValueWithinTransaction = true;
-        add(mode);
-
-        mode = new Mode(ModeEnum.Ignite);
-        mode.nullConcatIsNull = true;
-        mode.allowAffinityKey = true;
-        mode.indexDefinitionInCreateTable = true;
-        mode.allowEmptyInPredicate = true;
         mode.dateTimeValueWithinTransaction = true;
         add(mode);
     }

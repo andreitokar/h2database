@@ -37,11 +37,6 @@ public final class WindowFrame {
             this.orderedRows = orderedRows;
         }
 
-        @Override
-        public final void remove() {
-            throw new UnsupportedOperationException();
-        }
-
     }
 
     private static class PlainItr extends Itr {
@@ -337,6 +332,7 @@ public final class WindowFrame {
         case Value.DOUBLE:
         case Value.FLOAT:
         case Value.TIME:
+        case Value.TIME_TZ:
         case Value.DATE:
         case Value.TIMESTAMP:
         case Value.TIMESTAMP_TZ:

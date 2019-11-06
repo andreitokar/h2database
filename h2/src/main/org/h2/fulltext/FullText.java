@@ -969,9 +969,9 @@ public class FullText {
 /*
             try (Statement stat = conn.createStatement()) {
                 ResultSet rs = stat.executeQuery(
-                                "SELECT value FROM information_schema.settings" +
-                                " WHERE name = 'MULTI_THREADED'");
-                return rs.next() && !"0".equals(rs.getString(1));
+                                "SELECT VALUE FROM INFORMATION_SCHEMA.SETTINGS" +
+                                " WHERE NAME = 'MV_STORE'");
+                return rs.next() && "true".equals(rs.getString(1));
             }
 */
         }

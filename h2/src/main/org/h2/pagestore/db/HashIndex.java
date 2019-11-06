@@ -52,7 +52,7 @@ public class HashIndex extends BaseIndex {
     }
 
     private void reset() {
-        rows = totalOrdering ? new HashMap<Value, Long>() : new TreeMap<Value, Long>(database.getCompareMode());
+        rows = totalOrdering ? new HashMap<>() : new TreeMap<>(database.getCompareMode());
     }
 
     @Override
@@ -155,23 +155,8 @@ public class HashIndex extends BaseIndex {
     }
 
     @Override
-    public void checkRename() {
-        // ok
-    }
-
-    @Override
     public boolean needRebuild() {
         return true;
-    }
-
-    @Override
-    public boolean canGetFirstOrLast() {
-        return false;
-    }
-
-    @Override
-    public Cursor findFirstOrLast(Session session, boolean first) {
-        throw DbException.getUnsupportedException("HASH");
     }
 
     @Override

@@ -166,7 +166,6 @@ public class PageDataIndex extends PageIndex {
             store.update(newRoot);
             root = newRoot;
         }
-        row.setDeleted(false);
         invalidateRowCount();
         rowCount++;
         store.logAddOrRemoveRow(session, tableData.getId(), row, true);
@@ -215,11 +214,6 @@ public class PageDataIndex extends PageIndex {
         return p;
     }
 
-    @Override
-    public boolean canGetFirstOrLast() {
-        return false;
-    }
-
     /**
      * Get the key from the row.
      *
@@ -261,11 +255,6 @@ public class PageDataIndex extends PageIndex {
     Cursor find(Session session, long first, long last) {
         PageData root = getPage(rootPageId, 0);
         return root.find(session, first, last);
-    }
-
-    @Override
-    public Cursor findFirstOrLast(Session session, boolean first) {
-        throw DbException.throwInternalError(toString());
     }
 
     long getLastKey() {

@@ -9,7 +9,6 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
-
 import org.h2.api.ErrorCode;
 import org.h2.engine.Constants;
 import org.h2.engine.Database;
@@ -72,11 +71,6 @@ public abstract class Command implements CommandInterface {
      */
     @Override
     public abstract boolean isQuery();
-
-    /**
-     * Prepare join batching.
-     */
-    public abstract void prepareJoinBatch();
 
     /**
      * Get the list of parameters.
@@ -160,8 +154,6 @@ public abstract class Command implements CommandInterface {
             session.commit(true);
         } else if (session.getAutoCommit()) {
             session.commit(false);
-        } else {
-            session.unlockReadLocks();
         }
         if (trace.isInfoEnabled() && startTimeNanos > 0) {
             long timeMillis = (System.nanoTime() - startTimeNanos) / 1000 / 1000;
@@ -184,15 +176,9 @@ public abstract class Command implements CommandInterface {
         startTimeNanos = 0;
         long start = 0;
         Database database = session.getDatabase();
-        Object sync = database.isMultiThreaded() || database.getStore() != null ? session : database;
+        Object sync = database.isMVStore() ? session : database;
         session.waitIfExclusiveModeEnabled();
         boolean callStop = true;
-        boolean writing = !isReadOnly();
-        if (writing) {
-            while (!database.beforeWriting()) {
-                // wait
-            }
-        }
         //noinspection SynchronizationOnLocalVariableOrMethodParameter
         synchronized (sync) {
             session.startStatementWithinTransaction(this);
@@ -207,6 +193,10 @@ public abstract class Command implements CommandInterface {
                         }
                         return result;
                     } catch (DbException e) {
+                        // cannot retry DDL
+                        if (isCurrentCommandADefineCommand()) {
+                            throw e;
+                        }
                         start = filterConcurrentUpdate(e, start);
                     } catch (OutOfMemoryError e) {
                         callStop = false;
@@ -236,9 +226,6 @@ public abstract class Command implements CommandInterface {
                 if (callStop) {
                     stop();
                 }
-                if (writing) {
-                    database.afterWriting();
-                }
             }
         }
     }
@@ -247,15 +234,9 @@ public abstract class Command implements CommandInterface {
     public ResultWithGeneratedKeys executeUpdate(Object generatedKeysRequest) {
         long start = 0;
         Database database = session.getDatabase();
-        Object sync = database.isMultiThreaded() || database.getStore() != null ? session : database;
+        Object sync = database.isMVStore() ? session : database;
         session.waitIfExclusiveModeEnabled();
         boolean callStop = true;
-        boolean writing = !isReadOnly();
-        if (writing) {
-            while (!database.beforeWriting()) {
-                // wait
-            }
-        }
         //noinspection SynchronizationOnLocalVariableOrMethodParameter
         synchronized (sync) {
             Session.Savepoint rollback = session.setSavepoint();
@@ -268,6 +249,10 @@ public abstract class Command implements CommandInterface {
                         return update(generatedKeysRequest);
                     } catch (DbException e) {
                         database.unlockMetaDebug(session);
+                        // cannot retry DDL
+                        if (isCurrentCommandADefineCommand()) {
+                            throw e;
+                        }
                         start = filterConcurrentUpdate(e, start);
                     } catch (OutOfMemoryError e) {
                         database.unlockMetaDebug(session);
@@ -315,10 +300,6 @@ public abstract class Command implements CommandInterface {
                     } else {
                         ex.addSuppressed(nested);
                     }
-                } finally {
-                    if (writing) {
-                        database.afterWriting();
-                    }
                 }
             }
         }
@@ -326,9 +307,8 @@ public abstract class Command implements CommandInterface {
 
     private long filterConcurrentUpdate(DbException e, long start) {
         int errorCode = e.getErrorCode();
-        if (errorCode != ErrorCode.CONCURRENT_UPDATE_1 &&
-                errorCode != ErrorCode.ROW_NOT_FOUND_IN_PRIMARY_INDEX &&
-                errorCode != ErrorCode.ROW_NOT_FOUND_WHEN_DELETING_1) {
+        if (errorCode != ErrorCode.CONCURRENT_UPDATE_1 && errorCode != ErrorCode.ROW_NOT_FOUND_IN_PRIMARY_INDEX
+                && errorCode != ErrorCode.ROW_NOT_FOUND_WHEN_DELETING_1) {
             throw e;
         }
         long now = System.nanoTime();
@@ -337,17 +317,13 @@ public abstract class Command implements CommandInterface {
         }
         // Only in PageStore mode we need to sleep here to avoid busy wait loop
         Database database = session.getDatabase();
-        if (database.getStore() == null) {
+        if (!database.isMVStore()) {
             int sleep = 1 + MathUtils.randomInt(10);
             while (true) {
                 try {
-                    if (database.isMultiThreaded()) {
-                        Thread.sleep(sleep);
-                    } else {
-                        // although nobody going to notify us
-                        // it is vital to give up lock on a database
-                        database.wait(sleep);
-                    }
+                    // although nobody going to notify us
+                    // it is vital to give up lock on a database
+                    database.wait(sleep);
                 } catch (InterruptedException e1) {
                     // ignore
                 }
@@ -405,4 +381,9 @@ public abstract class Command implements CommandInterface {
     }
 
     public abstract Set<DbObject> getDependencies();
+
+    /**
+     * Is the command we just tried to execute a DefineCommand (i.e. DDL)
+     */
+    protected abstract boolean isCurrentCommandADefineCommand();
 }

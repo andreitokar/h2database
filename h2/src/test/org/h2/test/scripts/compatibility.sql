@@ -149,3 +149,96 @@ DROP TABLE A, B;
 
 SET MODE Regular;
 > ok
+
+-- PostgreSQL-style CREATE INDEX ... USING
+CREATE TABLE TEST(B1 INT, B2 INT, H INT, R GEOMETRY, T INT);
+> ok
+
+CREATE INDEX TEST_BTREE_IDX ON TEST USING BTREE(B1, B2);
+> ok
+
+CREATE INDEX TEST_HASH_IDX ON TEST USING HASH(H);
+> ok
+
+CREATE INDEX TEST_RTREE_IDX ON TEST USING RTREE(R);
+> ok
+
+SELECT INDEX_NAME, COLUMN_NAME, ORDINAL_POSITION, INDEX_TYPE_NAME FROM INFORMATION_SCHEMA.INDEXES
+    WHERE TABLE_NAME = 'TEST';
+> INDEX_NAME     COLUMN_NAME ORDINAL_POSITION INDEX_TYPE_NAME
+> -------------- ----------- ---------------- ---------------
+> TEST_BTREE_IDX B1          1                INDEX
+> TEST_BTREE_IDX B2          2                INDEX
+> TEST_HASH_IDX  H           1                HASH INDEX
+> TEST_RTREE_IDX R           1                SPATIAL INDEX
+> rows: 4
+
+CREATE HASH INDEX TEST_BAD_IDX ON TEST USING HASH(T);
+> exception SYNTAX_ERROR_2
+
+CREATE SPATIAL INDEX TEST_BAD_IDX ON TEST USING RTREE(T);
+> exception SYNTAX_ERROR_2
+
+DROP TABLE TEST;
+> ok
+
+SET MODE MySQL;
+> ok
+
+CREATE TABLE test (id int(25) NOT NULL auto_increment, name varchar NOT NULL, PRIMARY KEY  (id,name));
+> ok
+
+drop table test;
+> ok
+
+create memory table word(word_id integer, name varchar);
+> ok
+
+alter table word alter column word_id integer(10) auto_increment;
+> ok
+
+insert into word(name) values('Hello');
+> update count: 1
+
+alter table word alter column word_id restart with 30872;
+> ok
+
+insert into word(name) values('World');
+> update count: 1
+
+select * from word;
+> WORD_ID NAME
+> ------- -----
+> 1       Hello
+> 30872   World
+> rows: 2
+
+drop table word;
+> ok
+
+CREATE MEMORY TABLE TEST1(ID BIGINT(20) NOT NULL PRIMARY KEY COMMENT 'COMMENT1', FIELD_NAME VARCHAR(100) NOT NULL COMMENT 'COMMENT2');
+> ok
+
+SCRIPT NOPASSWORDS NOSETTINGS TABLE TEST1;
+> SCRIPT
+> ---------------------------------------------------------------------------------------------------------------------------------------
+> -- 0 +/- SELECT COUNT(*) FROM PUBLIC.TEST1;
+> ALTER TABLE "PUBLIC"."TEST1" ADD CONSTRAINT "PUBLIC"."CONSTRAINT_4" PRIMARY KEY("ID");
+> CREATE MEMORY TABLE "PUBLIC"."TEST1"( "ID" BIGINT NOT NULL COMMENT 'COMMENT1', "FIELD_NAME" VARCHAR(100) NOT NULL COMMENT 'COMMENT2' );
+> CREATE USER IF NOT EXISTS "SA" PASSWORD '' ADMIN;
+> rows: 4
+
+CREATE TABLE TEST2(ID BIGINT(20) NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT 'COMMENT1', FIELD_NAME VARCHAR(100) NOT NULL COMMENT 'COMMENT2' COMMENT 'COMMENT3');
+> exception SYNTAX_ERROR_2
+
+CREATE TABLE TEST3(ID BIGINT(20) NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT 'COMMENT1' CHECK(ID > 0), FIELD_NAME VARCHAR(100) NOT NULL COMMENT 'COMMENT2');
+> ok
+
+CREATE TABLE TEST3(ID BIGINT(20) NOT NULL AUTO_INCREMENT PRIMARY KEY CHECK(ID > 0) COMMENT 'COMMENT1', FIELD_NAME VARCHAR(100) NOT NULL COMMENT 'COMMENT2');
+> exception SYNTAX_ERROR_2
+
+DROP TABLE IF EXISTS TEST1, TEST2, TEST3;
+> ok
+
+SET MODE Regular;
+> ok

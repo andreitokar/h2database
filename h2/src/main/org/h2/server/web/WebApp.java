@@ -1078,10 +1078,6 @@ public class WebApp {
                         query(conn, s, i - 1, list.size() - 2, b);
                         return b.toString();
                     }
-                    @Override
-                    public void remove() {
-                        throw new UnsupportedOperationException();
-                    }
                 });
                 return "result.jsp";
             }
@@ -1275,12 +1271,7 @@ public class WebApp {
     private static void addDatabaseMetaData(SimpleResultSet rs,
             DatabaseMetaData meta) {
         Method[] methods = DatabaseMetaData.class.getDeclaredMethods();
-        Arrays.sort(methods, new Comparator<Method>() {
-            @Override
-            public int compare(Method o1, Method o2) {
-                return o1.toString().compareTo(o2.toString());
-            }
-        });
+        Arrays.sort(methods, Comparator.comparing(Method::toString));
         for (Method m : methods) {
             if (m.getParameterTypes().length == 0) {
                 try {
@@ -1439,6 +1430,8 @@ public class WebApp {
                         .append(": read_committed<br />");
                 buff.append(Connection.TRANSACTION_REPEATABLE_READ)
                         .append(": repeatable_read<br />");
+                buff.append(Constants.TRANSACTION_SNAPSHOT)
+                        .append(": snapshot<br />");
                 buff.append(Connection.TRANSACTION_SERIALIZABLE)
                         .append(": serializable");
             }
@@ -1645,9 +1638,9 @@ public class WebApp {
                     "id=\"mainForm\" target=\"h2result\">" +
                     "<input type=\"hidden\" name=\"op\" value=\"1\" />" +
                     "<input type=\"hidden\" name=\"row\" value=\"\" />" +
-                    "<table cellspacing=0 cellpadding=0 id=\"editTable\">");
+                    "<table class=\"resultSet\" cellspacing=\"0\" cellpadding=\"0\" id=\"editTable\">");
         } else {
-            buff.append("<table cellspacing=0 cellpadding=0>");
+            buff.append("<table class=\"resultSet\" cellspacing=\"0\" cellpadding=\"0\">");
         }
         if (metadata) {
             SimpleResultSet r = new SimpleResultSet();

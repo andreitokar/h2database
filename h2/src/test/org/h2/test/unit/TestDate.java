@@ -20,9 +20,7 @@ import org.h2.engine.Mode;
 import org.h2.message.DbException;
 import org.h2.test.TestBase;
 import org.h2.test.utils.AssertThrows;
-import org.h2.util.CurrentTimestamp;
 import org.h2.util.DateTimeUtils;
-import org.h2.util.JSR310;
 import org.h2.value.TypeInfo;
 import org.h2.value.Value;
 import org.h2.value.ValueDate;
@@ -40,7 +38,7 @@ import org.h2.value.ValueTimestampTimeZone;
 public class TestDate extends TestBase {
 
     static class SimpleCastDataProvider implements CastDataProvider {
-        private final ValueTimestampTimeZone currentTimestamp = CurrentTimestamp.get();
+        private final ValueTimestampTimeZone currentTimestamp = DateTimeUtils.currentTimestamp();
 
         @Override
         public Mode getMode() {
@@ -77,7 +75,7 @@ public class TestDate extends TestBase {
     private void testValueDate() {
         assertEquals("2000-01-01",
                 ValueDate.get(null, Date.valueOf("2000-01-01")).getString());
-        assertEquals("0-00-00",
+        assertEquals("0000-00-00",
                 ValueDate.fromDateValue(0).getString());
         assertEquals("9999-12-31",
                 ValueDate.parse("9999-12-31").getString());
@@ -129,8 +127,7 @@ public class TestDate extends TestBase {
             assertEquals(ErrorCode.INVALID_DATETIME_CONSTANT_2, ex.getErrorCode());
         }
         ValueTime t1 = ValueTime.parse("11:11:11");
-        assertEquals("11:11:11", t1.getTime(null).toString());
-        assertEquals("1970-01-01", t1.getDate(null).toString());
+        assertEquals("11:11:11", t1.getTime(null, null).toString());
         assertEquals("TIME '11:11:11'", t1.getSQL());
         assertEquals("TIME '11:11:11'", t1.toString());
         assertEquals("05:35:35.5", t1.multiply(ValueDouble.get(0.5)).getString());
@@ -185,15 +182,15 @@ public class TestDate extends TestBase {
                 "2001-02-03 04:05:06.001002003",
                 ValueTimestamp.get(null, Timestamp.valueOf("2001-02-03 04:05:06.001002003")).getString());
         assertEquals(
-                "0-00-00 00:00:00", ValueTimestamp.fromDateValueAndNanos(0, 0).getString());
+                "0000-00-00 00:00:00", ValueTimestamp.fromDateValueAndNanos(0, 0).getString());
         assertEquals(
                 "9999-12-31 23:59:59",
                 ValueTimestamp.parse("9999-12-31 23:59:59").getString());
 
         ValueTimestamp t1 = ValueTimestamp.parse("2001-01-01 01:01:01.111");
-        assertEquals("2001-01-01 01:01:01.111", t1.getTimestamp(null).toString());
+        assertEquals("2001-01-01 01:01:01.111", t1.getTimestamp(null, null).toString());
         assertEquals("2001-01-01", t1.getDate(null).toString());
-        assertEquals("01:01:01", t1.getTime(null).toString());
+        assertEquals("01:01:01", t1.getTime(null, null).toString());
         assertEquals("TIMESTAMP '2001-01-01 01:01:01.111'", t1.getSQL());
         assertEquals("TIMESTAMP '2001-01-01 01:01:01.111'", t1.toString());
         assertEquals(Value.TIMESTAMP, t1.getValueType());
@@ -274,13 +271,13 @@ public class TestDate extends TestBase {
         assertEquals(0, ValueTimestamp.parse(
                 "1970-01-01").getTimeNanos());
         assertEquals(0, ValueTimestamp.parse(
-                "1970-01-01 00:00:00.000 UTC").getTimestamp(null).getTime());
+                "1970-01-01 00:00:00.000 UTC").getTimestamp(null, null).getTime());
         assertEquals(0, ValueTimestamp.parse(
-                "+1970-01-01T00:00:00.000Z").getTimestamp(null).getTime());
+                "+1970-01-01T00:00:00.000Z").getTimestamp(null, null).getTime());
         assertEquals(0, ValueTimestamp.parse(
-                "1970-01-01T00:00:00.000+00:00").getTimestamp(null).getTime());
+                "1970-01-01T00:00:00.000+00:00").getTimestamp(null, null).getTime());
         assertEquals(0, ValueTimestamp.parse(
-                "1970-01-01T00:00:00.000-00:00").getTimestamp(null).getTime());
+                "1970-01-01T00:00:00.000-00:00").getTimestamp(null, null).getTime());
         new AssertThrows(ErrorCode.INVALID_DATETIME_CONSTANT_2) {
             @Override
             public void test() {
@@ -326,7 +323,7 @@ public class TestDate extends TestBase {
     }
 
     private void testValidDate() {
-        Calendar c = DateTimeUtils.createGregorianCalendar(DateTimeUtils.UTC);
+        Calendar c = TestDateTimeUtils.createGregorianCalendar(DateTimeUtils.UTC);
         c.setLenient(false);
         for (int y = -2000; y < 3000; y++) {
             for (int m = -3; m <= 14; m++) {
@@ -336,7 +333,7 @@ public class TestDate extends TestBase {
                         assertFalse(valid);
                     } else if (d < 1 || d > 31) {
                         assertFalse(valid);
-                    } else if (y != 1582 && d >= 1 && d <= 27) {
+                    } else if (d <= 27) {
                         assertTrue(valid);
                     } else {
                         if (y <= 0) {
@@ -428,14 +425,12 @@ public class TestDate extends TestBase {
 
     private void testDateTimeUtils() {
         TimeZone old = TimeZone.getDefault();
-        if (JSR310.PRESENT) {
-            /*
-             * java.util.TimeZone doesn't support LMT, so perform this test with
-             * fixed time zone offset
-             */
-            TimeZone.setDefault(TimeZone.getTimeZone("GMT+01"));
-            DateTimeUtils.resetCalendar();
-        }
+        /*
+         * java.util.TimeZone doesn't support LMT, so perform this test with
+         * fixed time zone offset
+         */
+        TimeZone.setDefault(TimeZone.getTimeZone("GMT+01"));
+        DateTimeUtils.resetCalendar();
         try {
             ValueTimestamp ts1 = ValueTimestamp.parse("-999-08-07 13:14:15.16");
             ValueTimestamp ts2 = ValueTimestamp.parse("19999-08-07 13:14:15.16");
@@ -443,32 +438,21 @@ public class TestDate extends TestBase {
             ValueTime t2 = (ValueTime) ts2.convertTo(Value.TIME);
             ValueDate d1 = (ValueDate) ts1.convertTo(Value.DATE);
             ValueDate d2 = (ValueDate) ts2.convertTo(Value.DATE);
-            assertEquals("-999-08-07 13:14:15.16", ts1.getString());
-            assertEquals("-999-08-07", d1.getString());
+            assertEquals("-0999-08-07 13:14:15.16", ts1.getString());
+            assertEquals("-0999-08-07", d1.getString());
             assertEquals("13:14:15.16", t1.getString());
             assertEquals("19999-08-07 13:14:15.16", ts2.getString());
             assertEquals("19999-08-07", d2.getString());
             assertEquals("13:14:15.16", t2.getString());
-            TimeZone timeZone = DateTimeUtils.createGregorianCalendar().getTimeZone();
-            ValueTimestamp ts1a = ValueTimestamp.get(timeZone, ts1.getTimestamp(null));
-            ValueTimestamp ts2a = ValueTimestamp.get(timeZone, ts2.getTimestamp(null));
-            assertEquals("-999-08-07 13:14:15.16", ts1a.getString());
+            TimeZone timeZone = TimeZone.getDefault();
+            ValueTimestamp ts1a = ValueTimestamp.get(timeZone, ts1.getTimestamp(null, null));
+            ValueTimestamp ts2a = ValueTimestamp.get(timeZone, ts2.getTimestamp(null, null));
+            assertEquals("-0999-08-07 13:14:15.16", ts1a.getString());
             assertEquals("19999-08-07 13:14:15.16", ts2a.getString());
         } finally {
-            if (JSR310.PRESENT) {
-                TimeZone.setDefault(old);
-                DateTimeUtils.resetCalendar();
-            }
+            TimeZone.setDefault(old);
+            DateTimeUtils.resetCalendar();
         }
-
-        // test for bug on Java 1.8.0_60 in "Europe/Moscow" timezone.
-        // Doesn't affect most other timezones
-        long millis = 1407437460000L;
-        long ms = DateTimeUtils.getTimeUTCWithoutDst(millis);
-        ms += DateTimeUtils.getTimeZoneOffsetMillis(ms);
-        long result1 = DateTimeUtils.nanosFromLocalMillis(ms);
-        long result2 = DateTimeUtils.nanosFromLocalMillis(ms);
-        assertEquals(result1, result2);
     }
 
 }

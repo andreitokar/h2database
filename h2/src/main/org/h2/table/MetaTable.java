@@ -218,8 +218,7 @@ public class MetaTable extends Table {
                     "ID INT",
                     "SORT_TYPE INT",
                     "CONSTRAINT_NAME",
-                    "INDEX_CLASS",
-                    "AFFINITY BIT"
+                    "INDEX_CLASS"
             );
             indexColumnName = "TABLE_NAME";
             break;
@@ -517,6 +516,7 @@ public class MetaTable extends Table {
                     "CLIENT_ADDR",
                     "CLIENT_INFO",
                     "SESSION_START TIMESTAMP WITH TIME ZONE",
+                    "ISOLATION_LEVEL",
                     "STATEMENT",
                     "STATEMENT_START TIMESTAMP WITH TIME ZONE",
                     "CONTAINS_UNCOMMITTED BIT",
@@ -646,14 +646,14 @@ public class MetaTable extends Table {
 
     private Column[] createColumns(String... names) {
         Column[] cols = new Column[names.length];
+        int defaultType = database.getSettings().caseInsensitiveIdentifiers ? Value.STRING_IGNORECASE : Value.STRING;
         for (int i = 0; i < names.length; i++) {
             String nameType = names[i];
             int idx = nameType.indexOf(' ');
             int dataType;
             String name;
             if (idx < 0) {
-                dataType = database.getMode().lowerCaseIdentifiers ?
-                        Value.STRING_IGNORECASE : Value.STRING;
+                dataType = defaultType;
                 name = nameType;
             } else {
                 dataType = DataType.getTypeByName(nameType.substring(idx + 1), database.getMode()).type;
@@ -662,11 +662,6 @@ public class MetaTable extends Table {
             cols[i] = new Column(database.sysIdentifier(name), dataType);
         }
         return cols;
-    }
-
-    @Override
-    public String getDropSQL() {
-        return null;
     }
 
     @Override
@@ -693,7 +688,7 @@ public class MetaTable extends Table {
     }
 
     private String identifier(String s) {
-        if (database.getMode().lowerCaseIdentifiers) {
+        if (database.getSettings().databaseToLower) {
             s = s == null ? null : StringUtils.toLowerEnglish(s);
         }
         return s;
@@ -723,7 +718,7 @@ public class MetaTable extends Table {
         }
         Database db = session.getDatabase();
         Value v;
-        if (database.getMode().lowerCaseIdentifiers) {
+        if (database.getSettings().caseInsensitiveIdentifiers) {
             v = ValueStringIgnoreCase.get(value);
         } else {
             v = ValueString.get(value);
@@ -861,6 +856,7 @@ public class MetaTable extends Table {
                     int type = dataType.type;
                     switch (type) {
                     case Value.TIME:
+                    case Value.TIME_TZ:
                     case Value.DATE:
                     case Value.TIMESTAMP:
                     case Value.TIMESTAMP_TZ:
@@ -1035,9 +1031,7 @@ public class MetaTable extends Table {
                                 // CONSTRAINT_NAME
                                 constraintName,
                                 // INDEX_CLASS
-                                indexClass,
-                                // AFFINITY
-                                ValueBoolean.get(index.getIndexType().isAffinity())
+                                indexClass
                             );
                     }
                 }
@@ -1123,7 +1117,6 @@ public class MetaTable extends Table {
             add(rows, "EXCLUSIVE", database.getExclusiveSession() == null ?
                     "FALSE" : "TRUE");
             add(rows, "MODE", database.getMode().getName());
-            add(rows, "MULTI_THREADED", database.isMultiThreaded() ? "1" : "0");
             add(rows, "QUERY_TIMEOUT", Integer.toString(session.getQueryTimeout()));
             add(rows, "RETENTION_TIME", Integer.toString(database.getRetentionTime()));
             add(rows, "LOG", Integer.toString(database.getLogMode()));
@@ -1153,28 +1146,40 @@ public class MetaTable extends Table {
                 if (store != null) {
                     MVStore mvStore = store.getMvStore();
                     FileStore fs = mvStore.getFileStore();
-                    add(rows, "info.FILE_WRITE",
-                            Long.toString(fs.getWriteCount()));
-                    add(rows, "info.FILE_READ",
-                            Long.toString(fs.getReadCount()));
-                    add(rows, "info.UPDATE_FAILURE_PERCENT",
-                            String.format(Locale.ENGLISH, "%.2f%%", 100 * mvStore.getUpdateFailureRatio()));
-                    long size;
-                    try {
-                        size = fs.getFile().size();
-                    } catch (IOException e) {
-                        throw DbException.convertIOException(e, "Can not get size");
+                    if (fs != null) {
+                        add(rows, "info.FILE_WRITE",
+                                Long.toString(fs.getWriteCount()));
+                        add(rows, "info.FILE_WRITE_BYTES",
+                                Long.toString(fs.getWriteBytes()));
+                        add(rows, "info.FILE_READ",
+                                Long.toString(fs.getReadCount()));
+                        add(rows, "info.FILE_READ_BYTES",
+                                Long.toString(fs.getReadBytes()));
+                        add(rows, "info.UPDATE_FAILURE_PERCENT",
+                                String.format(Locale.ENGLISH, "%.2f%%", 100 * mvStore.getUpdateFailureRatio()));
+                        add(rows, "info.FILL_RATE",
+                                Integer.toString(mvStore.getFillRate()));
+                        add(rows, "info.CHUNKS_FILL_RATE",
+                                Integer.toString(mvStore.getChunksFillRate()));
+                        try {
+                            add(rows, "info.FILE_SIZE",
+                                    Long.toString(fs.getFile().size()));
+                        } catch (IOException ignore) {/**/}
+                        add(rows, "info.CHUNK_COUNT",
+                                Long.toString(mvStore.getChunkCount()));
+                        add(rows, "info.PAGE_COUNT",
+                                Long.toString(mvStore.getPageCount()));
+                        add(rows, "info.PAGE_COUNT_LIVE",
+                                Long.toString(mvStore.getLivePageCount()));
+                        add(rows, "info.PAGE_SIZE",
+                                Integer.toString(mvStore.getPageSplitSize()));
+                        add(rows, "info.CACHE_MAX_SIZE",
+                                Integer.toString(mvStore.getCacheSize()));
+                        add(rows, "info.CACHE_SIZE",
+                                Integer.toString(mvStore.getCacheSizeUsed()));
+                        add(rows, "info.CACHE_HIT_RATIO",
+                                Integer.toString(mvStore.getCacheHitRatio()));
                     }
-                    int pageSize = 4 * 1024;
-                    long pageCount = size / pageSize;
-                    add(rows, "info.PAGE_COUNT",
-                            Long.toString(pageCount));
-                    add(rows, "info.PAGE_SIZE",
-                            Integer.toString(mvStore.getPageSplitSize()));
-                    add(rows, "info.CACHE_MAX_SIZE",
-                            Integer.toString(mvStore.getCacheSize()));
-                    add(rows, "info.CACHE_SIZE",
-                            Integer.toString(mvStore.getCacheSizeUsed()));
                 }
             }
             break;
@@ -1873,6 +1878,8 @@ public class MetaTable extends Table {
                             networkConnectionInfo == null ? null : networkConnectionInfo.getClientInfo(),
                             // SESSION_START
                             DateTimeUtils.timestampTimeZoneFromMillis(s.getSessionStart()),
+                            // ISOLATION_LEVEL
+                            session.getIsolationLevel().getSQL(),
                             // STATEMENT
                             command == null ? null : command.toString(),
                             // STATEMENT_START

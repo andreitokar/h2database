@@ -287,7 +287,7 @@ This is achieved using different database URLs. Settings in the URLs are not cas
 <tr>
     <td><a href="#database_file_locking">File locking methods</a></td>
     <td class="notranslate">
-        jdbc:h2:&lt;url&gt;;FILE_LOCK={FILE|SOCKET|NO}<br />
+        jdbc:h2:&lt;url&gt;;FILE_LOCK={FILE|SOCKET|FS|NO}<br />
         jdbc:h2:file:~/private;CIPHER=AES;FILE_LOCK=SOCKET<br />
     </td>
 </tr>
@@ -653,10 +653,6 @@ An application can use multiple threads that access the same database at the sam
 With default MVStore engine threads that use different connections can use the database concurrently.
 With PageStore engine requests to the same database are synchronized,
 that means that if one thread executes a long running query, the other threads need to wait.
-Concurrent database usage may be enabled for PageStore or disabled for MVStore
-with <code>MULTI_THREADED</code> setting.
-Note that multi-threaded mode for PageStore engine is not tested well and has some issues;
-it should be used with caution.
 </p>
 
 <h3>Locking, Lock-Timeout, Deadlocks</h3>
@@ -1030,18 +1026,6 @@ Do not change value of DATABASE_TO_LOWER after creation of database.
 </li><li>Datetime value functions return the same value within a transaction.
 </li><li>ARRAY_SLICE() out of bounds parameters are silently corrected.
 </li><li>EXTRACT function with DOW field returns (0-6), Sunday is 0.
-</li></ul>
-
-<h3>Ignite Compatibility Mode</h3>
-<p>
-To use the Ignite mode, use the database URL <code>jdbc:h2:~/test;MODE=Ignite</code>
-or the SQL statement <code>SET MODE Ignite</code>.
-</p>
-<ul><li>Creating indexes in the <code>CREATE TABLE</code> statement is allowed using
-    <code>INDEX(..)</code> or <code>KEY(..)</code>.
-    Example: <code>create table test(id int primary key, name varchar(255), key idx_name(name));</code>
-</li><li>AFFINITY KEY and SHARD KEY keywords may be used in index definition.
-</li><li>Datetime value functions return the same value within a transaction.
 </li></ul>
 
 <h2 id="auto_reconnect">Auto-Reconnect</h2>

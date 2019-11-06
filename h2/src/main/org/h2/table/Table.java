@@ -27,11 +27,11 @@ import org.h2.index.Index;
 import org.h2.index.IndexType;
 import org.h2.message.DbException;
 import org.h2.message.Trace;
+import org.h2.result.DefaultRow;
 import org.h2.result.Row;
 import org.h2.result.RowFactory;
 import org.h2.result.RowList;
 import org.h2.result.SearchRow;
-import org.h2.result.SimpleRow;
 import org.h2.result.SimpleRowValue;
 import org.h2.result.SortOrder;
 import org.h2.schema.Schema;
@@ -671,18 +671,31 @@ public abstract class Table extends SchemaObjectBase {
     }
 
     /**
-     * Create a new row for a table.
+     * Create a new row for this table.
      *
-     * @param data the values.
-     * @param memory whether the row is in memory.
-     * @return the created row.
+     * @param data the values
+     * @param memory whether the row is in memory
+     * @return the created row
      */
     public Row createRow(Value[] data, int memory) {
         return rowFactory.createRow(data, memory);
     }
 
+    /**
+     * Create a new row for this table.
+     *
+     * @param data the values
+     * @param memory whether the row is in memory
+     * @return the created row
+     */
+    public Row createRow(Value[] data, int memory, long key) {
+        Row row = rowFactory.createRow(data, memory);
+        row.setKey(key);
+        return row;
+    }
+
     public Row getTemplateRow() {
-        return createRow(new Value[getColumns().length], Row.MEMORY_CALCULATE);
+        return createRow(new Value[getColumns().length], SearchRow.MEMORY_CALCULATE);
     }
 
     /**
@@ -695,7 +708,7 @@ public abstract class Table extends SchemaObjectBase {
         if (singleColumn) {
             return new SimpleRowValue(columns.length);
         }
-        return new SimpleRow(new Value[columns.length]);
+        return new DefaultRow(new Value[columns.length]);
     }
 
     Row getNullRow() {

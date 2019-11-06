@@ -16,6 +16,7 @@ import java.net.InetAddress;
 import java.net.Socket;
 import org.h2.api.ErrorCode;
 import org.h2.api.IntervalQualifier;
+import org.h2.engine.CastDataProvider;
 import org.h2.engine.Constants;
 import org.h2.engine.SessionInterface;
 import org.h2.message.DbException;
@@ -25,8 +26,8 @@ import org.h2.security.SHA256;
 import org.h2.store.Data;
 import org.h2.store.DataReader;
 import org.h2.util.Bits;
+import org.h2.util.DateTimeUtils;
 import org.h2.util.IOUtils;
-import org.h2.util.JdbcUtils;
 import org.h2.util.MathUtils;
 import org.h2.util.NetUtils;
 import org.h2.util.StringUtils;
@@ -70,6 +71,7 @@ public class Transfer {
     private static final int INTERVAL = 26;
     private static final int ROW = 27;
     private static final int JSON = 28;
+    private static final int TIME_TZ = 29;
 
     private Socket socket;
     private DataInputStream in;
@@ -343,6 +345,25 @@ public class Transfer {
     }
 
     /**
+     * Write value type, precision, and scale.
+     *
+     * @param type data type information
+     * @return itself
+     */
+    public Transfer writeTypeInfo(TypeInfo type) throws IOException {
+        return writeInt(type.getValueType()).writeLong(type.getPrecision()).writeInt(type.getScale());
+    }
+
+    /**
+     * Read a type information.
+     *
+     * @return the type information
+     */
+    public TypeInfo readTypeInfo() throws IOException {
+        return TypeInfo.getTypeInfo(readInt(), readLong(), readInt(), null);
+    }
+
+    /**
      * Write a value.
      *
      * @param v the value
@@ -380,6 +401,22 @@ public class Transfer {
             writeInt(TIME);
             writeLong(((ValueTime) v).getNanos());
             break;
+        case Value.TIME_TZ: {
+            ValueTimeTimeZone t = (ValueTimeTimeZone) v;
+            if (version >= Constants.TCP_PROTOCOL_VERSION_19) {
+                writeInt(TIME_TZ);
+                writeLong(t.getNanos());
+                writeInt(t.getTimeZoneOffsetSeconds());
+            } else {
+                writeInt(TIME);
+                ValueTimestampTimeZone current = session instanceof CastDataProvider
+                        ? ((CastDataProvider) session).currentTimestamp() : DateTimeUtils.currentTimestamp();
+                writeLong(DateTimeUtils.normalizeNanosOfDay(t.getNanos() +
+                        (t.getTimeZoneOffsetSeconds() - current.getTimeZoneOffsetSeconds())
+                        * DateTimeUtils.NANOS_PER_DAY));
+            }
+            break;
+        }
         case Value.DATE:
             writeInt(DATE);
             writeLong(((ValueDate) v).getDateValue());
@@ -501,13 +538,7 @@ public class Transfer {
             ValueArray va = (ValueArray) v;
             Value[] list = va.getList();
             int len = list.length;
-            Class<?> componentType = va.getComponentType();
-            if (componentType == Object.class) {
-                writeInt(len);
-            } else {
-                writeInt(-(len + 1));
-                writeString(componentType.getName());
-            }
+            writeInt(len);
             for (Value value : list) {
                 writeValue(value);
             }
@@ -540,14 +571,13 @@ public class Transfer {
                 if (version >= Constants.TCP_PROTOCOL_VERSION_18) {
                     writeString(result.getAlias(i));
                     writeString(result.getColumnName(i));
-                    writeInt(columnType.getValueType());
-                    writeLong(columnType.getPrecision());
+                    writeTypeInfo(columnType);
                 } else {
                     writeString(result.getColumnName(i));
                     writeInt(DataType.getDataType(columnType.getValueType()).sqlType);
                     writeInt(MathUtils.convertLongToInt(columnType.getPrecision()));
+                    writeInt(columnType.getScale());
                 }
-                writeInt(columnType.getScale());
             }
             while (result.next()) {
                 writeBoolean(true);
@@ -615,11 +645,6 @@ public class Transfer {
             break;
         }
         default:
-            if (JdbcUtils.customDataTypesHandler != null) {
-                writeInt(type);
-                writeBytes(v.getBytesNoCopy());
-                break;
-            }
             throw DbException.get(ErrorCode.CONNECTION_BROKEN_1, "type=" + type);
         }
     }
@@ -648,6 +673,8 @@ public class Transfer {
             return ValueDate.fromDateValue(readLong());
         case TIME:
             return ValueTime.fromNanos(readLong());
+        case TIME_TZ:
+            return ValueTimeTimeZone.fromNanos(readLong(), readInt());
         case TIMESTAMP:
             return ValueTimestamp.fromDateValueAndNanos(readLong(), readLong());
         case TIMESTAMP_TZ: {
@@ -736,16 +763,16 @@ public class Transfer {
         }
         case ARRAY: {
             int len = readInt();
-            Class<?> componentType = Object.class;
             if (len < 0) {
-                len = -(len + 1);
-                componentType = JdbcUtils.loadUserClass(readString());
+                // Unlikely, but possible with H2 1.4.200 and older versions
+                len = ~len;
+                readString();
             }
             Value[] list = new Value[len];
             for (int i = 0; i < len; i++) {
                 list[i] = readValue();
             }
-            return ValueArray.get(componentType, list);
+            return ValueArray.get(list);
         }
         case ROW: {
             int len = readInt();
@@ -760,7 +787,7 @@ public class Transfer {
             int columns = readInt();
             for (int i = 0; i < columns; i++) {
                 if (version >= Constants.TCP_PROTOCOL_VERSION_18) {
-                    rs.addColumn(readString(), readString(), readInt(), readLong(), readInt());
+                    rs.addColumn(readString(), readString(), readTypeInfo());
                 } else {
                     String name = readString();
                     rs.addColumn(name, name, DataType.convertSQLTypeToValueType(readInt()), readInt(), readInt());
@@ -793,10 +820,6 @@ public class Transfer {
             // Do not trust the value
             return ValueJson.fromJson(readBytes());
         default:
-            if (JdbcUtils.customDataTypesHandler != null) {
-                return JdbcUtils.customDataTypesHandler.convert(
-                        ValueBytes.getNoCopy(readBytes()), type);
-            }
             throw DbException.get(ErrorCode.CONNECTION_BROKEN_1, "type=" + type);
         }
     }

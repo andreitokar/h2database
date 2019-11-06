@@ -72,7 +72,7 @@ public class JdbcDatabaseMetaData extends TraceObject implements
     public String getDatabaseProductName() {
         debugCodeCall("getDatabaseProductName");
         // This value must stay like that, see
-        // http://opensource.atlassian.com/projects/hibernate/browse/HHH-2682
+        // https://hibernate.atlassian.net/browse/HHH-2682
         return "H2";
     }
 
@@ -1558,25 +1558,26 @@ public class JdbcDatabaseMetaData extends TraceObject implements
      * BETWEEN, BOTH
      * CASE, CHECK, CONSTRAINT, CROSS, CURRENT_CATALOG, CURRENT_DATE, CURRENT_SCHEMA,
      * CURRENT_TIME, CURRENT_TIMESTAMP, CURRENT_USER,
-     * DISTINCT,
+     * DAY, DISTINCT,
      * EXCEPT, EXISTS,
      * FALSE, FETCH, FILTER, FOR, FOREIGN, FROM, FULL,
      * GROUP, GROUPS
-     * HAVING,
+     * HAVING, HOUR,
      * IF, ILIKE, IN, INNER, INTERSECT, INTERSECTS, INTERVAL, IS,
      * JOIN,
      * LEADING, LEFT, LIKE, LIMIT, LOCALTIME, LOCALTIMESTAMP,
-     * MINUS,
+     * MINUS, MINUTE, MONTH,
      * NATURAL, NOT, NULL,
      * OFFSET, ON, OR, ORDER, OVER,
      * PARTITION, PRIMARY,
      * QUALIFY,
      * RANGE, REGEXP, RIGHT, ROW, _ROWID_, ROWNUM, ROWS,
-     * SELECT, SYSDATE, SYSTIME, SYSTIMESTAMP,
+     * SECOND, SELECT, SYSDATE, SYSTIME, SYSTIMESTAMP,
      * TABLE, TODAY, TOP, TRAILING, TRUE,
      * UNION, UNIQUE, UNKNOWN, USING
      * VALUES,
-     * WHERE, WINDOW, WITH
+     * WHERE, WINDOW, WITH,
+     * YEAR
      * </pre>
      *
      * @return a list of additional the keywords
@@ -2356,25 +2357,10 @@ public class JdbcDatabaseMetaData extends TraceObject implements
     public boolean supportsTransactionIsolationLevel(int level) throws SQLException {
         debugCodeCall("supportsTransactionIsolationLevel");
         switch (level) {
-        case Connection.TRANSACTION_READ_UNCOMMITTED: {
-            // Currently the combination of MV_STORE=FALSE, LOCK_MODE=0 and
-            // MULTI_THREADED=TRUE is not supported. Also see code in
-            // Database#setLockMode(int)
-            try (PreparedStatement prep = conn.prepareStatement(
-                    "SELECT VALUE FROM INFORMATION_SCHEMA.SETTINGS WHERE NAME=?")) {
-                // TODO skip MV_STORE check for H2 <= 1.4.197
-                prep.setString(1, "MV_STORE");
-                ResultSet rs = prep.executeQuery();
-                if (rs.next() && Boolean.parseBoolean(rs.getString(1))) {
-                    return true;
-                }
-                prep.setString(1, "MULTI_THREADED");
-                rs = prep.executeQuery();
-                return !rs.next() || !rs.getString(1).equals("1");
-            }
-        }
+        case Connection.TRANSACTION_READ_UNCOMMITTED:
         case Connection.TRANSACTION_READ_COMMITTED:
         case Connection.TRANSACTION_REPEATABLE_READ:
+        case Constants.TRANSACTION_SNAPSHOT:
         case Connection.TRANSACTION_SERIALIZABLE:
             return true;
         default:
@@ -3079,12 +3065,12 @@ public class JdbcDatabaseMetaData extends TraceObject implements
     /**
      * Gets the minor version of the supported JDBC API.
      *
-     * @return the minor version (1)
+     * @return the minor version (2)
      */
     @Override
     public int getJDBCMinorVersion() {
         debugCodeCall("getJDBCMinorVersion");
-        return 1;
+        return 2;
     }
 
     /**

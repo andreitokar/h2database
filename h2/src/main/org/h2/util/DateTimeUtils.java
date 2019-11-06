@@ -7,15 +7,17 @@
  */
 package org.h2.util;
 
-import java.sql.Date;
-import java.util.Calendar;
-import java.util.GregorianCalendar;
+import java.time.Instant;
+import java.util.Date;
 import java.util.TimeZone;
 
+import org.h2.api.ErrorCode;
 import org.h2.engine.CastDataProvider;
+import org.h2.message.DbException;
 import org.h2.value.Value;
 import org.h2.value.ValueDate;
 import org.h2.value.ValueTime;
+import org.h2.value.ValueTimeTimeZone;
 import org.h2.value.ValueTimestamp;
 import org.h2.value.ValueTimestampTimeZone;
 
@@ -73,10 +75,10 @@ public class DateTimeUtils {
     static final int SHIFT_MONTH = 5;
 
     /**
-     * Gregorian change date for a {@link GregorianCalendar} that represents a
-     * proleptic Gregorian calendar.
+     * Gregorian change date for a {@link java.util.GregorianCalendar} that
+     * represents a proleptic Gregorian calendar.
      */
-    private static final Date PROLEPTIC_GREGORIAN_CHANGE = new Date(Long.MIN_VALUE);
+    public static final Date PROLEPTIC_GREGORIAN_CHANGE = new Date(Long.MIN_VALUE);
 
     /**
      * Date value for 1970-01-01.
@@ -97,22 +99,13 @@ public class DateTimeUtils {
             30, 31, 31, 30, 31, 30, 31 };
 
     /**
-     * Multipliers for {@link #convertScale(long, int, long)}.
+     * Multipliers for {@link #convertScale(long, int, long)} and
+     * {@link #appendNanos(StringBuilder, int)}.
      */
-    private static final int[] CONVERT_SCALE_TABLE = { 1_000_000_000, 100_000_000,
-            10_000_000, 1_000_000, 100_000, 10_000, 1_000, 100, 10 };
+    private static final int[] FRACTIONAL_SECONDS_TABLE = { 1_000_000_000, 100_000_000,
+            10_000_000, 1_000_000, 100_000, 10_000, 1_000, 100, 10, 1 };
 
     private static volatile TimeZoneProvider LOCAL;
-
-    /**
-     * Raw offset doesn't change during DST transitions, but changes during
-     * other transitions that some time zones have. H2 1.4.193 and later
-     * versions use zone offset that is valid for startup time for performance
-     * reasons. This code is now used only by old PageStore engine and its
-     * datetime storage code has issues with all time zone transitions, so this
-     * buggy logic is preserved as is too.
-     */
-    private static int zoneOffsetMillis = createGregorianCalendar().get(Calendar.ZONE_OFFSET);
 
     private DateTimeUtils() {
         // utility class
@@ -124,7 +117,6 @@ public class DateTimeUtils {
      */
     public static void resetCalendar() {
         LOCAL = null;
-        zoneOffsetMillis = createGregorianCalendar().get(Calendar.ZONE_OFFSET);
     }
 
     /**
@@ -141,44 +133,22 @@ public class DateTimeUtils {
     }
 
     /**
-     * Get a time zone provider for the given time zone.
+     * Returns current timestamp.
      *
-     * @param tz the time zone
-     * @return a time zone provider for the given time zone
+     * @return current timestamp
      */
-    public static TimeZoneProvider getTimeZone(TimeZone tz) {
-        return TimeZoneProvider.ofId(tz.getID());
-    }
-
-    /**
-     * Creates a Gregorian calendar for the default timezone using the default
-     * locale. Dates in H2 are represented in a Gregorian calendar. So this
-     * method should be used instead of Calendar.getInstance() to ensure that
-     * the Gregorian calendar is used for all date processing instead of a
-     * default locale calendar that can be non-Gregorian in some locales.
-     *
-     * @return a new calendar instance.
-     */
-    public static GregorianCalendar createGregorianCalendar() {
-        GregorianCalendar c = new GregorianCalendar();
-        c.setGregorianChange(PROLEPTIC_GREGORIAN_CHANGE);
-        return c;
-    }
-
-    /**
-     * Creates a Gregorian calendar for the given timezone using the default
-     * locale. Dates in H2 are represented in a Gregorian calendar. So this
-     * method should be used instead of Calendar.getInstance() to ensure that
-     * the Gregorian calendar is used for all date processing instead of a
-     * default locale calendar that can be non-Gregorian in some locales.
-     *
-     * @param tz timezone for the calendar, is never null
-     * @return a new calendar instance.
-     */
-    public static GregorianCalendar createGregorianCalendar(TimeZone tz) {
-        GregorianCalendar c = new GregorianCalendar(tz);
-        c.setGregorianChange(PROLEPTIC_GREGORIAN_CHANGE);
-        return c;
+    public static ValueTimestampTimeZone currentTimestamp() {
+        Instant now = Instant.now();
+        long second = now.getEpochSecond();
+        int nano = now.getNano();
+        /*
+         * This code intentionally does not support properly dates before UNIX
+         * epoch because such support is not required for current dates.
+         */
+        int offset = getTimeZoneOffset(second);
+        second += offset;
+        return ValueTimestampTimeZone.fromDateValueAndNanos(dateValueFromAbsoluteDay(second / SECONDS_PER_DAY),
+                second % SECONDS_PER_DAY * 1_000_000_000 + nano, offset);
     }
 
     /**
@@ -335,18 +305,6 @@ public class DateTimeUtils {
     }
 
     /**
-     * See:
-     * https://stackoverflow.com/questions/3976616/how-to-find-nth-occurrence-of-character-in-a-string#answer-3976656
-     */
-    private static int findNthIndexOf(String str, char chr, int n) {
-        int pos = str.indexOf(chr);
-        while (--n > 0 && pos != -1) {
-            pos = str.indexOf(chr, pos + 1);
-        }
-        return pos;
-    }
-
-    /**
      * Parses timestamp value from the specified string.
      *
      * @param s
@@ -365,7 +323,7 @@ public class DateTimeUtils {
             dateEnd = s.indexOf('T');
             if (dateEnd < 0 && provider != null && provider.getMode().allowDB2TimestampFormat) {
                 // DB2 also allows dash between date and time
-                dateEnd = findNthIndexOf(s, '-', 3);
+                dateEnd = s.indexOf('-', s.indexOf('-', s.indexOf('-') + 1) + 1);
             }
         }
         int timeStart;
@@ -397,8 +355,7 @@ public class DateTimeUtils {
                     if (offsetEnd < 0) {
                         offsetEnd = s.length();
                     }
-                    String tzName = s.substring(timeZoneStart, offsetEnd);
-                    tz = TimeZoneProvider.ofId(tzName);
+                    tz = TimeZoneProvider.ofId(s.substring(timeZoneStart, offsetEnd));
                     if (s.charAt(timeZoneStart - 1) == ' ') {
                         timeZoneStart--;
                     }
@@ -406,8 +363,7 @@ public class DateTimeUtils {
                 } else {
                     timeZoneStart = s.indexOf(' ', dateEnd + 1);
                     if (timeZoneStart > 0) {
-                        String tzName = s.substring(timeZoneStart + 1);
-                        tz = TimeZoneProvider.ofId(tzName);
+                        tz = TimeZoneProvider.ofId(s.substring(timeZoneStart + 1));
                         timeEnd = timeZoneStart;
                     }
                 }
@@ -434,6 +390,48 @@ public class DateTimeUtils {
     }
 
     /**
+     * Parses TIME WITH TIME ZONE value from the specified string.
+     *
+     * @param s
+     *            string to parse
+     * @param provider
+     *            the cast information provider, or {@code null}
+     * @return parsed time with time zone
+     */
+    public static ValueTimeTimeZone parseTimeWithTimeZone(String s, CastDataProvider provider) {
+        int timeEnd;
+        TimeZoneProvider tz;
+        if (s.endsWith("Z")) {
+            tz = TimeZoneProvider.UTC;
+            timeEnd = s.length() - 1;
+        } else {
+            int timeZoneStart = s.indexOf('+', 1);
+            if (timeZoneStart < 0) {
+                timeZoneStart = s.indexOf('-', 1);
+            }
+            if (timeZoneStart >= 0) {
+                tz = TimeZoneProvider.ofId(s.substring(timeZoneStart));
+                if (s.charAt(timeZoneStart - 1) == ' ') {
+                    timeZoneStart--;
+                }
+                timeEnd = timeZoneStart;
+            } else {
+                timeZoneStart = s.indexOf(' ', 1);
+                if (timeZoneStart > 0) {
+                    tz = TimeZoneProvider.ofId(s.substring(timeZoneStart + 1));
+                    timeEnd = timeZoneStart;
+                } else {
+                    throw DbException.get(ErrorCode.INVALID_DATETIME_CONSTANT_2, "TIME WITH TIME ZONE", s);
+                }
+            }
+            if (!tz.hasFixedOffset()) {
+                throw DbException.get(ErrorCode.INVALID_DATETIME_CONSTANT_2, "TIME WITH TIME ZONE", s);
+            }
+        }
+        return ValueTimeTimeZone.fromNanos(parseTimeNanos(s, 0, timeEnd), tz.getTimeZoneOffsetUTC(0L));
+    }
+
+    /**
      * Calculates the time zone offset in seconds for the specified date
      * value, and nanoseconds since midnight.
      *
@@ -454,7 +452,12 @@ public class DateTimeUtils {
      * @return local time zone offset
      */
     public static int getTimeZoneOffsetMillis(long ms) {
-        return getTimeZoneOffset(ms / 1000) * 1_000;
+        long seconds = ms / 1_000;
+        // Round toward negative infinity
+        if (ms < 0 && (seconds * 1_000 != ms)) {
+            seconds--;
+        }
+        return getTimeZoneOffset(seconds) * 1_000;
     }
 
     /**
@@ -495,7 +498,7 @@ public class DateTimeUtils {
      * @return the number of milliseconds (UTC)
      */
     public static long getMillis(TimeZone tz, long dateValue, long timeNanos) {
-        TimeZoneProvider c = tz == null ? getTimeZone() : getTimeZone(tz);
+        TimeZoneProvider c = tz == null ? getTimeZone() : TimeZoneProvider.ofId(tz.getID());
         return c.getEpochSecondsFromLocal(dateValue, timeNanos) * 1_000 + timeNanos / 1_000_000 % 1_000;
     }
 
@@ -504,9 +507,11 @@ public class DateTimeUtils {
      *
      * @param value
      *            value to extract fields from
+     * @param provider
+     *            the cast information provider
      * @return array with date value and nanos of day
      */
-    public static long[] dateAndTimeFromValue(Value value) {
+    public static long[] dateAndTimeFromValue(Value value, CastDataProvider provider) {
         long dateValue = EPOCH_DATE_VALUE;
         long timeNanos = 0;
         if (value instanceof ValueTimestamp) {
@@ -521,8 +526,10 @@ public class DateTimeUtils {
             ValueTimestampTimeZone v = (ValueTimestampTimeZone) value;
             dateValue = v.getDateValue();
             timeNanos = v.getTimeNanos();
+        } else if (value instanceof ValueTimeTimeZone) {
+            timeNanos = ((ValueTimeTimeZone) value).getNanos();
         } else {
-            ValueTimestamp v = (ValueTimestamp) value.convertTo(Value.TIMESTAMP);
+            ValueTimestamp v = (ValueTimestamp) value.convertTo(Value.TIMESTAMP, provider, false);
             dateValue = v.getDateValue();
             timeNanos = v.getTimeNanos();
         }
@@ -531,8 +538,8 @@ public class DateTimeUtils {
 
     /**
      * Creates a new date-time value with the same type as original value. If
-     * original value is a ValueTimestampTimeZone, returned value will have the same
-     * time zone offset as original value.
+     * original value is a ValueTimestampTimeZone or ValueTimeTimeZone, returned
+     * value will have the same time zone offset as original value.
      *
      * @param original
      *            original value
@@ -540,49 +547,23 @@ public class DateTimeUtils {
      *            date value for the returned value
      * @param timeNanos
      *            nanos of day for the returned value
-     * @param forceTimestamp
-     *            if {@code true} return ValueTimestamp if original argument is
-     *            ValueDate or ValueTime
      * @return new value with specified date value and nanos of day
      */
-    public static Value dateTimeToValue(Value original, long dateValue, long timeNanos, boolean forceTimestamp) {
-        if (!(original instanceof ValueTimestamp)) {
-            if (!forceTimestamp) {
-                if (original instanceof ValueDate) {
-                    return ValueDate.fromDateValue(dateValue);
-                }
-                if (original instanceof ValueTime) {
-                    return ValueTime.fromNanos(timeNanos);
-                }
-            }
-            if (original instanceof ValueTimestampTimeZone) {
-                return ValueTimestampTimeZone.fromDateValueAndNanos(dateValue, timeNanos,
-                        ((ValueTimestampTimeZone) original).getTimeZoneOffsetSeconds());
-            }
+    public static Value dateTimeToValue(Value original, long dateValue, long timeNanos) {
+        switch (original.getValueType()) {
+        case Value.DATE:
+            return ValueDate.fromDateValue(dateValue);
+        case Value.TIME:
+            return ValueTime.fromNanos(timeNanos);
+        case Value.TIME_TZ:
+            return ValueTimeTimeZone.fromNanos(timeNanos, ((ValueTimeTimeZone) original).getTimeZoneOffsetSeconds());
+        case Value.TIMESTAMP:
+        default:
+            return ValueTimestamp.fromDateValueAndNanos(dateValue, timeNanos);
+        case Value.TIMESTAMP_TZ:
+            return ValueTimestampTimeZone.fromDateValueAndNanos(dateValue, timeNanos,
+                    ((ValueTimestampTimeZone) original).getTimeZoneOffsetSeconds());
         }
-        return ValueTimestamp.fromDateValueAndNanos(dateValue, timeNanos);
-    }
-
-    /**
-     * Get the number of milliseconds since 1970-01-01 in the local timezone,
-     * but without daylight saving time into account.
-     *
-     * @param d the date
-     * @return the milliseconds
-     */
-    public static long getTimeLocalWithoutDst(java.util.Date d) {
-        return d.getTime() + zoneOffsetMillis;
-    }
-
-    /**
-     * Convert the number of milliseconds since 1970-01-01 in the local timezone
-     * to UTC, but without daylight saving time into account.
-     *
-     * @param millis the number of milliseconds in the local timezone
-     * @return the number of milliseconds in UTC
-     */
-    public static long getTimeUTCWithoutDst(long millis) {
-        return millis - zoneOffsetMillis;
     }
 
     /**
@@ -880,12 +861,11 @@ public class DateTimeUtils {
      * @return the nanoseconds
      */
     public static long nanosFromLocalSeconds(long localSeconds) {
-        long absoluteDay = localSeconds / SECONDS_PER_DAY;
-        // Round toward negative infinity
-        if (localSeconds < 0 && (absoluteDay * SECONDS_PER_DAY != localSeconds)) {
-            absoluteDay--;
+        localSeconds %= SECONDS_PER_DAY;
+        if (localSeconds < 0) {
+            localSeconds += SECONDS_PER_DAY;
         }
-        return (localSeconds - absoluteDay * SECONDS_PER_DAY) * NANOS_PER_SECOND;
+        return localSeconds * NANOS_PER_SECOND;
     }
 
     /**
@@ -895,35 +875,25 @@ public class DateTimeUtils {
      * @return the nanoseconds
      */
     public static long nanosFromLocalMillis(long ms) {
-        long absoluteDay = ms / MILLIS_PER_DAY;
-        // Round toward negative infinity
-        if (ms < 0 && (absoluteDay * MILLIS_PER_DAY != ms)) {
-            absoluteDay--;
+        ms %= MILLIS_PER_DAY;
+        if (ms < 0) {
+            ms += MILLIS_PER_DAY;
         }
-        return (ms - absoluteDay * MILLIS_PER_DAY) * 1_000_000;
+        return ms * 1_000_000;
     }
 
     /**
-     * Calculate the normalized timestamp.
+     * Calculate the normalized nanos of day.
      *
-     * @param absoluteDay the absolute day
      * @param nanos the nanoseconds (may be negative or larger than one day)
-     * @return the timestamp
+     * @return the nanos of day within a day
      */
-    public static ValueTimestamp normalizeTimestamp(long absoluteDay,
-            long nanos) {
-        if (nanos > NANOS_PER_DAY || nanos < 0) {
-            long d;
-            if (nanos > NANOS_PER_DAY) {
-                d = nanos / NANOS_PER_DAY;
-            } else {
-                d = (nanos - NANOS_PER_DAY + 1) / NANOS_PER_DAY;
-            }
-            nanos -= d * NANOS_PER_DAY;
-            absoluteDay += d;
+    public static long normalizeNanosOfDay(long nanos) {
+        nanos %= NANOS_PER_DAY;
+        if (nanos < 0) {
+            nanos += NANOS_PER_DAY;
         }
-        return ValueTimestamp.fromDateValueAndNanos(
-                dateValueFromAbsoluteDay(absoluteDay), nanos);
+        return nanos;
     }
 
     /**
@@ -1087,76 +1057,79 @@ public class DateTimeUtils {
     /**
      * Append a date to the string builder.
      *
-     * @param buff the target string builder
+     * @param builder the target string builder
      * @param dateValue the date value
+     * @return the specified string builder
      */
-    public static void appendDate(StringBuilder buff, long dateValue) {
+    public static StringBuilder appendDate(StringBuilder builder, long dateValue) {
         int y = yearFromDateValue(dateValue);
-        int m = monthFromDateValue(dateValue);
-        int d = dayFromDateValue(dateValue);
-        if (y > 0 && y < 10_000) {
-            StringUtils.appendZeroPadded(buff, 4, y);
+        if (y < 1_000 && y > -1_000) {
+            if (y < 0) {
+                builder.append('-');
+                y = -y;
+            }
+            StringUtils.appendZeroPadded(builder, 4, y);
         } else {
-            buff.append(y);
+            builder.append(y);
         }
-        buff.append('-');
-        StringUtils.appendZeroPadded(buff, 2, m);
-        buff.append('-');
-        StringUtils.appendZeroPadded(buff, 2, d);
+        StringUtils.appendTwoDigits(builder.append('-'), monthFromDateValue(dateValue)).append('-');
+        return StringUtils.appendTwoDigits(builder, dayFromDateValue(dateValue));
     }
 
     /**
      * Append a time to the string builder.
      *
-     * @param buff the target string builder
+     * @param builder the target string builder
      * @param nanos the time in nanoseconds
      */
-    public static void appendTime(StringBuilder buff, long nanos) {
+    public static void appendTime(StringBuilder builder, long nanos) {
         if (nanos < 0) {
-            buff.append('-');
+            builder.append('-');
             nanos = -nanos;
         }
         /*
          * nanos now either in range from 0 to Long.MAX_VALUE or equals to
-         * Long.MIN_VALUE. We need to divide nanos by 1000000 with unsigned division to
-         * get correct result. The simplest way to do this with such constraints is to
-         * divide -nanos by -1000000.
+         * Long.MIN_VALUE. We need to divide nanos by 1,000,000,000 with
+         * unsigned division to get correct result. The simplest way to do this
+         * with such constraints is to divide -nanos by -1,000,000,000.
          */
-        long ms = -nanos / -1_000_000;
-        nanos -= ms * 1_000_000;
-        long s = ms / 1_000;
-        ms -= s * 1_000;
-        long m = s / 60;
+        long s = -nanos / -1_000_000_000;
+        nanos -= s * 1_000_000_000;
+        int m = (int) (s / 60);
         s -= m * 60;
-        long h = m / 60;
+        int h = m / 60;
         m -= h * 60;
-        StringUtils.appendZeroPadded(buff, 2, h);
-        buff.append(':');
-        StringUtils.appendZeroPadded(buff, 2, m);
-        buff.append(':');
-        StringUtils.appendZeroPadded(buff, 2, s);
-        if (ms > 0 || nanos > 0) {
-            buff.append('.');
-            StringUtils.appendZeroPadded(buff, 3, ms);
-            if (nanos > 0) {
-                StringUtils.appendZeroPadded(buff, 6, nanos);
-            }
-            stripTrailingZeroes(buff);
-        }
+        StringUtils.appendTwoDigits(builder, h).append(':');
+        StringUtils.appendTwoDigits(builder, m).append(':');
+        StringUtils.appendTwoDigits(builder, (int) s);
+        appendNanos(builder, (int) nanos);
     }
 
     /**
-     * Skip trailing zeroes.
+     * Append nanoseconds of time, if any.
      *
-     * @param buff String buffer.
+     * @param builder string builder to append to
+     * @param nanos nanoseconds of second
      */
-    static void stripTrailingZeroes(StringBuilder buff) {
-        int i = buff.length() - 1;
-        if (buff.charAt(i) == '0') {
-            while (buff.charAt(--i) == '0') {
-                // do nothing
+    static void appendNanos(StringBuilder builder, int nanos) {
+        if (nanos > 0) {
+            builder.append('.');
+            for (int i = 1; nanos < FRACTIONAL_SECONDS_TABLE[i]; i++) {
+                builder.append('0');
             }
-            buff.setLength(i + 1);
+            if (nanos % 1_000 == 0) {
+                nanos /= 1_000;
+                if (nanos % 1_000 == 0) {
+                    nanos /= 1_000;
+                }
+            }
+            if (nanos % 10 == 0) {
+                nanos /= 10;
+                if (nanos % 10 == 0) {
+                    nanos /= 10;
+                }
+            }
+            builder.append(nanos);
         }
     }
 
@@ -1174,34 +1147,18 @@ public class DateTimeUtils {
             buff.append('+');
         }
         int rem = tz / 3_600;
-        StringUtils.appendZeroPadded(buff, 2, rem);
+        StringUtils.appendTwoDigits(buff, rem);
         tz -= rem * 3_600;
         if (tz != 0) {
             rem = tz / 60;
             buff.append(':');
-            StringUtils.appendZeroPadded(buff, 2, rem);
+            StringUtils.appendTwoDigits(buff, rem);
             tz -= rem * 60;
             if (tz != 0) {
                 buff.append(':');
-                StringUtils.appendZeroPadded(buff, 2, tz);
+                StringUtils.appendTwoDigits(buff, tz);
             }
         }
-    }
-
-    /**
-     * Formats timestamp with time zone as string.
-     *
-     * @param buff the target string builder
-     * @param dateValue the year-month-day bit field
-     * @param timeNanos nanoseconds since midnight
-     * @param timeZoneOffsetSeconds the time zone offset in seconds
-     */
-    public static void appendTimestampTimeZone(StringBuilder buff, long dateValue, long timeNanos,
-            int timeZoneOffsetSeconds) {
-        appendDate(buff, dateValue);
-        buff.append(' ');
-        appendTime(buff, timeNanos);
-        appendTimeZone(buff, timeZoneOffsetSeconds);
     }
 
     /**
@@ -1223,14 +1180,13 @@ public class DateTimeUtils {
         } else {
             b.append('+');
         }
-        StringUtils.appendZeroPadded(b, 2, offsetSeconds / 3_600);
-        b.append(':');
+        StringUtils.appendTwoDigits(b, offsetSeconds / 3_600).append(':');
         offsetSeconds %= 3_600;
-        StringUtils.appendZeroPadded(b, 2, offsetSeconds / 60);
+        StringUtils.appendTwoDigits(b, offsetSeconds / 60);
         offsetSeconds %= 60;
         if (offsetSeconds != 0) {
             b.append(':');
-            StringUtils.appendZeroPadded(b, 2, offsetSeconds);
+            StringUtils.appendTwoDigits(b, offsetSeconds);
         }
         return b.toString();
     }
@@ -1247,7 +1203,7 @@ public class DateTimeUtils {
         if (scale >= 9) {
             return nanosOfDay;
         }
-        int m = CONVERT_SCALE_TABLE[scale];
+        int m = FRACTIONAL_SECONDS_TABLE[scale];
         long mod = nanosOfDay % m;
         if (mod >= m >>> 1) {
             nanosOfDay += m;

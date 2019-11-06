@@ -19,11 +19,9 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Properties;
 import java.util.Set;
 import java.util.StringTokenizer;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -48,9 +46,7 @@ import org.h2.mvstore.db.MVTableEngine;
 import org.h2.pagestore.PageStore;
 import org.h2.pagestore.WriterThread;
 import org.h2.pagestore.db.LobStorageBackend;
-import org.h2.result.LocalResultFactory;
 import org.h2.result.Row;
-import org.h2.result.RowFactory;
 import org.h2.result.SearchRow;
 import org.h2.schema.Schema;
 import org.h2.schema.SchemaObject;
@@ -75,7 +71,7 @@ import org.h2.table.TableType;
 import org.h2.table.TableView;
 import org.h2.tools.DeleteDbFiles;
 import org.h2.tools.Server;
-import org.h2.util.CurrentTimestamp;
+import org.h2.util.DateTimeUtils;
 import org.h2.util.JdbcUtils;
 import org.h2.util.MathUtils;
 import org.h2.util.NetUtils;
@@ -199,8 +195,6 @@ public class Database implements DataHandler, CastDataProvider {
     private final String accessModeData;
     private boolean referentialIntegrity = true;
     private Mode mode = Mode.getRegular();
-    /** ie. the MULTI_THREADED setting */
-    private boolean multiThreaded;
     private int maxOperationMemory =
             Constants.DEFAULT_MAX_OPERATION_MEMORY;
     private SmallLRUCache<String, String[]> lobFileListCache;
@@ -210,12 +204,6 @@ public class Database implements DataHandler, CastDataProvider {
     private HashMap<TableLinkConnection, TableLinkConnection> linkConnections;
     private final TempFileDeleter tempFileDeleter = TempFileDeleter.getInstance();
     private PageStore pageStore;
-    private Properties reconnectLastLock;
-    private volatile long reconnectCheckNext;
-    private volatile boolean reconnectChangePending;
-    private volatile int checkpointAllowed;
-    private volatile boolean checkpointRunning;
-    private final Object reconnectSync = new Object();
     private int cacheSize;
     private int compactMode;
     private SourceCompiler compiler;
@@ -225,7 +213,6 @@ public class Database implements DataHandler, CastDataProvider {
     private final int pageSize;
     private int defaultTableType = Table.TYPE_CACHED;
     private final DbSettings dbSettings;
-    private final long reconnectCheckDelayNs;
     private int logMode;
     private MVTableEngine.Store store;
     private int retentionTime;
@@ -238,7 +225,6 @@ public class Database implements DataHandler, CastDataProvider {
     private int queryStatisticsMaxEntries = Constants.QUERY_STATISTICS_MAX_ENTRIES;
     private QueryStatisticsData queryStatisticsData;
     private RowFactory rowFactory = RowFactory.getRowFactory();
-    private LocalResultFactory resultFactory = LocalResultFactory.DEFAULT;
     private boolean ignoreCatalogs;
 
     private Authenticator authenticator;
@@ -251,7 +237,6 @@ public class Database implements DataHandler, CastDataProvider {
         }
         String name = ci.getName();
         this.dbSettings = ci.getDbSettings();
-        this.reconnectCheckDelayNs = TimeUnit.MILLISECONDS.toNanos(dbSettings.reconnectCheckDelay);
         this.compareMode = CompareMode.getInstance(null, 0);
         this.persistent = ci.isPersistent();
         this.filePasswordHash = ci.getFilePasswordHash();
@@ -260,7 +245,6 @@ public class Database implements DataHandler, CastDataProvider {
         this.databaseShortName = parseDatabaseShortName();
         this.maxLengthInplaceLob = Constants.DEFAULT_MAX_LENGTH_INPLACE_LOB;
         this.cipher = cipher;
-        String lockMethodName = ci.getProperty("FILE_LOCK", null);
         this.accessModeData = StringUtils.toLowerEnglish(
                 ci.getProperty("ACCESS_MODE_DATA", "rw"));
         this.autoServerMode = ci.getProperty("AUTO_SERVER", false);
@@ -274,18 +258,11 @@ public class Database implements DataHandler, CastDataProvider {
         if ("r".equals(accessModeData)) {
             readOnly = true;
         }
+        String lockMethodName = ci.getProperty("FILE_LOCK", null);
         if (dbSettings.mvStore && lockMethodName == null) {
-            if (autoServerMode) {
-                fileLockMethod = FileLockMethod.FILE;
-            } else {
-                fileLockMethod = FileLockMethod.FS;
-            }
+            fileLockMethod = autoServerMode ? FileLockMethod.FILE : FileLockMethod.FS;
         } else {
             fileLockMethod = FileLock.getFileLockMethod(lockMethodName);
-        }
-        if (dbSettings.mvStore && fileLockMethod == FileLockMethod.SERIALIZED) {
-            throw DbException.getUnsupportedException(
-                    "MV_STORE combined with FILE_LOCK=SERIALIZED");
         }
         this.databaseURL = ci.getURL();
         String listener = ci.removeProperty("DATABASE_EVENT_LISTENER", null);
@@ -304,8 +281,6 @@ public class Database implements DataHandler, CastDataProvider {
                 ci.getProperty("LOG", PageStore.LOG_MODE_SYNC);
         this.javaObjectSerializerName =
                 ci.getProperty("JAVA_OBJECT_SERIALIZER", null);
-        this.multiThreaded =
-                ci.getProperty("MULTI_THREADED", dbSettings.mvStore);
         this.allowBuiltinAliasOverride =
                 ci.getProperty("BUILTIN_ALIAS_OVERRIDE", false);
         boolean closeAtVmShutdown =
@@ -362,33 +337,6 @@ public class Database implements DataHandler, CastDataProvider {
         Setting setting = findSetting(
                 SetTypes.getTypeName(SetTypes.DEFAULT_LOCK_TIMEOUT));
         return setting == null ? Constants.INITIAL_LOCK_TIMEOUT : setting.getIntValue();
-    }
-
-    /**
-     * Create a new row for a table.
-     *
-     * @param data the values
-     * @param memory whether the row is in memory
-     * @return the created row
-     */
-    public Row createRow(Value[] data, int memory) {
-        return rowFactory.createRow(data, memory);
-    }
-
-    public RowFactory getRowFactory() {
-        return rowFactory;
-    }
-
-    public void setRowFactory(RowFactory rowFactory) {
-        this.rowFactory = rowFactory;
-    }
-
-    public LocalResultFactory getResultFactory() {
-        return resultFactory;
-    }
-
-    public void setResultFactory(LocalResultFactory resultFactory) {
-        this.resultFactory = resultFactory;
     }
 
     public static void setInitialPowerOffCount(int count) {
@@ -468,79 +416,6 @@ public class Database implements DataHandler, CastDataProvider {
         return modificationDataId.get();
     }
 
-    /**
-     * Set or reset the pending change flag in the .lock.db file.
-     *
-     * @param pending the new value of the flag
-     * @return true if the call was successful,
-     *          false if another connection was faster
-     */
-    private synchronized boolean reconnectModified(boolean pending) {
-        if (readOnly || lock == null ||
-                fileLockMethod != FileLockMethod.SERIALIZED) {
-            return true;
-        }
-        try {
-            if (pending == reconnectChangePending) {
-                long now = System.nanoTime();
-                if (now > reconnectCheckNext) {
-                    if (pending) {
-                        String pos = pageStore == null ?
-                                null : Long.toString(pageStore.getWriteCountTotal());
-                        lock.setProperty("logPos", pos);
-                        lock.save();
-                    }
-                    reconnectCheckNext = now + reconnectCheckDelayNs;
-                }
-                return true;
-            }
-            Properties old = lock.load();
-            if (pending) {
-                if (old.getProperty("changePending") != null) {
-                    return false;
-                }
-                trace.debug("wait before writing");
-                Thread.sleep(TimeUnit.NANOSECONDS.toMillis((long) (reconnectCheckDelayNs * 1.1)));
-                Properties now = lock.load();
-                if (!now.equals(old)) {
-                    // somebody else was faster
-                    return false;
-                }
-            }
-            String pos = pageStore == null ?
-                    null : Long.toString(pageStore.getWriteCountTotal());
-            lock.setProperty("logPos", pos);
-            if (pending) {
-                lock.setProperty("changePending", "true-" + Math.random());
-            } else {
-                lock.setProperty("changePending", null);
-            }
-            // ensure that the writer thread will
-            // not reset the flag before we are done
-            reconnectCheckNext = System.nanoTime() +
-                    2 * reconnectCheckDelayNs;
-            old = lock.save();
-            if (pending) {
-                trace.debug("wait before writing again");
-                Thread.sleep(TimeUnit.NANOSECONDS.toMillis((long) (reconnectCheckDelayNs * 1.1)));
-                Properties now = lock.load();
-                if (!now.equals(old)) {
-                    // somebody else was faster
-                    return false;
-                }
-            } else {
-                Thread.sleep(1);
-            }
-            reconnectLastLock = old;
-            reconnectChangePending = pending;
-            reconnectCheckNext = System.nanoTime() + reconnectCheckDelayNs;
-            return true;
-        } catch (Exception e) {
-            trace.error(e, "pending {0}", pending);
-            return false;
-        }
-    }
-
     public long getNextModificationDataId() {
         return modificationDataId.incrementAndGet();
     }
@@ -588,10 +463,8 @@ public class Database implements DataHandler, CastDataProvider {
                 }
                 if (lock != null) {
                     stopServer();
-                    if (fileLockMethod != FileLockMethod.SERIALIZED) {
-                        // allow testing shutdown
-                        lock.unlock();
-                    }
+                    // allow testing shutdown
+                    lock.unlock();
                     lock = null;
                 }
                 if (traceSystem != null) {
@@ -616,6 +489,20 @@ public class Database implements DataHandler, CastDataProvider {
             return true;
         }
         return FileUtils.exists(name + Constants.SUFFIX_MV_FILE);
+    }
+
+    /**
+     * Check if a database with the given name exists.
+     *
+     * @param name
+     *            the name of the database (including path)
+     * @param mvStore
+     *            {@code true} to check MVStore file only, {@code false} to
+     *            check PageStore file only
+     * @return true if one exists
+     */
+    static boolean exists(String name, boolean mvStore) {
+        return FileUtils.exists(name + (mvStore ? Constants.SUFFIX_MV_FILE : Constants.SUFFIX_PAGE_FILE));
     }
 
     /**
@@ -676,6 +563,13 @@ public class Database implements DataHandler, CastDataProvider {
                 : dbSettings.databaseToLower ? StringUtils.toLowerEnglish(n) : n;
     }
 
+    private void initTraceSystem(int traceLevelFile, int traceLevelSystemOut)  {
+        traceSystem.setLevelFile(traceLevelFile);
+        traceSystem.setLevelSystemOut(traceLevelSystemOut);
+        trace = traceSystem.getTrace(Trace.DATABASE);
+        trace.info("opening {0} (build {1})", databaseName, Constants.BUILD_ID);
+    }
+
     private synchronized void open(int traceLevelFile, int traceLevelSystemOut, ConnectionInfo ci) {
         if (persistent) {
             String dataFileName = databaseName + Constants.SUFFIX_OLD_DATABASE_FILE;
@@ -699,9 +593,6 @@ public class Database implements DataHandler, CastDataProvider {
             }
             if (existsPage && !existsMv) {
                 dbSettings.setMvStore(false);
-                // Need to re-init this because the first time we do it we don't
-                // know if we have an mvstore or a pagestore.
-                multiThreaded = ci.getProperty("MULTI_THREADED", false);
             }
             if (readOnly) {
                 if (traceLevelFile >= TraceSystem.DEBUG) {
@@ -716,19 +607,14 @@ public class Database implements DataHandler, CastDataProvider {
                 traceSystem = new TraceSystem(databaseName +
                         Constants.SUFFIX_TRACE_FILE);
             }
-            traceSystem.setLevelFile(traceLevelFile);
-            traceSystem.setLevelSystemOut(traceLevelSystemOut);
-            trace = traceSystem.getTrace(Trace.DATABASE);
-            trace.info("opening {0} (build {1})", databaseName, Constants.BUILD_ID);
+            initTraceSystem(traceLevelFile, traceLevelSystemOut);
             if (autoServerMode) {
                 if (readOnly ||
                         fileLockMethod == FileLockMethod.NO ||
-                        fileLockMethod == FileLockMethod.SERIALIZED ||
                         fileLockMethod == FileLockMethod.FS) {
                     throw DbException.getUnsupportedException(
                             "autoServerMode && (readOnly || " +
                             "fileLockMethod == NO || " +
-                            "fileLockMethod == SERIALIZED || " +
                             "fileLockMethod == FS || " +
                             "inMemory)");
                 }
@@ -749,17 +635,6 @@ public class Database implements DataHandler, CastDataProvider {
                     }
                 }
             }
-            if (SysProperties.MODIFY_ON_WRITE) {
-                while (isReconnectNeeded()) {
-                    // wait until others stopped writing
-                }
-            } else {
-                while (isReconnectNeeded() && !beforeWriting()) {
-                    // wait until others stopped writing and
-                    // until we can write (the file is not yet open -
-                    // no need to re-connect)
-                }
-            }
             deleteOldTempFiles();
             starting = true;
             if (SysProperties.MODIFY_ON_WRITE) {
@@ -770,11 +645,6 @@ public class Database implements DataHandler, CastDataProvider {
                         throw e;
                     }
                     pageStore = null;
-                    while (!beforeWriting()) {
-                        // wait until others stopped writing and
-                        // until we can write (the file is not yet open -
-                        // no need to re-connect)
-                    }
                     getPageStore();
                 }
             } else {
@@ -782,12 +652,12 @@ public class Database implements DataHandler, CastDataProvider {
             }
             starting = false;
         } else {
+            traceSystem = new TraceSystem(null);
+            initTraceSystem(traceLevelFile, traceLevelSystemOut);
             if (autoServerMode) {
                 throw DbException.getUnsupportedException(
                         "autoServerMode && inMemory");
             }
-            traceSystem = new TraceSystem(null);
-            trace = traceSystem.getTrace(Trace.DATABASE);
             if (dbSettings.mvStore) {
                 getPageStore();
             }
@@ -903,9 +773,6 @@ public class Database implements DataHandler, CastDataProvider {
                 setWriteDelay(writeDelay);
             }
         }
-        if (checkpointAllowed > 0) {
-            afterWriting();
-        }
     }
 
     /**
@@ -958,12 +825,7 @@ public class Database implements DataHandler, CastDataProvider {
                 }
                 if (needRepair) {
                     Row[] array = allMetaRows.toArray(new Row[0]);
-                    Arrays.sort(array, new Comparator<Row>() {
-                        @Override
-                        public int compare(Row o1, Row o2) {
-                            return Integer.compare(o1.getValue(0).getInt(), o2.getValue(0).getInt());
-                        }
-                    });
+                    Arrays.sort(array, Comparator.comparingInt(t -> t.getValue(0).getInt()));
                     meta.truncate(systemSession);
                     for (Row row : array) {
                         meta.addRow(systemSession, row);
@@ -1044,16 +906,40 @@ public class Database implements DataHandler, CastDataProvider {
     private void addMeta(Session session, DbObject obj) {
         assert Thread.holdsLock(this);
         int id = obj.getId();
-        if (id > 0 && !starting && !obj.isTemporary()) {
-            Row r = meta.getTemplateRow();
-            MetaRecord.populateRowFromDBObject(obj, r);
-            synchronized (objectIds) {
-                objectIds.set(id);
+        if (id > 0 && !obj.isTemporary()) {
+            if (isMVStore()) {
+                if (!isReadOnly()) {
+                    Row r = meta.getTemplateRow();
+                    MetaRecord.populateRowFromDBObject(obj, r);
+                    assert objectIds.get(id);
+                    if (SysProperties.CHECK) {
+                        verifyMetaLocked(session);
+                    }
+                    Cursor cursor = metaIdIndex.find(session, r, r);
+                    if (!cursor.next()) {
+                        meta.addRow(session, r);
+                    } else {
+                        assert starting;
+                        Row oldRow = cursor.get();
+                        MetaRecord rec = new MetaRecord(oldRow);
+                        assert rec.getId() == obj.getId();
+                        assert rec.getObjectType() == obj.getType();
+                        if (!rec.getSQL().equals(obj.getCreateSQL())) {
+                            meta.updateRow(session, oldRow, r);
+                        }
+                    }
+                }
+            } else if (!starting) {
+                Row r = meta.getTemplateRow();
+                MetaRecord.populateRowFromDBObject(obj, r);
+                synchronized (objectIds) {
+                    objectIds.set(id);
+                }
+                if (SysProperties.CHECK) {
+                    verifyMetaLocked(session);
+                }
+                meta.addRow(session, r);
             }
-            if (SysProperties.CHECK) {
-                verifyMetaLocked(session);
-            }
-            meta.addRow(session, r);
         }
     }
 
@@ -1513,17 +1399,6 @@ public class Database implements DataHandler, CastDataProvider {
                 if (closing) {
                     return;
                 }
-                if (fileLockMethod == FileLockMethod.SERIALIZED &&
-                        !reconnectChangePending) {
-                    // another connection may have written something - don't write
-                    try {
-                        closeOpenFilesAndUnlock(false);
-                    } catch (DbException e) {
-                        // ignore
-                    }
-                    traceSystem.close();
-                    return;
-                }
                 closing = true;
                 stopServer();
                 if (!userSessions.isEmpty()) {
@@ -1670,7 +1545,6 @@ public class Database implements DataHandler, CastDataProvider {
                     }
                 }
             }
-            reconnectModified(false);
             if (store != null) {
                 MVStore mvStore = store.getMvStore();
                 if (mvStore != null && !mvStore.isClosed()) {
@@ -1703,18 +1577,6 @@ public class Database implements DataHandler, CastDataProvider {
             }
         } finally {
             if (lock != null) {
-                if (fileLockMethod == FileLockMethod.SERIALIZED) {
-                    // wait before deleting the .lock file,
-                    // otherwise other connections can not detect that
-                    if (lock.load().containsKey("changePending")) {
-                        try {
-                            Thread.sleep(TimeUnit.NANOSECONDS
-                                    .toMillis((long) (reconnectCheckDelayNs * 1.1)));
-                        } catch (InterruptedException e) {
-                            trace.error(e, "close");
-                        }
-                    }
-                }
                 lock.unlock();
                 lock = null;
             }
@@ -2262,11 +2124,6 @@ public class Database implements DataHandler, CastDataProvider {
         if (readOnly) {
             throw DbException.get(ErrorCode.DATABASE_IS_READ_ONLY);
         }
-        if (fileLockMethod == FileLockMethod.SERIALIZED) {
-            if (!reconnectChangePending) {
-                throw DbException.get(ErrorCode.DATABASE_IS_READ_ONLY);
-            }
-        }
     }
 
     public boolean isReadOnly() {
@@ -2509,15 +2366,6 @@ public class Database implements DataHandler, CastDataProvider {
     public void setLockMode(int lockMode) {
         switch (lockMode) {
         case Constants.LOCK_MODE_OFF:
-            if (multiThreaded && !isMVStore()) {
-                // Currently the combination of MV_STORE=FALSE, LOCK_MODE=0 and
-                // MULTI_THREADED=TRUE is not supported. Also see code in
-                // JdbcDatabaseMetaData#supportsTransactionIsolationLevel(int)
-                throw DbException.get(
-                        ErrorCode.UNSUPPORTED_SETTING_COMBINATION,
-                        "MV_STORE=FALSE & LOCK_MODE=0 & MULTI_THREADED=TRUE");
-            }
-            break;
         case Constants.LOCK_MODE_READ_COMMITTED:
         case Constants.LOCK_MODE_TABLE:
         case Constants.LOCK_MODE_TABLE_GC:
@@ -2706,23 +2554,6 @@ public class Database implements DataHandler, CastDataProvider {
         return mode;
     }
 
-    public boolean isMultiThreaded() {
-        return multiThreaded;
-    }
-
-    public void setMultiThreaded(boolean multiThreaded) {
-        if (multiThreaded && this.multiThreaded != multiThreaded) {
-            if (lockMode == Constants.LOCK_MODE_OFF && !isMVStore()) {
-                // Currently the combination of MV_STORE=FALSE, LOCK_MODE=0 and
-                // MULTI_THREADED=TRUE is not supported.
-                throw DbException.get(
-                        ErrorCode.UNSUPPORTED_SETTING_COMBINATION,
-                        "MV_STORE=FALSE & LOCK_MODE=0 & MULTI_THREADED=TRUE");
-            }
-        }
-        this.multiThreaded = multiThreaded;
-    }
-
     public void setMaxOperationMemory(int maxOperationMemory) {
         this.maxOperationMemory  = maxOperationMemory;
     }
@@ -2740,10 +2571,12 @@ public class Database implements DataHandler, CastDataProvider {
      *
      * @param session the session
      * @param closeOthers whether other sessions are closed
-     * @return true if success, false otherwise
+     * @return true if success or if database is in exclusive mode
+     *         set by this session already, false otherwise
      */
     public boolean setExclusiveSession(Session session, boolean closeOthers) {
-        if (!exclusiveSession.compareAndSet(null, session)) {
+        if (exclusiveSession.get() != session &&
+                !exclusiveSession.compareAndSet(null, session)) {
             return false;
         }
         if (closeOthers) {
@@ -2756,10 +2589,12 @@ public class Database implements DataHandler, CastDataProvider {
      * Stop exclusive access the database by provided session.
      *
      * @param session the session
-     * @return true if success, false otherwise
+     * @return true if success or if database is in non-exclusive mode already,
+     *         false otherwise
      */
     public boolean unsetExclusiveSession(Session session) {
-        return exclusiveSession.compareAndSet(session, null);
+        return exclusiveSession.get() == null
+            || exclusiveSession.compareAndSet(session, null);
     }
 
     @Override
@@ -2881,108 +2716,6 @@ public class Database implements DataHandler, CastDataProvider {
     }
 
     /**
-     * Check if the contents of the database was changed and therefore it is
-     * required to re-connect. This method waits until pending changes are
-     * completed. If a pending change takes too long (more than 2 seconds), the
-     * pending change is broken (removed from the properties file).
-     *
-     * @return true if reconnecting is required
-     */
-    public boolean isReconnectNeeded() {
-        if (fileLockMethod != FileLockMethod.SERIALIZED) {
-            return false;
-        }
-        if (reconnectChangePending) {
-            return false;
-        }
-        long now = System.nanoTime();
-        if (now < reconnectCheckNext) {
-            return false;
-        }
-        reconnectCheckNext = now + reconnectCheckDelayNs;
-        if (lock == null) {
-            lock = new FileLock(traceSystem, databaseName +
-                    Constants.SUFFIX_LOCK_FILE, Constants.LOCK_SLEEP);
-        }
-        try {
-            Properties prop = lock.load(), first = prop;
-            while (true) {
-                if (prop.equals(reconnectLastLock)) {
-                    return false;
-                }
-                if (prop.getProperty("changePending", null) == null) {
-                    break;
-                }
-                if (System.nanoTime() >
-                        now + reconnectCheckDelayNs * 10) {
-                    if (first.equals(prop)) {
-                        // the writing process didn't update the file -
-                        // it may have terminated
-                        lock.setProperty("changePending", null);
-                        lock.save();
-                        break;
-                    }
-                }
-                trace.debug("delay (change pending)");
-                Thread.sleep(TimeUnit.NANOSECONDS.toMillis(reconnectCheckDelayNs));
-                prop = lock.load();
-            }
-            reconnectLastLock = prop;
-        } catch (Exception e) {
-            // DbException, InterruptedException
-            trace.error(e, "readOnly {0}", readOnly);
-            // ignore
-        }
-        return true;
-    }
-
-    /**
-     * Flush all changes when using the serialized mode, and if there are
-     * pending changes, and some time has passed. This switches to a new
-     * transaction log and resets the change pending flag in
-     * the .lock.db file.
-     */
-    public void checkpointIfRequired() {
-        if (fileLockMethod != FileLockMethod.SERIALIZED ||
-                readOnly || !reconnectChangePending || closing) {
-            return;
-        }
-        long now = System.nanoTime();
-        if (now > reconnectCheckNext + reconnectCheckDelayNs) {
-            if (checkpointAllowed < 0) {
-                DbException.throwInternalError(Integer.toString(checkpointAllowed));
-            }
-            synchronized (reconnectSync) {
-                if (checkpointAllowed > 0) {
-                    return;
-                }
-                checkpointRunning = true;
-            }
-            synchronized (this) {
-                trace.debug("checkpoint start");
-                flushSequences();
-                checkpoint();
-                reconnectModified(false);
-                trace.debug("checkpoint end");
-            }
-            synchronized (reconnectSync) {
-                checkpointRunning = false;
-            }
-        }
-    }
-
-    public boolean isFileLockSerialized() {
-        return fileLockMethod == FileLockMethod.SERIALIZED;
-    }
-
-    private void flushSequences() {
-        for (SchemaObject obj : getAllSchemaObjects(DbObject.SEQUENCE)) {
-            Sequence sequence = (Sequence) obj;
-            sequence.flushWithoutMargin();
-        }
-    }
-
-    /**
      * Flush all changes and open a new transaction log.
      */
     public void checkpoint() {
@@ -2997,52 +2730,6 @@ public class Database implements DataHandler, CastDataProvider {
             }
         }
         getTempFileDeleter().deleteUnused();
-    }
-
-    /**
-     * This method is called before writing to the transaction log.
-     *
-     * @return true if the call was successful and writing is allowed,
-     *          false if another connection was faster
-     */
-    public boolean beforeWriting() {
-        if (fileLockMethod != FileLockMethod.SERIALIZED) {
-            return true;
-        }
-        while (checkpointRunning) {
-            try {
-                Thread.sleep(10 + (int) (Math.random() * 10));
-            } catch (Exception e) {
-                // ignore InterruptedException
-            }
-        }
-        synchronized (reconnectSync) {
-            if (reconnectModified(true)) {
-                if (++checkpointAllowed > 20) {
-                    throw DbException.throwInternalError(Integer.toString(checkpointAllowed));
-                }
-                return true;
-            }
-        }
-        // make sure the next call to isReconnectNeeded() returns true
-        reconnectCheckNext = System.nanoTime() - 1;
-        reconnectLastLock = null;
-        return false;
-    }
-
-    /**
-     * This method is called after updates are finished.
-     */
-    public void afterWriting() {
-        if (fileLockMethod != FileLockMethod.SERIALIZED) {
-            return;
-        }
-        synchronized (reconnectSync) {
-            checkpointAllowed--;
-        }
-        if (checkpointAllowed < 0) {
-            throw DbException.throwInternalError(Integer.toString(checkpointAllowed));
-        }
     }
 
     /**
@@ -3151,7 +2838,7 @@ public class Database implements DataHandler, CastDataProvider {
      * @return the hash map
      */
     public <V> HashMap<String, V> newStringMap() {
-        return dbSettings.caseInsensitiveIdentifiers ? new CaseInsensitiveMap<V>() : new HashMap<String, V>();
+        return dbSettings.caseInsensitiveIdentifiers ? new CaseInsensitiveMap<>() : new HashMap<>();
     }
 
     /**
@@ -3162,8 +2849,8 @@ public class Database implements DataHandler, CastDataProvider {
      * @return the hash map
      */
     public <V> ConcurrentHashMap<String, V> newConcurrentStringMap() {
-        return dbSettings.caseInsensitiveIdentifiers ? new CaseInsensitiveConcurrentMap<V>()
-                : new ConcurrentHashMap<String, V>();
+        return dbSettings.caseInsensitiveIdentifiers ? new CaseInsensitiveConcurrentMap<>()
+                : new ConcurrentHashMap<>();
     }
 
     /**
@@ -3303,7 +2990,7 @@ public class Database implements DataHandler, CastDataProvider {
          * This method shouldn't be used in this class, but return a value for
          * safety.
          */
-        return CurrentTimestamp.get();
+        return DateTimeUtils.currentTimestamp();
     }
 
 }

@@ -5,6 +5,7 @@
  */
 package org.h2.table;
 
+import java.util.ArrayList;
 import org.h2.api.ErrorCode;
 import org.h2.engine.Session;
 import org.h2.expression.Expression;
@@ -33,25 +34,26 @@ public class RangeTable extends VirtualTable {
     private Expression min, max, step;
     private boolean optimized;
 
+    private final RangeIndex index;
+
     /**
      * Create a new range with the given start and end expressions.
      *
      * @param schema the schema (always the main schema)
      * @param min the start expression
      * @param max the end expression
-     * @param noColumns whether this table has no columns
      */
-    public RangeTable(Schema schema, Expression min, Expression max, boolean noColumns) {
+    public RangeTable(Schema schema, Expression min, Expression max) {
         super(schema, 0, NAME);
-        Column[] cols = noColumns ? new Column[0] : new Column[] { new Column("X", Value.LONG) };
         this.min = min;
         this.max = max;
-        setColumns(cols);
+        Column[] columns = new Column[] { new Column("X", Value.LONG) };
+        setColumns(columns);
+        index = new RangeIndex(this, IndexColumn.wrap(columns));
     }
 
-    public RangeTable(Schema schema, Expression min, Expression max,
-            Expression step, boolean noColumns) {
-        this(schema, min, max, noColumns);
+    public RangeTable(Schema schema, Expression min, Expression max, Expression step) {
+        this(schema, min, max);
         this.step = step;
     }
 
@@ -99,7 +101,17 @@ public class RangeTable extends VirtualTable {
         if (getStep(session) == 0) {
             throw DbException.get(ErrorCode.STEP_SIZE_MUST_NOT_BE_ZERO);
         }
-        return new RangeIndex(this, IndexColumn.wrap(columns));
+        return index;
+    }
+
+    @Override
+    public ArrayList<Index> getIndexes() {
+        ArrayList<Index> list = new ArrayList<>(2);
+        // Scan index (ignored by MIN/MAX optimization)
+        list.add(index);
+        // Normal index
+        list.add(index);
+        return list;
     }
 
     /**

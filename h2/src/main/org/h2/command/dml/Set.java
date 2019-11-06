@@ -20,14 +20,11 @@ import org.h2.expression.Expression;
 import org.h2.expression.ValueExpression;
 import org.h2.message.DbException;
 import org.h2.message.Trace;
-import org.h2.result.LocalResultFactory;
 import org.h2.result.ResultInterface;
-import org.h2.result.RowFactory;
 import org.h2.schema.Schema;
 import org.h2.security.auth.AuthenticatorFactory;
 import org.h2.table.Table;
 import org.h2.tools.CompressTool;
-import org.h2.util.JdbcUtils;
 import org.h2.util.StringUtils;
 import org.h2.value.CompareMode;
 import org.h2.value.ValueInt;
@@ -405,7 +402,7 @@ public class Set extends Prepared {
             database.setMaxOperationMemory(value);
             break;
         }
-        case SetTypes.MODE:
+        case SetTypes.MODE: {
             Mode mode = Mode.getInstance(stringValue);
             if (mode == null) {
                 throw DbException.get(ErrorCode.UNKNOWN_MODE_1, stringValue);
@@ -414,13 +411,6 @@ public class Set extends Prepared {
                 session.getUser().checkAdmin();
                 database.setMode(mode);
                 session.getColumnNamerConfiguration().configure(mode.getEnum());
-            }
-            break;
-        case SetTypes.MULTI_THREADED: {
-            boolean v = getIntValue() == 1;
-            if (database.isMultiThreaded() != v) {
-                session.getUser().checkAdmin();
-                database.setMultiThreaded(v);
             }
             break;
         }
@@ -577,14 +567,6 @@ public class Set extends Prepared {
             addOrUpdateSetting(name, '"' + rowFactoryName + '"', 0);
             break;
         }
-        case SetTypes.BATCH_JOINS: {
-            int value = getIntValue();
-            if (value != 0 && value != 1) {
-                throw DbException.getInvalidValueException("BATCH_JOINS", value);
-            }
-            session.setJoinBatchEnabled(value == 1);
-            break;
-        }
         case SetTypes.FORCE_JOIN_ORDER: {
             int value = getIntValue();
             if (value != 0 && value != 1) {
@@ -638,19 +620,6 @@ public class Set extends Prepared {
                 } else {
                     throw DbException.convert(e);
                 }
-            }
-            break;
-        }
-        case SetTypes.LOCAL_RESULT_FACTORY: {
-            session.getUser().checkAdmin();
-            String localResultFactoryName = expression.getColumnName();
-            Class<LocalResultFactory> localResultFactoryClass = JdbcUtils.loadUserClass(localResultFactoryName);
-            LocalResultFactory localResultFactory;
-            try {
-                localResultFactory = localResultFactoryClass.getDeclaredConstructor().newInstance();
-                database.setResultFactory(localResultFactory);
-            } catch (Exception e) {
-                throw DbException.convert(e);
             }
             break;
         }

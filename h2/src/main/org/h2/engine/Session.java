@@ -16,6 +16,7 @@ import java.util.LinkedList;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.WeakHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.h2.api.ErrorCode;
@@ -24,7 +25,7 @@ import org.h2.command.CommandInterface;
 import org.h2.command.Parser;
 import org.h2.command.Prepared;
 import org.h2.command.ddl.Analyze;
-import org.h2.command.dml.Query;
+import org.h2.command.dml.SetTypes;
 import org.h2.constraint.Constraint;
 import org.h2.index.Index;
 import org.h2.index.ViewIndex;
@@ -40,17 +41,15 @@ import org.h2.mvstore.tx.Transaction;
 import org.h2.mvstore.tx.TransactionStore;
 import org.h2.result.ResultInterface;
 import org.h2.result.Row;
-import org.h2.result.SortOrder;
 import org.h2.schema.Schema;
+import org.h2.schema.Sequence;
 import org.h2.store.DataHandler;
 import org.h2.store.InDoubtTransaction;
 import org.h2.store.LobStorageFrontend;
-import org.h2.table.SubQueryInfo;
 import org.h2.table.Table;
-import org.h2.table.TableFilter;
 import org.h2.table.TableType;
 import org.h2.util.ColumnNamerConfiguration;
-import org.h2.util.CurrentTimestamp;
+import org.h2.util.DateTimeUtils;
 import org.h2.util.NetworkConnectionInfo;
 import org.h2.util.SmallLRUCache;
 import org.h2.util.Utils;
@@ -86,7 +85,6 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
 
     private final int serialId = nextSerialId++;
     private final Database database;
-    private ConnectionInfo connectionInfo;
     private final User user;
     private final int id;
 
@@ -97,9 +95,12 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
     private boolean autoCommit = true;
     private Random random;
     private int lockTimeout;
+
+    private WeakHashMap<Sequence, Value> currentValueFor;
     private Value lastIdentity = ValueLong.get(0);
     private Value lastScopeIdentity = ValueLong.get(0);
     private Value lastTriggerIdentity;
+
     private int firstUncommittedLog = Session.LOG_WRITTEN;
     private int firstUncommittedPos = Session.LOG_WRITTEN;
     private HashMap<String, Savepoint> savepoints;
@@ -135,12 +136,9 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
     private final int queryCacheSize;
     private SmallLRUCache<String, Command> queryCache;
     private long modificationMetaID = -1;
-    private SubQueryInfo subQueryInfo;
     private ArrayDeque<String> viewNameStack;
-    private int preparingQueryExpression;
     private volatile SmallLRUCache<Object, ViewIndex> viewIndexCache;
     private HashMap<Object, ViewIndex> subQueryIndexCache;
-    private boolean joinBatchEnabled;
     private boolean forceJoinOrder;
     private boolean lazyQueryExecution;
     private ColumnNamerConfiguration columnNamerConfiguration;
@@ -168,6 +166,22 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
     private Transaction transaction;
     private final AtomicReference<State> state = new AtomicReference<>(State.INIT);
     private long startStatement = -1;
+
+    /**
+     * Isolation level. Used only with MVStore engine, with PageStore engine the
+     * value of this field shouldn't be changed or used to get the real
+     * isolation level.
+     */
+    private IsolationLevel isolationLevel = IsolationLevel.READ_COMMITTED;
+
+    /**
+     * The snapshot data modification id. If isolation level doesn't allow
+     * non-repeatable reads the session uses a snapshot versions of data. After
+     * commit or rollback these snapshots are discarded and cached results of
+     * queries may became invalid. Commit and rollback allocate a new data
+     * modification id and store it here to forbid usage of older results.
+     */
+    private long snapshotDataModificationId;
 
     /**
      * Set of database object ids to be released at the end of transaction
@@ -204,49 +218,6 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
         return forceJoinOrder;
     }
 
-    public void setJoinBatchEnabled(boolean joinBatchEnabled) {
-        this.joinBatchEnabled = joinBatchEnabled;
-    }
-
-    public boolean isJoinBatchEnabled() {
-        return joinBatchEnabled;
-    }
-
-    /**
-     * Create a new row for a table.
-     *
-     * @param data the values
-     * @param memory whether the row is in memory
-     * @return the created row
-     */
-    public Row createRow(Value[] data, int memory) {
-        return database.createRow(data, memory);
-    }
-
-    /**
-     * Add a subquery info on top of the subquery info stack.
-     *
-     * @param masks the mask
-     * @param filters the filters
-     * @param filter the filter index
-     * @param sortOrder the sort order
-     */
-    public void pushSubQueryInfo(int[] masks, TableFilter[] filters, int filter,
-            SortOrder sortOrder) {
-        subQueryInfo = new SubQueryInfo(subQueryInfo, masks, filters, filter, sortOrder);
-    }
-
-    /**
-     * Remove the current subquery info from the stack.
-     */
-    public void popSubQueryInfo() {
-        subQueryInfo = subQueryInfo.getUpper();
-    }
-
-    public SubQueryInfo getSubQueryInfo() {
-        return subQueryInfo;
-    }
-
     /**
      * Stores name of currently parsed view in a stack so it can be determined
      * during {@code prepare()}.
@@ -275,31 +246,6 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
 
     public boolean isParsingCreateView() {
         return viewNameStack != null && !viewNameStack.isEmpty();
-    }
-
-    /**
-     * Optimize a query. This will remember the subquery info, clear it, prepare
-     * the query, and reset the subquery info.
-     *
-     * @param query the query to prepare
-     */
-    public void optimizeQueryExpression(Query query) {
-        // we have to hide current subQueryInfo if we are going to optimize
-        // query expression
-        SubQueryInfo tmp = subQueryInfo;
-        subQueryInfo = null;
-        preparingQueryExpression++;
-        try {
-            query.prepare();
-        } finally {
-            subQueryInfo = tmp;
-            preparingQueryExpression--;
-        }
-    }
-
-    public boolean isPreparingQueryExpression() {
-        assert preparingQueryExpression >= 0;
-        return preparingQueryExpression != 0;
     }
 
     @Override
@@ -563,6 +509,9 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
 
     public void setLockTimeout(int lockTimeout) {
         this.lockTimeout = lockTimeout;
+        if (transaction != null) {
+            transaction.setTimeoutMillis(lockTimeout);
+        }
     }
 
     @Override
@@ -635,7 +584,6 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
             // we can't reuse sub-query indexes, so just drop the whole cache
             subQueryIndexCache = null;
         }
-        command.prepareJoinBatch();
         if (queryCache != null) {
             if (command.isCacheable()) {
                 queryCache.put(sql, command);
@@ -682,7 +630,9 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
 
         currentTransactionName = null;
         transactionStart = null;
+        boolean forRepeatableRead = false;
         if (transaction != null) {
+            forRepeatableRead = !isolationLevel.allowNonRepeatableRead();
             try {
                 markUsedTablesAsUpdated();
                 transaction.commit();
@@ -716,7 +666,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
                 commit(true);
             }
         }
-        endTransaction();
+        endTransaction(forRepeatableRead);
     }
 
     private void markUsedTablesAsUpdated() {
@@ -772,7 +722,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
         }
     }
 
-    private void endTransaction() {
+    private void endTransaction(boolean forRepeatableRead) {
         if (removeLobMap != null && removeLobMap.size() > 0) {
             if (database.getStore() == null) {
                 // need to flush the transaction log, because we can't unlink
@@ -789,6 +739,19 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
             database.releaseDatabaseObjectIds(idsToRelease);
             idsToRelease = null;
         }
+        if (forRepeatableRead) {
+            snapshotDataModificationId = database.getNextModificationDataId();
+        }
+    }
+
+    /**
+     * Returns the data modification id of transaction's snapshot, or 0 if
+     * isolation level doesn't use snapshots.
+     *
+     * @return the data modification id of transaction's snapshot, or 0
+     */
+    public long getSnapshotDataModificationId() {
+        return snapshotDataModificationId;
     }
 
     /**
@@ -799,6 +762,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
         currentTransactionName = null;
         transactionStart = null;
         boolean needCommit = undoLog != null && undoLog.size() > 0 || transaction != null;
+        boolean forRepeatableRead = transaction != null && !isolationLevel.allowNonRepeatableRead();
         if (needCommit) {
             rollbackTo(null);
         }
@@ -811,7 +775,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
             autoCommit = true;
             autoCommitAtTransactionEnd = false;
         }
-        endTransaction();
+        endTransaction(forRepeatableRead);
     }
 
     /**
@@ -926,18 +890,31 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
     }
 
     /**
-     * Add a lock for the given table. The object is unlocked on commit or
-     * rollback.
+     * Register table as locked within current transaction.
+     * Table is unlocked on commit or rollback.
+     * It also assumes that table will be modified by transaction.
      *
      * @param table the table that is locked
      */
-    public void addLock(Table table) {
+    public void registerTableAsLocked(Table table) {
         if (SysProperties.CHECK) {
             if (locks.contains(table)) {
                 DbException.throwInternalError(table.toString());
             }
         }
         locks.add(table);
+    }
+
+    /**
+     * Register table as updated within current transaction.
+     * This is used instead of table locking when lock mode is LOCK_MODE_OFF.
+     *
+     * @param table to register
+     */
+    public void registerTableAsUpdated(Table table) {
+        if (!locks.contains(table)) {
+            locks.add(table);
+        }
     }
 
     /**
@@ -971,23 +948,6 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
                 undoLog = new UndoLog(database);
             }
             undoLog.add(log);
-        }
-    }
-
-    /**
-     * Unlock all read locks. This is done if the transaction isolation mode is
-     * READ_COMMITTED.
-     */
-    public void unlockReadLocks() {
-        if (!database.isMVStore() && database.isMultiThreaded() &&
-                database.getLockMode() == Constants.LOCK_MODE_READ_COMMITTED) {
-            for (Iterator<Table> iter = locks.iterator(); iter.hasNext(); ) {
-                Table t = iter.next();
-                if (!t.isLockedExclusively()) {
-                    t.unlock(this);
-                    iter.remove();
-                }
-            }
         }
     }
 
@@ -1071,6 +1031,44 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
         }
         trace = database.getTraceSystem().getTrace(traceModuleName);
         return trace;
+    }
+
+    /**
+     * Sets the current value of the sequence and last identity value for this
+     * session.
+     *
+     * @param sequence
+     *            the sequence
+     * @param value
+     *            the current value of the sequence
+     */
+    public void setCurrentValueFor(Sequence sequence, Value value) {
+        WeakHashMap<Sequence, Value> currentValueFor = this.currentValueFor;
+        if (currentValueFor == null) {
+            this.currentValueFor = currentValueFor = new WeakHashMap<>();
+        }
+        currentValueFor.put(sequence, value);
+        setLastIdentity(value);
+    }
+
+    /**
+     * Returns the current value of the sequence in this session.
+     *
+     * @param sequence
+     *            the sequence
+     * @return the current value of the sequence in this session
+     * @throws DbException
+     *             if current value is not defined
+     */
+    public Value getCurrentValueFor(Sequence sequence) {
+        WeakHashMap<Sequence, Value> currentValueFor = this.currentValueFor;
+        if (currentValueFor != null) {
+            Value value = currentValueFor.get(sequence);
+            if (value != null) {
+                return value;
+            }
+        }
+        throw DbException.get(ErrorCode.CURRENT_SEQUENCE_VALUE_IS_NOT_DEFINED_IN_SESSION_1, sequence.getSQL(false));
     }
 
     public void setLastIdentity(Value last) {
@@ -1239,7 +1237,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
      */
     public void throttle() {
         if (currentCommandStart == null) {
-            currentCommandStart = CurrentTimestamp.get();
+            currentCommandStart = DateTimeUtils.currentTimestamp();
         }
         if (throttleNs == 0) {
             return;
@@ -1271,7 +1269,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
             currentCommand = command;
             if (command != null) {
                 if (queryTimeout > 0) {
-                    currentCommandStart = CurrentTimestamp.get();
+                    currentCommandStart = DateTimeUtils.currentTimestamp();
                     long now = System.nanoTime();
                     cancelAtNs = now + TimeUnit.MILLISECONDS.toNanos(queryTimeout);
                 } else {
@@ -1330,7 +1328,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
 
     public ValueTimestampTimeZone getCurrentCommandStart() {
         if (currentCommandStart == null) {
-            currentCommandStart = CurrentTimestamp.get();
+            currentCommandStart = DateTimeUtils.currentTimestamp();
         }
         return currentCommandStart;
     }
@@ -1508,7 +1506,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
 
     public ValueTimestampTimeZone getTransactionStart() {
         if (transactionStart == null) {
-            transactionStart = CurrentTimestamp.get();
+            transactionStart = DateTimeUtils.currentTimestamp();
         }
         return transactionStart;
     }
@@ -1517,7 +1515,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
         /*
          * This implementation needs to be lock-free.
          */
-        if (locks.isEmpty()) {
+        if (database.getLockMode() == Constants.LOCK_MODE_OFF || locks.isEmpty()) {
             return Collections.emptySet();
         }
         /*
@@ -1673,47 +1671,6 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
         return modificationId;
     }
 
-    @Override
-    public boolean isReconnectNeeded(boolean write) {
-        while (true) {
-            boolean reconnect = database.isReconnectNeeded();
-            if (reconnect) {
-                return true;
-            }
-            if (write) {
-                if (database.beforeWriting()) {
-                    return false;
-                }
-            } else {
-                return false;
-            }
-        }
-    }
-
-    @Override
-    public void afterWriting() {
-        database.afterWriting();
-    }
-
-    @Override
-    public SessionInterface reconnect(boolean write) {
-        readSessionState();
-        close();
-        Session newSession = Engine.getInstance().createSession(connectionInfo);
-        newSession.sessionState = sessionState;
-        newSession.recreateSessionState();
-        if (write) {
-            while (!newSession.database.beforeWriting()) {
-                // wait until we are allowed to write
-            }
-        }
-        return newSession;
-    }
-
-    public void setConnectionInfo(ConnectionInfo ci) {
-        connectionInfo = ci;
-    }
-
     public Value getTransactionId() {
         if (database.getStore() != null) {
             if (transaction == null || !transaction.hasChanges()) {
@@ -1759,6 +1716,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
                     throw DbException.get(ErrorCode.DATABASE_IS_CLOSED, backgroundException);
                 }
                 transaction = store.getTransactionStore().begin(this, this.lockTimeout, id);
+                transaction.setIsolationLevel(isolationLevel);
             }
             startStatement = -1;
         }
@@ -1776,24 +1734,41 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
      * Start a new statement within a transaction.
      * @param command about to be started
      */
+    @SuppressWarnings("incomplete-switch")
     public void startStatementWithinTransaction(Command command) {
         Transaction transaction = getTransaction();
-        if(transaction != null) {
-            Set<MVMap<?, ?>> maps = null;
+        if (transaction != null) {
+            HashSet<MVMap<?, ?>> maps = new HashSet<>();
             if (command != null) {
-                maps = new HashSet<>();
                 Set<DbObject> dependencies = command.getDependencies();
-                for (DbObject dependency : dependencies) {
-                    if (dependency instanceof MVTable) {
-                        MVTable table = (MVTable) dependency;
-                        for (Index index : table.getIndexes()) {
-                            if (index instanceof MVIndex) {
-                                MVIndex index1 = (MVIndex) index;
-                                MVMap<?, ?> map = index1.getMVMap();
-                                maps.add(map);
+                switch (transaction.getIsolationLevel()) {
+                case SNAPSHOT:
+                case SERIALIZABLE:
+                    if (!transaction.hasStatementDependencies()) {
+                        for (Table table : database.getAllTablesAndViews(false)) {
+                            if (table instanceof MVTable) {
+                                addTableToDependencies((MVTable)table, maps);
                             }
                         }
+                        break;
                     }
+                    //$FALL-THROUGH$
+                case READ_COMMITTED:
+                case READ_UNCOMMITTED:
+                    for (DbObject dependency : dependencies) {
+                        if (dependency instanceof MVTable) {
+                            addTableToDependencies((MVTable)dependency, maps);
+                        }
+                    }
+                    break;
+                case REPEATABLE_READ:
+                    HashSet<MVTable> processed = new HashSet<>();
+                    for (DbObject dependency : dependencies) {
+                        if (dependency instanceof MVTable) {
+                            addTableToDependencies((MVTable)dependency, maps, processed);
+                        }
+                    }
+                    break;
                 }
             }
             transaction.markStatementStart(maps);
@@ -1804,13 +1779,37 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
         }
     }
 
+    private static void addTableToDependencies(MVTable table, HashSet<MVMap<?, ?>> maps) {
+        for (Index index : table.getIndexes()) {
+            if (index instanceof MVIndex) {
+                maps.add(((MVIndex) index).getMVMap());
+            }
+        }
+    }
+
+    private static void addTableToDependencies(MVTable table, HashSet<MVMap<?, ?>> maps, HashSet<MVTable> processed) {
+        if (!processed.add(table)) {
+            return;
+        }
+        addTableToDependencies(table, maps);
+        ArrayList<Constraint> constraints = table.getConstraints();
+        if (constraints != null) {
+            for (Constraint constraint : constraints) {
+                Table ref = constraint.getTable();
+                if (ref != table && ref instanceof MVTable) {
+                    addTableToDependencies((MVTable) ref, maps, processed);
+                }
+            }
+        }
+    }
+
     /**
      * Mark the statement as completed. This also close all temporary result
      * set, and deletes all temporary files held by the result sets.
      */
     public void endStatement() {
         setCurrentCommand(null);
-        if(transaction != null) {
+        if (transaction != null) {
             transaction.markStatementEnd();
         }
         startStatement = -1;
@@ -1996,6 +1995,30 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
     @Override
     public Mode getMode() {
         return database.getMode();
+    }
+
+    @Override
+    public IsolationLevel getIsolationLevel() {
+        if (database.isMVStore()) {
+            return isolationLevel;
+        } else {
+            return IsolationLevel.fromLockMode(database.getLockMode());
+        }
+    }
+
+    @Override
+    public void setIsolationLevel(IsolationLevel isolationLevel) {
+        commit(false);
+        if (database.isMVStore()) {
+            this.isolationLevel = isolationLevel;
+        } else {
+            int lockMode = isolationLevel.getLockMode();
+            org.h2.command.dml.Set set = new org.h2.command.dml.Set(this, SetTypes.LOCK_MODE);
+            set.setInt(lockMode);
+            synchronized (database) {
+                set.update();
+            }
+        }
     }
 
 }

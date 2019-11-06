@@ -14,7 +14,6 @@ import org.h2.api.ErrorCode;
 import org.h2.engine.CastDataProvider;
 import org.h2.message.DbException;
 import org.h2.util.DateTimeUtils;
-import org.h2.util.JSR310;
 import org.h2.util.JSR310Utils;
 
 /**
@@ -37,7 +36,7 @@ public class ValueTime extends Value {
     /**
      * The default scale for time.
      */
-    static final int DEFAULT_SCALE = 0;
+    public static final int DEFAULT_SCALE = 0;
 
     /**
      * The maximum scale for time.
@@ -86,17 +85,6 @@ public class ValueTime extends Value {
     }
 
     /**
-     * Calculate the time value from a given time in
-     * milliseconds in UTC.
-     *
-     * @param ms the milliseconds
-     * @return the value
-     */
-    public static ValueTime fromMillis(long ms) {
-        return fromNanos(DateTimeUtils.nanosFromLocalMillis(ms + DateTimeUtils.getTimeZoneOffsetMillis(ms)));
-    }
-
-    /**
      * Parse a string to a ValueTime.
      *
      * @param s the string to parse
@@ -119,7 +107,7 @@ public class ValueTime extends Value {
     }
 
     @Override
-    public Time getTime(TimeZone timeZone) {
+    public Time getTime(CastDataProvider provider, TimeZone timeZone) {
         return new Time(DateTimeUtils.getMillis(timeZone, DateTimeUtils.EPOCH_DATE_VALUE, nanos));
     }
 
@@ -135,15 +123,14 @@ public class ValueTime extends Value {
 
     @Override
     public String getString() {
-        StringBuilder buff = new StringBuilder(MAXIMUM_PRECISION);
-        DateTimeUtils.appendTime(buff, nanos);
-        return buff.toString();
+        StringBuilder builder = new StringBuilder(MAXIMUM_PRECISION);
+        DateTimeUtils.appendTime(builder, nanos);
+        return builder.toString();
     }
 
     @Override
     public StringBuilder getSQL(StringBuilder builder) {
-        builder.append("TIME '");
-        DateTimeUtils.appendTime(builder, nanos);
+        DateTimeUtils.appendTime(builder.append("TIME '"), nanos);
         return builder.append('\'');
     }
 
@@ -189,20 +176,18 @@ public class ValueTime extends Value {
 
     @Override
     public Object getObject() {
-        return getTime(null);
+        return getTime(null, null);
     }
 
     @Override
     public void set(PreparedStatement prep, int parameterIndex) throws SQLException {
-        if (JSR310.PRESENT) {
-            try {
-                prep.setObject(parameterIndex, JSR310Utils.valueToLocalTime(this), Types.TIME);
-                return;
-            } catch (SQLException ignore) {
-                // Nothing to do
-            }
+        try {
+            prep.setObject(parameterIndex, JSR310Utils.valueToLocalTime(this, null), Types.TIME);
+            return;
+        } catch (SQLException ignore) {
+            // Nothing to do
         }
-        prep.setTime(parameterIndex, getTime(null));
+        prep.setTime(parameterIndex, getTime(null, null));
     }
 
     @Override

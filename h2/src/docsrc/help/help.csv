@@ -76,10 +76,14 @@ When using default MVStore engine only the selected rows are locked as in an UPD
 Rows from the right side of a left join and from the left side of a right join, including nested joins, aren't locked.
 Locking behavior for rows that were excluded from result using OFFSET / FETCH / LIMIT / TOP or QUALIFY is undefined,
 to avoid possible locking of excessive rows try to filter out unneeded rows with the WHERE criteria when possible.
-Rows are processed one by one. Committed row is read, tested with WHERE criteria, locked, read again and re-tested,
+Rows are processed one by one. Each row is read, tested with WHERE criteria, locked, read again and re-tested,
 because its value may be changed by concurrent transaction before lock acquisition.
-Note that new uncommitted rows from other transactions are not visible due to read committed isolation level
-and therefore cannot be locked.
+The returned row represents the latest committed values and may violate isolation level requirements of the current
+transaction.
+Note that new uncommitted rows from other transactions are not visible unless read uncommitted isolation level is used
+and therefore cannot be selected and locked.
+Modified uncommitted rows from other transactions that satisfy the WHERE criteria cause this SELECT to wait for
+commit or rollback of those transactions.
 With PageStore engine the whole tables are locked;
 to avoid deadlocks with this engine always lock the tables in the same order in all transactions.
 ","
@@ -412,7 +416,8 @@ ALTER TABLE TEST RENAME CONSTRAINT FOO TO BAR
 "
 
 "Commands (DDL)","ALTER TABLE ALTER COLUMN","
-ALTER TABLE [ IF EXISTS ] tableName ALTER COLUMN columnName
+ALTER TABLE [ IF EXISTS ] tableName
+ALTER COLUMN [ IF EXISTS ] columnName
 { { columnDefinition }
     | { RENAME TO name }
     | { RESTART WITH long }
@@ -1581,20 +1586,22 @@ SET LOG 1
 "Commands (Other)","SET LOCK_MODE","
 SET LOCK_MODE int
 ","
-Sets the lock mode. The values 0, 1, 2, and 3 are supported. The default is 3
-(READ_COMMITTED). This setting affects all connections.
+Sets the lock mode. The values 0, 1, 2, and 3 are supported. The default is 3.
+This setting affects all connections.
 
-The value 0 means no locking (should only be used for testing; also known as
-READ_UNCOMMITTED). Please note that using SET LOCK_MODE 0 while at the same time
+The value 0 means no locking (should only be used for testing).
+Please note that using SET LOCK_MODE 0 while at the same time
 using multiple connections may result in inconsistent transactions.
 
-The value 1 means table level locking (also known as SERIALIZABLE).
+The value 1 means table level locking for PageStore engine,
+for default MVStore engine it is the same as default 3.
 
-The value 2 means table level locking with garbage collection (if the
-application does not close all connections).
+The value 2 means table level locking with garbage collection
+(if the application does not close all connections) for PageStore engine,
+for default MVStore engine it is the same as default 3.
 
-The value 3 means table level locking, but read locks are released immediately
-(default; also known as READ_COMMITTED).
+The value 3 means table level locking, but read locks are released immediately for PageStore engine,
+for default MVStore engine it means row-level locking for write operations.
 
 Admin rights are required to execute this command, as it affects all connections.
 This command commits an open transaction in this connection.
@@ -1706,23 +1713,6 @@ This command commits an open transaction in this connection.
 This setting can be appended to the database URL: ""jdbc:h2:./test;MODE=MYSQL""
 ","
 SET MODE HSQLDB
-"
-
-"Commands (Other)","SET MULTI_THREADED","
-SET MULTI_THREADED { 0 | 1 }
-","
-Enabled (1) or disabled (0) multi-threading inside the database engine.
-MULTI_THREADED is enabled by default with default MVStore storage engine.
-MULTI_THREADED is disabled by default when using PageStore storage engine, enabling this with PageStore is experimental only.
-
-This is a global setting, which means it is not possible to open multiple databases with different modes at the same time in the same virtual machine.
-This setting is not persistent, however the value is kept until the virtual machine exits or it is changed.
-
-Admin rights are required to execute this command, as it affects all connections.
-This command commits an open transaction in this connection.
-This setting can be appended to the database URL: ""jdbc:h2:./test;MV_STORE=FALSE;MULTI_THREADED=1""
-","
-SET MULTI_THREADED 1
 "
 
 "Commands (Other)","SET OPTIMIZE_REUSE_RESULTS","
@@ -1860,6 +1850,18 @@ This setting can be appended to the database URL: ""jdbc:h2:./test;SCHEMA_SEARCH
 SET SCHEMA_SEARCH_PATH INFORMATION_SCHEMA, PUBLIC
 "
 
+"Commands (Other)","SET SESSION CHARACTERISTICS","
+SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL
+{ READ UNCOMMITTED | READ COMMITTED | REPEATABLE READ | SERIALIZABLE }
+","
+Changes the transaction isolation level of the current session.
+The actual support of isolation levels depends on the database engine.
+
+This command commits an open transaction in this session.
+","
+SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL SERIALIZABLE
+"
+
 "Commands (Other)","SET THROTTLE","
 SET THROTTLE int
 ","
@@ -1953,7 +1955,7 @@ SHUTDOWN COMPACT
 
 "Literals","Value","
 string | dollarQuotedString | numeric | dateAndTime | boolean | bytes
-    | interval | array | null
+    | interval | array | json | null
 ","
 A literal value of any data type, or null.
 ","
@@ -1999,7 +2001,7 @@ DATE '2004-12-31'
 "
 
 "Literals","Date and time","
-date | time | timestamp | timestampWithTimeZone
+date | time | timeWithTimeZone | timestamp | timestampWithTimeZone
 ","
 A literal value of any date-time data type.
 ","
@@ -2113,6 +2115,17 @@ A time literal. A value is between 0:00:00 and 23:59:59.999999999
 and has nanosecond resolution.
 ","
 TIME '23:59:59'
+"
+
+"Literals","Time with time zone","
+TIME WITH TIME ZONE 'hh:mm:ss[.nnnnnnnnn]{Z | { - | + } timeZoneOffsetString}'
+","
+A time with time zone literal. A value is between 0:00:00 and 23:59:59.999999999
+and has nanosecond resolution.
+","
+TIME WITH TIME ZONE '23:59:59+01'
+TIME WITH TIME ZONE '10:15:30.334-03:30'
+TIME WITH TIME ZONE '0:00:00Z'
 "
 
 "Literals","Timestamp","
@@ -2255,7 +2268,7 @@ INTERVAL '11:12.123' MINUTE TO SECOND
 yearField | monthField | dayOfMonthField
     | hourField | minuteField | secondField
     | millisecondField | microsecondField | nanosecondField
-    | timezoneHourField | timezoneMinuteField
+    | timezoneHourField | timezoneMinuteField | timezoneSecondField
     | dayOfWeekField | isoWeekYearField | isoDayOfWeekField
     | weekOfYearField | isoWeekOfYearField
     | quarterField | dayOfYearField | epochField
@@ -2351,6 +2364,16 @@ TIMEZONE_MINUTE
 Timezone minute (from -59 to +59).
 ","
 TIMEZONE_MINUTE
+"
+
+"Datetime fields","Timezone second field","
+TIMEZONE_SECOND
+","
+Timezone second (from -59 to +59).
+Local mean time (LMT) used in the past may have offsets with seconds.
+Standard time doesn't use such offsets.
+","
+TIMEZONE_SECOND
 "
 
 "Datetime fields","Day of week field","
@@ -2710,10 +2733,10 @@ SELECT ID FROM FINAL TABLE (INSERT INTO TEST (A, B) VALUES (1, 2))
 
 "Other Grammar","Data Type","
 intType | booleanType | tinyintType | smallintType | bigintType | identityType
-    | decimalType | doubleType | realType | dateType | timeType | timestampType
-    | timestampWithTimeZoneType | binaryType | otherType | varcharType
-    | varcharIgnorecaseType | charType | blobType | clobType | uuidType
-    | arrayType | enumType | intervalType
+    | decimalType | doubleType | realType | dateType | timeType
+    | timeWithTimeZoneType | timestampType | timestampWithTimeZoneType
+    | binaryType | otherType | varcharType | varcharIgnorecaseType | charType
+    | blobType | clobType | uuidType | arrayType | enumType | intervalType
 ","
 A data type definition.
 ","
@@ -2791,6 +2814,19 @@ VALUES { DEFAULT|expression | [ROW] ({DEFAULT|expression} [,...]) }, [,...]
 Values for INSERT statement.
 ","
 VALUES (1, 'Test')
+"
+
+"Other Grammar","Interval qualifier","
+YEAR [(precisionInt)] [ TO MONTH ]
+    | MONTH [(precisionInt)]
+    | DAY [(precisionInt)] [ TO { HOUR | MINUTE | SECOND [(scaleInt)] } ]
+    | HOUR [(precisionInt)] [ TO { MINUTE | SECOND [(scaleInt)] } ]
+    | MINUTE [(precisionInt)] [ TO SECOND [(scaleInt)] ]
+    | SECOND [(precisionInt [, scaleInt])]
+","
+An interval qualifier.
+","
+DAY TO SECOND
 "
 
 "Other Grammar","Join specification","
@@ -2962,8 +2998,15 @@ ID AS VALUE
 ","
 The next or current value of a sequence.
 
-When the next value is requested the sequence is incremented and the last identity in the current session is updated.
+When the next value is requested the sequence is incremented and the current value of the sequence
+and the last identity in the current session are updated with the generated value.
 Used values are never re-used, even when the transaction is rolled back.
+
+Current value may only be requested after generation of the sequence value in the current session.
+It returns the latest generated value for the current session.
+
+If a single command contains next and current value expressions for the same sequence there is no guarantee that
+the next value expression will be evaluated before the evaluation of current value expression.
 ","
 NEXT VALUE FOR SEQ1
 CURRENT VALUE FOR SCHEMA2.SEQ2
@@ -3173,16 +3216,21 @@ CURRENT ROW
     | sequenceValueExpression
     | function
     | { - | + } term
-    | ( expression )
+    | ( expression ) [ intervalQualifier ]
     | query
     | case
     | caseWhen
     | userDefinedFunctionName }
-[ timeZone ]
+[ timeZone | intervalQualifier ]
 ","
 A value. Parameters can be indexed, for example ""?1"" meaning the first parameter.
+
+Interval qualifier may only be specified for a compatible value
+or for a subtraction operation between two datetime values.
+The subtraction operation ignores the leading field precision of the qualifier.
 ","
 'Hello'
+
 "
 
 "Other Grammar","Time zone","
@@ -3284,6 +3332,9 @@ IDENTITY
 Data type with fixed precision and scale. This data type is recommended for
 storing currency values.
 
+If precision is specified, it must be positive.
+If scale is specified, it must be from -100000 to 100000, 0 is default.
+
 See also [numeric](https://h2database.com/html/grammar.html#numeric) literal grammar.
 Mapped to ""java.math.BigDecimal"".
 ","
@@ -3308,7 +3359,7 @@ DOUBLE
 ","
 A single precision floating point number. Should not be used to represent currency
 values, because of rounding problems.
-Precision value for FLOAT type name should be from 0 to 24.
+Precision value for FLOAT type name should be from 1 to 24.
 
 See also [numeric](https://h2database.com/html/grammar.html#numeric) literal grammar.
 Mapped to ""java.lang.Float"".
@@ -3324,7 +3375,7 @@ If fractional seconds precision is specified it should be from 0 to 9, 0 is defa
 
 See also [time](https://h2database.com/html/grammar.html#time) literal grammar.
 Mapped to ""java.sql.Time"".
-""java.time.LocalTime"" is also supported and recommended on Java 8 and later versions.
+""java.time.LocalTime"" is also supported and recommended.
 Use ""java.time.LocalTime"" or ""String"" instead of ""java.sql.Time"" when non-zero precision is needed.
 Cast from higher fractional seconds precision to lower fractional seconds precision performs round half up;
 if result of rounding is higher than maximum supported value 23:59:59.999999999 the value is rounded down instead.
@@ -3335,6 +3386,23 @@ TIME
 TIME(9)
 "
 
+"Data Types","TIME WITH TIME ZONE Type","
+TIME [ ( precisionInt ) ] WITH TIME ZONE
+","
+The time with time zone data type.
+If fractional seconds precision is specified it should be from 0 to 9, 0 is default.
+
+See also [time with time zone](https://h2database.com/html/grammar.html#time_with_time_zone) literal grammar.
+Mapped to ""java.time.OffsetTime"".
+Cast from higher fractional seconds precision to lower fractional seconds precision performs round half up;
+if result of rounding is higher than maximum supported value 23:59:59.999999999 the value is rounded down instead.
+The CAST operation to TIMESTAMP and TIMESTAMP WITH TIME ZONE data types uses the CURRENT_DATE for date fields,
+comparison operations with values of these data types use the 1970-01-01 instead.
+","
+TIME WITH TIME ZONE
+TIME(9) WITH TIME ZONE
+"
+
 "Data Types","DATE Type","
 DATE
 ","
@@ -3342,12 +3410,16 @@ The date data type. The proleptic Gregorian calendar is used.
 
 See also [date](https://h2database.com/html/grammar.html#date) literal grammar.
 Mapped to ""java.sql.Date"", with the time set to ""00:00:00""
-(or to the next possible time if midnight doesn't exist for the given date and timezone due to a daylight saving change).
-If you deal with old dates note that ""java.sql.Date"" uses a mixed Julian/Gregorian calendar,
+(or to the next possible time if midnight doesn't exist for the given date and time zone due to a daylight saving change).
+""java.time.LocalDate"" is also supported and recommended.
+
+If your time zone had LMT (local mean time) in the past and you use such old dates
+(depends on the time zone, usually 100 or more years ago),
+don't use ""java.sql.Date"" to read and write them.
+
+If you deal with very old dates (before 1582-10-15) note that ""java.sql.Date"" uses a mixed Julian/Gregorian calendar,
 ""java.util.GregorianCalendar"" can be configured to proleptic Gregorian with
 ""setGregorianChange(new java.util.Date(Long.MIN_VALUE))"" and used to read or write fields of dates.
-
-""java.time.LocalDate"" is also supported and recommended on Java 8 and later versions.
 ","
 DATE
 "
@@ -3357,17 +3429,24 @@ DATE
     | DATETIME [ ( precisionInt ) ] | SMALLDATETIME }
 ","
 The timestamp data type. The proleptic Gregorian calendar is used.
-Stored internally as a BCD-encoded date, and nanoseconds since midnight.
 If fractional seconds precision is specified it should be from 0 to 9, 6 is default.
 Fractional seconds precision of SMALLDATETIME is always 0 and cannot be specified.
 
+This data type holds the local date and time without time zone information.
+It cannot distinguish timestamps near transitions from DST to normal time.
+For absolute timestamps use the [TIMESTAMP WITH TIME ZONE](https://h2database.com/html/datatypes.html#timestamp_with_time_zone_type) data type instead.
+
 See also [timestamp](https://h2database.com/html/grammar.html#timestamp) literal grammar.
 Mapped to ""java.sql.Timestamp"" (""java.util.Date"" may be used too).
-If you deal with old dates note that ""java.sql.Timestamp"" uses a mixed Julian/Gregorian calendar,
-""java.util.GregorianCalendar"" can be configured to proleptic Gregorian with
-""setGregorianChange(new java.util.Date(Long.MIN_VALUE))"" and used to read or write fields of timestamps.
+""java.time.LocalDateTime"" is also supported and recommended.
 
-""java.time.LocalDateTime"" is also supported and recommended on Java 8 and later versions.
+If your time zone had LMT (local mean time) in the past and you use such old dates
+(depends on the time zone, usually 100 or more years ago),
+don't use ""java.sql.Timestamp"" and ""java.util.Date"" to read and write them.
+
+If you deal with very old dates (before 1582-10-15) note that ""java.sql.Timestamp"" and ""java.util.Date""
+use a mixed Julian/Gregorian calendar, ""java.util.GregorianCalendar"" can be configured to proleptic Gregorian with
+""setGregorianChange(new java.util.Date(Long.MIN_VALUE))"" and used to read or write fields of timestamps.
 
 Cast from higher fractional seconds precision to lower fractional seconds precision performs round half up.
 ","
@@ -3379,12 +3458,11 @@ TIMESTAMP(9)
 TIMESTAMP [ ( precisionInt ) ] WITH TIME ZONE
 ","
 The timestamp with time zone data type. The proleptic Gregorian calendar is used.
-Stored internally as a BCD-encoded date, nanoseconds since midnight, and time zone offset in minutes.
 If fractional seconds precision is specified it should be from 0 to 9, 6 is default.
 
 See also [timestamp with time zone](https://h2database.com/html/grammar.html#timestamp_with_time_zone) literal grammar.
-Mapped to ""org.h2.api.TimestampWithTimeZone"" by default and can be optionally mapped to ""java.time.OffsetDateTime"".
-""java.time.ZonedDateTime"" and ""java.time.Instant"" are also supported on Java 8 and later versions.
+Mapped to ""java.time.OffsetDateTime"".
+""java.time.ZonedDateTime"" and ""java.time.Instant"" are also supported.
 
 Values of this data type are compared by UTC values. It means that ""2010-01-01 10:00:00+01"" is greater than ""2010-01-01 11:00:00+03"".
 
@@ -3541,9 +3619,11 @@ UUID
 "
 
 "Data Types","ARRAY Type","
-ARRAY [ '[' maximumCardinalityInt ']' ]
+[baseDataType] ARRAY [ '[' maximumCardinalityInt ']' ]
 ","
 An array of values.
+Base data type, if any, specifies the data type of elements.
+Array may have NULL elements.
 Maximum cardinality, if any, specifies maximum allowed number of elements in the array.
 
 See also [array](https://h2database.com/html/grammar.html#array) literal grammar.
@@ -3554,6 +3634,7 @@ and ""ResultSet.getObject(..)"" or ""ResultSet.getArray(..)"" to retrieve the va
 ","
 ARRAY
 ARRAY[10]
+INTEGER ARRAY[10]
 "
 
 "Data Types","ENUM Type","
@@ -3653,7 +3734,7 @@ If precision is specified it should be from 1 to 18, 2 is default.
 
 See also [year interval](https://h2database.com/html/grammar.html#interval_year) literal grammar.
 Mapped to ""org.h2.api.Interval"".
-""java.time.Period"" is also supported on Java 8 and later versions.
+""java.time.Period"" is also supported.
 ","
 INTERVAL YEAR
 "
@@ -3666,7 +3747,7 @@ If precision is specified it should be from 1 to 18, 2 is default.
 
 See also [month interval](https://h2database.com/html/grammar.html#interval_month) literal grammar.
 Mapped to ""org.h2.api.Interval"".
-""java.time.Period"" is also supported on Java 8 and later versions.
+""java.time.Period"" is also supported.
 ","
 INTERVAL MONTH
 "
@@ -3679,7 +3760,7 @@ If precision is specified it should be from 1 to 18, 2 is default.
 
 See also [day interval](https://h2database.com/html/grammar.html#interval_day) literal grammar.
 Mapped to ""org.h2.api.Interval"".
-""java.time.Duration"" is also supported on Java 8 and later versions.
+""java.time.Duration"" is also supported.
 ","
 INTERVAL DAY
 "
@@ -3692,7 +3773,7 @@ If precision is specified it should be from 1 to 18, 2 is default.
 
 See also [hour interval](https://h2database.com/html/grammar.html#interval_hour) literal grammar.
 Mapped to ""org.h2.api.Interval"".
-""java.time.Duration"" is also supported on Java 8 and later versions.
+""java.time.Duration"" is also supported.
 ","
 INTERVAL HOUR
 "
@@ -3705,7 +3786,7 @@ If precision is specified it should be from 1 to 18, 2 is default.
 
 See also [minute interval](https://h2database.com/html/grammar.html#interval_minute) literal grammar.
 Mapped to ""org.h2.api.Interval"".
-""java.time.Duration"" is also supported on Java 8 and later versions.
+""java.time.Duration"" is also supported.
 ","
 INTERVAL MINUTE
 "
@@ -3719,7 +3800,7 @@ If fractional seconds precision is specified it should be from 0 to 9, 6 is defa
 
 See also [second interval](https://h2database.com/html/grammar.html#interval_second) literal grammar.
 Mapped to ""org.h2.api.Interval"".
-""java.time.Duration"" is also supported on Java 8 and later versions.
+""java.time.Duration"" is also supported.
 ","
 INTERVAL SECOND
 "
@@ -3732,7 +3813,7 @@ If leading field precision is specified it should be from 1 to 18, 2 is default.
 
 See also [year to month interval](https://h2database.com/html/grammar.html#interval_year_to_month) literal grammar.
 Mapped to ""org.h2.api.Interval"".
-""java.time.Period"" is also supported on Java 8 and later versions.
+""java.time.Period"" is also supported.
 ","
 INTERVAL YEAR TO MONTH
 "
@@ -3745,7 +3826,7 @@ If leading field precision is specified it should be from 1 to 18, 2 is default.
 
 See also [day to hour interval](https://h2database.com/html/grammar.html#interval_day_to_hour) literal grammar.
 Mapped to ""org.h2.api.Interval"".
-""java.time.Duration"" is also supported on Java 8 and later versions.
+""java.time.Duration"" is also supported.
 ","
 INTERVAL DAY TO HOUR
 "
@@ -3758,7 +3839,7 @@ If leading field precision is specified it should be from 1 to 18, 2 is default.
 
 See also [day to minute interval](https://h2database.com/html/grammar.html#interval_day_to_minute) literal grammar.
 Mapped to ""org.h2.api.Interval"".
-""java.time.Duration"" is also supported on Java 8 and later versions.
+""java.time.Duration"" is also supported.
 ","
 INTERVAL DAY TO MINUTE
 "
@@ -3772,7 +3853,7 @@ If fractional seconds precision is specified it should be from 0 to 9, 6 is defa
 
 See also [day to second interval](https://h2database.com/html/grammar.html#interval_day_to_second) literal grammar.
 Mapped to ""org.h2.api.Interval"".
-""java.time.Duration"" is also supported on Java 8 and later versions.
+""java.time.Duration"" is also supported.
 ","
 INTERVAL DAY TO SECOND
 "
@@ -3785,7 +3866,7 @@ If leading field precision is specified it should be from 1 to 18, 2 is default.
 
 See also [hour to minute interval](https://h2database.com/html/grammar.html#interval_hour_to_minute) literal grammar.
 Mapped to ""org.h2.api.Interval"".
-""java.time.Duration"" is also supported on Java 8 and later versions.
+""java.time.Duration"" is also supported.
 ","
 INTERVAL HOUR TO MINUTE
 "
@@ -3799,7 +3880,7 @@ If fractional seconds precision is specified it should be from 0 to 9, 6 is defa
 
 See also [hour to second interval](https://h2database.com/html/grammar.html#interval_hour_to_second) literal grammar.
 Mapped to ""org.h2.api.Interval"".
-""java.time.Duration"" is also supported on Java 8 and later versions.
+""java.time.Duration"" is also supported.
 ","
 INTERVAL HOUR TO SECOND
 "
@@ -3813,7 +3894,7 @@ If fractional seconds precision is specified it should be from 0 to 9, 6 is defa
 
 See also [minute to second interval](https://h2database.com/html/grammar.html#interval_minute_to_second) literal grammar.
 Mapped to ""org.h2.api.Interval"".
-""java.time.Duration"" is also supported on Java 8 and later versions.
+""java.time.Duration"" is also supported.
 ","
 INTERVAL MINUTE TO SECOND
 "
@@ -4725,7 +4806,8 @@ CALL TRANSLATE('Hello world', 'eo', 'EO')
 CURRENT_DATE | CURDATE() | SYSDATE | TODAY
 ","
 Returns the current date.
-These methods always return the same value within a transaction (default)
+
+These functions always return the same value within a transaction (default)
 or within a command depending on database mode.
 ","
 CURRENT_DATE
@@ -4734,13 +4816,13 @@ CURRENT_DATE
 "Functions (Time and Date)","CURRENT_TIME","
 CURRENT_TIME [ (int) ]
 ","
-Returns the current time.
-The returned value does not have time zone information, because TIME WITH TIME ZONE data type is not supported in H2.
+Returns the current time with time zone.
 If fractional seconds precision is specified it should be from 0 to 9, 0 is default.
 The specified value can be used only to limit precision of a result.
 The actual maximum available precision depends on operating system and JVM and can be 3 (milliseconds) or higher.
 Higher precision is not available before Java 9.
-These methods always return the same value within a transaction (default)
+
+This function always returns the same value within a transaction (default)
 or within a command depending on database mode.
 ","
 CURRENT_TIME
@@ -4756,7 +4838,8 @@ If fractional seconds precision is specified it should be from 0 to 9, 6 is defa
 The specified value can be used only to limit precision of a result.
 The actual maximum available precision depends on operating system and JVM and can be 3 (milliseconds) or higher.
 Higher precision is not available before Java 9.
-This method always returns the same value within a transaction (default)
+
+This function always returns the same value within a transaction (default)
 or within a command depending on database mode.
 ","
 CURRENT_TIMESTAMP
@@ -4766,12 +4849,13 @@ CURRENT_TIMESTAMP(9)
 "Functions (Time and Date)","LOCALTIME","
 LOCALTIME [ (int) ] | CURTIME([ int ])
 ","
-Returns the current time.
+Returns the current time without time zone.
 If fractional seconds precision is specified it should be from 0 to 9, 0 is default.
 The specified value can be used only to limit precision of a result.
 The actual maximum available precision depends on operating system and JVM and can be 3 (milliseconds) or higher.
 Higher precision is not available before Java 9.
-These methods always return the same value within a transaction (default)
+
+These functions always return the same value within a transaction (default)
 or within a command depending on database mode.
 ","
 LOCALTIME
@@ -4786,7 +4870,14 @@ If fractional seconds precision is specified it should be from 0 to 9, 6 is defa
 The specified value can be used only to limit precision of a result.
 The actual maximum available precision depends on operating system and JVM and can be 3 (milliseconds) or higher.
 Higher precision is not available before Java 9.
-These methods always return the same value within a transaction (default)
+
+The returned value has date and time without time zone information.
+If time zone has DST transitions the returned values are ambiguous during transition from DST to normal time.
+For absolute timestamps use the [CURRENT_TIMESTAMP](https://h2database.com/html/functions.html#current_timestamp)
+function and [TIMESTAMP WITH TIME ZONE](https://h2database.com/html/datatypes.html#timestamp_with_time_zone_type)
+data type.
+
+These functions always return the same value within a transaction (default)
 or within a command depending on database mode.
 ","
 LOCALTIMESTAMP
@@ -4803,7 +4894,7 @@ microseconds, or nanoseconds otherwise its range is restricted to int.
 This method returns a value with the same type as specified value if unit is compatible with this value.
 If specified field is a HOUR, MINUTE, SECOND, MILLISECOND, etc and value is a DATE value DATEADD returns combined TIMESTAMP.
 Fields DAY, MONTH, YEAR, WEEK, etc are not allowed for TIME values.
-Fields TIMEZONE_HOUR and TIMEZONE_MINUTE are only allowed for TIMESTAMP WITH TIME ZONE values.
+Fields TIMEZONE_HOUR, TIMEZONE_MINUTE, and TIMEZONE_SECOND are only allowed for TIMESTAMP WITH TIME ZONE values.
 ","
 DATEADD(MONTH, 1, DATE '2001-01-31')
 "
@@ -4814,7 +4905,7 @@ DATEADD(MONTH, 1, DATE '2001-01-31')
 Returns the number of crossed unit boundaries between two date/time values.
 This method returns a long.
 The datetimeField indicates the unit.
-Only TIMEZONE_HOUR and TIMEZONE_MINUTE fields use the time zone offset component.
+Only TIMEZONE_HOUR, TIMEZONE_MINUTE, and TIMEZONE_SECOND fields use the time zone offset component.
 With all other fields if date/time values have time zone offset component it is ignored.
 ","
 DATEDIFF(YEAR, T1.CREATED, T2.CREATED)
@@ -4983,6 +5074,20 @@ Returns the ISO week year from a date/time value.
 ISO_YEAR(CREATED)
 "
 
+"Functions (System)","ABORT_SESSION","
+ABORT_SESSION(sessionInt)
+","
+Cancels the currently executing statement of another session. Closes the session and releases the allocated resources.
+The method only works with default MVStore engine.
+Returns true if the session was closed, false if no session with the given id was found.
+
+If a client was connected while its session was aborted it will see an error.
+
+Admin rights are required to execute this command.
+","
+CALL ABORT_SESSION(3)
+"
+
 "Functions (System)","ARRAY_GET","
 ARRAY_GET(arrayExpression, indexExpression)
 ","
@@ -5050,8 +5155,7 @@ AUTOCOMMIT()
 CANCEL_SESSION(sessionInt)
 ","
 Cancels the currently executing statement of another session.
-The method only works if the multithreaded kernel is enabled
-(it is enabled by default with MVStore engine only, see SET MULTI_THREADED).
+The method only works with default MVStore engine.
 Returns true if the statement was canceled, false if the session is closed or no statement is currently executing.
 
 Admin rights are required to execute this command.
@@ -5106,8 +5210,8 @@ CONVERT(NAME, INT)
 "Functions (System)","CURRVAL","
 CURRVAL( [ schemaNameString, ] sequenceString )
 ","
-Returns the current (last) value of the sequence, independent of the session.
-If the sequence was just created, the method returns (start - interval).
+Returns the latest generated value of the sequence for the current session.
+Current value may only be requested after generation of the sequence value in the current session.
 This method exists only for compatibility, when it isn't required use
 [CURRENT VALUE FOR sequenceName](https://h2database.com/html/grammar.html#sequence_value_expression)
 instead.
@@ -5373,7 +5477,8 @@ MEMORY_USED()
 "Functions (System)","NEXTVAL","
 NEXTVAL ( [ schemaNameString, ] sequenceString )
 ","
-Returns the next value of the sequence.
+Increments the sequence and returns its value.
+The current value of the sequence and the last identity in the current session are updated with the generated value.
 Used values are never re-used, even when the transaction is rolled back.
 This method exists only for compatibility, it's recommended to use the standard
 [NEXT VALUE FOR sequenceName](https://h2database.com/html/grammar.html#sequence_value_expression)
@@ -5418,7 +5523,8 @@ This method returns a long value.
 It is supported for SELECT statements, as well as for DELETE and UPDATE.
 The first row has the row number 1, and is calculated before ordering and grouping the result set,
 but after evaluating index conditions (even when the index conditions are specified in an outer query).
-Use the ROW_NUMBER() OVER () function to get row numbers after grouping or in specified order.
+Use the [ROW_NUMBER() OVER ()](https://h2database.com/html/functions-window.html#row_number)
+function to get row numbers after grouping or in specified order.
 ","
 SELECT ROWNUM(), * FROM TEST;
 SELECT ROWNUM(), * FROM (SELECT * FROM TEST ORDER BY NAME);

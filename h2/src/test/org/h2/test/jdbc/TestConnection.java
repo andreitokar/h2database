@@ -16,6 +16,7 @@ import java.sql.SQLClientInfoException;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Properties;
+import org.h2.engine.Constants;
 import org.h2.engine.SysProperties;
 
 /**
@@ -41,10 +42,12 @@ public class TestConnection extends TestDb {
         testSetUnsupportedClientInfoProperties();
         testSetInternalProperty();
         testSetInternalPropertyToInitialValue();
+        testTransactionIsolationSetAndGet();
         testSetGetSchema();
         testCommitOnAutoCommitSetRunner();
         testRollbackOnAutoCommitSetRunner();
         testChangeTransactionLevelCommitRunner();
+        testLockTimeout();
     }
 
     private void testSetInternalProperty() throws SQLException {
@@ -115,6 +118,25 @@ public class TestConnection extends TestDb {
         Connection conn = getConnection("clientInfo");
         assertNull(conn.getClientInfo("UnknownProperty"));
         conn.close();
+    }
+
+    private void testTransactionIsolationSetAndGet() throws Exception {
+        deleteDb("transactionIsolation");
+        try (Connection conn = getConnection("transactionIsolation")) {
+            assertEquals(Connection.TRANSACTION_READ_COMMITTED, conn.getTransactionIsolation());
+            conn.setTransactionIsolation(Connection.TRANSACTION_READ_UNCOMMITTED);
+            assertEquals(Connection.TRANSACTION_READ_UNCOMMITTED, conn.getTransactionIsolation());
+            conn.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+            assertEquals(config.mvStore ? Connection.TRANSACTION_REPEATABLE_READ : Connection.TRANSACTION_SERIALIZABLE,
+                    conn.getTransactionIsolation());
+            conn.setTransactionIsolation(Constants.TRANSACTION_SNAPSHOT);
+            assertEquals(config.mvStore ? Constants.TRANSACTION_SNAPSHOT : Connection.TRANSACTION_SERIALIZABLE,
+                    conn.getTransactionIsolation());
+            conn.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
+            assertEquals(Connection.TRANSACTION_SERIALIZABLE, conn.getTransactionIsolation());
+        } finally {
+            deleteDb("transactionIsolation");
+        }
     }
 
     private void testCommitOnAutoCommitSetRunner() throws Exception {
@@ -305,4 +327,31 @@ public class TestConnection extends TestDb {
         conn.close();
         deleteDb("schemaSetGet");
     }
+
+    private void testLockTimeout() throws SQLException {
+        if (!config.mvStore) {
+            return;
+        }
+        deleteDb("lockTimeout");
+        try (Connection conn1 = getConnection("lockTimeout");
+                Connection conn2 = getConnection("lockTimeout;LOCK_TIMEOUT=6000")) {
+            conn1.setAutoCommit(false);
+            conn2.setAutoCommit(false);
+            Statement s1 = conn1.createStatement();
+            Statement s2 = conn2.createStatement();
+            s1.execute("CREATE TABLE TEST(ID INT PRIMARY KEY, V INT) AS VALUES (1, 2)");
+            conn1.commit();
+            s2.execute("INSERT INTO TEST VALUES (2, 4)");
+            s1.execute("UPDATE TEST SET V = 3 WHERE ID = 1");
+            s2.execute("SET LOCK_TIMEOUT 50");
+            long n = System.nanoTime();
+            assertThrows(ErrorCode.LOCK_TIMEOUT_1, s2).execute("UPDATE TEST SET V = 4 WHERE ID = 1");
+            if (System.nanoTime() - n > 5_000_000_000L) {
+                fail("LOCK_TIMEOUT wasn't set");
+            }
+        } finally {
+            deleteDb("lockTimeout");
+        }
+    }
+
 }

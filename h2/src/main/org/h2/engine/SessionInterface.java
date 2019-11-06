@@ -91,28 +91,6 @@ public interface SessionInterface extends Closeable {
     void cancel();
 
     /**
-     * Check if the database changed and therefore reconnecting is required.
-     *
-     * @param write if the next operation may be writing
-     * @return true if reconnecting is required
-     */
-    boolean isReconnectNeeded(boolean write);
-
-    /**
-     * Close the connection and open a new connection.
-     *
-     * @param write if the next operation may be writing
-     * @return the new connection
-     */
-    SessionInterface reconnect(boolean write);
-
-    /**
-     * Called after writing has ended. It needs to be called after
-     * isReconnectNeeded(true) returned false.
-     */
-    void afterWriting();
-
-    /**
      * Check if this session is in auto-commit mode.
      *
      * @return true if the session is in auto-commit mode
@@ -169,5 +147,19 @@ public interface SessionInterface extends Closeable {
      * @param networkConnectionInfo the network connection information
      */
     void setNetworkConnectionInfo(NetworkConnectionInfo networkConnectionInfo);
+
+    /**
+     * Returns the isolation level.
+     *
+     * @return the isolation level
+     */
+    IsolationLevel getIsolationLevel();
+
+    /**
+     * Sets the isolation level.
+     *
+     * @param isolationLevel the isolation level to set
+     */
+    void setIsolationLevel(IsolationLevel isolationLevel);
 
 }

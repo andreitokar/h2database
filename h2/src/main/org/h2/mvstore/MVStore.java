@@ -566,7 +566,7 @@ public class MVStore implements AutoCloseable
                 String configAsString = meta.get(MVMap.getMapKey(id));
                 HashMap<String, Object> config;
                 if (configAsString != null) {
-                    config = new HashMap<String, Object>(DataUtils.parseMap(configAsString));
+                    config = new HashMap<>(DataUtils.parseMap(configAsString));
                 } else {
                     config = new HashMap<>();
                 }
@@ -779,21 +779,18 @@ public class MVStore implements AutoCloseable
         long fileSize = fileStore.size();
         long blocksInStore = fileSize / BLOCK_SIZE;
 
-        Comparator<Chunk> chunkComparator = new Comparator<Chunk>() {
-            @Override
-            public int compare(Chunk one, Chunk two) {
-                int result = Long.compare(two.version, one.version);
-                if (result == 0) {
-                    // out of two copies of the same chunk we prefer the one
-                    // close to the beginning of file (presumably later version)
-                    result = Long.compare(one.block, two.block);
-                }
-                return result;
+        Comparator<Chunk> chunkComparator = (one, two) -> {
+            int result = Long.compare(two.version, one.version);
+            if (result == 0) {
+                // out of two copies of the same chunk we prefer the one
+                // close to the beginning of file (presumably later version)
+                result = Long.compare(one.block, two.block);
             }
+            return result;
         };
 
         if (!assumeCleanShutdown) {
-            Chunk tailChunk = discoverChunk(blockSize);
+            Chunk tailChunk = discoverChunk(blocksInStore);
             if (tailChunk != null) {
                 blocksInStore = tailChunk.block; // for a possible full scan later on
                 if (newest == null || tailChunk.version > newest.version) {
@@ -866,7 +863,7 @@ public class MVStore implements AutoCloseable
                     validChunksById.put(chunk.id, chunk);
                 }
                 quickRecovery = findLastChunkWithCompleteValidChunkSet(lastChunkCandidates, validChunksByLocation,
-                        validChunksById);
+                        validChunksById, false);
             }
 
             if (!quickRecovery) {
@@ -887,7 +884,8 @@ public class MVStore implements AutoCloseable
                 for (Chunk chunk : lastChunkCandidates) {
                     validChunksById.put(chunk.id, chunk);
                 }
-                findLastChunkWithCompleteValidChunkSet(lastChunkCandidates, validChunksByLocation, validChunksById);
+                findLastChunkWithCompleteValidChunkSet(lastChunkCandidates, validChunksByLocation,
+                        validChunksById, true);
             }
         }
 
@@ -911,8 +909,9 @@ public class MVStore implements AutoCloseable
     }
 
     private boolean findLastChunkWithCompleteValidChunkSet(Chunk[] lastChunkCandidates,
-                                                            Map<Long, Chunk> validChunksByLocation,
-                                                            Map<Integer, Chunk> validChunksById) {
+            Map<Long, Chunk> validChunksByLocation,
+            Map<Integer, Chunk> validChunksById,
+            boolean afterFullScan) {
         // Try candidates for "last chunk" in order from newest to oldest
         // until suitable is found. Suitable one should have meta map
         // where all chunk references point to valid locations.
@@ -933,40 +932,36 @@ public class MVStore implements AutoCloseable
                         c = test;
                     }
                     assert chunks.get(c.id) == c;
-                    if ((test = validChunksByLocation.get(c.block)) != null && test.id == c.id) {
-                        continue;
-                    } else if ((test = validChunksById.get(c.id)) != null) {
-                        // We do not have a valid chunk at that location,
-                        // but there is a copy of same chunk from original
-                        // location.
-                        // Chunk header at original location does not have
-                        // any dynamic (occupancy) metadata, so it can't be
-                        // used here as is, re-point our chunk to original
-                        // location instead.
-                        c.block = test.block;
-                        continue;
-                    }
-
-                    if (!c.isLive()) {
-                        // we can just remove entry from meta, referencing to this chunk,
-                        // but store maybe R/O, and it's not properly started yet,
-                        // so lets make this chunk "dead" and taking no space,
-                        // and it will be automatically removed later.
-                        c.block = Long.MAX_VALUE;
-                        c.len = Integer.MAX_VALUE;
-                        if (c.unused == 0) {
-                            c.unused = creationTime;
+                    if ((test = validChunksByLocation.get(c.block)) == null || test.id != c.id) {
+                        if ((test = validChunksById.get(c.id)) != null) {
+                            // We do not have a valid chunk at that location,
+                            // but there is a copy of same chunk from original
+                            // location.
+                            // Chunk header at original location does not have
+                            // any dynamic (occupancy) metadata, so it can't be
+                            // used here as is, re-point our chunk to original
+                            // location instead.
+                            c.block = test.block;
+                        } else if (!c.isLive()) {
+                            // we can just remove entry from meta, referencing to this chunk,
+                            // but store maybe R/O, and it's not properly started yet,
+                            // so lets make this chunk "dead" and taking no space,
+                            // and it will be automatically removed later.
+                            c.block = Long.MAX_VALUE;
+                            c.len = Integer.MAX_VALUE;
+                            if (c.unused == 0) {
+                                c.unused = creationTime;
+                            }
+                            if (c.unusedAtVersion == 0) {
+                                c.unusedAtVersion = INITIAL_VERSION;
+                            }
+                        } else if (afterFullScan || readChunkHeaderAndFooter(c.block, c.id) == null) {
+                            // chunk reference is invalid
+                            // this "last chunk" candidate is not suitable
+                            verified = false;
+                            break;
                         }
-                        if (c.unusedAtVersion == 0) {
-                            c.unusedAtVersion = INITIAL_VERSION;
-                        }
-                        continue;
                     }
-
-                    // chunk reference is invalid
-                    // this "last chunk" candidate is not suitable
-                    verified = false;
-                    break;
                 }
             } catch(Exception ignored) {
                 verified = false;
@@ -1780,17 +1775,14 @@ public class MVStore implements AutoCloseable
         Iterable<Chunk> result = null;
         if (maxBlocksToMove > 0) {
             PriorityQueue<Chunk> queue = new PriorityQueue<>(chunks.size() / 2 + 1,
-                    new Comparator<Chunk>() {
-                        @Override
-                        public int compare(Chunk o1, Chunk o2) {
-                            // instead of selection just closest to beginning of the file,
-                            // pick smaller chunk(s) which sit in between bigger holes
-                            int res = Integer.compare(o2.collectPriority, o1.collectPriority);
-                            if (res != 0) {
-                                return res;
-                            }
-                            return Long.signum(o2.block - o1.block);
+                    (o1, o2) -> {
+                        // instead of selection just closest to beginning of the file,
+                        // pick smaller chunk(s) which sit in between bigger holes
+                        int res = Integer.compare(o2.collectPriority, o1.collectPriority);
+                        if (res != 0) {
+                            return res;
                         }
+                        return Long.signum(o2.block - o1.block);
                     });
             long size = 0;
             for (Chunk chunk : chunks.values()) {
@@ -1809,7 +1801,7 @@ public class MVStore implements AutoCloseable
             }
             if (!queue.isEmpty()) {
                 ArrayList<Chunk> list = new ArrayList<>(queue);
-                Collections.sort(list, Chunk.PositionComparator.INSTANCE);
+                list.sort(Chunk.PositionComparator.INSTANCE);
                 result = list;
             }
         }
@@ -2054,6 +2046,41 @@ public class MVStore implements AutoCloseable
         return fillRate;
     }
 
+    /**
+     * Get data chunks count.
+     *
+     * @return number of existing chunks in store.
+     */
+    public int getChunkCount() {
+        return chunks.size();
+    }
+
+    /**
+     * Get data pages count.
+     *
+     * @return number of existing pages in store.
+     */
+    public int getPageCount() {
+        int count = 0;
+        for (Chunk chunk : chunks.values()) {
+            count += chunk.pageCount;
+        }
+        return count;
+    }
+
+    /**
+     * Get live data pages count.
+     *
+     * @return number of existing live pages in store.
+     */
+    public int getLivePageCount() {
+        int count = 0;
+        for (Chunk chunk : chunks.values()) {
+            count += chunk.pageCountLive;
+        }
+        return count;
+    }
+
     private int getProjectedFillRate() {
         int vacatedBlocks = 0;
         long maxLengthSum = 1;
@@ -2083,15 +2110,12 @@ public class MVStore implements AutoCloseable
 
         // the queue will contain chunks we want to free up
         PriorityQueue<Chunk> queue = new PriorityQueue<>(this.chunks.size() / 4 + 1,
-                new Comparator<Chunk>() {
-                    @Override
-                    public int compare(Chunk o1, Chunk o2) {
-                        int comp = Integer.compare(o2.collectPriority, o1.collectPriority);
-                        if (comp == 0) {
-                            comp = Long.compare(o2.maxLenLive, o2.maxLenLive);
-                        }
-                        return comp;
+                (o1, o2) -> {
+                    int comp = Integer.compare(o2.collectPriority, o1.collectPriority);
+                    if (comp == 0) {
+                        comp = Long.compare(o2.maxLenLive, o2.maxLenLive);
                     }
+                    return comp;
                 });
 
         long totalSize = 0;
@@ -2565,7 +2589,7 @@ public class MVStore implements AutoCloseable
             if (!remove.isEmpty()) {
                 // remove the youngest first, so we don't create gaps
                 // (in case we remove many chunks)
-                Collections.sort(remove, Collections.reverseOrder());
+                remove.sort(Collections.reverseOrder());
                 for (int id : remove) {
                     Chunk c = chunks.remove(id);
                     if (c != null) {
@@ -2741,7 +2765,7 @@ public class MVStore implements AutoCloseable
         if(id > 0) {
             MVMap<?, ?> map = getMap(id);
             if (map == null) {
-                map = openMap(name);
+                map = openMap(name, MVStoreTool.getGenericMapBuilder());
             }
             removeMap(map);
         }

@@ -21,6 +21,108 @@ Change Log
 
 <h2>Next Version (unreleased)</h2>
 <ul>
+<li>Issue #2233: "Prepared.getObjectId() was called before" when granting on multiple tables
+</li>
+<li>PR #2230: Add factory methods for Row
+</li>
+<li>Issue #2226, PR #2227: Remove support of Apache Ignite
+</li>
+<li>PR #2224: Update some hyperlinks and use https in them where possible
+</li>
+<li>PR #2223: Fix data change delta tables in views
+</li>
+<li>Issue #1943: Deadlock in TestTriggersConstraints
+</li>
+<li>PR #2219: do not retry failed DDL commands
+</li>
+<li>PR #2214: Fix TRACE_LEVEL_FILE=4 for in-memory databases
+</li>
+<li>PR #2216: Add FileChannel.lock in the connection URL summary
+</li>
+<li>PR #2215: Add white-space: pre to tables with query results
+</li>
+<li>Issue #2213: NUMERIC scale can be larger than a precision
+</li>
+<li>PR #2212: Get rid of multi-version CurrentTimestamp and fix negative scale of NUMERIC
+</li>
+<li>PR #2210: Meta table extras
+</li>
+<li>PR #2209: Add standard expressions with interval qualifier
+</li>
+<li>PR #2195: Feature abort_session function
+</li>
+<li>PR #2201: Add padding to negative years and other changes
+</li>
+<li>PR #2197: Add some additional methods from JDBC 4.2 and return 4.2 as supported version
+</li>
+<li>PR #2193: Require Java 8 and remove Java 7 support
+</li>
+<li>Issue #2191: NPE with H2 v1.4.200 repeatable read select queries
+</li>
+<li>Issue #1390: Add standard-compliant ARRAY data type syntax
+</li>
+<li>PR #2186: Refactor Parser.parseColumnWithType() and fix some minor issues with CAST
+</li>
+<li>Issue #2181: SET EXCLUSIVE quirks
+</li>
+<li>PR #2173: Move snapshots from Transaction to TransactionMap
+</li>
+<li>Issue #2175: Regression: NPE in ResultSet#getTime(int)
+</li>
+<li>Issue #2171: Wrong PostgreSQL compatibility syntax for the creation of indexes
+</li>
+<li>PR #2169: Clean up some find methods of indexes and fix minor issues with them
+</li>
+</ul>
+
+<h2>Version 1.4.200 (2019-10-14)</h2>
+<ul>
+<li>PR #2168: Add non-standard SNAPSHOT isolation level to MVStore databases
+</li>
+<li>Issue #2165: Problem with secondary index on SERIALIZABLE isolation level
+</li>
+<li>Issue #2161: Remove undocumented PageStore-only FILE_LOCK=SERIALIZED
+</li>
+<li>PR #2155: Reduce code duplication
+</li>
+<li>Issue #1894: Confusing error message when database creation is disallowed
+</li>
+<li>Issue #2123: Random failures in TestTransactionStore
+</li>
+<li>Issue #2153: Different behavior in SET LOCK_TIMEOUT after 1.4.197
+</li>
+<li>Issue #2150: Remove MULTI_THREADED setting and use multi-threaded MVStore and single-threaded PageStore backends
+</li>
+<li>Issue #216: Support READ UNCOMMITTED isolation level in MVStore mode
+</li>
+<li>Issue #678: Support REPEATABLE READ isolation level in MVStore mode
+</li>
+<li>Issue #174: Support SERIALIZABLE isolation level in MVStore mode
+</li>
+<li>Issue #2144: MVStore: read uncommitted doesn't see committed rows
+</li>
+<li>Issue #2142: CURRVAL / CURRENT VALUE FOR should return the value for the current session
+</li>
+<li>Issue #2136: ConstraintCheck concurrency regression
+</li>
+<li>PR #2137: Don't use SYSTEM_RANGE for SELECT without a FROM
+</li>
+<li>PR #2134: Assorted fixes and other changes in DateTimeUtils
+</li>
+<li>PR #2133: Optimize COUNT([ALL] constant) and other changes
+</li>
+<li>PR #2132: Typo and another bug in MVStore.readStoreHeader()
+</li>
+<li>Issue #2130: Group-sorted query returns invalid results with duplicate grouped columns in select list
+</li>
+<li>Issue #2120: Add IF EXISTS clause to column name in ALTER TABLE ALTER COLUMN statement
+</li>
+<li>Issue #521: Add support for the TIME WITH TIME ZONE data type
+</li>
+<li>PR #2127: Fix race condition / performance issue during snapshotting
+</li>
+<li>Issue #2124: MVStore build is broken
+</li>
 <li>PR #2122: Add support for LMT in time zones and fix large years in datetime values
 </li>
 <li>Issue #2067: Incorrect chunk space allocation during chunks movement
@@ -1729,42 +1831,6 @@ temporary storages
 <li>Add padding for CHAR(N) values in PostgreSQL mode
 </li>
 <li>Issue #89: Add DB2 timestamp format compatibility
-</li>
-</ul>
-
-<h2>Version 1.4.196 (2017-06-10)</h2>
-<ul>
-<li>Issue#479 Allow non-recursive CTEs (WITH statements), patch from stumc
-</li>
-<li>Fix startup issue when using "CHECK" as a column name.
-</li>
-<li>Issue #423: ANALYZE performed multiple times on one table during execution of the same statement.
-</li>
-<li>Issue #426: Support ANALYZE TABLE statement
-</li>
-<li>Issue #438: Fix slow logging via SLF4J (TRACE_LEVEL_FILE=4).
-</li>
-<li>Issue #472: Support CREATE SEQUENCE ... ORDER as a NOOP for Oracle compatibility
-</li>
-<li>Issue #479: Allow non-recursive Common Table Expressions (CTE)
-</li>
-<li>On Mac OS X, with IPv6 and no network connection, the Console tool was not working as expected.
-</li>
-</ul>
-
-<h2>Version 1.4.195 (2017-04-23)</h2>
-<ul>
-<li>Lazy query execution support.
-</li>
-<li>Added API for handling custom data types (System property "h2.customDataTypesHandler", API org.h2.api.CustomDataTypesHandler).
-</li>
-<li>Added support for invisible columns.
-</li>
-<li>Added an ENUM data type, with syntax similar to that of MySQL.
-</li>
-<li>MVStore: for object data types, the cache size memory estimation
-    was sometimes far off in a read-only scenario.
-    This could result in inefficient cache usage.
 </li>
 </ul>
 

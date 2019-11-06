@@ -13,6 +13,7 @@ import org.h2.message.DbException;
 import org.h2.message.Trace;
 import org.h2.schema.Schema;
 import org.h2.security.SHA256;
+import org.h2.table.DualTable;
 import org.h2.table.MetaTable;
 import org.h2.table.RangeTable;
 import org.h2.table.Table;
@@ -84,11 +85,6 @@ public class User extends RightOwner {
         return getCreateSQL(true);
     }
 
-    @Override
-    public String getDropSQL() {
-        return null;
-    }
-
     /**
      * Checks that this user has the given rights for this database object.
      *
@@ -120,7 +116,7 @@ public class User extends RightOwner {
         if (publicRole.isRightGrantedRecursive(table, rightMask)) {
             return true;
         }
-        if (table instanceof MetaTable || table instanceof RangeTable) {
+        if (table instanceof MetaTable || table instanceof DualTable || table instanceof RangeTable) {
             // everybody has access to the metadata information
             return true;
         }
@@ -251,11 +247,6 @@ public class User extends RightOwner {
         Arrays.fill(passwordHash, (byte) 0);
         passwordHash = null;
         invalidate();
-    }
-
-    @Override
-    public void checkRename() {
-        // ok
     }
 
     /**

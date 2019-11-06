@@ -5,7 +5,6 @@
  */
 package org.h2.mvstore.db;
 
-import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.PriorityQueue;
@@ -17,6 +16,7 @@ import org.h2.engine.Session;
 import org.h2.index.BaseIndex;
 import org.h2.index.Cursor;
 import org.h2.index.IndexType;
+import org.h2.index.SingleRowCursor;
 import org.h2.message.DbException;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.MVMap;
@@ -376,11 +376,6 @@ public final class MVSecondaryIndex extends BaseIndex implements MVIndex {
     @Override
     public Cursor findNext(Session session, SearchRow higherThan, SearchRow last) {
         return find(session, higherThan, true, last);
-    }
-
-    @Override
-    public void checkRename() {
-        // ok
     }
 
     /**

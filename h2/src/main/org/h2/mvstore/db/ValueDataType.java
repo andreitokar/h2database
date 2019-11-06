@@ -31,7 +31,7 @@ import org.h2.result.RowFactory;
 import org.h2.result.SimpleResult;
 import org.h2.result.SortOrder;
 import org.h2.store.DataHandler;
-import org.h2.util.JdbcUtils;
+import org.h2.util.DateTimeUtils;
 import org.h2.util.Utils;
 import org.h2.value.CompareMode;
 import org.h2.value.TypeInfo;
@@ -60,6 +60,7 @@ import org.h2.value.ValueString;
 import org.h2.value.ValueStringFixed;
 import org.h2.value.ValueStringIgnoreCase;
 import org.h2.value.ValueTime;
+import org.h2.value.ValueTimeTimeZone;
 import org.h2.value.ValueTimestamp;
 import org.h2.value.ValueTimestampTimeZone;
 import org.h2.value.ValueUuid;
@@ -109,9 +110,10 @@ public class ValueDataType extends BasicDataType<Value> {
     private static final byte STRING_0_31 = 68;
     private static final int BYTES_0_31 = 100;
     private static final int SPATIAL_KEY_2D = 132;
-    private static final int CUSTOM_DATA_TYPE = 133;
+    // 133 was used for CUSTOM_DATA_TYPE
     private static final int JSON = 134;
     private static final int TIMESTAMP_TZ_2 = 135;
+    private static final int TIME_TZ = 136;
 
     private final DataHandler handler;
     protected final CastDataProvider provider;
@@ -310,6 +312,15 @@ public class ValueDataType extends BasicDataType<Value> {
             buff.put(TIME).
                 putVarLong(millis).
                 putVarInt((int) nanos);
+            break;
+        }
+        case Value.TIME_TZ: {
+            ValueTimeTimeZone t = (ValueTimeTimeZone) v;
+            long nanosOfDay = t.getNanos();
+            buff.put((byte) TIME_TZ).
+                putVarInt((int) (nanosOfDay / DateTimeUtils.NANOS_PER_SECOND)).
+                putVarInt((int) (nanosOfDay % DateTimeUtils.NANOS_PER_SECOND));
+            writeTimeZone(buff, t.getTimeZoneOffsetSeconds());
             break;
         }
         case Value.DATE: {
@@ -552,14 +563,6 @@ public class ValueDataType extends BasicDataType<Value> {
             break;
         }
         default:
-            if (JdbcUtils.customDataTypesHandler != null) {
-                byte[] b = v.getBytesNoCopy();
-                buff.put((byte)CUSTOM_DATA_TYPE).
-                    putVarInt(type).
-                    putVarInt(b.length).
-                    put(b);
-                break;
-            }
             DbException.throwInternalError("type=" + v.getValueType());
         }
     }
@@ -650,6 +653,9 @@ public class ValueDataType extends BasicDataType<Value> {
             long nanos = readVarLong(buff) * 1_000_000 + readVarInt(buff);
             return ValueTime.fromNanos(nanos);
         }
+        case TIME_TZ:
+            return ValueTimeTimeZone.fromNanos(readVarInt(buff) * DateTimeUtils.NANOS_PER_SECOND + readVarInt(buff),
+                    readTimeZone(buff));
         case TIMESTAMP: {
             long dateValue = readVarLong(buff);
             long nanos = readVarLong(buff) * 1_000_000 + readVarInt(buff);
@@ -779,18 +785,6 @@ public class ValueDataType extends BasicDataType<Value> {
         }
         case SPATIAL_KEY_2D:
             return getSpatialDataType().read(buff);
-        case CUSTOM_DATA_TYPE: {
-            if (JdbcUtils.customDataTypesHandler != null) {
-                int customType = readVarInt(buff);
-                int len = readVarInt(buff);
-                byte[] b = Utils.newBytes(len);
-                buff.get(b, 0, len);
-                return JdbcUtils.customDataTypesHandler.convert(
-                        ValueBytes.getNoCopy(b), customType);
-            }
-            throw DbException.get(ErrorCode.UNKNOWN_DATA_TYPE_1,
-                    "No CustomDataTypesHandler has been set up");
-        }
         case JSON: {
             int len = readVarInt(buff);
             byte[] b = Utils.newBytes(len);

@@ -42,7 +42,7 @@ public class TransactionStore {
     /**
      * Default blocked transaction timeout
      */
-    private final int timeoutMillis;
+    final int timeoutMillis;
 
     /**
      * The persisted map of prepared transactions.
@@ -129,9 +129,9 @@ public class TransactionStore {
      * @param transactionId of the corresponding transaction
      * @return undo log name
      */
-    public static String getUndoLogName(int transactionId) {
-        return UNDO_LOG_NAME_PREFIX + UNDO_LOG_OPEN +
-                (transactionId > 0 ? String.valueOf(transactionId) : "");
+    private static String getUndoLogName(int transactionId) {
+        return transactionId > 0 ? UNDO_LOG_NAME_PREFIX + UNDO_LOG_OPEN + transactionId
+                : UNDO_LOG_NAME_PREFIX + UNDO_LOG_OPEN;
     }
 
     /**
@@ -498,11 +498,9 @@ public class TransactionStore {
                     if (map != null) { // might be null if map was removed later
                         Object key = op.key;
                         commitDecisionMaker.setUndoKey(undoKey);
-                        // although second parameter (value) is not really
-                        // used by CommitDecisionMaker, MVRTreeMap has weird
-                        // traversal logic based on it, and any non-null
-                        // value will do, to signify update, not removal
-                        map.operate(key, VersionedValue.DUMMY, commitDecisionMaker);
+                        // second parameter (value) is not really
+                        // used by CommitDecisionMaker
+                        map.operate(key, null, commitDecisionMaker);
                     }
                 }
                 undoLog.clear();
@@ -755,11 +753,6 @@ public class TransactionStore {
                 return result;
             }
 
-            @Override
-            public void remove() {
-                throw DataUtils.newUnsupportedOperationException("remove");
-            }
-
         };
     }
 
@@ -811,13 +804,7 @@ public class TransactionStore {
                         VersionedValue existingValue, VersionedValue restoredValue);
     }
 
-    static final RollbackListener ROLLBACK_LISTENER_NONE = new RollbackListener() {
-        @Override
-        public void onRollback(MVMap<Object, VersionedValue> map, Object key,
-                                VersionedValue existingValue, VersionedValue restoredValue) {
-            // do nothing
-        }
-    };
+    private static final RollbackListener ROLLBACK_LISTENER_NONE = (map, key, existingValue, restoredValue) -> {};
 
     private static final class TxMapBuilder<K,V> extends MVMap.Builder<K,V> {
 

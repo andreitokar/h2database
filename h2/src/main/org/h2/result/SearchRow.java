@@ -8,14 +8,17 @@ package org.h2.result;
 import org.h2.value.Value;
 
 /**
- * The interface for rows stored in a table, and for partial rows stored in the
+ * The base class for rows stored in a table, and for partial rows stored in the
  * index.
  */
-public interface SearchRow {
+public abstract class SearchRow {
+
     /**
      * Index of a virtual "_ROWID_" column within a row or a table
      */
-    int ROWID_INDEX = -1;
+    public static final int ROWID_INDEX = -1;
+
+    public static final int MEMORY_CALCULATE = -1;
 
     long MATCH_ALL_ROW_KEY = Long.MIN_VALUE + 1;
 
@@ -29,14 +32,14 @@ public interface SearchRow {
      *
      * @return the column count
      */
-    int getColumnCount();
+    public abstract int getColumnCount();
 
     /**
      * Determine if specified column contains NULL
      * @param indx column index
      * @return true if NULL
      */
-    boolean isNull(int indx);
+    public abstract boolean isNull(int indx);
 
     /**
      * Get the value for the column
@@ -44,7 +47,7 @@ public interface SearchRow {
      * @param index the column number (starting with 0)
      * @return the value
      */
-    Value getValue(int index);
+    public abstract Value getValue(int index);
 
     /**
      * Set the value for given column
@@ -52,39 +55,32 @@ public interface SearchRow {
      * @param index the column number (starting with 0)
      * @param v the new value
      */
-    void setValue(int index, Value v);
-
-    /**
-     * Set the position to match another row.
-     *
-     * @param old the other row.
-     */
-    void setKey(SearchRow old);
+    public abstract void setValue(int index, Value v);
 
     /**
      * Set the unique key of the row.
      *
      * @param key the key
      */
-    void setKey(long key);
+    public abstract void setKey(long key);
 
     /**
      * Get the unique key of the row.
      *
      * @return the key
      */
-    long getKey();
+    public abstract long getKey();
 
     /**
      * Get the estimated memory used for this row, in bytes.
      *
      * @return the memory
      */
-    int getMemory();
+    public abstract int getMemory();
 
     /**
      * Copy all relevant values from the source to this row.
      * @param source of column values
      */
-    void copyFrom(SearchRow source);
+    public abstract void copyFrom(SearchRow source);
 }

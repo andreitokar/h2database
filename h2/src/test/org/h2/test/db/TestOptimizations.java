@@ -20,7 +20,6 @@ import org.h2.api.ErrorCode;
 import org.h2.test.TestBase;
 import org.h2.test.TestDb;
 import org.h2.tools.SimpleResultSet;
-import org.h2.util.StringUtils;
 import org.h2.util.Task;
 
 /**
@@ -115,7 +114,7 @@ public class TestOptimizations extends TestDb {
     private void testExplainRoundTrip() throws Exception {
         Connection conn = getConnection("optimizations");
         assertExplainRoundTrip(conn,
-                "SELECT \"X\" FROM DUAL WHERE \"X\" > ANY(SELECT \"X\" FROM DUAL)");
+                "SELECT \"X\" FROM SYSTEM_RANGE(1, 1) WHERE \"X\" > ANY(SELECT \"X\" FROM SYSTEM_RANGE(1, 1))");
         conn.close();
     }
 
@@ -128,7 +127,6 @@ public class TestOptimizations extends TestDb {
         plan = plan.replaceAll("\\s+", " ");
         plan = plan.replaceAll("/\\*[^\\*]*\\*/", "");
         plan = plan.replaceAll("\\s+", " ");
-        plan = StringUtils.replaceAll(plan, "SYSTEM_RANGE(1, 1)", "DUAL");
         plan = plan.replaceAll("\\( ", "\\(");
         plan = plan.replaceAll(" \\)", "\\)");
         assertEquals(sql, plan);
@@ -535,12 +533,12 @@ public class TestOptimizations extends TestDb {
         assertFalse(rs.next());
 
         PreparedStatement prep;
-        prep = conn.prepareStatement("SELECT * FROM DUAL A " +
-                "WHERE A.X IN (SELECT B.X FROM DUAL B WHERE B.X LIKE ?)");
+        prep = conn.prepareStatement("SELECT * FROM SYSTEM_RANGE(1, 1) A " +
+                "WHERE A.X IN (SELECT B.X FROM SYSTEM_RANGE(1, 1) B WHERE B.X LIKE ?)");
         prep.setString(1, "1");
         prep.execute();
-        prep = conn.prepareStatement("SELECT * FROM DUAL A " +
-                "WHERE A.X IN (SELECT B.X FROM DUAL B WHERE B.X IN (?, ?))");
+        prep = conn.prepareStatement("SELECT * FROM SYSTEM_RANGE(1, 1) A " +
+                "WHERE A.X IN (SELECT B.X FROM SYSTEM_RANGE(1, 1) B WHERE B.X IN (?, ?))");
         prep.setInt(1, 1);
         prep.setInt(2, 1);
         prep.executeQuery();
@@ -958,9 +956,9 @@ public class TestOptimizations extends TestDb {
         assertFalse(stat.executeQuery("select * from dual " +
                 "where null in(null, 1)").next());
 
-        assertFalse(stat.executeQuery("select * from dual " +
+        assertFalse(stat.executeQuery("select * from system_range(1, 1) " +
                 "where 1+x in(3, 4)").next());
-        assertFalse(stat.executeQuery("select * from dual d1, dual d2 " +
+        assertFalse(stat.executeQuery("select * from system_range(1, 1) d1, dual d2 " +
                 "where d1.x in(3, 4)").next());
 
         stat.execute("create table test(id int primary key, name varchar)");
@@ -1186,11 +1184,11 @@ public class TestOptimizations extends TestDb {
         Connection conn = getConnection("optimizations");
         Statement stat = conn.createStatement();
         stat.execute("CREATE TABLE IF NOT EXISTS TABLE_A (" +
-                "id int(10) NOT NULL AUTO_INCREMENT, " +
+                "id int NOT NULL AUTO_INCREMENT, " +
                 "name VARCHAR(30) NOT NULL," +
                 "occupation VARCHAR(20)," +
-                "age int(10)," +
-                "salary int(10)," +
+                "age int," +
+                "salary int," +
                 "PRIMARY KEY(id))");
         stat.execute("INSERT INTO TABLE_A (name,occupation,age,salary) VALUES" +
                 "('mark', 'doctor',25,5000)," +

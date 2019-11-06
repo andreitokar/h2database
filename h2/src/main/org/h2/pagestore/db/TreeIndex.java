@@ -294,16 +294,7 @@ public class TreeIndex extends BaseIndex {
     }
 
     @Override
-    public Cursor find(TableFilter filter, SearchRow first, SearchRow last) {
-        return find(first, last);
-    }
-
-    @Override
     public Cursor find(Session session, SearchRow first, SearchRow last) {
-        return find(first, last);
-    }
-
-    private Cursor find(SearchRow first, SearchRow last) {
         if (first == null) {
             TreeNode x = root, n;
             while (x != null) {
@@ -335,11 +326,6 @@ public class TreeIndex extends BaseIndex {
     public void truncate(Session session) {
         root = null;
         rowCount = 0;
-    }
-
-    @Override
-    public void checkRename() {
-        // nothing to do
     }
 
     @Override

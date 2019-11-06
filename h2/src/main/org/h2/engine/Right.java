@@ -102,8 +102,7 @@ public class Right extends DbObjectBase {
             comma = appendRight(buff, grantedRight, SELECT, "SELECT", comma);
             comma = appendRight(buff, grantedRight, DELETE, "DELETE", comma);
             comma = appendRight(buff, grantedRight, INSERT, "INSERT", comma);
-            comma = appendRight(buff, grantedRight, ALTER_ANY_SCHEMA,
-                    "ALTER ANY SCHEMA", comma);
+            comma = appendRight(buff, grantedRight, ALTER_ANY_SCHEMA, "ALTER ANY SCHEMA", comma);
             appendRight(buff, grantedRight, UPDATE, "UPDATE", comma);
         }
         return buff.toString();
@@ -119,11 +118,6 @@ public class Right extends DbObjectBase {
 
     public DbObject getGrantee() {
         return grantee;
-    }
-
-    @Override
-    public String getDropSQL() {
-        return null;
     }
 
     @Override
