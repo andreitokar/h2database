@@ -50,6 +50,8 @@ public final class RootReference<K,V> {
      */
     private final byte appendCounter;
 
+    final KVMapping<K,V>[] buffer;
+
 
     // This one is used to set root initially and for r/o snapshots
     RootReference(Page<K,V> root, long version) {
@@ -61,6 +63,7 @@ public final class RootReference<K,V> {
         this.holdCount = 0;
         this.ownerId = 0;
         this.appendCounter = 0;
+        this.buffer = null;
     }
 
     private RootReference(RootReference<K,V> r, Page<K,V> root, long updateAttemptCounter) {
@@ -71,7 +74,20 @@ public final class RootReference<K,V> {
         this.updateAttemptCounter = r.updateAttemptCounter + updateAttemptCounter;
         this.holdCount = 0;
         this.ownerId = 0;
+        this.appendCounter = 0;
+        this.buffer = null;
+    }
+
+    private RootReference(RootReference<K,V> r, KVMapping<K,V>[] buffer, long updateAttemptCounter) {
+        this.root = r.root;
+        this.version = r.version;
+        this.previous = r.previous;
+        this.updateCounter = r.updateCounter + 1;
+        this.updateAttemptCounter = r.updateAttemptCounter + updateAttemptCounter;
+        this.holdCount = 0;
+        this.ownerId = 0;
         this.appendCounter = r.appendCounter;
+        this.buffer = buffer;
     }
 
     // This one is used for locking
@@ -86,20 +102,21 @@ public final class RootReference<K,V> {
         this.holdCount = (byte)(r.holdCount + 1);
         this.ownerId = Thread.currentThread().getId();
         this.appendCounter = r.appendCounter;
+        this.buffer = r.buffer;
     }
 
-    // This one is used for unlocking
-    private RootReference(RootReference<K,V> r, Page<K,V> root, boolean keepLocked, int appendCounter) {
+    // This one is used for simultaneous page update and optional unlocking
+    private RootReference(RootReference<K,V> r, Page<K,V> root, boolean keepLocked,
+                          int appendCounter, KVMapping<K,V>[] buffer) {
         this.root = root;
         this.version = r.version;
         this.previous = r.previous;
         this.updateCounter = r.updateCounter;
         this.updateAttemptCounter = r.updateAttemptCounter;
-        assert r.holdCount > 0 && r.ownerId == Thread.currentThread().getId() //
-                : Thread.currentThread().getId() + " " + r;
-        this.holdCount = (byte)(r.holdCount - (keepLocked ? 0 : 1));
+        this.holdCount = (byte)(r.holdCount == 0 ? (keepLocked ? 1 : 0) : r.holdCount - (keepLocked ? 0 : 1));
         this.ownerId = this.holdCount == 0 ? 0 : Thread.currentThread().getId();
         this.appendCounter = (byte) appendCounter;
+        this.buffer = buffer;
     }
 
     // This one is used for version change
@@ -118,6 +135,7 @@ public final class RootReference<K,V> {
         this.ownerId = this.holdCount == 0 ? 0 : r.ownerId;
         assert r.appendCounter == 0;
         this.appendCounter = 0;
+        this.buffer = r.buffer;
     }
 
     /**
@@ -129,6 +147,10 @@ public final class RootReference<K,V> {
      */
     RootReference<K,V> updateRootPage(Page<K,V> newRootPage, long attemptCounter) {
         return isFree() ? tryUpdate(new RootReference<>(this, newRootPage, attemptCounter)) : null;
+    }
+
+    RootReference<K,V> updateBuffer(KVMapping<K,V>[] buffer, long attemptCounter) {
+        return isFree() ? tryUpdate(new RootReference<>(this, buffer, attemptCounter)) : null;
     }
 
     /**
@@ -160,8 +182,8 @@ public final class RootReference<K,V> {
      * @param appendCounter number of items in append buffer
      * @return the new root reference, or null if not successful
      */
-    RootReference<K,V> updatePageAndLockedStatus(Page<K,V> page, boolean keepLocked, int appendCounter) {
-        return canUpdate() ? tryUpdate(new RootReference<>(this, page, keepLocked, appendCounter)) : null;
+    RootReference<K,V> updatePageAndLockedStatus(Page<K,V> page, boolean keepLocked, int appendCounter, KVMapping<K,V>[] buffer) {
+        return canUpdate() ? tryUpdate(new RootReference<>(this, page, keepLocked, appendCounter, buffer)) : null;
     }
 
     /**
@@ -209,7 +231,9 @@ public final class RootReference<K,V> {
 
     long getVersion() {
         RootReference<K,V> prev = previous;
-        return prev == null || prev.root != root ||
+        return prev == null ||
+                prev.root != root ||
+                prev.buffer != buffer ||
                 prev.appendCounter != appendCounter ?
                     version : prev.getVersion();
     }
@@ -222,7 +246,9 @@ public final class RootReference<K,V> {
      * @return true if this root has unsaved changes
      */
     boolean hasChangesSince(long version, boolean persistent) {
-        return persistent && (root.isSaved() ? getAppendCounter() > 0 : getTotalCount() > 0)
+        return persistent && (root.isSaved() ?
+                (getAppendCounter() > 0 || buffer != null && buffer.length > 0) :
+                getTotalCount() > 0)
                 || getVersion() > version;
     }
 
@@ -240,7 +266,17 @@ public final class RootReference<K,V> {
     }
 
     public long getTotalCount() {
-        return root.getTotalCount() + getAppendCounter();
+        long result = root.getTotalCount() + getAppendCounter();
+        if (buffer != null) {
+            for (KVMapping<K,V> kvMapping : buffer) {
+                if (kvMapping.index < 0) {
+                    ++result;
+                } else if (kvMapping.value == null) {
+                    --result;
+                }
+            }
+        }
+        return result;
     }
 
     @Override
@@ -251,6 +287,7 @@ public final class RootReference<K,V> {
                 ", holdCnt=" + holdCount +
                 ", keys=" + root.getTotalCount() +
                 ", append=" + getAppendCounter() +
+                ", buf=" + (buffer == null ? -1 : buffer.length) +
                 ")";
     }
 }

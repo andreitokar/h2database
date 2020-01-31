@@ -14,15 +14,15 @@ import java.util.NoSuchElementException;
  * @param <K> the key type
  * @param <V> the value type
  */
-public final class Cursor<K,V> implements Iterator<K> {
-    private final boolean reverse;
-    private final K to;
-    private CursorPos<K,V> cursorPos;
-    private CursorPos<K,V> keeper;
-    private K current;
-    private K last;
-    private V lastValue;
-    private Page<K,V> lastPage;
+public class Cursor<K,V> implements Iterator<K> {
+    protected final boolean reverse;
+    protected final K to;
+    protected CursorPos<K,V> cursorPos;
+    protected CursorPos<K,V> keeper;
+    protected K current;
+    protected K last;
+    protected V lastValue;
+    protected Page<K,V> lastPage;
 
 
     public Cursor(RootReference<K,V> rootReference, K from, K to) {
