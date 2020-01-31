@@ -440,8 +440,10 @@ public abstract class Page<K,V> implements Cloneable {
     final void expandKeys(int extraKeyCount, K[] extraKeys) {
         int keyCount = getKeyCount();
         K[] newKeys = createKeyStorage(keyCount + extraKeyCount);
-        System.arraycopy(keys, 0, newKeys, 0, keyCount);
-        System.arraycopy(extraKeys, 0, newKeys, keyCount, extraKeyCount);
+        if (extraKeys != null) {
+            System.arraycopy(keys, 0, newKeys, 0, keyCount);
+            System.arraycopy(extraKeys, 0, newKeys, keyCount, extraKeyCount);
+        }
         keys = newKeys;
     }
 
@@ -462,11 +464,11 @@ public abstract class Page<K,V> implements Cloneable {
 
     /**
      * Replace the child page.
-     *
      * @param index the index
      * @param c the new child page
+     * @param cloneStorage true if storage need to be cloned
      */
-    public abstract void setChild(int index, Page<K,V> c);
+    public abstract void setChild(int index, Page<K,V> c, boolean cloneStorage);
 
     /**
      * Replace the key at an index in this page.
@@ -1183,12 +1185,14 @@ public abstract class Page<K,V> implements Cloneable {
         }
 
         @Override
-        public void setChild(int index, Page<K,V> c) {
+        public void setChild(int index, Page<K,V> c, boolean cloneStorage) {
             assert c != null;
             PageReference<K,V> child = children[index];
-            if (c != child.getPage() || c.getPos() != child.getPos()) {
+            if (c != child.getPage() || c.getPos() != child.getPos() || !cloneStorage) {
                 totalCount += c.getTotalCount() - child.count;
-                children = children.clone();
+                if (cloneStorage) {
+                    children = children.clone();
+                }
                 children[index] = new PageReference<>(c);
             }
         }
@@ -1484,8 +1488,10 @@ public abstract class Page<K,V> implements Cloneable {
             expandKeys(extraKeyCount, extraKeys);
             if(values != null) {
                 V[] newValues = createValueStorage(keyCount + extraKeyCount);
-                System.arraycopy(values, 0, newValues, 0, keyCount);
-                System.arraycopy(extraValues, 0, newValues, keyCount, extraKeyCount);
+                if (extraValues != null) {
+                    System.arraycopy(values, 0, newValues, 0, keyCount);
+                    System.arraycopy(extraValues, 0, newValues, keyCount, extraKeyCount);
+                }
                 values = newValues;
             }
             if(isPersistent()) {
@@ -1504,7 +1510,7 @@ public abstract class Page<K,V> implements Cloneable {
         }
 
         @Override
-        public void setChild(int index, Page<K,V> c) {
+        public void setChild(int index, Page<K,V> c, boolean cloneStorage) {
             throw new UnsupportedOperationException();
         }
 

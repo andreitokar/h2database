@@ -72,6 +72,14 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
      */
     static final long INITIAL_VERSION = -1;
 
+    @SuppressWarnings("rawtypes")
+    private static final KVMapping[] DUMMY_BUFFER = new KVMapping[0];
+
+    @SuppressWarnings("unchecked")
+    private static <X,Y> KVMapping<X,Y>[] dummyBuffer() { return DUMMY_BUFFER; }
+
+    @SuppressWarnings("unchecked")
+    private static <X,Y> KVMapping<X,Y>[] createBuffer(int size) { return new KVMapping[size]; }
 
     protected MVMap(Map<String, Object> config, DataType<K> keyType, DataType<V> valueType) {
         this((MVStore) config.get("store"), keyType, valueType,
@@ -379,7 +387,20 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
     }
 
     private K getMinMax(RootReference<K,V> rootRef, K key, boolean min, boolean excluding) {
-        return getMinMax(rootRef.root, key, min, excluding);
+        if (min && key == null) {
+            return null;
+        }
+        if (rootRef.buffer == null && !rootRef.needFlush()) {
+            return getMinMax(rootRef.root, key, min, excluding);
+        }
+        Cursor<K, V> cursor = cursor(rootRef, key, null, min);
+        while (cursor.hasNext()) {
+            K next = cursor.next();
+            if (!excluding || compare(key, next) != 0) {
+                return next;
+            }
+        }
+        return null;
     }
 
     private K getMinMax(Page<K,V> p, K key, boolean min, boolean excluding) {
@@ -1184,7 +1205,7 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
         if (parent == null) {
             setInitialRoot(target, INITIAL_VERSION);
         } else {
-            parent.setChild(index, target);
+            parent.setChild(index, target, true);
         }
         if (!source.isLeaf()) {
             for (int i = 0; i < getChildPageCount(target); i++) {
@@ -1284,23 +1305,12 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
                             if (p.getKeyCount() == 0) {
                                 p = page;
                             } else {
-                                K[] keys = p.createKeyStorage(1);
-                                keys[0] = key;
-                                Page.PageReference<K,V>[] children = Page.createRefStorage(2);
-                                children[0] = new Page.PageReference<>(p);
-                                children[1] = new Page.PageReference<>(page);
-                                unsavedMemoryHolder.value += p.getMemory();
-                                p = Page.createNode(this, keys, children, p.getTotalCount() + page.getTotalCount(), 0);
+                                p = createPostSplitLevel(key, p, page, p.getTotalCount() + page.getTotalCount());
                             }
                             break;
                         }
-                        Page<K,V> c = p;
-                        p = pos.page;
-                        index = pos.index;
+                        p = insertPageAfter(pos, p, key, page);
                         pos = pos.parent;
-                        p = p.copy();
-                        p.setChild(index, page);
-                        p.insertNode(index, key, c);
                         keyCount = p.getKeyCount();
                         int at = keyCount - (p.isLeaf() ? 1 : 2);
                         if (keyCount <= keysPerPage &&
@@ -1312,9 +1322,9 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
                         unsavedMemoryHolder.value += p.getMemory() + page.getMemory();
                     }
                 }
-                p = replacePage(pos, p, unsavedMemoryHolder);
+                p = replacePage(pos, p, unsavedMemoryHolder, null);
                 rootReference = rootReference.updatePageAndLockedStatus(p, preLocked || isPersistent(),
-                        remainingBuffer);
+                        remainingBuffer, null);
                 if (rootReference != null) {
                     // should always be the case, except for spurious failure?
                     locked = preLocked || isPersistent();
@@ -1334,8 +1344,110 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
         return rootReference;
     }
 
-    private static <K,V> Page<K,V> replacePage(CursorPos<K,V> path, Page<K,V> replacement,
-            IntValueHolder unsavedMemoryHolder) {
+    private Page<K,V> removePage(CursorPos<K,V> parentPath, IntValueHolder unsavedMemoryHolder,
+                                 Map<Page<K,V>,Page<K,V>> pageMap) {
+        Page<K,V> page;
+        int newKeyCount;
+        int index;
+        do {
+            page = parentPath.page;
+            index = parentPath.index;
+            parentPath = parentPath.parent;
+            newKeyCount = page.getKeyCount();
+            // condition below should always be false, but older
+            // versions (up to 1.4.197) may create
+            // single-childed (with no keys) internal nodes,
+            // which we skip here
+        } while (newKeyCount == 0 && parentPath != null);
+
+        Page<K,V> updatedPage;
+        if (pageMap == null || (updatedPage = pageMap.get(page)) == null) {
+            updatedPage = page.copy();
+            registerReplacementPage(pageMap, page, updatedPage);
+        }
+        if (newKeyCount > 1) {
+            updatedPage.remove(index);
+            page = updatedPage;
+        } else if (newKeyCount == 1) {
+            assert index <= 1;
+            page = updatedPage.getChildPage(1 - index);
+        } else {
+            // if root happens to be such single-childed
+            // (with no keys) internal node, then just
+            // replace it with empty leaf
+            return Page.createEmptyLeaf(this);
+        }
+        return replacePage(parentPath, page, unsavedMemoryHolder, pageMap);
+    }
+
+    private static <K,V> void registerReplacementPage(Map<Page<K,V>,Page<K,V>> pageMap, Page<K,V> page, Page<K,V> replacementPage) {
+        if (pageMap != null) {
+//            assert validatePageRemoval(pageMap, page);
+            pageMap.put(page, replacementPage);
+            if(page != replacementPage) {
+                pageMap.put(replacementPage, replacementPage);
+            }
+        }
+    }
+
+//    private static boolean validatePageRemoval(Map<Page, Page> pageMap, Page page) {
+//        long pagePos = page.getPos();
+//        if (DataUtils.isPageSaved(pagePos)) {
+//            for (Page p : pageMap.keySet()) {
+//                assert p == page || p.getPos() != pagePos : page + "\n--------\n" + p;
+//            }
+//        }
+//        return true;
+//    }
+
+    private Page<K,V> insertPage(CursorPos<K,V> path, Page<K,V> page, IntValueHolder unsavedMemoryHolder,
+                                    Map<Page<K,V>,Page<K,V>> pageMap) {
+        int unsavedMemory = 0;
+        while (shouldBeSplitted(page)) {
+            int keyCount = page.getKeyCount();
+            int at = keyCount >> 1;
+            long totalCount = page.getTotalCount();
+            K splitKey = page.getKey(at);
+            Page<K,V> splitted = page;
+            Page<K,V> splitoff = splitted.split(at);
+//            assert !shouldBeSplitted(splitted);
+//            assert !shouldBeSplitted(splitoff);
+            unsavedMemory += page.getMemory() + splitoff.getMemory();
+            if (path == null) {
+                page = createPostSplitLevel(splitKey, splitted, splitoff, totalCount);
+                break;
+            }
+
+            page = path.page;
+            int index = path.index;
+            path = path.parent;
+            Page<K,V> replacement;
+            boolean isOriginal = false;
+            if (pageMap == null || (replacement = pageMap.get(page)) == null) {
+                isOriginal = true;
+                replacement = page.copy();
+                registerReplacementPage(pageMap, page, replacement);
+                unsavedMemory += replacement.getMemory();
+            }
+            replacement.setChild(index, splitoff, isOriginal);
+            replacement.insertNode(index, splitKey, splitted);
+            page = replacement;
+        }
+        unsavedMemoryHolder.value += unsavedMemory;
+        return replacePage(path, page, unsavedMemoryHolder, pageMap);
+    }
+
+    private Page<K, V> createPostSplitLevel(K splitKey, Page<K, V> splitted, Page<K, V> splitoff, long totalCount) {
+        K[] keys = getKeyType().createStorage(1);
+        keys[0] = splitKey;
+        Page.PageReference<K,V>[] children = Page.createRefStorage(2);
+        children[0] = new Page.PageReference<>(splitted);
+        children[1] = new Page.PageReference<>(splitoff);
+        return Page.createNode(this, keys, children, totalCount, 0);
+    }
+
+    private static <K,V> Page<K,V> replacePage(CursorPos<K,V> path, Page<K,V> replacement, IntValueHolder unsavedMemoryHolder,
+                                    Map<Page<K,V>,Page<K,V>> pageMap) {
         int unsavedMemory = replacement.isSaved() ? 0 : replacement.getMemory();
         while (path != null) {
             Page<K,V> parent = path.page;
@@ -1343,9 +1455,14 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
             // may create single-childed (with no keys) internal nodes, which we skip here
             if (parent.getKeyCount() > 0) {
                 Page<K,V> child = replacement;
-                replacement = parent.copy();
-                replacement.setChild(path.index, child);
-                unsavedMemory += replacement.getMemory();
+                if (pageMap == null || (replacement = pageMap.get(parent)) == null) {
+                    replacement = parent.copy();
+                    replacement.setChild(path.index, child, true);
+                    registerReplacementPage(pageMap, parent, replacement);
+                    unsavedMemory += replacement.getMemory();
+                } else {
+                    replacement.setChild(path.index, child, false);
+                }
             }
             path = path.parent;
         }
@@ -1823,21 +1940,11 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
                                 Page<K,V> split = p.split(at);
                                 unsavedMemoryHolder.value += p.getMemory() + split.getMemory();
                                 if (pos == null) {
-                                    K[] keys = p.createKeyStorage(1);
-                                    keys[0] = k;
-                                    Page.PageReference<K,V>[] children = Page.createRefStorage(2);
-                                    children[0] = new Page.PageReference<>(p);
-                                    children[1] = new Page.PageReference<>(split);
-                                    p = Page.createNode(this, keys, children, totalCount, 0);
+                                    p = createPostSplitLevel(k, p, split, totalCount);
                                     break;
                                 }
-                                Page<K,V> c = p;
-                                p = pos.page;
-                                index = pos.index;
+                                p = insertPageAfter(pos, p, k, split);
                                 pos = pos.parent;
-                                p = p.copy();
-                                p.setChild(index, split);
-                                p.insertNode(index, k, c);
                             }
                         } else {
                             p.setValue(index, value);
@@ -1845,7 +1952,7 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
                         break;
                     }
                 }
-                rootPage = replacePage(pos, p, unsavedMemoryHolder);
+                rootPage = replacePage(pos, p, unsavedMemoryHolder, null);
                 if (!locked) {
                     rootReference = rootReference.updateRootPage(rootPage, attempt);
                     if (rootReference == null) {
@@ -1861,6 +1968,24 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
                 }
             }
         }
+    }
+
+    private Page<K, V> insertPageAfter(CursorPos<K, V> path, Page<K, V> anchorPage, K key, Page<K, V> insertPage) {
+        Page<K, V> parent = path.page;
+        parent = parent.copy();
+        int index = path.index;
+        parent.setChild(index, insertPage, true);
+        parent.insertNode(index, key, anchorPage);
+        return parent;
+    }
+
+    private boolean shouldBeSplitted(Page<K,V> page) {
+        return shouldBeSplitted(page.getKeyCount(), page.getMemory(), page.isLeaf());
+    }
+
+    private boolean shouldBeSplitted(int keyCount, int memory, boolean isLeaf) {
+        return (keyCount > store.getKeysPerPage()
+                || memory > store.getMaxPageSize() && keyCount > (isLeaf ? 1 : 2));
     }
 
     private RootReference<K,V> lockRoot(RootReference<K,V> rootReference, int attempt) {
@@ -1926,7 +2051,7 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
      * @return the new root reference (never null)
      */
     private RootReference<K,V> unlockRoot() {
-        return unlockRoot(null, -1);
+        return unlockRoot(null, -1, dummyBuffer());
     }
 
     /**
@@ -1936,14 +2061,18 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
      * @return the new root reference (never null)
      */
     protected RootReference<K,V> unlockRoot(Page<K,V> newRootPage) {
-        return unlockRoot(newRootPage, -1);
+        return unlockRoot(newRootPage, -1, dummyBuffer());
+    }
+
+    private void unlockRoot(KVMapping<K,V>[] buffer) {
+        unlockRoot(null, -1, buffer);
     }
 
     private void unlockRoot(int appendCounter) {
-        unlockRoot(null, appendCounter);
+        unlockRoot(null, appendCounter, dummyBuffer());
     }
 
-    private RootReference<K,V> unlockRoot(Page<K,V> newRootPage, int appendCounter) {
+    private RootReference<K,V> unlockRoot(Page<K,V> newRootPage, int appendCounter, KVMapping<K,V>[] buffer) {
         RootReference<K,V> updatedRootReference;
         do {
             RootReference<K,V> rootReference = getRoot();
@@ -1951,8 +2080,8 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
             updatedRootReference = rootReference.updatePageAndLockedStatus(
                                         newRootPage == null ? rootReference.root : newRootPage,
                                         false,
-                                        appendCounter == -1 ? rootReference.getAppendCounter() : appendCounter
-            );
+                                        appendCounter == -1 ? rootReference.getAppendCounter() : appendCounter,
+                                        buffer == DUMMY_BUFFER ? rootReference.buffer : buffer);
         } while(updatedRootReference == null);
 
         notifyWaiters();
