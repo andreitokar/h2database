@@ -177,7 +177,7 @@ public final class MVStore implements AutoCloseable {
      * The metadata map. Holds name -> id and id -> name and id -> metadata
      * mapping for all maps. This is relatively slow changing part of metadata
      */
-    private final MVMap<String, String> meta;
+    final MVMap<String, String> meta;
 
     private final ConcurrentHashMap<Integer, MVMap<?, ?>> maps = new ConcurrentHashMap<>();
 

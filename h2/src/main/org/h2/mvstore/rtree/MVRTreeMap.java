@@ -250,7 +250,7 @@ public final class MVRTreeMap<V> extends MVMap<Spatial, V> {
             // split on the way down
             Page<Spatial,V> split = split(c);
             p.setKey(index, getBounds(c));
-            p.setChild(index, c);
+            p.setChild(index, c, true);
             p.insertNode(index, getBounds(split), split);
             // now we are not sure where to add
             result = operate(p, key, value, decisionMaker, removedPages);
@@ -263,7 +263,7 @@ public final class MVRTreeMap<V> extends MVMap<Spatial, V> {
                 p.setKey(index, bounds);
             }
             if (c.getTotalCount() > 0) {
-                p.setChild(index, c);
+                p.setChild(index, c, true);
             } else {
                 p.remove(index);
             }
