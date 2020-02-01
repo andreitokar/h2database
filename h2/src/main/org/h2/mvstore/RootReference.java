@@ -247,7 +247,7 @@ public final class RootReference<K,V> {
      */
     boolean hasChangesSince(long version, boolean persistent) {
         return persistent && (root.isSaved() ?
-                (getAppendCounter() > 0 || buffer != null && buffer.length > 0) :
+                (needFlush() || buffer != null && buffer.length > 0) :
                 getTotalCount() > 0)
                 || getVersion() > version;
     }
