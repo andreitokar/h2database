@@ -179,7 +179,7 @@ public class Cursor<K,V> implements Iterator<K> {
         return cursorPos;
     }
 
-    private static <K,V> int upperBound(Page<K,V> page) {
+    protected static <K,V> int upperBound(Page<K,V> page) {
         return page.isLeaf() ? page.getKeyCount() : page.map.getChildPageCount(page);
     }
 }
