@@ -175,7 +175,7 @@ public class TestScalability implements Database.DatabaseTest {
             // calls garbage collection
             TestBase.getMemoryUsed();
             Database db = dbs.get(i);
-            System.out.println("Testing the performance of " + db.getName()
+            System.out.println("Testing the scalability of " + db.getName()
                     + " (" + db.getThreadsCount() + " threads)");
             db.startServer();
             Connection conn = db.openNewConnection();
