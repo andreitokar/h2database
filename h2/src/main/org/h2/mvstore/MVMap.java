@@ -10,7 +10,9 @@ import static org.h2.engine.Constants.MEMORY_POINTER;
 import java.util.AbstractList;
 import java.util.AbstractMap;
 import java.util.AbstractSet;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -796,7 +798,7 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
      * @return the cursor
      */
     public final Cursor<K, V> cursor(K from, K to, boolean reverse) {
-        return cursor(flushAndGetRoot(), from, to, reverse);
+        return cursor(flushAppendBufferAndGetRoot(), from, to, reverse);
     }
 
     /**
@@ -809,12 +811,16 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
      * @return the cursor
      */
     public Cursor<K, V> cursor(RootReference<K,V> rootReference, K from, K to, boolean reverse) {
-        return new Cursor<>(rootReference, from, to, reverse);
+//        if (singleWriter || rootReference.buffer == null || this == store.getMetaMap()) {
+            return new Cursor<>(rootReference, from, to, reverse);
+//        } else {
+//            return new CursorBuffered<>(rootReference, from, to, reverse);
+//        }
     }
 
     @Override
     public final Set<Map.Entry<K, V>> entrySet() {
-        final RootReference<K,V> rootReference = flushAndGetRoot();
+        final RootReference<K,V> rootReference = flushAppendBufferAndGetRoot();
         return new AbstractSet<>() {
 
             @Override
@@ -852,7 +858,7 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
 
     @Override
     public Set<K> keySet() {
-        final RootReference<K,V> rootReference = flushAndGetRoot();
+        final RootReference<K,V> rootReference = flushAppendBufferAndGetRoot();
         return new AbstractSet<>() {
 
             @Override
@@ -919,6 +925,19 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
      * @return current root reference
      */
     public RootReference<K,V> flushAndGetRoot() {
+        return flushAppendBufferAndGetRoot();
+//        RootReference<K,V> rootReference = getRoot();
+//        if (!singleWriter) {
+//            if (rootReference.buffer != null) {
+//                return flushBuffer(rootReference, 1);
+//            }
+//        } else if (rootReference.getAppendCounter() > 0) {
+//            return flushAppendBuffer(rootReference, true);
+//        }
+//        return rootReference;
+    }
+
+    public RootReference<K,V> flushAppendBufferAndGetRoot() {
         RootReference<K,V> rootReference = getRoot();
         if (singleWriter && rootReference.getAppendCounter() > 0) {
             return flushAppendBuffer(rootReference, true);
@@ -955,7 +974,7 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
      * @return true if rollback was a success, false if there was not enough in-memory history
      */
     boolean rollbackRoot(long version) {
-        RootReference<K,V> rootReference = flushAndGetRoot();
+        RootReference<K,V> rootReference = flushAppendBufferAndGetRoot();
         RootReference<K,V> previous;
         while (rootReference.version >= version && (previous = rootReference.previous) != null) {
             if (root.compareAndSet(rootReference, previous)) {
@@ -1310,7 +1329,7 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
                     }
                     locked = true;
                 }
-
+                assert rootReference.buffer == null;
                 Page<K,V> rootPage = rootReference.root;
                 long version = rootReference.version;
                 CursorPos<K,V> pos = rootPage.getAppendCursorPos(null);
@@ -1397,6 +1416,247 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
                     break;
                 }
                 rootReference = getRoot();
+            }
+        } finally {
+            if (locked && !preLocked) {
+                rootReference = unlockRoot();
+            }
+        }
+        return rootReference;
+    }
+
+    private RootReference<K,V> flushBuffer(RootReference<K,V> rootReference, int threshold) {
+        boolean preLocked = rootReference.isLockedByCurrentThread();
+        boolean locked = preLocked;
+        IntValueHolder unsavedMemoryHolder = new IntValueHolder();
+        try {
+            int attempt = 0;
+            HashMap<Page<K,V>, Page<K,V>> pageMap = null;
+            KVMapping<K,V>[] buffer;
+            int bufferLength;
+mainLoop:
+            while ((buffer = rootReference.buffer) != null && (bufferLength = buffer.length) >= threshold) {
+                if (!locked && ++attempt > 2) {
+                    // instead of just calling lockRoot() we loop here and check if someone else
+                    // already flushed the buffer, then we don't need a lock
+                    rootReference = tryLock(rootReference, attempt);
+                    if (rootReference == null) {
+                        rootReference = getRoot();
+                        continue;
+                    }
+                    locked = true;
+                }
+                assert rootReference.getAppendCounter() == 0;
+                Page<K,V> rootPage = rootReference.root;
+                long version = rootReference.version;
+                if (pageMap == null) {
+                    pageMap = new HashMap<>();
+                } else {
+                    pageMap.clear();
+                }
+                int from = 0;
+                while (from < bufferLength) {
+                    KVMapping<K,V> kvMapping = buffer[from];
+                    K key = kvMapping.key;
+                    CursorPos<K,V> path = CursorPos.traverseDown(rootPage, key);
+
+                    RootReference<K,V> current;
+                    if (!locked && (current = getRoot()) != rootReference) {
+                        rootReference = current;
+                        continue mainLoop;
+                    }
+
+                    CursorPos<K,V> parentPath = path.parent;
+                    Page<K,V> leaf = path.page;
+                    int keyCount = leaf.getKeyCount();
+                    int totalKeyCount = keyCount;
+
+                    K ceilingKey = null;
+                    while ((path = path.parent) != null) {
+                        int ind = path.index;
+                        if (ind < path.page.getKeyCount()) {
+                            ceilingKey = path.page.getKey(ind);
+                            break;
+                        }
+                    }
+                    int to = bufferLength;
+                    if (ceilingKey != null) {
+                        to = binarySearch(buffer, ceilingKey, from);
+                        if (to < 0) {
+                            to = -to - 1;
+                        }
+                        assert to > from;
+                    }
+                    for (int i = from; i < to; i++) {
+                        kvMapping = buffer[i];
+//                        int ind = leaf.binarySearch(kvMapping.key);
+//                        assert ind == kvMapping.index : ind + " != " + kvMapping.index;
+                        if (kvMapping.index < 0) {
+                            ++totalKeyCount;
+                        } else if (kvMapping.value == null) {
+                            --totalKeyCount;
+                        }
+                    }
+
+                    assert totalKeyCount >= 0;
+                    if (totalKeyCount == 0 && parentPath != null) {
+                        pageMap.put(leaf, leaf);
+                        rootPage = removePage(parentPath, unsavedMemoryHolder, pageMap);
+                        from = to;
+                        break;
+                    } else {
+                        int keyCountLimit = store.getKeysPerPage();
+                        long maxPageSize = store.getMaxPageSize();
+                        if (isPersistent() && keyCount > 0 && maxPageSize < Long.MAX_VALUE) {
+                            int leafMemory = leaf.getMemory();
+                            assert leafMemory > 0;
+                            int estimate = (int) (((maxPageSize - 1) * keyCount + leafMemory) / leafMemory);
+                            assert estimate > 0;
+                            if (estimate > 0 && estimate < keyCountLimit) {
+                                keyCountLimit = estimate;
+                            }
+                        }
+                        int remainingKeyCount = totalKeyCount;
+                        List<Page<K,V>> pages = null;
+                        int newKeyCount = remainingKeyCount;
+                        if (newKeyCount > keyCountLimit) {
+                            pages = new ArrayList<>();
+                            int pageCount = (remainingKeyCount + keyCountLimit - 1) / keyCountLimit;
+                            newKeyCount = (remainingKeyCount + pageCount - 1) / pageCount;
+                        }
+                        remainingKeyCount -= newKeyCount;
+
+                        Page<K,V> updatedPage;
+
+                        int src = 0;
+                        K[] keyStorage = leaf.createKeyStorage(newKeyCount);
+                        V[] valueStorage = leaf.createValueStorage(newKeyCount);
+                        int dst = 0;
+                        kvMapping = buffer[from];
+                        int srcTo = kvMapping.index;
+                        boolean isInsertFromBuffer = srcTo < 0; // as oppose to replace
+                        if (isInsertFromBuffer) {
+                            srcTo = ~srcTo;
+                        }
+                        while (true) {
+                            if (dst == newKeyCount) {
+                                updatedPage = Page.createLeaf(this, keyStorage, valueStorage, 0);
+                                if (pages != null) {
+                                    pages.add(updatedPage);
+                                    if (remainingKeyCount == 0) {
+                                        break;
+                                    }
+                                    newKeyCount = remainingKeyCount;
+                                    if (newKeyCount > keyCountLimit) {
+                                        int pageCount = (remainingKeyCount + keyCountLimit - 1) / keyCountLimit;
+                                        newKeyCount = (remainingKeyCount + pageCount - 1) / pageCount;
+                                    }
+                                    remainingKeyCount -= newKeyCount;
+                                    keyStorage = leaf.createKeyStorage(newKeyCount);
+                                    valueStorage = leaf.createValueStorage(newKeyCount);
+                                    dst = 0;
+                                } else {
+                                    break;
+                                }
+                            } else if (src == srcTo) {
+                                V value = kvMapping.value;
+                                if (isInsertFromBuffer) {
+                                    keyStorage[dst] = kvMapping.key;
+                                    valueStorage[dst++] = value;
+                                } else {
+                                    assert compare(leaf.getKey(src), kvMapping.key) == 0 : leaf.getKey(src) + " != " + kvMapping.key;
+                                    if (value != null) {     // update (otherwise removal)
+                                        keyStorage[dst] = leaf.getKey(src);
+                                        valueStorage[dst++] = value;
+                                    }
+                                    src++;
+                                }
+                                if (++from < to) {
+                                    kvMapping = buffer[from];
+                                    srcTo = kvMapping.index;
+                                    isInsertFromBuffer = srcTo < 0;
+                                    if (isInsertFromBuffer) {
+                                        srcTo = ~srcTo;
+                                    }
+                                } else {
+                                    srcTo = Integer.MAX_VALUE;
+                                }
+                            } else {     // no change, just copy
+                                keyStorage[dst] = leaf.getKey(src);
+                                valueStorage[dst++] = leaf.getValue(src++);
+                            }
+                        }
+                        from = to;
+                        if (pages != null) {
+                            if (parentPath == null) {
+                                K[] keys = leaf.createKeyStorage(pages.size() - 1);
+                                Page.PageReference<K,V>[] children = Page.createRefStorage(pages.size());
+                                int index = -1;
+                                for (Page<K, V> childPage : pages) {
+                                    if (index >= 0) {
+                                        keys[index] = childPage.getKey(0);
+                                    }
+                                    children[++index] = new Page.PageReference<>(childPage);
+                                    unsavedMemoryHolder.value += childPage.getMemory();
+                                }
+                                rootPage = Page.createNode(this, keys, children, totalKeyCount, 0);
+                                registerReplacementPage(pageMap, leaf, rootPage);
+                                unsavedMemoryHolder.value += rootPage.getMemory();
+                            } else {
+                                Page<K, V> page = parentPath.page;
+                                int insertIndex = parentPath.index;
+                                parentPath = parentPath.parent;
+
+                                boolean isOriginal = false;
+                                if ((updatedPage = pageMap.get(page)) == null) {
+                                    isOriginal = true;
+                                    updatedPage = page.copy();
+                                    registerReplacementPage(pageMap, page, updatedPage);
+                                }
+                                Page<K, V> childPage = pages.get(pages.size() - 1);
+                                updatedPage.setChild(insertIndex, childPage, isOriginal);
+                                K splitKey = childPage.getKey(0);
+                                unsavedMemoryHolder.value += childPage.getMemory();
+                                for (int i = pages.size() - 2; i >= 0; i--) {
+                                    childPage = pages.get(i);
+                                    updatedPage.insertNode(insertIndex, splitKey, childPage);
+                                    splitKey = childPage.getKey(0);
+                                    unsavedMemoryHolder.value += childPage.getMemory();
+                                }
+                                registerReplacementPage(pageMap, leaf, updatedPage);
+                                rootPage = insertPage(parentPath, updatedPage, unsavedMemoryHolder, pageMap);
+                            }
+                            break;
+                        } else {
+                            registerReplacementPage(pageMap, leaf, updatedPage);
+                            rootPage = replacePage(parentPath, updatedPage, unsavedMemoryHolder, pageMap);
+                        }
+                    }
+                }
+
+                int remaining = bufferLength - from;
+                assert remaining >= 0;
+                if (remaining == 0) {
+                    buffer = null;
+                } else {
+                    KVMapping<K,V>[] newBuffer = createBuffer(remaining);
+                    System.arraycopy(buffer, from, newBuffer, 0, remaining);
+                    buffer = newBuffer;
+                }
+                rootReference = rootReference.updatePageAndLockedStatus(rootPage, preLocked, 0, buffer);
+                if (rootReference != null) {
+                    locked = preLocked;
+                    if (isPersistent()) {
+                        pageMap.forEach((page, replacement) -> {
+                            if (page != replacement) {
+                                unsavedMemoryHolder.value += page.removePage(version);
+                            }
+                        });
+                        store.registerUnsavedMemory(unsavedMemoryHolder.value);
+                    }
+                } else {
+                    rootReference = getRoot();
+                }
             }
         } finally {
             if (locked && !preLocked) {
@@ -1909,6 +2169,14 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
      * @return previous value, if mapping for that key existed, or null otherwise
      */
     public V operate(K key, V value, DecisionMaker<? super V> decisionMaker) {
+//        if (singleWriter || this == store.getMetaMap()/* || getRoot().getTotalCount() < 10_000*/) {
+            return operateAppendable(key, value, decisionMaker);
+//        } else {
+//            return operateBuffered(key, value, decisionMaker);
+//        }
+    }
+
+    private V operateAppendable(K key, V value, DecisionMaker<? super V> decisionMaker) {
         IntValueHolder unsavedMemoryHolder = new IntValueHolder();
         int attempt = 0;
         while(true) {
@@ -1923,6 +2191,7 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
                     locked = true;
                 }
             }
+            assert rootReference.buffer == null;
             Page<K,V> rootPage = rootReference.root;
             long version = rootReference.version;
             CursorPos<K,V> tip;
@@ -2043,6 +2312,134 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
         parent.setChild(index, insertPage, true);
         parent.insertNode(index, key, anchorPage);
         return parent;
+    }
+
+    /**
+     * Add, replace or remove a key-value pair.
+     *
+     * @param key the key (may not be null)
+     * @param value new value, it may be null when removal is intended
+     * @param decisionMaker command object to make choices during transaction.
+     * @return previous value, if mapping for that key existed, or null otherwise
+     */
+    private V operateBuffered(K key, V value, DecisionMaker<? super V> decisionMaker) {
+        int attempt = 0;
+        while(true) {
+            RootReference<K,V> rootReference = flushAppendBufferAndGetRoot();
+//            if (rootReference.getTotalCount() < 1000) {
+//                return operateAppendable(key,value,decisionMaker);
+//            }
+            boolean locked = rootReference.isLockedByCurrentThread();
+            if (!locked) {
+                if (attempt++ == 0) {
+                    beforeWrite();
+                }
+                if (attempt > 3 || rootReference.isLocked()) {
+                    rootReference = lockRoot(rootReference, attempt);
+                    locked = true;
+                }
+            }
+
+            KVMapping<K,V>[] buffer = rootReference.buffer;
+
+            if(buffer != null && buffer.length >= store.getKeysPerPage()) {
+                rootReference = flushBuffer(rootReference, store.getKeysPerPage());
+                buffer = rootReference.buffer;
+            }
+
+            V result;
+            KVMapping<K,V>[] newBuffer = buffer;
+            int bufferIndex;
+            try {
+                if (buffer == null) {
+                    buffer = dummyBuffer();
+                    bufferIndex = -1;
+                } else {
+                    bufferIndex = binarySearch(buffer, key, 0);
+                }
+                int index;
+                if (bufferIndex >= 0) {
+                    index = buffer[bufferIndex].index;
+                    result = buffer[bufferIndex].value;
+                } else {
+                    Page<K,V> rootPage = rootReference.root;
+                    CursorPos<K,V> path = CursorPos.traverseDown(rootPage, key);
+                    Page<K,V> p = path.page;
+                    index = path.index;
+                    result = index < 0 ? null : p.getValue(index);
+                }
+                Decision decision = decisionMaker.decide(result, value);
+                switch (decision) {
+                    case REPEAT:
+                        decisionMaker.reset();
+                        continue;
+                    case ABORT:
+                        if (!locked && rootReference != getRoot()) {
+                            decisionMaker.reset();
+                            continue;
+                        }
+                        return result;
+                    case REMOVE: {
+                        if (bufferIndex >= 0) {     // found in buffer
+                            if (buffer[bufferIndex].value == null) {
+                                // nothing to do, already deleted
+                                if(!locked && rootReference != getRoot()) {
+                                    decisionMaker.reset();
+                                    continue;
+                                }
+                                return null;
+                            }
+                            if (index >= 0) {
+                                newBuffer = buffer.clone();
+                                newBuffer[bufferIndex] = new KVMapping<>(key, null, index);
+                            } else if (buffer.length > 1) {
+                                newBuffer = createBuffer(buffer.length - 1);
+                                DataUtils.copyExcept(buffer, newBuffer, buffer.length, bufferIndex);
+                            } else {
+                                newBuffer = null;
+                            }
+                            break;
+                        } else if (index < 0) {
+                            // not found in the map either
+                            if(!locked && rootReference != getRoot()) {
+                                decisionMaker.reset();
+                                continue;
+                            }
+                            return null;
+                        } else {    // exists on the map
+                            newBuffer = createBuffer(buffer.length + 1);
+                            bufferIndex = ~bufferIndex;
+                            DataUtils.copyWithGap(buffer, newBuffer, buffer.length, bufferIndex);
+                            newBuffer[bufferIndex] = new KVMapping<>(key, null, index);
+                            break;
+                        }
+                    }
+                    case PUT: {
+                        value = decisionMaker.selectValue(result, value);
+                        if (bufferIndex >= 0) {     // exists in buffer already, replace value
+                            newBuffer = buffer.clone();
+                        } else {                    // insert new mapping into the buffer
+                            newBuffer = createBuffer(buffer.length + 1);
+                            bufferIndex = ~bufferIndex;
+                            DataUtils.copyWithGap(buffer, newBuffer, buffer.length, bufferIndex);
+                        }
+                        newBuffer[bufferIndex] = new KVMapping<>(key, value, index);
+                        break;
+                    }
+                }
+                if (locked) {
+                    buffer = newBuffer;
+                } else if (rootReference.updateBuffer(newBuffer, attempt) == null) {
+                    decisionMaker.reset();
+                    continue;
+                }
+            } finally {
+                if(locked) {
+                    unlockRoot(buffer);
+                }
+            }
+            return result;
+        }
     }
 
     private boolean shouldBeSplitted(Page<K,V> page) {
