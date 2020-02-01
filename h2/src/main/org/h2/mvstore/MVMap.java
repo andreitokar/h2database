@@ -436,7 +436,67 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
     @SuppressWarnings("unchecked")
     @Override
     public final V get(Object key) {
-        return get(getRootPage(), (K) key);
+        return getIt((K)key);
+    }
+
+    public final V getIt(K key) {
+        return get(getRoot(), key);
+    }
+
+    public final V get(RootReference<K,V> rootReference, K key) {
+        Page<K,V> rootPage = rootReference.root;
+        KVMapping<K,V>[] buffer = rootReference.buffer;
+        if (buffer != null) {
+            int index = binarySearch(buffer, key, 0);
+            if (index >= 0) {
+                return buffer[index].value;
+            }
+        }
+        return get(rootPage, key);
+    }
+
+    int binarySearch(KVMapping<K,V>[] buffer, K key, int low) {
+        return binarySearch(buffer, key, low, buffer.length - 1);
+    }
+
+    int binarySearch(KVMapping<K,V>[] buffer, K key, int low, int high) {
+        assert buffer.length > 0;
+        int compare = 0;
+        if (low == 0) {
+            compare = compare(key, buffer[0].key);
+            if (compare < 0) {
+                return -1;
+            } else if (compare == 0) {
+                return 0;
+            }
+            low = 1;
+        }
+
+        if (high > 0) {
+            compare = compare(key, buffer[high].key);
+        }
+        if (compare > 0) {
+            return -high - 2;
+        } else if (compare == 0) {
+            return high;
+        }
+
+        return _binarySearch(buffer, key, low, high);
+    }
+
+    private int _binarySearch(KVMapping<K,V>[] buffer, K key, int low, int high) {
+        while (low <= high) {
+            int x = (low + high) >>> 1;
+            int compare = compare(key, buffer[x].key);
+            if (compare > 0) {
+                low = x + 1;
+            } else if (compare < 0) {
+                high = x - 1;
+            } else {
+                return x;
+            }
+        }
+        return -(low + 1);
     }
 
     /**
@@ -2029,7 +2089,7 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
             contention += (int)((updateAttemptCounter+1) / (updateCounter+1));
         }
 
-        if(attempt > 4) {
+        if(attempt > 4 || contention > 4) {
             if (attempt <= 12) {
                 Thread.yield();
             } else if (attempt <= 70 - 2 * contention) {

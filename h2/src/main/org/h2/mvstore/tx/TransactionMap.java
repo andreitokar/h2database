@@ -186,7 +186,7 @@ public final class TransactionMap<K, V> extends AbstractMap<K,V> {
                         Record<?,?> op = cursor.getValue();
                         if (op.mapId == map.getId()) {
                             @SuppressWarnings("unchecked")
-                            VersionedValue<V> currentValue = map.get(mapRootReference.root, (K)op.key);
+                            VersionedValue<V> currentValue = map.get(mapRootReference, (K)op.key);
                             // If map entry is not there, then we never counted
                             // it, in the first place, so skip it.
                             // This is possible when undo entry exists because
@@ -461,7 +461,7 @@ public final class TransactionMap<K, V> extends AbstractMap<K,V> {
         switch (transaction.isolationLevel) {
         case READ_UNCOMMITTED: {
             Snapshot<K,VersionedValue<V>> snapshot = getStatementSnapshot();
-            VersionedValue<V> data = map.get(snapshot.root.root, key);
+            VersionedValue<V> data = map.get(snapshot.root, key);
             if (data != null) {
                 return data.getCurrentValue();
             }
@@ -472,7 +472,7 @@ public final class TransactionMap<K, V> extends AbstractMap<K,V> {
         case SERIALIZABLE:
             if (transaction.hasChanges()) {
                 Snapshot<K,VersionedValue<V>> snapshot = getStatementSnapshot();
-                VersionedValue<V> data = map.get(snapshot.root.root, key);
+                VersionedValue<V> data = map.get(snapshot.root, key);
                 if (data != null) {
                     long id = data.getOperationId();
                     if (id != 0L && transaction.transactionId == TransactionStore.getTransactionId(id)) {
