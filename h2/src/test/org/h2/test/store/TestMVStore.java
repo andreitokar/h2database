@@ -787,7 +787,9 @@ public class TestMVStore extends TestBase {
             }
         }
         int[] expectedReadsForCacheSize = {
-                1880, 490, 476, 501, 476, 476, 541   // compressed
+                3599, 239, 239, 239, 239, 239, 239   // compressed
+//                1225, 355, 290, 314, 314, 314, 314   // compressed
+//                1880, 490, 476, 501, 476, 476, 541   // compressed
 //                1887, 1775, 1599, 1355, 1035, 732, 507    // uncompressed
         };
         for (int cacheSize = 0; cacheSize <= 6; cacheSize += 1) {
