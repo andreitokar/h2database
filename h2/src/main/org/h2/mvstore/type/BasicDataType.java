@@ -35,8 +35,8 @@ public abstract class BasicDataType<T> implements DataType<T> {
         return true;
     }
 
-    @Override
-    public int binarySearch(T key, Object storageObj, int size, int initialGuess) {
+//    @Override
+    public int _binarySearch(T key, Object storageObj, int size, int initialGuess) {
         T[] storage = cast(storageObj);
         int low = 0;
         int high = size - 1;
@@ -60,6 +60,48 @@ public abstract class BasicDataType<T> implements DataType<T> {
         }
         return ~low;
     }
+
+    @Override
+    public int binarySearch(T key, Object storageObj, int size, int initialGuess) {
+        T[] storage = cast(storageObj);
+//*
+        int last = initialGuess - 1;
+        int x;
+        if (0 <= last && initialGuess < size) {
+            x = binarySearch(key, storage, last, initialGuess);
+            if (x < 0) {
+                last = -(x + 1);
+                if (last < initialGuess) {
+                    x = binarySearch(key, storage, 0, initialGuess - 1);
+                } else if (last > initialGuess) {
+                    x = binarySearch(key, storage, initialGuess - 1, size - 1);
+                }
+            }
+        } else {
+            x = binarySearch(key, storage, 0, size - 1);
+        }
+        return x;
+/*/
+        return binarySearch(key, storage, 0, size - 1);
+//*/
+    }
+
+    private int binarySearch(T key, T[] k, int low, int high) {
+        while (low <= high) {
+            int x = (low + high) >>> 1;
+            int compare = compare(key, k[x]);
+            if (compare > 0) {
+                low = x + 1;
+            } else if (compare < 0) {
+                high = x - 1;
+            } else {
+                return x;
+            }
+        }
+        return -(low + 1);
+    }
+
+
 
     @Override
     public void write(WriteBuffer buff, Object storage, int len) {

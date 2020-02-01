@@ -498,7 +498,7 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
                 return x;
             }
         }
-        return -(low + 1);
+        return ~low;
     }
 
     /**
@@ -1468,25 +1468,20 @@ mainLoop:
 
                     CursorPos<K,V> parentPath = path.parent;
                     Page<K,V> leaf = path.page;
-                    int keyCount = leaf.getKeyCount();
-                    int totalKeyCount = keyCount;
 
-                    K ceilingKey = null;
-                    while ((path = path.parent) != null) {
-                        int ind = path.index;
-                        if (ind < path.page.getKeyCount()) {
-                            ceilingKey = path.page.getKey(ind);
-                            break;
-                        }
-                    }
+                    K ceilingKey = getCeilingKey(path);
+
                     int to = bufferLength;
                     if (ceilingKey != null) {
                         to = binarySearch(buffer, ceilingKey, from);
                         if (to < 0) {
-                            to = -to - 1;
+                            to = ~to;
                         }
                         assert to > from;
                     }
+
+                    int keyCount = leaf.getKeyCount();
+                    int totalKeyCount = keyCount;
                     for (int i = from; i < to; i++) {
                         kvMapping = buffer[i];
 //                        int ind = leaf.binarySearch(kvMapping.key);
@@ -1664,6 +1659,16 @@ mainLoop:
             }
         }
         return rootReference;
+    }
+
+    private static <K> K getCeilingKey(CursorPos<K,?> path) {
+        while ((path = path.parent) != null) {
+            int ind = path.index;
+            if (ind < path.page.getKeyCount()) {
+                return path.page.getKey(ind);
+            }
+        }
+        return null;
     }
 
     private Page<K,V> removePage(CursorPos<K,V> parentPath, IntValueHolder unsavedMemoryHolder,
@@ -2364,6 +2369,9 @@ mainLoop:
                 } else {
                     Page<K,V> rootPage = rootReference.root;
                     CursorPos<K,V> path = CursorPos.traverseDown(rootPage, key);
+                    if (!locked && rootReference != getRoot()) {
+                        continue;
+                    }
                     Page<K,V> p = path.page;
                     index = path.index;
                     result = index < 0 ? null : p.getValue(index);
@@ -2461,6 +2469,8 @@ mainLoop:
         }
     }
 
+
+    private static final int CPU_COUNT = Runtime.getRuntime().availableProcessors();
     /**
      * Try to lock the root.
      *
@@ -2486,7 +2496,7 @@ mainLoop:
             contention += (int)((updateAttemptCounter+1) / (updateCounter+1));
         }
 
-        if(attempt > 4 || contention > 4) {
+        if(attempt > 4 || contention > CPU_COUNT / 2) {
             if (attempt <= 12) {
                 Thread.yield();
             } else if (attempt <= 70 - 2 * contention) {
