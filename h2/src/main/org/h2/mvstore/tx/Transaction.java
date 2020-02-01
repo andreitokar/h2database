@@ -343,7 +343,7 @@ public final class Transaction {
                 committingTransactions = store.committingTransactions.get();
                 for (MVMap<Object,VersionedValue<Object>> map : maps) {
                     TransactionMap<?,?> txMap = openMapX(map);
-                    txMap.setStatementSnapshot(new Snapshot(map.flushAndGetRoot(), committingTransactions));
+                    txMap.setStatementSnapshot(new Snapshot(map.getRoot(), committingTransactions));
                 }
                 if (isReadCommitted()) {
                     undoLogRootReferences = store.collectUndoLogRootReferences();

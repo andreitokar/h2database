@@ -427,6 +427,7 @@ public class TransactionStore {
             MVMap<Long,Record<?,?>> undoLog = store.openMap(undoName, undoLogBuilder);
             undoLogs[transactionId] = undoLog;
         }
+        assert txId != 0 || undoLogs[transactionId].isEmpty();
         return transaction;
     }
 
