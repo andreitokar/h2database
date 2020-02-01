@@ -60,8 +60,10 @@ public class TestMVRTree extends TestMVStore {
     private void testRemoveAll() {
         String fileName = getBaseDir() + "/" + getTestName();
         FileUtils.delete(fileName);
-        try (MVStore s = new MVStore.Builder().fileName(fileName).pageSplitSize(100).open()) {
-            MVRTreeMap<String> map = s.openMap("data", new MVRTreeMap.Builder<>());
+        try (MVStore s = new MVStore.Builder().fileName(fileName).
+                pageSplitSize(100).open()) {
+            MVRTreeMap<String> map = s.openMap("data",
+                    new MVRTreeMap.Builder<>());
             Random r = new Random(1);
             for (int i = 0; i < 1000; i++) {
                 float x = r.nextFloat() * 50, y = r.nextFloat() * 50;
@@ -77,8 +79,9 @@ public class TestMVRTree extends TestMVStore {
         String fileName = getBaseDir() + "/" + getTestName();
         FileUtils.delete(fileName);
         try (MVStore s = new MVStore.Builder().fileName(fileName).
-                                pageSplitSize(100).open()) {
-            MVRTreeMap<String> map = s.openMap("data", new MVRTreeMap.Builder<>());
+                pageSplitSize(100).open()) {
+            MVRTreeMap<String> map = s.openMap("data",
+                    new MVRTreeMap.Builder<>());
             Random r = new Random(1);
             for (int i = 0; i < 1000; i++) {
                 if (i % 100 == 0) {
@@ -115,9 +118,9 @@ public class TestMVRTree extends TestMVStore {
     private void testExample() {
         // create an in-memory store
         try (MVStore s = MVStore.open(null)) {
-
             // open an R-tree map
-            MVRTreeMap<String> r = s.openMap("data", new MVRTreeMap.Builder<>());
+            MVRTreeMap<String> r = s.openMap("data",
+                    new MVRTreeMap.Builder<>());
 
             // add two key-value pairs
             // the first value is the key id (to make the key unique)
@@ -139,6 +142,7 @@ public class TestMVRTree extends TestMVStore {
     private void testMany() {
         String fileName = getBaseDir() + "/" + getTestName();
         FileUtils.delete(fileName);
+        Random rand = new Random(1);
         int len = 1000;
         try (MVStore s = openStore(fileName)) {
             // s.setMaxPageSize(50);
@@ -146,7 +150,6 @@ public class TestMVRTree extends TestMVStore {
                     new MVRTreeMap.Builder<String>().dimensions(2).
                             valueType(StringDataType.INSTANCE));
             // r.setQuadraticSplit(true);
-            Random rand = new Random(1);
             // long t = System.nanoTime();
             // Profiler prof = new Profiler();
             // prof.startCollecting();
@@ -158,7 +161,7 @@ public class TestMVRTree extends TestMVStore {
                 if (i > 0 && (i % len / 10) == 0) {
                     s.commit();
                 }
-                if (i > 0 && (i % 10000) == 0) {
+                if ((i+1) % 1000 == 0) {
                     render(r, getBaseDir() + "/test.png");
                 }
             }
@@ -226,7 +229,7 @@ public class TestMVRTree extends TestMVStore {
 
             // intersection
             list.clear();
-            Spatial k = key(0, 47.34, 7.36, 0);
+            Spatialk = key(0, 47.34, 7.36, 0);
             for (Iterator<Spatial> it = r.findIntersectingKeys(k); it.hasNext(); ) {
                 list.add(r.get(it.next()));
             }
@@ -324,7 +327,8 @@ public class TestMVRTree extends TestMVStore {
 
     private void testRandomFind() {
         try (MVStore s = openStore(null)) {
-            MVRTreeMap<Integer> m = s.openMap("data", new MVRTreeMap.Builder<>());
+            MVRTreeMap<Integer> m = s.openMap("data",
+                    new MVRTreeMap.Builder<>());
             int max = 100;
             for (int x = 0; x < max; x++) {
                 for (int y = 0; y < max; y++) {
@@ -371,6 +375,7 @@ public class TestMVRTree extends TestMVStore {
         String fileName = getBaseDir() + "/" + getTestName();
         FileUtils.delete(fileName);
         try (MVStore s = openStore(fileName)) {
+
             MVRTreeMap<String> m = s.openMap("data",
                     new MVRTreeMap.Builder<>());
 
@@ -423,7 +428,9 @@ public class TestMVRTree extends TestMVStore {
                     default:
                         String a = map.get(k);
                         String b = m.get(k);
-                        assertTrue(Objects.equals(a, b));
+
+                            assertTrue(Objects.equals(a, b));
+
                         break;
                 }
                 assertEquals(map.size(), m.size());

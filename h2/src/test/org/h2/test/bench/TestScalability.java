@@ -186,7 +186,7 @@ public class TestScalability implements Database.DatabaseTest {
                 }
                 String dbName = db.getName();
                 System.out.println("------------------");
-                System.out.println("Testing the performance of " + dbName);
+                System.out.println("Testing the scalability of " + dbName);
                 db.startServer();
                 // hold one connection open during the whole test to keep database up
                 conn = db.openNewConnection();

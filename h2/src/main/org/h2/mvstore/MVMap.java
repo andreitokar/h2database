@@ -811,11 +811,11 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
      * @return the cursor
      */
     public Cursor<K, V> cursor(RootReference<K,V> rootReference, K from, K to, boolean reverse) {
-//        if (singleWriter || rootReference.buffer == null || this == store.getMetaMap()) {
+        if (singleWriter || rootReference.buffer == null || this == store.getMetaMap()) {
             return new Cursor<>(rootReference, from, to, reverse);
-//        } else {
-//            return new CursorBuffered<>(rootReference, from, to, reverse);
-//        }
+        } else {
+            return new CursorBuffered<>(rootReference, from, to, reverse);
+        }
     }
 
     @Override
@@ -925,21 +925,20 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
      * @return current root reference
      */
     public RootReference<K,V> flushAndGetRoot() {
-        return flushAppendBufferAndGetRoot();
-//        RootReference<K,V> rootReference = getRoot();
-//        if (!singleWriter) {
-//            if (rootReference.buffer != null) {
-//                return flushBuffer(rootReference, 1);
-//            }
-//        } else if (rootReference.getAppendCounter() > 0) {
-//            return flushAppendBuffer(rootReference, true);
-//        }
-//        return rootReference;
+        RootReference<K,V> rootReference = getRoot();
+        if (!singleWriter) {
+            if (rootReference.buffer != null) {
+                return flushBuffer(rootReference, 1);
+            }
+        } else if (rootReference.needFlush()) {
+            return flushAppendBuffer(rootReference, true);
+        }
+        return rootReference;
     }
 
     public RootReference<K,V> flushAppendBufferAndGetRoot() {
         RootReference<K,V> rootReference = getRoot();
-        if (singleWriter && rootReference.getAppendCounter() > 0) {
+        if (rootReference.needFlush()) {
             return flushAppendBuffer(rootReference, true);
         }
         return rootReference;
@@ -2174,11 +2173,11 @@ mainLoop:
      * @return previous value, if mapping for that key existed, or null otherwise
      */
     public V operate(K key, V value, DecisionMaker<? super V> decisionMaker) {
-//        if (singleWriter || this == store.getMetaMap()/* || getRoot().getTotalCount() < 10_000*/) {
+        if (singleWriter || this == store.getMetaMap()/* || getRoot().getTotalCount() < 10_000*/) {
             return operateAppendable(key, value, decisionMaker);
-//        } else {
-//            return operateBuffered(key, value, decisionMaker);
-//        }
+        } else {
+            return operateBuffered(key, value, decisionMaker);
+        }
     }
 
     private V operateAppendable(K key, V value, DecisionMaker<? super V> decisionMaker) {
