@@ -59,7 +59,7 @@ public class Cursor<K,V> implements Iterator<K> {
                     tmp.parent = keeper;
                     keeper = tmp;
                 } else {
-                    // traverse down to the leaf taking the leftmost path
+                    // traverse down to the leaf taking the leftmost (rightmost for reverse) path
                     while (!page.isLeaf()) {
                         page = page.getChildPage(index);
                         index = reverse ? upperBound(page) - 1 : 0;
