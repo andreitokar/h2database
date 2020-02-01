@@ -80,12 +80,11 @@ public final class MVSecondaryIndex extends MVIndex<SearchRow, Value> {
     }
 
     private static final class Source {
-
         private final Iterator<SearchRow> iterator;
 
         SearchRow currentRowData;
 
-        public Source(Iterator<SearchRow> iterator) {
+        Source(Iterator<SearchRow> iterator) {
             assert iterator.hasNext();
             this.iterator = iterator;
             this.currentRowData = iterator.next();
