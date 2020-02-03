@@ -1051,6 +1051,11 @@ public abstract class Page<K,V> implements Cloneable {
             return EMPTY;
         }
 
+        @SuppressWarnings("unchecked")
+        public static <K,V> PageReference<K,V>[] createRefStorage(int size) {
+            return new PageReference[size];
+        }
+
         public PageReference(Page<K,V> page) {
             this(page, page.getPos(), page.getTotalCount());
         }
@@ -1179,8 +1184,8 @@ public abstract class Page<K,V> implements Cloneable {
             assert !isSaved();
             int b = getKeyCount() - at;
             K[] bKeys = splitKeys(at, b - 1);
-            PageReference<K,V>[] aChildren = createRefStorage(at + 1);
-            PageReference<K,V>[] bChildren = createRefStorage(b);
+            PageReference<K,V>[] aChildren = PageReference.createRefStorage(at + 1);
+            PageReference<K,V>[] bChildren = PageReference.createRefStorage(b);
             System.arraycopy(children, 0, aChildren, 0, at + 1);
             System.arraycopy(children, at + 1, bChildren, 0, b);
             children = aChildren;
@@ -1259,7 +1264,7 @@ public abstract class Page<K,V> implements Cloneable {
             int childCount = getRawChildPageCount();
             insertKey(index, key);
 
-            PageReference<K,V>[] newChildren = createRefStorage(childCount + 1);
+            PageReference<K,V>[] newChildren = PageReference.createRefStorage(childCount + 1);
             DataUtils.copyWithGap(children, newChildren, childCount, index);
             children = newChildren;
             children[index] = new PageReference<>(childPage);
@@ -1282,7 +1287,7 @@ public abstract class Page<K,V> implements Cloneable {
                 }
             }
             totalCount -= children[index].count;
-            PageReference<K,V>[] newChildren = createRefStorage(childCount - 1);
+            PageReference<K,V>[] newChildren = PageReference.createRefStorage(childCount - 1);
             DataUtils.copyExcept(children, newChildren, childCount, index);
             children = newChildren;
         }
@@ -1326,7 +1331,7 @@ public abstract class Page<K,V> implements Cloneable {
         @Override
         protected void readPayLoad(ByteBuffer buff) {
             int keyCount = getKeyCount();
-            children = createRefStorage(keyCount + 1);
+            children = PageReference.createRefStorage(keyCount + 1);
             long[] p = new long[keyCount + 1];
             for (int i = 0; i <= keyCount; i++) {
                 p[i] = buff.getLong();
@@ -1431,7 +1436,7 @@ public abstract class Page<K,V> implements Cloneable {
 
         private static <K,V> PageReference<K,V>[] constructEmptyPageRefs(int size) {
             // replace child pages with empty pages
-            PageReference<K,V>[] children = createRefStorage(size);
+            PageReference<K,V>[] children = PageReference.createRefStorage(size);
             Arrays.fill(children, PageReference.empty());
             return children;
         }

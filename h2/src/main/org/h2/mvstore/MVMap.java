@@ -10,7 +10,6 @@ import static org.h2.engine.Constants.MEMORY_POINTER;
 import java.util.AbstractList;
 import java.util.AbstractMap;
 import java.util.AbstractSet;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -22,6 +21,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.h2.mvstore.type.DataType;
+import org.h2.mvstore.Page.PageReference;
 import org.h2.mvstore.type.ObjectDataType;
 import org.h2.util.MemoryEstimator;
 
@@ -1351,8 +1351,8 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
                         p.expand(available, keysBuffer, valuesBuffer);
                         keyCount -= available;
                         if (fullFlush) {
-                            K[] keys = p.createKeyStorage(keyCount);
-                            V[] values = p.createValueStorage(keyCount);
+                            K[] keys = createKeyStorage(keyCount);
+                            V[] values = createValueStorage(keyCount);
                             System.arraycopy(keysBuffer, available, keys, 0, keyCount);
                             if (valuesBuffer != null) {
                                 System.arraycopy(valuesBuffer, available, values, 0, keyCount);
@@ -1385,7 +1385,7 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
                             if (p.getKeyCount() == 0) {
                                 p = page;
                             } else {
-                                p = createPostSplitLevel(key, p, page, p.getTotalCount() + page.getTotalCount());
+                                p = createParentPage(key, p, page, p.getTotalCount() + page.getTotalCount());
                             }
                             break;
                         }
@@ -1435,7 +1435,7 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
             int bufferLength;
 mainLoop:
             while ((buffer = rootReference.buffer) != null && (bufferLength = buffer.length) >= threshold) {
-                if (!locked && ++attempt > 2) {
+                if (!locked && ++attempt > 3) {
                     // instead of just calling lockRoot() we loop here and check if someone else
                     // already flushed the buffer, then we don't need a lock
                     rootReference = tryLock(rootReference, attempt);
@@ -1446,13 +1446,13 @@ mainLoop:
                     locked = true;
                 }
                 assert rootReference.getAppendCounter() == 0;
-                Page<K,V> rootPage = rootReference.root;
                 long version = rootReference.version;
                 if (pageMap == null) {
                     pageMap = new HashMap<>();
                 } else {
                     pageMap.clear();
                 }
+                Page<K,V> rootPage = rootReference.root;
                 int from = 0;
                 while (from < bufferLength) {
                     KVMapping<K,V> kvMapping = buffer[from];
@@ -1465,179 +1465,58 @@ mainLoop:
                         continue mainLoop;
                     }
 
-                    CursorPos<K,V> parentPath = path.parent;
                     Page<K,V> leaf = path.page;
-
                     K ceilingKey = getCeilingKey(path);
-
-                    int to = bufferLength;
-                    if (ceilingKey != null) {
-                        to = binarySearch(buffer, ceilingKey, from);
-                        if (to < 0) {
-                            to = ~to;
-                        }
-                        assert to > from;
-                    }
-
-                    int keyCount = leaf.getKeyCount();
-                    int totalKeyCount = keyCount;
-                    for (int i = from; i < to; i++) {
-                        kvMapping = buffer[i];
-//                        int ind = leaf.binarySearch(kvMapping.key);
-//                        assert ind == kvMapping.index : ind + " != " + kvMapping.index;
-                        if (kvMapping.index < 0) {
-                            ++totalKeyCount;
-                        } else if (kvMapping.value == null) {
-                            --totalKeyCount;
-                        }
-                    }
-
+                    int to = calcUpperBound(buffer, from, ceilingKey);
+                    int totalKeyCount = calcTotalKeyCount(buffer, from, leaf, to);
+                    path = path.parent;
                     assert totalKeyCount >= 0;
-                    if (totalKeyCount == 0 && parentPath != null) {
-                        pageMap.put(leaf, leaf);
-                        rootPage = removePage(parentPath, unsavedMemoryHolder, pageMap);
+                    if (totalKeyCount == 0) {
+                        rootPage = path == null ? createEmptyLeaf() : removePage(path, unsavedMemoryHolder, pageMap);
+                        registerReplacementPage(pageMap, leaf, rootPage);
                         from = to;
                         break;
                     } else {
-                        int keyCountLimit = store.getKeysPerPage();
-                        long maxPageSize = store.getMaxPageSize();
-                        if (isPersistent() && keyCount > 0 && maxPageSize < Long.MAX_VALUE) {
-                            int leafMemory = leaf.getMemory();
-                            assert leafMemory > 0;
-                            int estimate = (int) (((maxPageSize - 1) * keyCount + leafMemory) / leafMemory);
-                            assert estimate > 0;
-                            if (estimate > 0 && estimate < keyCountLimit) {
-                                keyCountLimit = estimate;
-                            }
-                        }
-                        int remainingKeyCount = totalKeyCount;
-                        List<Page<K,V>> pages = null;
-                        int newKeyCount = remainingKeyCount;
-                        if (newKeyCount > keyCountLimit) {
-                            pages = new ArrayList<>();
-                            int pageCount = (remainingKeyCount + keyCountLimit - 1) / keyCountLimit;
-                            newKeyCount = (remainingKeyCount + pageCount - 1) / pageCount;
-                        }
-                        remainingKeyCount -= newKeyCount;
+                        int keyPerPageLimit = calculateKeyPerPageLimit(leaf);
+                        int pageCount = (totalKeyCount + keyPerPageLimit - 1) / keyPerPageLimit;
+                        Page<K,V>[] pages = pageCount > 1 ? createPageArray(pageCount) : null;
 
-                        Page<K,V> updatedPage;
-
-                        int src = 0;
-                        K[] keyStorage = leaf.createKeyStorage(newKeyCount);
-                        V[] valueStorage = leaf.createValueStorage(newKeyCount);
-                        int dst = 0;
-                        kvMapping = buffer[from];
-                        int srcTo = kvMapping.index;
-                        boolean isInsertFromBuffer = srcTo < 0; // as oppose to replace
-                        if (isInsertFromBuffer) {
-                            srcTo = ~srcTo;
-                        }
-                        while (true) {
-                            if (dst == newKeyCount) {
-                                updatedPage = Page.createLeaf(this, keyStorage, valueStorage, 0);
-                                if (pages != null) {
-                                    pages.add(updatedPage);
-                                    if (remainingKeyCount == 0) {
-                                        break;
-                                    }
-                                    newKeyCount = remainingKeyCount;
-                                    if (newKeyCount > keyCountLimit) {
-                                        int pageCount = (remainingKeyCount + keyCountLimit - 1) / keyCountLimit;
-                                        newKeyCount = (remainingKeyCount + pageCount - 1) / pageCount;
-                                    }
-                                    remainingKeyCount -= newKeyCount;
-                                    keyStorage = leaf.createKeyStorage(newKeyCount);
-                                    valueStorage = leaf.createValueStorage(newKeyCount);
-                                    dst = 0;
-                                } else {
-                                    break;
-                                }
-                            } else if (src == srcTo) {
-                                V value = kvMapping.value;
-                                if (isInsertFromBuffer) {
-                                    keyStorage[dst] = kvMapping.key;
-                                    valueStorage[dst++] = value;
-                                } else {
-                                    assert compare(leaf.getKey(src), kvMapping.key) == 0 : leaf.getKey(src) + " != " + kvMapping.key;
-                                    if (value != null) {     // update (otherwise removal)
-                                        keyStorage[dst] = leaf.getKey(src);
-                                        valueStorage[dst++] = value;
-                                    }
-                                    src++;
-                                }
-                                if (++from < to) {
-                                    kvMapping = buffer[from];
-                                    srcTo = kvMapping.index;
-                                    isInsertFromBuffer = srcTo < 0;
-                                    if (isInsertFromBuffer) {
-                                        srcTo = ~srcTo;
-                                    }
-                                } else {
-                                    srcTo = Integer.MAX_VALUE;
-                                }
-                            } else {     // no change, just copy
-                                keyStorage[dst] = leaf.getKey(src);
-                                valueStorage[dst++] = leaf.getValue(src++);
-                            }
-                        }
+                        Page<K,V> replacementPage = createReplacementPages(leaf, buffer, from, to, totalKeyCount, pageCount, pages);
                         from = to;
                         if (pages != null) {
-                            if (parentPath == null) {
-                                K[] keys = leaf.createKeyStorage(pages.size() - 1);
-                                Page.PageReference<K,V>[] children = Page.createRefStorage(pages.size());
-                                int index = -1;
-                                for (Page<K, V> childPage : pages) {
-                                    if (index >= 0) {
-                                        keys[index] = childPage.getKey(0);
-                                    }
-                                    children[++index] = new Page.PageReference<>(childPage);
-                                    unsavedMemoryHolder.value += childPage.getMemory();
-                                }
-                                rootPage = Page.createNode(this, keys, children, totalKeyCount, 0);
+                            if (path == null) {
+                                rootPage = createParentPage(pages, unsavedMemoryHolder);
                                 registerReplacementPage(pageMap, leaf, rootPage);
                                 unsavedMemoryHolder.value += rootPage.getMemory();
                             } else {
-                                Page<K, V> page = parentPath.page;
-                                int insertIndex = parentPath.index;
-                                parentPath = parentPath.parent;
-
-                                boolean isOriginal = false;
-                                if ((updatedPage = pageMap.get(page)) == null) {
-                                    isOriginal = true;
-                                    updatedPage = page.copy();
-                                    registerReplacementPage(pageMap, page, updatedPage);
-                                }
-                                Page<K, V> childPage = pages.get(pages.size() - 1);
-                                updatedPage.setChild(insertIndex, childPage, isOriginal);
-                                K splitKey = childPage.getKey(0);
-                                unsavedMemoryHolder.value += childPage.getMemory();
-                                for (int i = pages.size() - 2; i >= 0; i--) {
-                                    childPage = pages.get(i);
-                                    updatedPage.insertNode(insertIndex, splitKey, childPage);
+                                Page<K, V> parentPage = path.page;
+                                int insertIndex = path.index;
+                                path = path.parent;
+                                boolean isOriginal = (replacementPage = findReplacement(pageMap, parentPage)) != parentPage;
+                                K splitKey = null;
+                                for (int i = pages.length - 1; i >= 0; i--) {
+                                    Page<K, V> childPage = pages[i];
+                                    if (splitKey == null) {
+                                        replacementPage.setChild(insertIndex, childPage, isOriginal);
+                                    } else {
+                                        replacementPage.insertNode(insertIndex, splitKey, childPage);
+                                    }
                                     splitKey = childPage.getKey(0);
                                     unsavedMemoryHolder.value += childPage.getMemory();
                                 }
-                                registerReplacementPage(pageMap, leaf, updatedPage);
-                                rootPage = insertPage(parentPath, updatedPage, unsavedMemoryHolder, pageMap);
+                                registerReplacementPage(pageMap, leaf, replacementPage);
+                                rootPage = insertPage(path, replacementPage, unsavedMemoryHolder, pageMap);
                             }
                             break;
                         } else {
-                            registerReplacementPage(pageMap, leaf, updatedPage);
-                            rootPage = replacePage(parentPath, updatedPage, unsavedMemoryHolder, pageMap);
+                            registerReplacementPage(pageMap, leaf, replacementPage);
+                            rootPage = replacePage(path, replacementPage, unsavedMemoryHolder, pageMap);
                         }
                     }
                 }
 
-                int remaining = bufferLength - from;
-                assert remaining >= 0;
-                if (remaining == 0) {
-                    buffer = null;
-                } else {
-                    KVMapping<K,V>[] newBuffer = createBuffer(remaining);
-                    System.arraycopy(buffer, from, newBuffer, 0, remaining);
-                    buffer = newBuffer;
-                }
-                rootReference = rootReference.updatePageAndLockedStatus(rootPage, preLocked, 0, buffer);
+                rootReference = rootReference.updatePageAndLockedStatus(rootPage, preLocked, 0,
+                                                                        createLeftoverBuffer(buffer, from));
                 if (rootReference != null) {
                     locked = preLocked;
                     if (isPersistent()) {
@@ -1660,50 +1539,219 @@ mainLoop:
         return rootReference;
     }
 
-    private static <K> K getCeilingKey(CursorPos<K,?> path) {
-        while ((path = path.parent) != null) {
-            int ind = path.index;
-            if (ind < path.page.getKeyCount()) {
-                return path.page.getKey(ind);
-            }
-        }
-        return null;
-    }
 
     private Page<K,V> removePage(CursorPos<K,V> parentPath, IntValueHolder unsavedMemoryHolder,
                                  Map<Page<K,V>,Page<K,V>> pageMap) {
         Page<K,V> page;
-        int newKeyCount;
+        int keyCount;
         int index;
         do {
             page = parentPath.page;
             index = parentPath.index;
             parentPath = parentPath.parent;
-            newKeyCount = page.getKeyCount();
+            keyCount = page.getKeyCount();
             // condition below should always be false, but older
             // versions (up to 1.4.197) may create
             // single-childed (with no keys) internal nodes,
             // which we skip here
-        } while (newKeyCount == 0 && parentPath != null);
+        } while (keyCount == 0 && parentPath != null);
 
-        Page<K,V> updatedPage;
-        if (pageMap == null || (updatedPage = pageMap.get(page)) == null) {
-            updatedPage = page.copy();
-            registerReplacementPage(pageMap, page, updatedPage);
-        }
-        if (newKeyCount > 1) {
-            updatedPage.remove(index);
-            page = updatedPage;
-        } else if (newKeyCount == 1) {
+        Page<K,V> replacement = findReplacement(pageMap, page);
+        if (keyCount > 1) {
+            replacement.remove(index);
+        } else if (keyCount == 1) {
             assert index <= 1;
-            page = updatedPage.getChildPage(1 - index);
+            replacement = replacement.getChildPage(1 - index);
         } else {
             // if root happens to be such single-childed
             // (with no keys) internal node, then just
             // replace it with empty leaf
             return Page.createEmptyLeaf(this);
         }
-        return replacePage(parentPath, page, unsavedMemoryHolder, pageMap);
+        return replacePage(parentPath, replacement, unsavedMemoryHolder, pageMap);
+    }
+
+    private Page<K,V> insertPage(CursorPos<K,V> path, Page<K,V> page, IntValueHolder unsavedMemoryHolder,
+                                    Map<Page<K,V>,Page<K,V>> pageMap) {
+        int unsavedMemory = 0;
+        while (shouldBeSplitted(page)) {
+            int keyCount = page.getKeyCount();
+            int at = keyCount >> 1;
+            long totalCount = page.getTotalCount();
+            K splitKey = page.getKey(at);
+            Page<K,V> splitted = page;
+            Page<K,V> splitoff = splitted.split(at);
+//            assert !shouldBeSplitted(splitted);
+//            assert !shouldBeSplitted(splitoff);
+            unsavedMemory += page.getMemory() + splitoff.getMemory();
+            if (path == null) {
+                page = createParentPage(splitKey, splitted, splitoff, totalCount);
+                break;
+            }
+
+            page = path.page;
+            int index = path.index;
+            path = path.parent;
+            Page<K,V> replacement;
+            boolean isOriginal = (replacement = findReplacement(pageMap, page)) != page;
+            if (isOriginal) {
+                unsavedMemory += replacement.getMemory();
+            }
+            replacement.setChild(index, splitoff, isOriginal);
+            replacement.insertNode(index, splitKey, splitted);
+            page = replacement;
+        }
+        unsavedMemoryHolder.value += unsavedMemory;
+        return replacePage(path, page, unsavedMemoryHolder, pageMap);
+    }
+
+    private static <K,V> Page<K,V> replacePage(CursorPos<K,V> path, Page<K,V> replacement, IntValueHolder unsavedMemoryHolder,
+                                    Map<Page<K,V>,Page<K,V>> pageMap) {
+        int unsavedMemory = replacement.isSaved() ? 0 : replacement.getMemory();
+        while (path != null) {
+            Page<K,V> parent = path.page;
+            assert !parent.isLeaf();
+            // condition below should always be true, but older versions (up to 1.4.197)
+            // may create single-childed (with no keys) internal nodes, which we skip here
+            if (parent.getKeyCount() > 0) {
+                Page<K,V> child = replacement;
+                boolean original = (replacement = findReplacement(pageMap, parent)) != parent;
+                if (original) {
+                    unsavedMemory += replacement.getMemory();
+                }
+                replacement.setChild(path.index, child, original);
+            }
+            path = path.parent;
+        }
+        unsavedMemoryHolder.value += unsavedMemory;
+        return replacement;
+    }
+
+    private int calcUpperBound(KVMapping<K, V>[] buffer, int from, K ceilingKey) {
+        int to = buffer.length;
+        if (ceilingKey != null) {
+            to = binarySearch(buffer, ceilingKey, from);
+            if (to < 0) {
+                to = ~to;
+            }
+            assert to > from;
+        }
+        return to;
+    }
+
+    private int calcTotalKeyCount(KVMapping<K, V>[] buffer, int from, Page<K, V> leaf, int to) {
+        KVMapping<K, V> kvMapping;
+        int totalKeyCount = leaf.getKeyCount();
+        for (int i = from; i < to; i++) {
+            kvMapping = buffer[i];
+//                        int ind = leaf.binarySearch(kvMapping.key);
+//                        assert ind == kvMapping.index : ind + " != " + kvMapping.index;
+            if (kvMapping.index < 0) {
+                ++totalKeyCount;
+            } else if (kvMapping.value == null) {
+                --totalKeyCount;
+            }
+        }
+        return totalKeyCount;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <K,V> Page<K, V>[] createPageArray(int pageCount) {
+        return (Page<K,V>[])new Page[pageCount];
+    }
+
+    private int calculateKeyPerPageLimit(Page<K, V> leaf) {
+        int keyCountLimit = store.getKeysPerPage();
+        if (isPersistent()) {
+            int keyCount = leaf.getKeyCount();
+            if (keyCount > 0) {
+                long maxPageSize = store.getMaxPageSize();
+                if (maxPageSize < Long.MAX_VALUE) {
+                    int leafMemory = leaf.getMemory();
+                    assert leafMemory > 0;
+                    int estimate = (int) (((maxPageSize - 1) * keyCount + leafMemory) / leafMemory);
+                    if (keyCountLimit > estimate) {
+                        keyCountLimit = estimate;
+                    }
+                    assert keyCountLimit > 0;
+                }
+            }
+        }
+        assert keyCountLimit > 0;
+        return keyCountLimit;
+    }
+
+    private Page<K, V> createReplacementPages(Page<K, V> leaf, KVMapping<K, V>[] buffer, int from, int to, int totalKeyCount, int pageCount, Page<K, V>[] pages) {
+        int pageSize = (totalKeyCount + pageCount - 1) / pageCount;
+        int bumpIndex = totalKeyCount  + pageCount - pageSize * pageCount;
+        int nextPageIndex = 0;
+
+        Page<K, V> updatedPage;
+        int src = 0;
+        K[] keyStorage = createKeyStorage(pageSize);
+        V[] valueStorage = createValueStorage(pageSize);
+        int dst = 0;
+        KVMapping<K, V> kvMapping = buffer[from];
+        int srcTo = kvMapping.index;
+        boolean isInsertFromBuffer = srcTo < 0; // as oppose to replace
+        if (isInsertFromBuffer) {
+            srcTo = ~srcTo;
+        }
+        while (true) {
+            if (dst == pageSize) {
+                updatedPage = Page.createLeaf(this, keyStorage, valueStorage, 0);
+                if (pages != null) {
+                    pages[nextPageIndex++] = updatedPage;
+                    if (nextPageIndex == pages.length) {
+                        break;
+                    }
+                    if (nextPageIndex == bumpIndex) {
+                        --pageSize;
+                    }
+                    keyStorage = createKeyStorage(pageSize);
+                    valueStorage = createValueStorage(pageSize);
+                    dst = 0;
+                } else {
+                    break;
+                }
+            } else if (src == srcTo) {
+                V value = kvMapping.value;
+                if (isInsertFromBuffer) {
+                    keyStorage[dst] = kvMapping.key;
+                    valueStorage[dst++] = value;
+                } else {
+                    assert compare(leaf.getKey(src), kvMapping.key) == 0 : leaf.getKey(src) + " != " + kvMapping.key;
+                    if (value != null) {     // update (otherwise removal)
+                        keyStorage[dst] = leaf.getKey(src);
+                        valueStorage[dst++] = value;
+                    }
+                    src++;
+                }
+                if (++from < to) {
+                    kvMapping = buffer[from];
+                    srcTo = kvMapping.index;
+                    isInsertFromBuffer = srcTo < 0;
+                    if (isInsertFromBuffer) {
+                        srcTo = ~srcTo;
+                    }
+                } else {
+                    srcTo = Integer.MAX_VALUE;
+                }
+            } else {     // no change, just copy
+                keyStorage[dst] = leaf.getKey(src);
+                valueStorage[dst++] = leaf.getValue(src++);
+            }
+        }
+        return updatedPage;
+    }
+
+    private static <K,V> Page<K,V> findReplacement(Map<Page<K, V>, Page<K, V>> pageMap, Page<K, V> page) {
+        Page<K,V> replacement = pageMap == null ? null : pageMap.get(page);
+        if (replacement == null) {
+            replacement = page.copy();
+            registerReplacementPage(pageMap, page, replacement);
+        }
+        return replacement;
     }
 
     private static <K,V> void registerReplacementPage(Map<Page<K,V>,Page<K,V>> pageMap, Page<K,V> page, Page<K,V> replacementPage) {
@@ -1726,75 +1774,66 @@ mainLoop:
 //        return true;
 //    }
 
-    private Page<K,V> insertPage(CursorPos<K,V> path, Page<K,V> page, IntValueHolder unsavedMemoryHolder,
-                                    Map<Page<K,V>,Page<K,V>> pageMap) {
-        int unsavedMemory = 0;
-        while (shouldBeSplitted(page)) {
-            int keyCount = page.getKeyCount();
-            int at = keyCount >> 1;
-            long totalCount = page.getTotalCount();
-            K splitKey = page.getKey(at);
-            Page<K,V> splitted = page;
-            Page<K,V> splitoff = splitted.split(at);
-//            assert !shouldBeSplitted(splitted);
-//            assert !shouldBeSplitted(splitoff);
-            unsavedMemory += page.getMemory() + splitoff.getMemory();
-            if (path == null) {
-                page = createPostSplitLevel(splitKey, splitted, splitoff, totalCount);
-                break;
-            }
 
-            page = path.page;
-            int index = path.index;
-            path = path.parent;
-            Page<K,V> replacement;
-            boolean isOriginal = false;
-            if (pageMap == null || (replacement = pageMap.get(page)) == null) {
-                isOriginal = true;
-                replacement = page.copy();
-                registerReplacementPage(pageMap, page, replacement);
-                unsavedMemory += replacement.getMemory();
-            }
-            replacement.setChild(index, splitoff, isOriginal);
-            replacement.insertNode(index, splitKey, splitted);
-            page = replacement;
+    private static <K,V> KVMapping<K, V>[] createLeftoverBuffer(KVMapping<K, V>[] buffer, int from) {
+        int remaining = buffer.length - from;
+        assert remaining >= 0;
+        if (remaining == 0) {
+            return null;
+        } else {
+            KVMapping<K,V>[] newBuffer = createBuffer(remaining);
+            System.arraycopy(buffer, from, newBuffer, 0, remaining);
+            return newBuffer;
         }
-        unsavedMemoryHolder.value += unsavedMemory;
-        return replacePage(path, page, unsavedMemoryHolder, pageMap);
     }
 
-    private Page<K, V> createPostSplitLevel(K splitKey, Page<K, V> splitted, Page<K, V> splitoff, long totalCount) {
-        K[] keys = getKeyType().createStorage(1);
+    private static <K> K getCeilingKey(CursorPos<K,?> path) {
+        while ((path = path.parent) != null) {
+            int ind = path.index;
+            if (ind < path.page.getKeyCount()) {
+                return path.page.getKey(ind);
+            }
+        }
+        return null;
+    }
+
+    private Page<K, V> createParentPage(Page<K,V>[] pages, IntValueHolder unsavedMemoryHolder) {
+        int childrenCount = pages.length;
+        assert childrenCount > 0;
+        K[] keys = createKeyStorage(childrenCount - 1);
+        PageReference<K,V>[] children = PageReference.createRefStorage(childrenCount);
+        int totalKeyCount = 0;
+        int index = -1;
+        for (Page<K, V> childPage : pages) {
+            if (index >= 0) {
+                keys[index] = childPage.getKey(0);
+            }
+            children[++index] = new PageReference<>(childPage);
+            unsavedMemoryHolder.value += childPage.getMemory();
+            totalKeyCount += childPage.getKeyCount();
+        }
+        return Page.createNode(this, keys, children, totalKeyCount, 0);
+    }
+
+    private Page<K, V> createParentPage(K splitKey, Page<K, V> splitted, Page<K, V> splitoff, long totalCount) {
+        K[] keys = createKeyStorage(1);
         keys[0] = splitKey;
-        Page.PageReference<K,V>[] children = Page.createRefStorage(2);
-        children[0] = new Page.PageReference<>(splitted);
-        children[1] = new Page.PageReference<>(splitoff);
+        PageReference<K,V>[] children = PageReference.createRefStorage(2);
+        children[0] = new PageReference<>(splitted);
+        children[1] = new PageReference<>(splitoff);
         return Page.createNode(this, keys, children, totalCount, 0);
     }
 
-    private static <K,V> Page<K,V> replacePage(CursorPos<K,V> path, Page<K,V> replacement, IntValueHolder unsavedMemoryHolder,
-                                    Map<Page<K,V>,Page<K,V>> pageMap) {
-        int unsavedMemory = replacement.isSaved() ? 0 : replacement.getMemory();
-        while (path != null) {
-            Page<K,V> parent = path.page;
-            // condition below should always be true, but older versions (up to 1.4.197)
-            // may create single-childed (with no keys) internal nodes, which we skip here
-            if (parent.getKeyCount() > 0) {
-                Page<K,V> child = replacement;
-                if (pageMap == null || (replacement = pageMap.get(parent)) == null) {
-                    replacement = parent.copy();
-                    replacement.setChild(path.index, child, true);
-                    registerReplacementPage(pageMap, parent, replacement);
-                    unsavedMemory += replacement.getMemory();
-                } else {
-                    replacement.setChild(path.index, child, false);
-                }
-            }
-            path = path.parent;
-        }
-        unsavedMemoryHolder.value += unsavedMemory;
-        return replacement;
+    public final K[] createKeyStorage(int size)
+    {
+        return getKeyType().createStorage(size);
     }
+
+    final V[] createValueStorage(int size)
+    {
+        return getValueType().createStorage(size);
+    }
+
 
     /**
      * Appends entry to this map. this method is NOT thread safe and can not be used
@@ -2277,7 +2316,7 @@ mainLoop:
                                 Page<K,V> split = p.split(at);
                                 unsavedMemoryHolder.value += p.getMemory() + split.getMemory();
                                 if (pos == null) {
-                                    p = createPostSplitLevel(k, p, split, totalCount);
+                                    p = createParentPage(k, p, split, totalCount);
                                     break;
                                 }
                                 p = insertPageAfter(pos, p, k, split);
@@ -2348,6 +2387,7 @@ mainLoop:
 
             if(buffer != null && buffer.length >= store.getKeysPerPage()) {
                 rootReference = flushBuffer(rootReference, store.getKeysPerPage());
+                assert locked == rootReference.isLockedByCurrentThread();
                 buffer = rootReference.buffer;
             }
 
