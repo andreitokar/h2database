@@ -233,15 +233,20 @@ public abstract class Page<K,V> implements Cloneable {
      * @return the value, or null if not found
      */
     static <K,V> V get(Page<K,V> p, K key) {
-        while (true) {
-            int index = p.binarySearch(key);
-            if (p.isLeaf()) {
-                return index >= 0 ? p.getValue(index) : null;
-            } else if (index++ < 0) {
+        p = findLeaf(p, key);
+        int index = p.binarySearch(key);
+        return index >= 0 ? p.getValue(index) : null;
+    }
+
+    static <K,V> Page<K,V> findLeaf(Page<K,V> page, K key) {
+        while (!page.isLeaf()) {
+            int index = page.binarySearch(key) + 1;
+            if (index < 0) {
                 index = -index;
             }
-            p = p.getChildPage(index);
+            page = page.getChildPage(index);
         }
+        return page;
     }
 
     /**
