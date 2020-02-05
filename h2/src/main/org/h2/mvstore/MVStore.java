@@ -740,8 +740,8 @@ public final class MVStore implements AutoCloseable {
     private long tryCommit(Predicate<MVStore> check) {
         if (canStartStoreOperation() && storeLock.tryLock()) {
             try {
-                if (check.test(this)) {
-                    return store(false);
+                if (check.test(this) && store(false)) {
+                    return currentVersion;
                 }
             } finally {
                 unlockAndCheckPanicCondition();
@@ -774,8 +774,8 @@ public final class MVStore implements AutoCloseable {
         if(canStartStoreOperation()) {
             storeLock.lock();
             try {
-                if (check.test(this)) {
-                    return store(true);
+                if (check.test(this) && store(true)) {
+                    return currentVersion;
                 }
             } finally {
                 unlockAndCheckPanicCondition();
@@ -1255,7 +1255,7 @@ public final class MVStore implements AutoCloseable {
      *
      * @param map the map
      */
-    void beforeWrite(MVMap<?, ?> map) {
+    boolean beforeWrite(MVMap<?, ?> map) {
         if (saveNeeded && isOpenOrStopping() &&
                 // condition below is to prevent potential deadlock,
                 // because we should never seek storeLock while holding
@@ -1270,12 +1270,13 @@ public final class MVStore implements AutoCloseable {
                 // some back pressure need to be applied
                 // to slow things down and avoid OOME
                 if (requireStore() && !map.isSingleWriter()) {
-                    commit(MVStore::requireStore);
+                    return commit(MVStore::requireStore) != INITIAL_VERSION;
                 } else {
-                    tryCommit(MVStore::needStore);
+                    return tryCommit(MVStore::needStore) != INITIAL_VERSION;
                 }
             }
         }
+        return false;
     }
 
     private boolean requireStore() {
