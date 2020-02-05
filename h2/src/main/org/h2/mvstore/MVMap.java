@@ -547,8 +547,8 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
             }
             boolean locked = rootReference.isLockedByCurrentThread();
             if (!locked) {
-                if (attempt++ == 0) {
-                    beforeWrite();
+                if (attempt++ == 0 && beforeWrite()) {
+                    continue;
                 } else if (attempt > 3 || rootReference.isLocked()) {
                     rootReference = lockRoot(rootReference, attempt);
                     locked = true;
@@ -1040,7 +1040,7 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
      * @throws UnsupportedOperationException if the map is read-only,
      *      or if another thread is concurrently writing
      */
-    protected final void beforeWrite() {
+    protected final boolean beforeWrite() {
         assert !getRoot().isLockedByCurrentThread() : getRoot();
         if (closed) {
             int id = getId();
@@ -1048,11 +1048,14 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
             throw DataUtils.newMVStoreException(
                     DataUtils.ERROR_CLOSED, "Map {0}({1}) is closed. {2}", mapName, id, store.getPanicException());
         }
+        if (!isPersistent()) {
+            return false;
+        }
         if (readOnly) {
             throw DataUtils.newUnsupportedOperationException(
                     "This map is read-only");
         }
-        store.beforeWrite(this);
+        return store.beforeWrite(this);
     }
 
     @Override
@@ -2222,8 +2225,8 @@ mainLoop:
             RootReference<K,V> rootReference = flushAndGetRoot();
             boolean locked = rootReference.isLockedByCurrentThread();
             if (!locked) {
-                if (attempt++ == 0) {
-                    beforeWrite();
+                if (attempt++ == 0 && beforeWrite()) {
+                    continue;
                 }
                 if (attempt > 3 || rootReference.isLocked()) {
                     rootReference = lockRoot(rootReference, attempt);
@@ -2363,13 +2366,10 @@ mainLoop:
         int attempt = 0;
         while(true) {
             RootReference<K,V> rootReference = flushAppendBufferAndGetRoot();
-//            if (rootReference.getTotalCount() < 1000) {
-//                return operateAppendable(key,value,decisionMaker);
-//            }
             boolean locked = rootReference.isLockedByCurrentThread();
             if (!locked) {
-                if (attempt++ == 0) {
-                    beforeWrite();
+                if (attempt++ == 0 && beforeWrite()) {
+                    continue;
                 }
                 if (attempt > 3 || rootReference.isLocked()) {
                     rootReference = lockRoot(rootReference, attempt);
