@@ -2406,14 +2406,9 @@ mainLoop:
                     index = buffer[bufferIndex].index;
                     result = buffer[bufferIndex].value;
                 } else {
-                    Page<K,V> rootPage = rootReference.root;
-                    CursorPos<K,V> path = CursorPos.traverseDown(rootPage, key);
-                    if (!locked && rootReference != getRoot()) {
-                        continue;
-                    }
-                    Page<K,V> p = path.page;
-                    index = path.index;
-                    result = index < 0 ? null : p.getValue(index);
+                    Page<K, V> page = Page.findLeaf(rootReference.root, key);
+                    index = page.binarySearch(key);
+                    result = index < 0 ? null : page.getValue(index);
                 }
                 Decision decision = decisionMaker.decide(result, value);
                 switch (decision) {
