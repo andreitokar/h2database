@@ -459,7 +459,7 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
             if (!locked) {
                 if (attempt++ == 0) {
                     beforeWrite();
-                } else if (attempt > 3 || rootReference.isLocked()) {
+                } else if (attempt > 7 || rootReference.isLocked()) {
                     rootReference = lockRoot(rootReference, attempt);
                     locked = true;
                 }
@@ -1126,7 +1126,7 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
             }
 
             RootReference<K,V> lockedRootReference = null;
-            if (++attempt > 3 || rootReference.isLocked()) {
+            if (++attempt > 7 || rootReference.isLocked()) {
                 lockedRootReference = lockRoot(rootReference, attempt);
                 rootReference = flushAndGetRoot();
             }
@@ -1731,33 +1731,39 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
      * @return previous value, if mapping for that key existed, or null otherwise
      */
     public V operate(K key, V value, DecisionMaker<? super V> decisionMaker) {
+        assert !getRoot().isLockedByCurrentThread();
         IntValueHolder unsavedMemoryHolder = new IntValueHolder();
         int attempt = 0;
+        CursorPos<K,V> tip = null;
         while(true) {
             RootReference<K,V> rootReference = flushAndGetRoot();
             boolean locked = rootReference.isLockedByCurrentThread();
+            CursorPos<K,V> pos = null;
             if (!locked) {
                 if (attempt++ == 0) {
                     beforeWrite();
+                    pos = tip = CursorPos.traverseDown(rootReference.root, key);
                 }
-                if (attempt > 3 || rootReference.isLocked()) {
+                if (attempt > 7 || rootReference.isLocked()) {
                     rootReference = lockRoot(rootReference, attempt);
                     locked = true;
+                    pos = null;
                 }
             }
             Page<K,V> rootPage = rootReference.root;
             long version = rootReference.version;
-            CursorPos<K,V> tip;
             V result;
             unsavedMemoryHolder.value = 0;
             try {
-                CursorPos<K,V> pos = CursorPos.traverseDown(rootPage, key);
+                if (pos == null) {
+                    pos = CursorPos.traverseDown(rootPage, key, tip);
+                }
+                tip = pos;
                 if (!locked && rootReference != getRoot()) {
                     continue;
                 }
                 Page<K,V> p = pos.page;
                 int index = pos.index;
-                tip = pos;
                 pos = pos.parent;
                 result = index < 0 ? null : p.getValue(index);
                 Decision decision = decisionMaker.decide(result, value, tip);
@@ -1891,6 +1897,7 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
             return lockedRootReference;
         }
         assert !rootReference.isLockedByCurrentThread() : rootReference;
+/*
         RootReference<K,V> oldRootReference = rootReference.previous;
         int contention = 1;
         if (oldRootReference != null) {
@@ -1902,21 +1909,22 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
             assert updateAttemptCounter >= updateCounter : updateAttemptCounter + " >= " + updateCounter;
             contention += (int)((updateAttemptCounter+1) / (updateCounter+1));
         }
+*/
 
         if(attempt > 4) {
-            if (attempt <= 12) {
+            if (attempt <= 24) {
                 Thread.yield();
-            } else if (attempt <= 70 - 2 * contention) {
-                try {
-                    Thread.sleep(contention);
-                } catch (InterruptedException ex) {
-                    throw new RuntimeException(ex);
-                }
+//            } else if (attempt <= 70 - 2 * contention) {
+//                try {
+//                    Thread.sleep(contention);
+//                } catch (InterruptedException ex) {
+//                    throw new RuntimeException(ex);
+//                }
             } else {
                 synchronized (lock) {
                     notificationRequested = true;
                     try {
-                        lock.wait(5);
+                        lock.wait(1);
                     } catch (InterruptedException ignore) {
                     }
                 }
