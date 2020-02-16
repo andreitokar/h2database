@@ -65,7 +65,7 @@ public abstract class Page<K,V> implements Cloneable {
     /**
      * The last result of a find operation is cached.
      */
-    private int cachedCompare;
+//    private int cachedCompare;
 
     /**
      * The estimated memory used in persistent case, IN_MEMORY marker value otherwise.
@@ -407,10 +407,8 @@ public abstract class Page<K,V> implements Cloneable {
      * @param key the key
      * @return the value or null
      */
-    int binarySearch(K key) {
-        int res = map.getKeyType().binarySearch(key, keys, getKeyCount(), cachedCompare);
-        cachedCompare = res < 0 ? ~res : res + 1;
-        return res;
+    final int binarySearch(K key) {
+        return map.getKeyType().binarySearch(key, keys, getKeyCount());
     }
 
     /**
