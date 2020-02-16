@@ -110,21 +110,12 @@ public final class RowDataType extends BasicDataType<SearchRow> implements State
     }
 
     @Override
-    public int binarySearch(SearchRow key, Object storage, int size, int initialGuess) {
-        return binarySearch(key, (SearchRow[])storage, size, initialGuess);
-    }
-
-    public int binarySearch(SearchRow key, SearchRow[] keys, int size, int initialGuess) {
+    public int binarySearch(SearchRow key, Object storage, int size) {
+        SearchRow[] keys = cast(storage);
         int low = 0;
         int high = size - 1;
-        // the cached index minus one, so that
-        // for the first time (when cachedCompare is 0),
-        // the default value is used
-        int x = initialGuess - 1;
-        if (x < 0 || x > high) {
-            x = high >>> 1;
-        }
         while (low <= high) {
+            int x = (low + high) >>> 1;
             int compare = compareSearchRows(key, keys[x]);
             if (compare > 0) {
                 low = x + 1;
@@ -133,9 +124,8 @@ public final class RowDataType extends BasicDataType<SearchRow> implements State
             } else {
                 return x;
             }
-            x = (low + high) >>> 1;
         }
-        return -(low + 1);
+        return ~low;
     }
 
     @Override

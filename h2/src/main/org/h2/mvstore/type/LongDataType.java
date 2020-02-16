@@ -51,23 +51,13 @@ public class LongDataType extends BasicDataType<Long> {
     }
 
     @Override
-    public int binarySearch(Long keyObj, Object storageObj, int size, int initialGuess) {
+    public int binarySearch(Long keyObj, Object storageObj, int size) {
         long key = keyObj;
         Long[] storage = cast(storageObj);
         int low = 0;
         int high = size - 1;
-        // the cached index minus one, so that
-        // for the first time (when cachedCompare is 0),
-        // the default value is used
-        int x = initialGuess - 1;
-        if (x < 0 || x > high) {
-            x = high >>> 1;
-        }
-        return binarySearch(key, storage, low, high, x);
-    }
-
-    private static int binarySearch(long key, Long[] storage, int low, int high, int x) {
         while (low <= high) {
+            int x = (low + high) >>> 1;
             long midVal = storage[x];
             if (key > midVal) {
                 low = x + 1;
@@ -76,7 +66,6 @@ public class LongDataType extends BasicDataType<Long> {
             } else {
                 return x;
             }
-            x = (low + high) >>> 1;
         }
         return ~low;
     }
