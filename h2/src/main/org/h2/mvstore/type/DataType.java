@@ -31,10 +31,9 @@ public interface DataType<T> extends Comparator<T> {
      * @param key to search for
      * @param storage to search within (an array of type T)
      * @param size number of data items in the storage
-     * @param initialGuess for key position
      * @return index of the key , if found, - index of the insertion point, if not
      */
-    int binarySearch(T key, Object storage, int size, int initialGuess);
+    int binarySearch(T key, Object storage, int size);
 
     /**
      * Calculates the amount of used memory in bytes.
