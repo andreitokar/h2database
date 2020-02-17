@@ -1743,7 +1743,7 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
      * @return previous value, if mapping for that key existed, or null otherwise
      */
     public V operate(K key, V value, DecisionMaker<? super V> decisionMaker) {
-        assert !getRoot().isLockedByCurrentThread();
+        beforeWrite();
         IntValueHolder unsavedMemoryHolder = new IntValueHolder();
         int attempt = 0;
         CursorPos<K,V> tip = null;
@@ -1753,7 +1753,6 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
             CursorPos<K,V> pos = null;
             if (!locked) {
                 if (attempt++ == 0) {
-                    beforeWrite();
                     pos = tip = CursorPos.traverseDown(rootReference.root, key);
                 }
                 if (attempt > 7 || rootReference.isLocked()) {
