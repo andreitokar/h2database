@@ -115,13 +115,12 @@ public final class MVRTreeMap<V> extends MVMap<Spatial, V> {
 
     @Override
     public V operate(Spatial key, V value, DecisionMaker<? super V> decisionMaker) {
+        beforeWrite();
         int attempt = 0;
         final Collection<Page<Spatial,V>> removedPages = isPersistent() ? new ArrayList<>() : null;
         while(true) {
             RootReference<Spatial,V> rootReference = flushAndGetRoot();
-            if (attempt++ == 0 && !rootReference.isLockedByCurrentThread()) {
-                beforeWrite();
-            }
+            attempt++;
             Page<Spatial,V> p = rootReference.root;
             if (removedPages != null && p.getTotalCount() > 0) {
                 removedPages.add(p);
