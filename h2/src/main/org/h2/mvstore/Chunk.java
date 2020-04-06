@@ -518,7 +518,6 @@ public final class Chunk {
         assert (pageCountLive == 0) == (maxLenLive == 0) : this;
 
         if (!isLive()) {
-            assert isEvacuatable() : this;
             unused = now;
             return true;
         }
