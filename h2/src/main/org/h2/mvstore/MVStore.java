@@ -381,7 +381,7 @@ public class MVStore implements AutoCloseable {
         if (fileStore == null) {
             fileStoreIsProvided = false;
             if (fileName != null) {
-                fileStore = new FileStore();
+                fileStore = new SingleFileStore();
             }
         } else {
             if (fileName != null) {
@@ -1901,37 +1901,9 @@ public class MVStore implements AutoCloseable {
      */
     private void shrinkFileIfPossible(int minPercent) {
         assert saveChunkLock.isHeldByCurrentThread();
-        if (fileStore.isReadOnly()) {
-            return;
-        }
-        long end = getFileLengthInUse();
-        long fileSize = fileStore.size();
-        if (end >= fileSize) {
-            return;
-        }
-        if (minPercent > 0 && fileSize - end < BLOCK_SIZE) {
-            return;
-        }
-        int savedPercent = (int) (100 - (end * 100 / fileSize));
-        if (savedPercent < minPercent) {
-            return;
-        }
-        if (isOpenOrStopping()) {
-            sync();
-        }
-        fileStore.truncate(end);
-    }
-
-    /**
-     * Get the position right after the last used byte.
-     *
-     * @return the position
-     */
-    private long getFileLengthInUse() {
-        assert saveChunkLock.isHeldByCurrentThread();
         long result = fileStore.getFileLengthInUse();
         assert result == measureFileLengthInUse() : result + " != " + measureFileLengthInUse();
-        return result;
+        fileStore.shrinkFileIfPossible(minPercent);
     }
 
     /**
