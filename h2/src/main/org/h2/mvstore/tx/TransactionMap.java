@@ -489,7 +489,7 @@ public final class TransactionMap<K, V> extends AbstractMap<K,V> {
     }
 
     private V getFromSnapshot(RootReference<K, VersionedValue<V>> rootRef, BitSet committingTransactions, K key) {
-        VersionedValue<V> data = map.get(rootRef.root, key);
+        VersionedValue<V> data = map.get(rootRef, key);
         if (data == null) {
             // doesn't exist
             return null;
