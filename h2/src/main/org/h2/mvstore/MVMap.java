@@ -2215,7 +2215,7 @@ mainLoop:
      * @return previous value, if mapping for that key existed, or null otherwise
      */
     public V operate(K key, V value, DecisionMaker<? super V> decisionMaker) {
-        if (singleWriter || this == store.getMetaMap()/* || getRoot().getTotalCount() < 10_000*/) {
+        if (singleWriter || this == store.getMetaMap() || this == store.getLayoutMap()/* || getRoot().getTotalCount() < 10_000*/) {
             return operateAppendable(key, value, decisionMaker);
         } else {
             return operateBuffered(key, value, decisionMaker);
