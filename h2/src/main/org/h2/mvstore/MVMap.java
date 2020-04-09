@@ -1896,7 +1896,6 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
             return lockedRootReference;
         }
         assert !rootReference.isLockedByCurrentThread() : rootReference;
-/*
         RootReference<K,V> oldRootReference = rootReference.previous;
         int contention = 1;
         if (oldRootReference != null) {
@@ -1908,22 +1907,21 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
             assert updateAttemptCounter >= updateCounter : updateAttemptCounter + " >= " + updateCounter;
             contention += (int)((updateAttemptCounter+1) / (updateCounter+1));
         }
-*/
 
         if(attempt > 4) {
             if (attempt <= 24) {
                 Thread.yield();
-//            } else if (attempt <= 70 - 2 * contention) {
-//                try {
-//                    Thread.sleep(contention);
-//                } catch (InterruptedException ex) {
-//                    throw new RuntimeException(ex);
-//                }
+            } else if (attempt <= 70 - 2 * contention) {
+                try {
+                    Thread.sleep(contention);
+                } catch (InterruptedException ex) {
+                    throw new RuntimeException(ex);
+                }
             } else {
                 synchronized (lock) {
                     notificationRequested = true;
                     try {
-                        lock.wait(1);
+                        lock.wait(3);
                     } catch (InterruptedException ignore) {
                     }
                 }
