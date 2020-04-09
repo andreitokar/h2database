@@ -107,7 +107,7 @@ public class TestStreamStore extends TestBase {
         }
         s.close();
         long writeCount = s.getFileStore().getWriteCount();
-        assertTrue(writeCount > 5);
+        assertTrue(writeCount+"", writeCount >= 5);
     }
 
     private void testExceptionDuringStore() throws IOException {
