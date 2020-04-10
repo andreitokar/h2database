@@ -325,7 +325,7 @@ public class TestMVStoreConcurrent extends TestMVStore {
         }
     }
 
-    private static void testConcurrentChangeAndGetVersion() throws InterruptedException {
+    private void testConcurrentChangeAndGetVersion() throws InterruptedException {
         for (int test = 0; test < 10; test++) {
             try (final MVStore s = new MVStore.Builder().autoCommitDisabled().open()) {
                 s.setVersionsToKeep(10);
@@ -342,7 +342,8 @@ public class TestMVStoreConcurrent extends TestMVStore {
                 };
                 task.execute();
                 Thread.sleep(1);
-                for (int i = 0; i < 10000; i++) {
+                int size = getSize(100, 10000);
+                for (int i = 0; i < size; i++) {
                     if (task.isFinished()) {
                         break;
                     }
@@ -644,7 +645,7 @@ public class TestMVStoreConcurrent extends TestMVStore {
     }
 
     private static void testConcurrentIterate() {
-        try (MVStore s = new MVStore.Builder().pageSplitSize(3).open()) {
+        try (MVStore s = new MVStore.Builder().keysPerPage(3).open()) {
             s.setVersionsToKeep(100);
             final MVMap<Integer, Integer> map = s.openMap("test");
             final int len = 10;
@@ -664,7 +665,7 @@ public class TestMVStoreConcurrent extends TestMVStore {
             };
             task.execute();
             try {
-                for (int k = 0; k < 10000; k++) {
+                for (int k = 0; k < 100; k++) {
                     Iterator<Integer> it = map.keyIterator(r.nextInt(len));
                     long old = map.getVersion();
                     s.commit();
