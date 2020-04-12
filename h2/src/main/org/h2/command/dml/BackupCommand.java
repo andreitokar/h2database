@@ -82,7 +82,7 @@ public class BackupCommand extends Prepared {
                     for (String n : fileList) {
                         if (n.endsWith(Constants.SUFFIX_MV_FILE) && store != null) {
                             MVStore s = store.getMvStore();
-                            boolean before = s.getReuseSpace();
+                            boolean before = s.isSpaceReused();
                             s.setReuseSpace(false);
                             try {
                                 store.getMvStore().getFileStore().backup(out);

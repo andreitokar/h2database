@@ -508,7 +508,7 @@ public class MVStoreTool {
      */
     public static void compact(MVStore source, MVStore target) {
         int autoCommitDelay = target.getAutoCommitDelay();
-        boolean reuseSpace = target.getReuseSpace();
+        boolean reuseSpace = target.isSpaceReused();
         try {
             target.setReuseSpace(false);  // disable unused chunks collection
             target.setAutoCommitDelay(0); // disable autocommit
