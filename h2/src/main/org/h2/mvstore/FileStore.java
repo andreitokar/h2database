@@ -1192,6 +1192,17 @@ public abstract class FileStore
         return chunks;
     }
 
+    public Collection<Chunk> getRewriteCandidates() {
+        return null;
+    }
+
+    public boolean isSpaceReused() {
+        return true;
+    }
+
+    public void setReuseSpace(boolean reuseSpace) {
+    }
+
 //    public void registerDeadChunk(Chunk chunk) {
 //        deadChunks.offer(chunk);
 //    }
