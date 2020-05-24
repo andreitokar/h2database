@@ -88,16 +88,14 @@ public final class RootReference<K,V> {
         this.appendCounter = r.appendCounter;
     }
 
-    // This one is used for unlocking
+    // This one is used for simultaneous page update and optional unlocking
     private RootReference(RootReference<K,V> r, Page<K,V> root, boolean keepLocked, int appendCounter) {
         this.root = root;
         this.version = r.version;
         this.previous = r.previous;
         this.updateCounter = r.updateCounter;
         this.updateAttemptCounter = r.updateAttemptCounter;
-        assert r.holdCount > 0 && r.ownerId == Thread.currentThread().getId() //
-                : Thread.currentThread().getId() + " " + r;
-        this.holdCount = (byte)(r.holdCount - (keepLocked ? 0 : 1));
+        this.holdCount = (byte)(r.holdCount == 0 ? (keepLocked ? 1 : 0) : r.holdCount - (keepLocked ? 0 : 1));
         this.ownerId = this.holdCount == 0 ? 0 : Thread.currentThread().getId();
         this.appendCounter = (byte) appendCounter;
     }

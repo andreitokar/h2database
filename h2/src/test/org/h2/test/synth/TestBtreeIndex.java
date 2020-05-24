@@ -39,6 +39,9 @@ public class TestBtreeIndex extends TestDb {
         for (int i = 0; i < getSize(1, 4); i++) {
             testAddDelete();
             int seed = random.nextInt();
+            seed = -1783663888;
+//            seed = 988242770;
+//            seed = 1408963099;
             testCase(seed);
         }
     }

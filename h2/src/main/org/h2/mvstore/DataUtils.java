@@ -139,6 +139,8 @@ public final class DataUtils {
      */
     public static final int PAGE_HAS_PAGE_NO = 8;
 
+    public static final int PAGE_HAS_BUFFER = 16;
+
     /**
      * The maximum length of a variable size int.
      */
