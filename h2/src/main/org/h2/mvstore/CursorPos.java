@@ -24,6 +24,7 @@ public final class CursorPos<K,V> {
      * In a later case, it could be negative, if the key is not present.
      */
     public int index;
+    public int limit;
 
     /**
      * Next node in the linked list, representing the position within parent level,
@@ -35,7 +36,12 @@ public final class CursorPos<K,V> {
     public CursorPos(Page<K,V> page, int index, CursorPos<K,V> parent) {
         this.page = page;
         this.index = index;
+        this.limit = upperBound(page);
         this.parent = parent;
+    }
+
+    protected static <K,V> int upperBound(Page<K,V> page) {
+        return (page.isLeaf() ? page.getKeyCount() : page.map.getChildPageCount(page)) - 1;
     }
 
     /**
@@ -58,6 +64,16 @@ public final class CursorPos<K,V> {
             page = page.getChildPage(index);
         }
         return new CursorPos<>(page, page.binarySearch(key), cursorPos);
+    }
+
+    static <K,V> CursorPos<K,V> reverse(CursorPos<K,V> cursorPos, CursorPos<K,V> res) {
+        while (cursorPos != null) {
+            CursorPos<K, V> tmp = cursorPos.parent;
+            cursorPos.parent = res;
+            res = cursorPos;
+            cursorPos = tmp;
+        }
+        return res;
     }
 
     /**

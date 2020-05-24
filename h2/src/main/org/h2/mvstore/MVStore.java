@@ -1410,7 +1410,7 @@ public class MVStore implements AutoCloseable {
      *
      * This method may return BEFORE this thread changes are actually persisted!
      *
-     * @return the new version (incremented if there were changes)
+     * @return the new version (incremented if there were changes) or -1 if there were no commit
      */
     public long tryCommit() {
         return tryCommit(x -> true);
@@ -1423,14 +1423,14 @@ public class MVStore implements AutoCloseable {
         if ((!storeLock.isHeldByCurrentThread() || currentStoreVersion < 0) &&
                 storeLock.tryLock()) {
             try {
-                if (check.test(this)) {
-                    store(false);
+                if (check.test(this) && store(false)) {
+                    return currentVersion;
                 }
             } finally {
                 unlockAndCheckPanicCondition();
             }
         }
-        return currentVersion;
+        return INITIAL_VERSION;
     }
 
     /**
@@ -1447,7 +1447,7 @@ public class MVStore implements AutoCloseable {
      * <p>
      * At most one store operation may run at any time.
      *
-     * @return the new version (incremented if there were changes)
+     * @return the new version (incremented if there were changes) or -1 if there were no commit
      */
     public long commit() {
         return commit(x -> true);
@@ -1460,17 +1460,17 @@ public class MVStore implements AutoCloseable {
         if(!storeLock.isHeldByCurrentThread() || currentStoreVersion < 0) {
             storeLock.lock();
             try {
-                if (check.test(this)) {
-                    store(true);
+                if (check.test(this) && store(true)) {
+                    return currentVersion;
                 }
             } finally {
                 unlockAndCheckPanicCondition();
             }
         }
-        return currentVersion;
+        return INITIAL_VERSION;
     }
 
-    private void store(boolean syncWrite) {
+    private boolean store(boolean syncWrite) {
         assert storeLock.isHeldByCurrentThread();
         assert !saveChunkLock.isHeldByCurrentThread();
         if (isOpenOrStopping()) {
@@ -1495,8 +1495,10 @@ public class MVStore implements AutoCloseable {
                     // to allow closing the store
                     currentStoreVersion = -1;
                 }
+                return true;
             }
         }
+        return false;
     }
 
     private void storeNow(boolean syncWrite, long reservedLow, Supplier<Long> reservedHighSupplier) {

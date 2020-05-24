@@ -14,15 +14,15 @@ import java.util.NoSuchElementException;
  * @param <K> the key type
  * @param <V> the value type
  */
-public final class Cursor<K,V> implements Iterator<K> {
-    private final boolean reverse;
-    private final K to;
-    private CursorPos<K,V> cursorPos;
-    private CursorPos<K,V> keeper;
-    private K current;
-    private K last;
-    private V lastValue;
-    private Page<K,V> lastPage;
+public class Cursor<K,V> implements Iterator<K> {
+    protected final boolean reverse;
+    protected final K to;
+    protected CursorPos<K,V> cursorPos;
+    protected CursorPos<K,V> keeper;
+    protected K current;
+    protected K last;
+    protected V lastValue;
+    protected Page<K,V> lastPage;
 
 
     public Cursor(RootReference<K,V> rootReference, K from, K to) {
@@ -49,7 +49,7 @@ public final class Cursor<K,V> implements Iterator<K> {
             while (current == null) {
                 Page<K,V> page = cursorPos.page;
                 int index = cursorPos.index;
-                if (reverse ? index < 0 : index >= upperBound(page)) {
+                if (reverse ? index < 0 : index > upperBound(page)) {
                     // traversal of this page is over, going up a level or stop if at the root already
                     CursorPos<K,V> tmp = cursorPos;
                     cursorPos = cursorPos.parent;
@@ -59,10 +59,10 @@ public final class Cursor<K,V> implements Iterator<K> {
                     tmp.parent = keeper;
                     keeper = tmp;
                 } else {
-                    // traverse down to the leaf taking the leftmost path
+                    // traverse down to the leaf taking the leftmost (rightmost for reverse) path
                     while (!page.isLeaf()) {
                         page = page.getChildPage(index);
-                        index = reverse ? upperBound(page) - 1 : 0;
+                        index = reverse ? upperBound(page) : 0;
                         if (keeper == null) {
                             cursorPos = new CursorPos<>(page, index, cursorPos);
                         } else {
@@ -172,7 +172,17 @@ public final class Cursor<K,V> implements Iterator<K> {
         return cursorPos;
     }
 
-    private static <K,V> int upperBound(Page<K,V> page) {
-        return page.isLeaf() ? page.getKeyCount() : page.map.getChildPageCount(page);
+    public static int normalizeIndex(int index, boolean reverse) {
+        if (index < 0) {
+            index = ~index;
+            if (reverse) {
+                --index;
+            }
+        }
+        return index;
+    }
+
+    protected static <K,V> int upperBound(Page<K,V> page) {
+        return (page.isLeaf() ? page.getKeyCount() : page.map.getChildPageCount(page)) - 1;
     }
 }
