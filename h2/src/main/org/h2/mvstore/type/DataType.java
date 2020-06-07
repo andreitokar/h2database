@@ -51,6 +51,12 @@ public interface DataType<T> extends Comparator<T> {
     boolean isMemoryEstimationAllowed();
 
     /**
+     * Whether data type has total order.
+     * @return true if values of the type can be compared
+     */
+    boolean isComparable();
+
+    /**
      * Write an object.
      *
      * @param buff the target buffer

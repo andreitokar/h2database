@@ -562,8 +562,8 @@ public class MVStoreTool {
             // end ensure that all pages are saved
             target.commit();
         } finally {
-            target.setAutoCommitDelay(autoCommitDelay);
             target.setReuseSpace(reuseSpace);
+            target.setAutoCommitDelay(autoCommitDelay);
         }
     }
 
@@ -712,8 +712,9 @@ public class MVStoreTool {
      * A data type that can read any data that is persisted, and converts it to
      * a byte array.
      */
-    private static class GenericDataType extends BasicDataType<byte[]> {
-        static GenericDataType INSTANCE = new GenericDataType();
+    private static final class GenericDataType extends BasicDataType<byte[]> {
+        static final GenericDataType INSTANCE = new GenericDataType();
+        static final byte[] DUMMY = new byte[0];
 
         private GenericDataType() {}
 
@@ -723,8 +724,13 @@ public class MVStoreTool {
         }
 
         @Override
+        public boolean isComparable() {
+            return false;
+        }
+
+        @Override
         public int getMemory(byte[] obj) {
-            return obj == null ? 0 : obj.length * 8;
+            return obj == null || obj == DUMMY ? 0 : obj.length * 8;
         }
 
         @Override
@@ -734,7 +740,7 @@ public class MVStoreTool {
 
         @Override
         public void write(WriteBuffer buff, byte[] obj) {
-            if (obj != null) {
+            if (obj != DUMMY) {
                 buff.put(obj);
             }
         }
@@ -743,7 +749,7 @@ public class MVStoreTool {
         public byte[] read(ByteBuffer buff) {
             int len = buff.remaining();
             if (len == 0) {
-                return null;
+                return DUMMY;
             }
             byte[] data = new byte[len];
             buff.get(data);

@@ -189,7 +189,7 @@ public final class MemoryEstimator {
         return (int)((statsData >> SKIP_SUM_SHIFT) & SKIP_SUM_MASK);
     }
 
-    private static int getAverage(long updatedStatsData) {
+    public static int getAverage(long updatedStatsData) {
         return (int)(updatedStatsData >>> (SUM_SHIFT + WINDOW_SHIFT));
     }
 }
