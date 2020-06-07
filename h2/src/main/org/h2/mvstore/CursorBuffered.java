@@ -134,7 +134,7 @@ public final class CursorBuffered<K, V> extends Cursor<K,V>
                     keeper = tmp;
                 } else if (page.isLeaf()) {
                     K key = page.getKey(index);
-                    int compare = buffersCount == 0 ? increment : comparator.compare(keys[heap[0]], key);
+                    int compare = buffersCount == 0 ? increment : Integer.signum(comparator.compare(keys[heap[0]], key));
 
                     V value;
                     if (compare == increment) {
@@ -302,6 +302,8 @@ public final class CursorBuffered<K, V> extends Cursor<K,V>
             long index = map.getKeyIndex(next());
             last = map.getKey(index + (reverse ? -n : n));
             cursorPos = traverseDown(root, last, reverse);
+            buffersCount = 0;
+            level = 0;
             init(last, to, reverse);
         }
     }

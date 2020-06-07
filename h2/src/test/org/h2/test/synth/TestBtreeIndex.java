@@ -35,14 +35,12 @@ public class TestBtreeIndex extends TestDb {
 
     @Override
     public void test() throws SQLException {
+        testAddDelete();
         Random random = new Random();
+        int seed = -1783663888;
         for (int i = 0; i < getSize(1, 4); i++) {
-            testAddDelete();
-            int seed = random.nextInt();
-            seed = -1783663888;
-//            seed = 988242770;
-//            seed = 1408963099;
             testCase(seed);
+            seed = random.nextInt();
         }
     }
 

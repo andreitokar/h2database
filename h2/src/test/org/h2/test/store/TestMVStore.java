@@ -101,8 +101,8 @@ public class TestMVStore extends TestBase {
         testInMemory();
         testLargeImport();
         testBtreeStore();
-//        testCompact();
-//        testCompactMapNotOpen();
+        testCompact();
+        testCompactMapNotOpen();
         testReuseSpace();
         testRandom();
         testKeyValueClasses();
@@ -791,7 +791,7 @@ public class TestMVStore extends TestBase {
             }
         }
         int[] expectedReadsForCacheSize = {
-                3464, 244, 244, 244, 244, 244, 244   // compressed
+                1404, 358, 358, 358, 358, 358, 358   // compressed
 //                1880, 490, 476, 501, 476, 476, 541   // compressed
 //                1887, 1775, 1599, 1355, 1035, 732, 507    // uncompressed
         };
@@ -1385,7 +1385,7 @@ public class TestMVStore extends TestBase {
             }
             assertEquals(1000, m.size());
             // memory calculations were adjusted, so as this out-of-the-thin-air number
-//            assertEquals(93832, s.getUnsavedMemory());
+            assertEquals(91487, s.getUnsavedMemory());
             s.commit();
             assertEquals(2, s.getFileStore().getWriteCount());
         }
@@ -1760,6 +1760,7 @@ public class TestMVStore extends TestBase {
                 trace("Before - fill rate: " + s.getFillRate() + "%, chunks fill rate: "
                         + s.getChunksFillRate() + ", len: " + FileUtils.size(fileName));
                 s.compact(80, 2048);
+                s.commit();
                 s.compactMoveChunks();
                 trace("After  - fill rate: " + s.getFillRate() + "%, chunks fill rate: "
                         + s.getChunksFillRate() + ", len: " + FileUtils.size(fileName));

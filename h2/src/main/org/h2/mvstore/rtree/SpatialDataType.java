@@ -48,6 +48,11 @@ public class SpatialDataType extends BasicDataType<Spatial> {
     }
 
     @Override
+    public boolean isComparable() {
+        return false;
+    }
+
+    @Override
     public int compare(Spatial a, Spatial b) {
         if (a == b) {
             return 0;

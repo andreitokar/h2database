@@ -1502,9 +1502,9 @@ public class MVStore implements AutoCloseable {
     }
 
     private void storeNow(boolean syncWrite, long reservedLow, Supplier<Long> reservedHighSupplier) {
+        int currentUnsavedMemory = unsavedMemory;
         try {
             lastCommitTime = getTimeSinceCreation();
-            int currentUnsavedPageCount = unsavedMemory;
             // it is ok, since that path suppose to be single-threaded under storeLock
             //noinspection NonAtomicOperationOnVolatileField
             long version = ++currentVersion;
@@ -1519,7 +1519,7 @@ public class MVStore implements AutoCloseable {
             // some pages might have been changed in the meantime (in the newest
             // version)
             saveNeeded = false;
-            unsavedMemory = Math.max(0, unsavedMemory - currentUnsavedPageCount);
+            unsavedMemory = Math.max(0, unsavedMemory - currentUnsavedMemory);
         } catch (MVStoreException e) {
             panic(e);
         } catch (Throwable e) {

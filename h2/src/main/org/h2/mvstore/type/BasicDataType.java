@@ -36,6 +36,11 @@ public abstract class BasicDataType<T> implements DataType<T> {
     }
 
     @Override
+    public boolean isComparable() {
+        return true;
+    }
+
+    @Override
     public int binarySearch(T key, Object storageObj, int size, int initialGuess) {
         T[] storage = cast(storageObj);
         int low = 0;

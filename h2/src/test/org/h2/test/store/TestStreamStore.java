@@ -126,10 +126,11 @@ public class TestStreamStore extends TestBase {
     private void testReadCount() throws IOException {
         String fileName = getBaseDir() + "/testReadCount.h3";
         FileUtils.delete(fileName);
-        MVStore s = new MVStore.Builder().
-                fileName(fileName).
-                open();
-        s.setCacheSize(1);
+        MVStore s = new MVStore.Builder()
+                .autoCommitDisabled()
+                .pageSplitSize(1024)
+                .fileName(fileName)
+                .open();
         StreamStore streamStore = getAutoCommitStreamStore(s);
         long size = s.getPageSplitSize() * 2;
         for (int i = 0; i < 100; i++) {
@@ -137,12 +138,13 @@ public class TestStreamStore extends TestBase {
         }
         s.commit();
         MVMap<Long, byte[]> map = s.openMap("data");
-        assertTrue("size: " + map.size(), map.sizeAsLong() >= 100);
+        assertTrue("size: " + map.size(), map.sizeAsLong() >= 10);
         s.close();
 
-        s = new MVStore.Builder().
-                fileName(fileName).
-                open();
+        s = new MVStore.Builder()
+                .autoCommitDisabled()
+                .fileName(fileName)
+                .open();
         streamStore = getAutoCommitStreamStore(s);
         for (int i = 0; i < 100; i++) {
             streamStore.put(new RandomStream(size, -i));
