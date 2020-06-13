@@ -274,61 +274,70 @@ public abstract class Page<K,V> implements Cloneable {
 */
 
 
-    public static <T> int mergeCenter(T[] a, int lowA, int highA,
-                            T[] b, int lowB, int highB,
-                            T[] res, int posRes,
-                            Comparator<? super T> comparator,
-                            BiFunction<? super T, ? super T, ? extends T> aggregator,
-                            boolean preferB) {
-        int lenA = highA - lowA;
-        assert lenA >= 0;
-        int lenB = highB - lowB;
-        assert lenB >= 0;
-//        if (lenA + lenB <= 7) {
-//            return mergeSmall(a, lowA, highA, b, lowB, highB, res, posRes, comparator, aggregator, preferB);
-//        }
-        if (lenA == 0) {
-            System.arraycopy(b, lowB, res, posRes, lenB);
-            return posRes + lenB;
-        }
-        if (lenA > lenB) {
-            return merge(b, lowB, highB, a, lowA, highA, res, posRes, comparator, aggregator, !preferB);
-        }
-        int midA = (lowA + highA) >> 1;
-        T key = a[midA];
-        int midB = Arrays.binarySearch(b, lowB, highB, key, comparator);
-        boolean noMatch = midB < 0;
-        if (noMatch) {
-            midB = ~midB;
-        }
+    public static <T> int merge(T[] a, int lowA, int highA,
+                                T[] b, int lowB, int highB,
+                                T[] res, int posRes,
+                                Comparator<? super T> comparator,
+                                BiFunction<? super T, ? super T, ? extends T> aggregator,
+                                boolean preferB) {
+        while (true) {
+            int lenA = highA - lowA;
+            assert lenA >= 0;
+            int lenB = highB - lowB;
+            assert lenB >= 0;
+//            if (lenA + lenB <= 7) {
+//                return mergeSmall(a, lowA, highA, b, lowB, highB, res, posRes, comparator, aggregator, preferB);
+//            }
+//*
+            if (lenA > lenB) {
+                T[] tmp = a;
+                a = b;
+                b = tmp;
 
-        posRes = merge(a, lowA, midA, b, lowB, midB, res, posRes, comparator, aggregator, preferB);
+                int t = lowA;
+                lowA = lowB;
+                lowB = t;
 
-        if (!noMatch) {
-            T preferredKey = b[midB++];
-            noMatch = aggregator == null;
-            if (noMatch) {
-                if (preferB) {
-                    key = a[midA];
-                } else {
-                    key = preferredKey;
-                    preferredKey = a[midA];
-                }
-                res[posRes++] = preferredKey;
-            } else {
-                if (preferB) {
-                    key = aggregator.apply(preferredKey, key);
-                } else {
-                    key = aggregator.apply(key, preferredKey);
-                }
-                noMatch = key != null;
+                t = highA;
+                highA = highB;
+                highB = t;
+
+                t = lenA;
+                lenA = lenB;
+                lenB = t;
+
+                preferB = !preferB;
             }
-        }
-        if (noMatch) {
-            res[posRes++] = key;
-        }
+            if (lenA == 0) {
+                System.arraycopy(b, lowB, res, posRes, lenB);
+                return posRes + lenB;
+            }
+            int midA = (lowA + highA) >> 1;
+            T itemA = a[midA];
+            int midB = Arrays.binarySearch(b, lowB, highB, itemA, comparator);
+            boolean match = midB >= 0;
+            if (!match) {
+                midB = ~midB;
+            }
 
-        return merge(a, ++midA, highA, b, midB, highB, res, posRes, comparator, aggregator, preferB);
+            posRes = merge(a, lowA, midA, b, lowB, midB, res, posRes, comparator, aggregator, preferB);
+
+            if (match) {
+                T itemB = b[midB++];
+                if (preferB) {
+                    T tmp = itemA;
+                    itemA = itemB;
+                    itemB = tmp;
+                }
+                itemA = aggregator.apply(itemA, itemB);
+                match = itemA == null;
+            }
+            if (!match) {
+                res[posRes++] = itemA;
+            }
+            lowA = ++midA;
+            lowB = midB;
+        }
     }
 
     public static <T> int mergeBig(T[] a, int lowA, int highA,
@@ -406,7 +415,7 @@ public abstract class Page<K,V> implements Cloneable {
         }
     }
 
-    public static <T> int merge(
+    public static <T> int mergeSmall(
                             T[] a, int lowA, int highA,
                             T[] b, int lowB, int highB,
                             T[] res, int posRes,
@@ -469,10 +478,11 @@ public abstract class Page<K,V> implements Cloneable {
      * @return the value, or null if not found
      */
     static <K,V> V get(Page<K,V> p, K key) {
+        MVMap<K, V> map = p.map;
         while (true) {
             KVMapping<K, V>[] buffer = p.getBuffer();
             if (buffer != null) {
-                int index = p.map.binarySearch(buffer, key, 0);
+                int index = map.binarySearch(buffer, key, 0);
                 if (index >= 0) {
                     return buffer[index].value;
                 }
@@ -2229,70 +2239,75 @@ public abstract class Page<K,V> implements Cloneable {
         }
 
         @Override
-        int acceptMappings(KVMapping<K, V>[] buffer, int position, int count,
+        int acceptMappings(KVMapping<K, V>[] buffer, int bufferPosition, int bufferCount,
                            K[] keyHolder, Page<K, V>[] pageHolder, int holderPosition,
                            Collection<Page<K, V>> removedPages, MVMap.IntValueHolder unsavedMemoryHolder) {
             removedPages.add(this);
-            int totalKeyCount = getKeyCount() + count;
-            for (int index = position; index < position + count; index++) {
-                KVMapping<K, V> kvMapping = buffer[index];
-                if (kvMapping.value == null) {
-                    --totalKeyCount;
-                }
-                if (kvMapping.existing) {
-                    --totalKeyCount;
-                }
-            }
-            assert totalKeyCount >= 0;
+            int keyCount = getKeyCount();
+            int totalKeyCount = calculateTotalKeyCount(keyCount, buffer, bufferPosition, bufferCount);
             if (totalKeyCount == 0) {
                 return 0;
             }
             int keyPerPageLimit = calculateKeyPerLeafLimit();
             int numberOfPages = (totalKeyCount + keyPerPageLimit - 1) / keyPerPageLimit;
-            int pageSize = (totalKeyCount + numberOfPages - 1) / numberOfPages;
-            int bumpIndex = totalKeyCount  + numberOfPages - pageSize * numberOfPages;
+            totalKeyCount += numberOfPages;
+            int pageSize = (totalKeyCount - 1) / numberOfPages;
+            totalKeyCount -= pageSize * numberOfPages;
             int pageIndex = -1;
-            int bufferIndex = position - 1;
+            --bufferPosition;
             DataType<K> comparator = map.getKeyType();
             int compare = 0;
             K pageKey = null;
             K bufferKey = null;
             for (int nextPageIndex = 0; nextPageIndex < numberOfPages; nextPageIndex++) {
-                if (nextPageIndex == bumpIndex) {
+                if (nextPageIndex == totalKeyCount) {
                     --pageSize;
                 }
                 K[] keyStorage = createKeyStorage(pageSize);
                 V[] valueStorage = createValueStorage(pageSize);
                 int combinedIndex = 0;
-                while (combinedIndex < pageSize) {
+                do {
                     if (compare >= 0) {
-                        pageKey = ++pageIndex >= getKeyCount() ? null : getKey(pageIndex);
+                        pageKey = ++pageIndex >= keyCount ? null : getKey(pageIndex);
                     }
                     if (compare <= 0) {
-                        bufferKey = --count < 0 ? null : buffer[++bufferIndex].key;
+                        bufferKey = --bufferCount < 0 ? null : buffer[++bufferPosition].key;
                     }
-                    if (bufferKey == null) {
-                        if (pageKey == null) {
-                            break;
-                        }
-                        compare = 1;
-                    } else {
-                        compare = pageKey == null ? -1 : comparator.compare(bufferKey, pageKey);
-                    }
+                    compare = pageKey == null ? -1 :
+                                bufferKey == null ? 1 :
+                                comparator.compare(bufferKey, pageKey);
                     if (compare > 0) {
                         keyStorage[combinedIndex] = pageKey;
                         valueStorage[combinedIndex++] = getValue(pageIndex);
-                    } else if (buffer[bufferIndex].value != null) {
+                    } else if (buffer[bufferPosition].value != null) {
                         keyStorage[combinedIndex] = bufferKey;
-                        valueStorage[combinedIndex++] = buffer[bufferIndex].value;
+                        valueStorage[combinedIndex++] = buffer[bufferPosition].value;
+                    } else {
+                        assert compare == 0;
                     }
-                }
+                } while (combinedIndex < pageSize);
                 Page<K,V> page = Page.createLeaf(map, keyStorage, valueStorage, 0);
-                keyHolder[holderPosition] = page.getKey(0);
+                keyHolder[holderPosition] = keyStorage[0];
                 pageHolder[holderPosition++] = page;
                 unsavedMemoryHolder.value += page.getMemory();
             }
             return numberOfPages;
+        }
+
+        private static <K,V> int calculateTotalKeyCount(int keyCount, KVMapping<K, V>[] buffer,
+                                                        int bufferPosition, int bufferCount) {
+            int totalKeyCount = keyCount + bufferCount;
+            for (int index = bufferPosition; index < bufferPosition + bufferCount; index++) {
+                KVMapping<K, V> kvMapping = buffer[index];
+                if (kvMapping.existing) {
+                    --totalKeyCount;
+                    if (kvMapping.value == null) {
+                        --totalKeyCount;
+                    }
+                }
+            }
+            assert totalKeyCount >= 0;
+            return totalKeyCount;
         }
 
         @Override
