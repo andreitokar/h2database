@@ -253,7 +253,37 @@ public abstract class Page<K,V> implements Cloneable {
         return page;
     }
 
-    public static <T> int merge(T[] a, int lowA, int highA,
+/*
+    public static <T> int merge(
+                            T[] a, int lowA, int highA,
+                            T[] b, int lowB, int highB,
+                            T[] res, int posRes,
+                            Comparator<? super T> comparator,
+                            BiFunction<? super T, ? super T, ? extends T> aggregator,
+                            boolean preferB) {
+        T[] res2 = res.clone();
+        int count = mergeSmall(a, lowA, highA,
+                                b, lowB, highB,
+                                res, posRes,
+                                comparator,
+                                aggregator,
+                                preferB);
+        int count2 = merge2(a, lowA, highA,
+                                b, lowB, highB,
+                                res2, posRes,
+                                comparator,
+                                aggregator,
+                                preferB);
+        assert count == count2;
+        for (int i = posRes; i < count; i++) {
+            assert comparator.compare(res[i], res2[i]) == 0;
+        }
+        return count;
+    }
+*/
+
+
+    public static <T> int mergeCenter(T[] a, int lowA, int highA,
                             T[] b, int lowB, int highB,
                             T[] res, int posRes,
                             Comparator<? super T> comparator,
@@ -263,6 +293,9 @@ public abstract class Page<K,V> implements Cloneable {
         assert lenA >= 0;
         int lenB = highB - lowB;
         assert lenB >= 0;
+//        if (lenA + lenB <= 7) {
+//            return mergeSmall(a, lowA, highA, b, lowB, highB, res, posRes, comparator, aggregator, preferB);
+//        }
         if (lenA == 0) {
             System.arraycopy(b, lowB, res, posRes, lenB);
             return posRes + lenB;
@@ -305,6 +338,124 @@ public abstract class Page<K,V> implements Cloneable {
         }
 
         return merge(a, ++midA, highA, b, midB, highB, res, posRes, comparator, aggregator, preferB);
+    }
+
+    public static <T> int mergeBig(T[] a, int lowA, int highA,
+                            T[] b, int lowB, int highB,
+                            T[] res, int posRes,
+                            Comparator<? super T> comparator,
+                            BiFunction<? super T, ? super T, ? extends T> aggregator,
+                            boolean preferB) {
+        while(true) {
+            int lenA = highA - lowA;
+            assert lenA >= 0;
+            int lenB = highB - lowB;
+            assert lenB >= 0;
+//            if (lenA + lenB <= 9) {
+//                return mergeSmall(a, lowA, highA, b, lowB, highB, res, posRes, comparator, aggregator, preferB);
+//            }
+            if (lenA > lenB) {
+                T[] tmp = a;
+                a = b;
+                b = tmp;
+
+                int t = lowA;
+                lowA = lowB;
+                lowB = t;
+
+                t = highA;
+                highA = highB;
+                highB = t;
+
+                preferB = !preferB;
+                continue;
+            }
+            if (lenA == 0) {
+                System.arraycopy(b, lowB, res, posRes, lenB);
+                return posRes + lenB;
+            }
+            T itemA = a[lowA++];
+            int midB = Arrays.binarySearch(b, lowB, highB, itemA, comparator);
+            boolean match = midB >= 0;
+            if (!match) {
+                midB = ~midB;
+            }
+            lenB = midB - lowB;
+
+            System.arraycopy(b, lowB, res, posRes, lenB);
+            posRes += lenB;
+            lowB = midB;
+
+            if (match) {
+                T itemB = b[lowB++];
+//                match = aggregator != null;
+//                if (!match) {
+//                    if (!preferB) {
+//                        T tmp = itemA;
+//                        itemA = itemB;
+//                        itemB = tmp;
+//                    }
+//                    res[posRes++] = itemB;
+//                } else {
+                    if (preferB) {
+                        T tmp = itemA;
+                        itemA = itemB;
+                        itemB = tmp;
+                    }
+//                        itemA = aggregator.apply(itemB, itemA);
+//                    } else {
+                        itemA = aggregator.apply(itemA, itemB);
+//                    }
+                    match = itemA == null;
+//                }
+            }
+            if (!match) {
+                res[posRes++] = itemA;
+            }
+        }
+    }
+
+    public static <T> int merge(
+                            T[] a, int lowA, int highA,
+                            T[] b, int lowB, int highB,
+                            T[] res, int posRes,
+                            Comparator<? super T> comparator,
+                            BiFunction<? super T, ? super T, ? extends T> aggregator,
+                            boolean preferB) {
+        T itemA = null;
+        T itemB = null;
+        --lowA;
+        --lowB;
+        int compare = 0;
+        while (true) {
+            if (compare <= 0) {
+                if (++lowA >= highA) {
+                    if (compare == 0) {
+                        ++lowB;
+                    }
+                    highB -= lowB;
+                    System.arraycopy(b, lowB, res, posRes, highB);
+                    return posRes + highB;
+                }
+                itemA = a[lowA];
+            }
+            if (compare >= 0) {
+                if (++lowB >= highB) {
+                    highA -= lowA;
+                    System.arraycopy(a, lowA, res, posRes, highA);
+                    return posRes + highA;
+                }
+                itemB = b[lowB];
+            }
+            compare = comparator.compare(itemA, itemB);
+            T item = compare < 0 ? itemA :
+                     compare > 0 ? itemB :
+                     preferB ? aggregator.apply(itemB, itemA) :
+                               aggregator.apply(itemA, itemB);
+            if (item != null) {
+                res[posRes++] = item;
+            }
+        }
     }
 
     private void initMemoryAccount(int memoryCount) {
