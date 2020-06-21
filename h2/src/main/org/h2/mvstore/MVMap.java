@@ -493,11 +493,7 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
     @SuppressWarnings("unchecked")
     @Override
     public final V get(Object key) {
-        return getIt((K)key);
-    }
-
-    public final V getIt(K key) {
-        return get(getRoot(), key);
+        return get(getRoot(), (K)key);
     }
 
     public final V get(RootReference<K,V> rootReference, K key) {
@@ -533,10 +529,10 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
         return binarySearch(buffer, key, low, high);
     }
 
-    int binarySearch(KVMapping<K,V>[] buffer, K key, int low, int high) {
+    final int binarySearch(KVMapping<K,V>[] buffer, K key, int low, int high) {
         while (low <= high) {
             int x = (low + high) >>> 1;
-            int compare = compare(key, buffer[x].key);
+            int compare = keyType.compare(key, buffer[x].key);
             if (compare > 0) {
                 low = x + 1;
             } else if (compare < 0) {

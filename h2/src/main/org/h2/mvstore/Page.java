@@ -1919,10 +1919,10 @@ public abstract class Page<K,V> implements Cloneable {
                            Collection<Page<K, V>> removedPages, MVMap.IntValueHolder unsavedMemoryHolder) {
             assert count > 0;
             KVMapping<K, V>[] ownBuffer = getBuffer();
-            if (ownBuffer == null/* || ownBuffer.length == 0*/) {
+            if (ownBuffer == null) {
                 return super.acceptMappings(buffer, position, count, keyHolder, pageHolder, holderPosition, removedPages, unsavedMemoryHolder);
             }
-
+            
             int ownCount = ownBuffer.length;
             assert ownCount > 0;
             KVMapping<K, V>[] merged = Page.createBuffer(ownCount + count);
