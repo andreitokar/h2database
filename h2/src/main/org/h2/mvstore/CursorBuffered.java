@@ -28,7 +28,7 @@ public final class CursorBuffered<K, V> extends Cursor<K,V>
     private final int[] heap = new int [LEVELS];
     private       int level;
     private       int buffersCount;
-    private Page<K,V> coverPage;
+    private       Page<K,V> coverPage;
 
     CursorBuffered(RootReference<K,V> rootReference, K from, K to, boolean reverse) {
         super(rootReference, from, to, reverse);

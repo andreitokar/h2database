@@ -41,17 +41,17 @@ public class LongDataType extends BasicDataType<Long> {
     }
 
     @Override
-    public Long[] createStorage(int size) {
+    public final Long[] createStorage(int size) {
         return size == 0 ? EMPTY_LONG_ARR : new Long[size];
     }
 
     @Override
-    public int compare(Long one, Long two) {
+    public final int compare(Long one, Long two) {
         return Long.compare(one, two);
     }
 
     @Override
-    public int binarySearch(Long keyObj, Object storageObj, int size, int initialGuess) {
+    public final int binarySearch(Long keyObj, Object storageObj, int size, int initialGuess) {
         long key = keyObj;
         Long[] storage = cast(storageObj);
         int low = 0;
@@ -78,6 +78,6 @@ public class LongDataType extends BasicDataType<Long> {
             }
             x = (low + high) >>> 1;
         }
-        return -(low + 1);
+        return ~low;
     }
 }
