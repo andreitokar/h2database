@@ -2989,10 +2989,8 @@ public final class InformationSchemaTable extends MetaTable {
                             "info.CHUNKS_FILL_RATE", Integer.toString(mvStore.getChunksFillRate()));
                     add(session, rows,
                             "info.CHUNKS_FILL_RATE_RW", Integer.toString(mvStore.getRewritableChunksFillRate()));
-                    try {
-                        add(session, rows,
-                                "info.FILE_SIZE", Long.toString(fs.getFile().size()));
-                    } catch (IOException ignore) {/**/}
+                    add(session, rows,
+                            "info.FILE_SIZE", Long.toString(fs.size()));
                     add(session, rows,
                             "info.CHUNK_COUNT", Long.toString(mvStore.getChunkCount()));
                     add(session, rows,
