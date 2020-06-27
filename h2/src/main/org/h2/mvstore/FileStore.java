@@ -117,7 +117,7 @@ public abstract class FileStore
     /**
      * The map of chunks.
      */
-    private ConcurrentHashMap<Integer, Chunk> chunks = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Integer, Chunk> chunks = new ConcurrentHashMap<>();
 
     private final HashMap<String, Object> storeHeader = new HashMap<>();
 
@@ -144,10 +144,10 @@ public abstract class FileStore
 
 
     public void open(String fileName, boolean readOnly, char[] encryptionKey,
-                     MVStore mvStore, ConcurrentHashMap<Integer, Chunk> chunks) {
+                     MVStore mvStore) {
         this.fileName = fileName;
         this.readOnly = readOnly;
-        bind(mvStore, chunks);
+        bind(mvStore);
         scrubLayoutMap();
     }
 
@@ -306,15 +306,17 @@ public abstract class FileStore
         }
     }
 
-    public void bind(MVStore mvStore, ConcurrentHashMap<Integer, Chunk> chunks) {
+    public void bind(MVStore mvStore) {
         if(this.mvStore != mvStore) {
             layout = new MVMap<>(mvStore, 0, StringDataType.INSTANCE, StringDataType.INSTANCE);
             this.mvStore = mvStore;
-            this.chunks = chunks;
+            mvStore.resetLastMapId(lastChunk == null ? 0 : lastChunk.mapId);
+            mvStore.setCurrentVersion(lastChunkVersion());
         }
     }
 
     public void close() {
+        chunks.clear();
         mvStore = null;
     }
 
@@ -419,7 +421,7 @@ public abstract class FileStore
     protected abstract void allocateChunkSpace(Chunk c, WriteBuffer buff);
 
     public void storeBuffer(Chunk c, WriteBuffer buff) {
-        allocateChunkSpace(c, buff);
+//        allocateChunkSpace(c, buff);
         saveChunkLock.lock();
         try {
             buff.position(0);
