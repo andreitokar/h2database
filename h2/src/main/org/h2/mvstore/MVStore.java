@@ -21,6 +21,7 @@ import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.Set;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutionException;
@@ -1278,35 +1279,43 @@ public class MVStore implements AutoCloseable {
     boolean compactMoveChunks(int targetFillRate, long moveSize) {
         boolean res = false;
         if (isSpaceReused()) {
-            storeLock.lock();
-            try {
-                checkOpen();
-                // because serializationExecutor is a single-threaded one and
-                // all task submissions to it are done under storeLock,
-                // it is guaranteed, that upon this dummy task completion
-                // there are no pending / in-progress task here
-                submitOrRun(serializationExecutor, () -> {}, true, 0, Integer.MAX_VALUE);
-                serializationLock.lock();
-                try {
-                    // similarly, all task submissions to bufferSaveExecutor
-                    // are done under serializationLock, and upon this dummy task completion
-                    // it will be no pending / in-progress task here
-                    submitOrRun(bufferSaveExecutor, () -> {}, true, 0, Integer.MAX_VALUE);
-                    dropUnusedChunks();
-                    res = fileStore.compactChunks(targetFillRate, moveSize, this);
-                } finally {
-                    serializationLock.unlock();
-                }
-            } catch (MVStoreException e) {
-                panic(e);
-            } catch (Throwable e) {
-                panic(DataUtils.newMVStoreException(
-                        DataUtils.ERROR_INTERNAL, "{0}", e.toString(), e));
-            } finally {
-                unlockAndCheckPanicCondition();
-            }
+            res = executeFilestoreOperation(() -> {
+                dropUnusedChunks();
+                return fileStore.compactChunks(targetFillRate, moveSize, this);
+            });
         }
         return res;
+    }
+
+    public <R> R executeFilestoreOperation(Callable<R> operation) {
+        R result = null;
+        storeLock.lock();
+        try {
+            checkOpen();
+            // because serializationExecutor is a single-threaded one and
+            // all task submissions to it are done under storeLock,
+            // it is guaranteed, that upon this dummy task completion
+            // there are no pending / in-progress task here
+            submitOrRun(serializationExecutor, () -> {}, true, 0, Integer.MAX_VALUE);
+            serializationLock.lock();
+            try {
+                // similarly, all task submissions to bufferSaveExecutor
+                // are done under serializationLock, and upon this dummy task completion
+                // it will be no pending / in-progress task here
+                submitOrRun(bufferSaveExecutor, () -> {}, true, 0, Integer.MAX_VALUE);
+                result = operation.call();
+            } finally {
+                serializationLock.unlock();
+            }
+        } catch (MVStoreException e) {
+            panic(e);
+        } catch (Throwable e) {
+            panic(DataUtils.newMVStoreException(
+                    DataUtils.ERROR_INTERNAL, "{0}", e.toString(), e));
+        } finally {
+            unlockAndCheckPanicCondition();
+        }
+        return result;
     }
 
 
