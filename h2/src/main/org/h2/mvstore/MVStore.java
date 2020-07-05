@@ -385,11 +385,7 @@ public class MVStore implements AutoCloseable {
                     fileStore.bind(this);
                     chunks = fileStore.getChunks();
                 }
-                if (this.fileStore.size() == 0) {
-                    fileStore.initializeStoreHeader(getTimeAbsolute());
-                } else {
-                    fileStore.readStoreHeader(recoveryMode);
-                }
+                fileStore.readStoreHeader(recoveryMode);
             } catch (MVStoreException e) {
                 panic(e);
             } finally {
@@ -416,7 +412,7 @@ public class MVStore implements AutoCloseable {
     }
 
     private MVMap<String,String> openMetaMap() {
-        int metaId = fileStore != null ? fileStore.getMetaMapId() : 1;
+        int metaId = fileStore != null ? fileStore.getMetaMapId(this::getNextMapId) : 1;
         MVMap<String,String> map = new MVMap<>(this, metaId, StringDataType.INSTANCE, StringDataType.INSTANCE);
         map.setRootPos(getRootPos(map.getId()), currentVersion - 1);
         return map;
