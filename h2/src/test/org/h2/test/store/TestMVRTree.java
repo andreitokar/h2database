@@ -170,7 +170,7 @@ public class TestMVRTree extends TestMVStore {
             MVRTreeMap<String> r = s.openMap("data",
                     new MVRTreeMap.Builder<String>().dimensions(2).
                             valueType(StringDataType.INSTANCE));
-            Random rand = new Random(1);
+            rand = new Random(1);
             for (int i = 0; i < len; i++) {
                 float x = rand.nextFloat(), y = rand.nextFloat();
                 float p = (float) (rand.nextFloat() * 0.000001);
@@ -229,7 +229,7 @@ public class TestMVRTree extends TestMVStore {
 
             // intersection
             list.clear();
-            Spatialk = key(0, 47.34, 7.36, 0);
+            Spatial k = key(0, 47.34, 7.36, 0);
             for (Iterator<Spatial> it = r.findIntersectingKeys(k); it.hasNext(); ) {
                 list.add(r.get(it.next()));
             }
