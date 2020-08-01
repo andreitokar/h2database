@@ -832,6 +832,7 @@ public class MVStore implements AutoCloseable {
             fileStore.setWriteVersion(version);
         }
         onVersionChange(version);
+        metaChanged = false;
     }
 
     /**
@@ -910,7 +911,6 @@ public class MVStore implements AutoCloseable {
                         //noinspection NonAtomicOperationOnVolatileField
                         ++currentVersion;
                         setWriteVersion(currentVersion);
-                        metaChanged = false;
                     } else {
                         dropUnusedChunks();
                         if (fileStore.isReadOnly()) {
@@ -1860,7 +1860,7 @@ public class MVStore implements AutoCloseable {
             // no stored data
             return true;
         }
-        return fileStore.isKnownVersion(version);
+        return fileStore == null || fileStore.isKnownVersion(version);
     }
 
     /**
@@ -1971,31 +1971,7 @@ public class MVStore implements AutoCloseable {
         storeLock.lock();
         try {
             checkOpen();
-
-            if (version == 0) {
-                // special case: remove all data
-                if (fileStore != null) {
-                    fileStore.rollbackTo(version);
-                }
-                meta.setInitialRoot(meta.createEmptyLeaf(), INITIAL_VERSION);
-                removedPages.clear();
-                clearCaches();
-                if (fileStore != null) {
-                    chunks.clear();
-                    fileStore.clear();
-                }
-                versions.clear();
-                currentVersion = version;
-                setWriteVersion(version);
-                metaChanged = false;
-                for (MVMap<?, ?> m : maps.values()) {
-                    m.close();
-                }
-                return;
-            }
-            DataUtils.checkArgument(
-                    isKnownVersion(version),
-                    "Unknown version {0}", version);
+            DataUtils.checkArgument(isKnownVersion(version), "Unknown version {0}", version);
 
             TxCounter txCounter;
             while ((txCounter = versions.peekLast()) != null && txCounter.version >= version) {
