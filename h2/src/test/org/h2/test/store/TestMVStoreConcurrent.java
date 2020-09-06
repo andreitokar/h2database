@@ -587,6 +587,8 @@ public class TestMVStoreConcurrent extends TestMVStore {
     private void testConcurrentOnlineBackup() throws Exception {
         String fileName = getBaseDir() + "/" + getTestName();
         String fileNameRestore = getBaseDir() + "/" + getTestName() + "2";
+        FileUtils.delete(fileName);
+        FileUtils.delete(fileNameRestore);
         try (final MVStore s = openStore(fileName)) {
             final MVMap<Integer, byte[]> map = s.openMap("test");
             final Random r = new Random();
@@ -613,9 +615,9 @@ public class TestMVStoreConcurrent extends TestMVStore {
             };
             task.execute();
             try {
+                String archiveName = fileNameRestore + ".zip";
                 for (int i = 0; i < 10; i++) {
-                    // System.out.println("test " + i);
-                    String archiveName = fileNameRestore + ".zip";
+                    FileUtils.delete(archiveName);
                     try (OutputStream out = FileUtils.newOutputStream(archiveName, false)) {
                         try (ZipOutputStream zip = new ZipOutputStream(out)) {
                             s.getFileStore().backup(zip);
