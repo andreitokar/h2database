@@ -20,6 +20,8 @@ import org.h2.engine.Database;
 import org.h2.engine.SessionLocal;
 import org.h2.message.DbException;
 import org.h2.mvstore.db.Store;
+import org.h2.mvstore.FileStore;
+import org.h2.mvstore.MVStore;
 import org.h2.pagestore.PageStore;
 import org.h2.table.Table;
 import org.h2.util.NetworkConnectionInfo;
