@@ -637,8 +637,10 @@ public class MVMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V
      */
     final void setRootPos(long rootPos, long version) {
         Page<K,V> root = readOrCreateRootPage(rootPos);
-        setInitialRoot(root, version);
-        setWriteVersion(store.getCurrentVersion());
+        setInitialRoot(root, version - 1);
+//        assert version == store.getCurrentVersion();
+        setWriteVersion(version);
+//        setWriteVersion(store.getCurrentVersion());
     }
 
     private Page<K,V> readOrCreateRootPage(long rootPos) {

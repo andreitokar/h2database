@@ -29,6 +29,7 @@ import org.h2.compress.CompressLZF;
 import org.h2.compress.Compressor;
 import org.h2.mvstore.type.StringDataType;
 import org.h2.util.Utils;
+import org.jetbrains.annotations.TestOnly;
 
 /*
 
@@ -148,7 +149,7 @@ public class MVStore implements AutoCloseable {
      * It serves as a replacement for synchronized(this), except it allows for
      * non-blocking lock attempts.
      */
-    final ReentrantLock storeLock = new ReentrantLock(true);
+    private final ReentrantLock storeLock = new ReentrantLock(true);
 
     private volatile int state;
 
@@ -296,7 +297,7 @@ public class MVStore implements AutoCloseable {
     private MVMap<String,String> openMetaMap() {
         int metaId = fileStore != null ? fileStore.getMetaMapId(this::getNextMapId) : 1;
         MVMap<String,String> map = new MVMap<>(this, metaId, StringDataType.INSTANCE, StringDataType.INSTANCE);
-        map.setRootPos(getRootPos(map.getId()), currentVersion - 1);
+        map.setRootPos(getRootPos(map.getId()), currentVersion);
         return map;
     }
 
@@ -421,7 +422,7 @@ public class MVStore implements AutoCloseable {
             String x = Integer.toHexString(id);
             meta.put(MVMap.getMapKey(id), map.asString(name));
             meta.put(DataUtils.META_NAME + name, x);
-            map.setRootPos(0, curVersion - 1);
+            map.setRootPos(0, curVersion);
             markMetaChanged();
             @SuppressWarnings("unchecked")
             M existingMap = (M) maps.putIfAbsent(id, map);
@@ -454,8 +455,7 @@ public class MVStore implements AutoCloseable {
                 config.put("id", id);
                 map = builder.create(this, config);
                 long root = getRootPos(id);
-                long lastStoredVersion = currentVersion - 1;
-                map.setRootPos(root, lastStoredVersion);
+                map.setRootPos(root, currentVersion);
                 maps.put(id, map);
             }
             return map;
@@ -640,9 +640,7 @@ public class MVStore implements AutoCloseable {
                                 setRetentionTime(0);
                                 commit();
                                 if (allowedCompactionTime > 0) {
-                                    compactFile(allowedCompactionTime);
-                                } else if (allowedCompactionTime < 0) {
-                                    fileStore.doMaintenance();
+                                    fileStore.compactFile(allowedCompactionTime);
                                 }
 
                                 fileStore.writeCleanShutdown();
@@ -681,9 +679,10 @@ public class MVStore implements AutoCloseable {
             }
         }
         meta.setWriteVersion(version);
-        if (fileStore != null) {
-            fileStore.setWriteVersion(version);
-        }
+        assert fileStore == null;
+//        if (fileStore != null) {
+//            fileStore.setWriteVersion(version);
+//        }
         onVersionChange(version);
     }
 
@@ -764,11 +763,11 @@ public class MVStore implements AutoCloseable {
                     if (fileStore == null) {
                         setWriteVersion(currentVersion);
                     } else {
-                        dropUnusedChunks();
                         if (fileStore.isReadOnly()) {
                             throw DataUtils.newMVStoreException(
                                     DataUtils.ERROR_WRITING_FAILED, "This store is read-only");
                         }
+                        fileStore.dropUnusedChunks();
                         storeNow(syncWrite);
                     }
                     return result;
@@ -781,6 +780,8 @@ public class MVStore implements AutoCloseable {
     }
 
     void storeNow() {
+        // it is ok, since that path suppose to be single-threaded under storeLock
+        //noinspection NonAtomicOperationOnVolatileField
         ++currentVersion;
         storeNow(true);
     }
@@ -788,7 +789,6 @@ public class MVStore implements AutoCloseable {
     private void storeNow(boolean syncWrite) {
         try {
             int currentUnsavedPageCount = unsavedMemory;
-            // it is ok, since that path suppose to be single-threaded under storeLock
             long version = currentVersion;
 
             assert storeLock.isHeldByCurrentThread();
@@ -882,29 +882,15 @@ public class MVStore implements AutoCloseable {
      */
     public void compactMoveChunks() {
         if (hasPersitentData()) {
-            compactMoveChunks(100, Long.MAX_VALUE);
+            fileStore.compactMoveChunks(100, Long.MAX_VALUE);
         }
     }
 
-    /**
-     * Compact the store by moving all chunks next to each other, if there is
-     * free space between chunks. This might temporarily increase the file size.
-     * Chunks are overwritten irrespective of the current retention time. Before
-     * overwriting chunks and before resizing the file, syncFile() is called.
-     *
-     * @param targetFillRate do nothing if the file store fill rate is higher
-     *            than this
-     * @param moveSize the number of bytes to move
-     */
-    boolean compactMoveChunks(int targetFillRate, long moveSize) {
-        return fileStore.compactMoveChunks(targetFillRate, moveSize);
-    }
-
-    public <R> R executeFilestoreOperation(Callable<R> operation) {
+    public void executeFilestoreOperation(Runnable operation) {
         storeLock.lock();
         try {
             checkOpen();
-            return fileStore.executeFilestoreOperation(operation);
+            fileStore.executeFilestoreOperation(operation);
         } catch (MVStoreException e) {
             panic(e);
         } catch (Throwable e) {
@@ -913,7 +899,6 @@ public class MVStore implements AutoCloseable {
         } finally {
             unlockAndCheckPanicCondition();
         }
-        return null;
     }
 
     <R> R tryExecuteUnderStoreLock(Callable<R> operation) throws InterruptedException {
@@ -957,21 +942,9 @@ public class MVStore implements AutoCloseable {
         setRetentionTime(0);
         storeLock.lock();
         try {
-//            fileStore.compactFile(95, maxCompactTime, 16 * 1024 * 1024);
-            compactFile(95, maxCompactTime, 16 * 1024 * 1024);
+            fileStore.compactFile(maxCompactTime);
         } finally {
             unlockAndCheckPanicCondition();
-        }
-    }
-
-    public void compactFile(int tresholdFildRate, long maxCompactTime, int maxWriteSize) {
-        long stopAt = System.nanoTime() + maxCompactTime * 1_000_000L;
-        while (compact(tresholdFildRate, maxWriteSize)) {
-            sync();
-            compactMoveChunks(tresholdFildRate, maxWriteSize);
-            if (System.nanoTime() - stopAt > 0L) {
-                break;
-            }
         }
     }
 
@@ -991,30 +964,11 @@ public class MVStore implements AutoCloseable {
      *
      * @param targetFillRate the minimum percentage of live entries
      * @param write the minimum number of bytes to write
-     * @return if a chunk was re-written
+     * @return if any chunk was re-written
      */
     public boolean compact(int targetFillRate, int write) {
-        if (hasPersitentData()) {
-            checkOpen();
-            if (targetFillRate > 0 && fileStore.getChunksFillRate() < targetFillRate) {
-                // We can't wait forever for the lock here,
-                // because if called from the background thread,
-                // it might go into deadlock with concurrent database closure
-                // and attempt to stop this thread.
-                try {
-                    if (storeLock.tryLock(10, TimeUnit.MILLISECONDS)) {
-                        try {
-                            return fileStore.rewriteChunks(write, 100);
-                        } finally {
-                            storeLock.unlock();
-                        }
-                    }
-                } catch (InterruptedException e) {
-                    throw new RuntimeException(e);
-                }
-            }
-        }
-        return false;
+        checkOpen();
+        return fileStore != null && fileStore.compact(targetFillRate, write);
     }
 
     public int getFillRate() {
@@ -1347,7 +1301,7 @@ public class MVStore implements AutoCloseable {
                     maps.remove(id);
                 } else {
                     if (!m.rollbackRoot(version)) {
-                        m.setRootPos(getRootPos(id), version - 1);
+                        m.setRootPos(getRootPos(id), version);
                     }
                 }
             }
@@ -1689,12 +1643,6 @@ public class MVStore implements AutoCloseable {
             versions.poll();
         }
         setOldestVersionToKeep((txCounter != null ? txCounter : currentTxCounter).version);
-    }
-
-    private int dropUnusedChunks() {
-        assert storeLock.isHeldByCurrentThread();
-//        return fileStore != null ? fileStore.dropUnusedChunks() : 0;
-        return fileStore.dropUnusedChunks();
     }
 
     public void countNewPage(boolean leaf) {
