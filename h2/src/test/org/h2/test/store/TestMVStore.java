@@ -26,6 +26,7 @@ import org.h2.mvstore.MVStore;
 import org.h2.mvstore.MVStoreException;
 import org.h2.mvstore.OffHeapStore;
 import org.h2.mvstore.Page;
+import org.h2.mvstore.RandomAccessStore;
 import org.h2.mvstore.cache.CacheLongKeyLIRS;
 import org.h2.mvstore.type.DataType;
 import org.h2.mvstore.type.ObjectDataType;
@@ -489,11 +490,19 @@ public class TestMVStore extends TestBase {
             s.removeMap(m);
             s.commit();
         }
-        long sizeOld = s.getFileStore().size();
-        s.compactMoveChunks();
+        FileStore fileStore = s.getFileStore();
+        long sizeOld = fileStore.size();
+        compactMoveChunks(s);
         s.close();
-        long sizeNew = s.getFileStore().size();
+        long sizeNew = fileStore.size();
         assertTrue("old: " + sizeOld + " new: " + sizeNew, sizeNew < sizeOld);
+    }
+
+    private static void compactMoveChunks(MVStore s) {
+        FileStore fileStore = s.getFileStore();
+        if (fileStore instanceof RandomAccessStore) {
+            ((RandomAccessStore) fileStore).compactMoveChunks(100, Long.MAX_VALUE, s);
+        }
     }
 
     private void testBackgroundExceptionListener() throws Exception {
@@ -1371,7 +1380,7 @@ public class TestMVStore extends TestBase {
             }
             assertTrue(s.compact(100, 50 * 1024));
             // compaction alone will not guarantee file size reduction
-            s.compactMoveChunks();
+            compactMoveChunks(s);
         }
         long len2 = FileUtils.size(fileName);
         assertTrue("len2: " + len2 + " len: " + len, len2 < len);
@@ -1725,7 +1734,7 @@ public class TestMVStore extends TestBase {
                 }
             }
             assertFalse(s.compact(50, 1024));
-            s.compactMoveChunks();
+            compactMoveChunks(s);
 
             int chunkCount3 = getChunkCount(layout);
 
@@ -1766,7 +1775,7 @@ public class TestMVStore extends TestBase {
                 trace("Before - fill rate: " + s.getFillRate() + "%, chunks fill rate: "
                         + fileStore.getChunksFillRate() + ", len: " + FileUtils.size(fileName));
                 s.compact(80, 2048);
-                s.compactMoveChunks();
+                compactMoveChunks(s);
                 trace("After  - fill rate: " + s.getFillRate() + "%, chunks fill rate: "
                         + fileStore.getChunksFillRate() + ", len: " + FileUtils.size(fileName));
             }
