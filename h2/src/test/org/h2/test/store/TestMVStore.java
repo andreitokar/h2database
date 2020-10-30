@@ -1369,6 +1369,8 @@ public class TestMVStore extends TestBase {
         long len = FileUtils.size(fileName);
         try (MVStore s = openStore(fileName)) {
             s.setRetentionTime(0);
+            s.setVersionsToKeep(0);
+            s.setAutoCommitDelay(0);
             // remove 75%
             MVMap<Integer, String> m = s.openMap("data");
             for (int i = 0; i < 10; i++) {
@@ -1408,7 +1410,7 @@ public class TestMVStore extends TestBase {
             assertEquals(0, m.size());
             s.commit();
             // ensure only nodes are read, but not leaves
-            assertEquals(6, s.getFileStore().getReadCount());
+            assertEquals(7, s.getFileStore().getReadCount());
             assertTrue(s.getFileStore().getWriteCount() < 5);
         }
     }
