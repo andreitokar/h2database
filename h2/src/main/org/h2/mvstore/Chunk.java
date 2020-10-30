@@ -87,12 +87,12 @@ public final class Chunk {
     int pageCountLive;
 
     /**
-     * Offset (from the beginning of the chunk) for the table of content.
+     * Byte offset (from the beginning of the chunk) for the table of content (ToC).
      * Table of content is holding a long value for each page in the chunk.
      * This value consists of map id, page offset, page length and page type.
      * Format is the same as page's position id, but with map id replacing chunk id.
      *
-     * @see DataUtils#getTocElement(int, int, int, int) for field format details
+     * @see DataUtils#composeTocElement(int, int, int, int) for field format details
      */
     int tocPos;
 
@@ -195,6 +195,7 @@ public final class Chunk {
             byte[] bytes = DataUtils.parseHexBytes(map, ATTR_OCCUPANCY);
             if (bytes == null) {
                 occupancy = new BitSet();
+                assert pageCountLive == pageCount;
             } else {
                 occupancy = BitSet.valueOf(bytes);
                 if (pageCount - pageCountLive != occupancy.cardinality()) {
@@ -348,7 +349,7 @@ public final class Chunk {
         if (tocPos > 0) {
             DataUtils.appendMap(buff, ATTR_TOC, tocPos);
         }
-        if (!occupancy.isEmpty()) {
+        if (occupancy != null && !occupancy.isEmpty()) {
             DataUtils.appendMap(buff, ATTR_OCCUPANCY,
                     StringUtils.convertBytesToHex(occupancy.toByteArray()));
         }
@@ -370,6 +371,9 @@ public final class Chunk {
         DataUtils.appendMap(buff, ATTR_VERSION, version);
         if (next != 0) {
             DataUtils.appendMap(buff, ATTR_NEXT, next);
+        }
+        if (tocPos > 0) {
+            DataUtils.appendMap(buff, ATTR_TOC, tocPos);
         }
         return buff.toString().getBytes(StandardCharsets.ISO_8859_1);
     }
@@ -457,7 +461,7 @@ public final class Chunk {
     }
 
     long[] readToC(FileStore fileStore) {
-        assert isSaved() : this;
+        assert isSaved() || buffer != null : this;
         assert tocPos > 0;
         long[] toc = new long[pageCount];
         while (true) {
