@@ -976,7 +976,23 @@ public abstract class Page<K,V> implements Cloneable {
                     "File corrupted in chunk {0}, expected node type {1}, got {2}",
                     chunkId, isLeaf() ? "0" : "1" , type);
         }
-
+        byte[] flags = null;
+        // jump ahead and read pageNo, because if page is compressed,
+        // buffer will be replaced by uncompressed one
+        int compressedRegionEnd = start + pageLength;
+        if ((type & DataUtils.PAGE_HAS_BUFFER) != 0) {
+            int position = buff.position();
+            buff.position(compressedRegionEnd);
+            if ((type & DataUtils.PAGE_HAS_BUFFER) != 0) {
+                buff.position(compressedRegionEnd - 2);
+                int bufLen = buff.getShort();
+                flags = new byte[bufLen];
+                compressedRegionEnd -= flags.length + 2;
+                buff.position(compressedRegionEnd);
+                buff.get(flags);
+            }
+            buff.position(position);
+        }
         // to restrain hacky GenericDataType, which grabs the whole remainder of the buffer
         buff.limit(compressedRegionEnd);
         readChildren(buff);
@@ -1006,7 +1022,8 @@ public abstract class Page<K,V> implements Cloneable {
                     buff.arrayOffset(), l);
         }
         map.getKeyType().read(buff, keys, keyCount);
-        readPayLoad(buff, type);
+        assert !isLeaf() || flags == null;
+        readPayLoad(buff, flags);
         diskSpaceUsed = pageLength;
         recalculateMemory();
         recalculateTotalCount();
@@ -1063,14 +1080,17 @@ public abstract class Page<K,V> implements Cloneable {
         pageNo = toc.size();
         int keyCount = getKeyCount();
         int start = buff.position();
+        int type = isLeaf() ? PAGE_TYPE_LEAF : DataUtils.PAGE_TYPE_NODE;
+        KVMapping<K, V>[] buffer = getBuffer();
+        boolean hasBuffer = buffer != null && buffer.length > 0;
+        int flags = type | (hasBuffer ? DataUtils.PAGE_HAS_BUFFER : 0);
         buff.putInt(0)          // placeholder for pageLength
-            .putShort((byte)0) // placeholder for check
+            .putShort((short)0) // placeholder for check
             .putVarInt(pageNo)
             .putVarInt(map.getId())
             .putVarInt(keyCount);
-        int typePos = buff.position();
-        int type = isLeaf() ? PAGE_TYPE_LEAF : DataUtils.PAGE_TYPE_NODE;
-        buff.put((byte)type);
+        int flagsPos = buff.position();
+        buff.put((byte)flags);
         int childrenPos = buff.position();
         writeChildren(buff, true);
         int compressStart = buff.position();
