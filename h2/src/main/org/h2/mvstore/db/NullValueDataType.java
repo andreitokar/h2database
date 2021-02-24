@@ -48,6 +48,11 @@ public final class NullValueDataType implements DataType<Value> {
     }
 
     @Override
+    public boolean isComparable() {
+        return false;
+    }
+
+    @Override
     public void write(WriteBuffer buff, Value obj) {
     }
 
