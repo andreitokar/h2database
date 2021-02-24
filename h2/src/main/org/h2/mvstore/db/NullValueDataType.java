@@ -33,7 +33,7 @@ public final class NullValueDataType implements DataType<Value> {
     }
 
     @Override
-    public int binarySearch(Value key, Object storage, int size, int initialGuess) {
+    public int binarySearch(Value key, Object storage, int size) {
         return 0;
     }
 
