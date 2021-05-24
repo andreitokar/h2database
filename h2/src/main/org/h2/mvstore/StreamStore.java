@@ -509,7 +509,7 @@ public class StreamStore {
                     } catch (MVStoreException e) {
                         String msg = DataUtils.formatMessage(
                                 DataUtils.ERROR_BLOCK_NOT_FOUND,
-                                "Block not found in id {0}",
+                                "Block not found for id {0}",
                                 Arrays.toString(idBuffer.array()));
                         throw new IOException(msg, e);
                     }

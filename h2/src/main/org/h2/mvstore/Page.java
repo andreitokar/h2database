@@ -2312,10 +2312,16 @@ public abstract class Page<K,V> implements Cloneable {
                                 comparator.compare(bufferKey, pageKey);
                     if (compare > 0) {
                         keyStorage[combinedIndex] = pageKey;
-                        valueStorage[combinedIndex++] = getValue(pageIndex);
+                        if (valueStorage != null) {
+                            valueStorage[combinedIndex] = getValue(pageIndex);
+                        }
+                        ++combinedIndex;
                     } else if (buffer[bufferPosition].value != null) {
                         keyStorage[combinedIndex] = bufferKey;
-                        valueStorage[combinedIndex++] = buffer[bufferPosition].value;
+                        if (valueStorage != null) {
+                            valueStorage[combinedIndex] = buffer[bufferPosition].value;
+                        }
+                        ++combinedIndex;
                     } else {
                         assert compare == 0;
                     }
