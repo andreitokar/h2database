@@ -63,16 +63,7 @@ public class Cursor<K,V> implements Iterator<K> {
                     while (!page.isLeaf()) {
                         page = page.getChildPage(index);
                         index = reverse ? upperBound(page) : 0;
-                        if (keeper == null) {
-                            cursorPos = new CursorPos<>(page, index, cursorPos);
-                        } else {
-                            CursorPos<K,V> tmp = keeper;
-                            keeper = keeper.parent;
-                            tmp.parent = cursorPos;
-                            tmp.page = page;
-                            tmp.index = index;
-                            cursorPos = tmp;
-                        }
+                        allocateCursorPos(page, index);
                     }
                     if (reverse ? index >= 0 : index < page.getKeyCount()) {
                         K key = page.getKey(index);
@@ -88,6 +79,19 @@ public class Cursor<K,V> implements Iterator<K> {
             }
         }
         return current != null;
+    }
+
+    protected final void allocateCursorPos(Page<K, V> page, int index) {
+        if (keeper == null) {
+            cursorPos = new CursorPos<>(page, index, cursorPos);
+        } else {
+            CursorPos<K,V> tmp = keeper;
+            keeper = keeper.parent;
+            tmp.parent = cursorPos;
+            tmp.page = page;
+            tmp.index = index;
+            cursorPos = tmp;
+        }
     }
 
     @Override

@@ -6,7 +6,6 @@
 package org.h2.mvstore;
 
 import org.h2.mvstore.type.DataType;
-import java.util.Arrays;
 
 /**
  * A cursor to iterate over elements in ascending order.
@@ -21,9 +20,11 @@ public final class CursorBuffered<K, V> extends Cursor<K,V>
     private static final int LEVELS = 16;
 
     private final DataType<K> comparator;
+    @SuppressWarnings("unchecked")
     private final KVMapping<K,V>[][] buffers = (KVMapping<K,V>[][])new KVMapping[LEVELS][];
     private final int[] bufferLimits = new int[LEVELS];
     private final int[] bufferIndexes = new int[LEVELS];
+    @SuppressWarnings("unchecked")
     private final K[] keys = (K[])new Object[LEVELS];
     private final int[] heap = new int [LEVELS];
     private       int level;
@@ -170,16 +171,7 @@ public final class CursorBuffered<K, V> extends Cursor<K,V>
                         if (buffer != null) {
                             addBufferToHeap(buffer, null, atStop ? to : null, reverse, level);
                         }
-                        if (keeper == null) {
-                            cursorPos = new CursorPos<>(page, index, cursorPos);
-                        } else {
-                            CursorPos<K,V> tmp = keeper;
-                            keeper = keeper.parent;
-                            tmp.parent = cursorPos;
-                            tmp.page = page;
-                            tmp.index = index;
-                            cursorPos = tmp;
-                        }
+                        allocateCursorPos(page, index);
                         if (atStop && to != null) {
                             coverPage = page;
                             cursorPos.limit = coverPage.normalizeIndex(coverPage.binarySearch(to), !reverse);
@@ -195,7 +187,6 @@ public final class CursorBuffered<K, V> extends Cursor<K,V>
         assert validateHeap();
         return current != null;
     }
-
     private KVMapping<K,V> pullOut() {
         assert buffersCount != 0;
         assert validateHeap();
