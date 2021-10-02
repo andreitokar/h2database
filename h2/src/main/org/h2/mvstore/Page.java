@@ -1541,7 +1541,7 @@ public abstract class Page<K,V> implements Cloneable {
         public Page<K,V> copy(MVMap<K, V> map, boolean eraseChildrenRefs) {
             return eraseChildrenRefs ?
                     new IncompleteNonLeaf<>(map, this) :
-                    new NonLeaf<>(map, this, children, totalCount);
+                    new NonLeaf<>(map, this, children);
         }
 
         @Override
