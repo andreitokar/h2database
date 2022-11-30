@@ -14,6 +14,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.channels.OverlappingFileLockException;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Function;
@@ -27,6 +28,8 @@ import java.util.zip.ZipOutputStream;
 @SuppressWarnings("unused")
 public final class AppendOnlyMultiFileStore extends FileStore<MFChunk>
 {
+    private static final String HDR_VOL_ID = "vol_id";
+
     /**
      * Limit for the number of files used by this store
      */
@@ -78,7 +81,7 @@ public final class AppendOnlyMultiFileStore extends FileStore<MFChunk>
         fileChannels = new FileChannel[maxFileCount];
     }
 
-    protected final MFChunk createChunk(int newChunkId) {
+    protected MFChunk createChunk(int newChunkId) {
         return new MFChunk(newChunkId);
     }
 
@@ -196,7 +199,29 @@ public final class AppendOnlyMultiFileStore extends FileStore<MFChunk>
     }
 
     protected void initializeStoreHeader(long time) {
+        initializeCommonHeaderAttributes(time);
+        storeHeader.put(HDR_VOL_ID, 0);
+
+        writeStoreHeader();
+
     }
+
+    private void writeStoreHeader() {
+        StringBuilder buff = new StringBuilder(112);
+        DataUtils.appendMap(buff, storeHeader);
+        byte[] bytes = buff.toString().getBytes(StandardCharsets.ISO_8859_1);
+        int checksum = DataUtils.getFletcher32(bytes, 0, bytes.length);
+        DataUtils.appendMap(buff, HDR_FLETCHER, checksum);
+        buff.append('\n');
+        bytes = buff.toString().getBytes(StandardCharsets.ISO_8859_1);
+        ByteBuffer header = ByteBuffer.allocate(2 * BLOCK_SIZE);
+        header.put(bytes);
+        header.position(BLOCK_SIZE);
+        header.put(bytes);
+        header.rewind();
+        writeFully(null, 0, header);
+    }
+
 
     protected void readStoreHeader(boolean recoveryMode) {
         ByteBuffer fileHeaderBlocks = readFully(new MFChunk(""), 0, FileStore.BLOCK_SIZE);

@@ -311,7 +311,7 @@ public class MVStore implements AutoCloseable {
     }
 
     public MVMap<String,String> openMetaMap() {
-        int metaId = fileStore != null ? fileStore.getMetaMapId(this::getNextMapId) : 1;
+        int metaId = fileStore != null ? fileStore.getMetaMapId(this::getNextMapId) : getNextMapId();
         MVMap<String,String> map = new MVMap<>(this, metaId, StringDataType.INSTANCE, StringDataType.INSTANCE);
         map.setRootPos(getRootPos(map.getId()), currentVersion);
         return map;
@@ -1276,7 +1276,7 @@ public class MVStore implements AutoCloseable {
             saveNeeded = false;
             // check again, because it could have been written by now
             if (autoCommitMemory > 0 && needStore()) {
-                // if unsaved memory creation rate is to high,
+                // if unsaved memory creation rate is too high,
                 // some back pressure need to be applied
                 // to slow things down and avoid OOME
                 if (requireStore() && !map.isSingleWriter()) {

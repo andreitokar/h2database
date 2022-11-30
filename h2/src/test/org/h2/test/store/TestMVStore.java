@@ -289,7 +289,7 @@ public class TestMVStore extends TestBase {
             map.put(1, new byte[10 * 1024]);
             s.commit();
             Map<String, String> layout = s.getLayoutMap();
-            Chunk<?> c = s.getFileStore().createChunk(layout.get(DataUtils.META_CHUNK + "1"));
+            Chunk<?> c = s.getFileStore().createChunk(layout.get(DataUtils.LAYOUT_CHUNK + "1"));
             assertTrue(c.maxLen < Integer.MAX_VALUE);
             assertTrue(c.maxLenLive < Integer.MAX_VALUE);
         }
@@ -1583,8 +1583,8 @@ public class TestMVStore extends TestBase {
             s.commit();
             assertEquals("name:data", m.get(DataUtils.META_MAP + id));
             m = s.getLayoutMap();
-            assertTrue(m.get(DataUtils.META_ROOT + id).length() > 0);
-            assertTrue(m.containsKey(DataUtils.META_CHUNK + "1"));
+            assertTrue(m.get(DataUtils.LAYOUT_ROOT + id).length() > 0);
+            assertTrue(m.containsKey(DataUtils.LAYOUT_CHUNK + "1"));
 
             assertEquals(2, s.getCurrentVersion());
 
@@ -1745,7 +1745,7 @@ public class TestMVStore extends TestBase {
         Map<String, String> layout = s.getLayoutMap();
         int chunkCount = 0;
         for (String k : layout.keySet()) {
-            if (k.startsWith(DataUtils.META_CHUNK)) {
+            if (k.startsWith(DataUtils.LAYOUT_CHUNK)) {
                 chunkCount++;
             }
         }
