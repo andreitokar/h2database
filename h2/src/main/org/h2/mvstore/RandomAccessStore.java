@@ -590,7 +590,7 @@ public abstract class RandomAccessStore extends FileStore<SFChunk>
     }
 
     private void writeStoreHeader() {
-        if (hasPersitentData()) {
+        if (hasPersistentData()) {
             storeHeader.put(HDR_BLOCK, lastChunk.block);
             storeHeader.put(HDR_CHUNK, lastChunk.id);
             storeHeader.put(HDR_VERSION, lastChunk.version);
