@@ -1,6 +1,6 @@
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <!--
-Copyright 2004-2022 H2 Group. Multiple-Licensed under the MPL 2.0,
+Copyright 2004-2023 H2 Group. Multiple-Licensed under the MPL 2.0,
 and the EPL 1.0 (https://h2database.com/html/license.html).
 Initial Developer: H2 Group
 -->
@@ -21,6 +21,35 @@ Change Log
 
 <h2>Next Version (unreleased)</h2>
 <ul>
+<li>Issue #3580: TestCrashAPI: NPE in ParserUtil.getTokenType() (called by Parser.readIfDataType1())
+</li>
+<li>PR #3709: Update copyright years and fix building of documentation
+</li>
+<li>Issue #3701: CLOBs can cause ClassCastExceptions
+</li>
+<li>Issue #3698: MySQL mode show columns from table, if modificationMetaId changed between prepared and execute.
+Then error occurred.
+</li>
+<li>PR #3699: Upgrade to the latest OSGi JDBC specification
+</li>
+<li>Issue #3659: User-defined variable "sticky" if used in view with join
+</li>
+<li>Issue #3693: Wrong result when intersecting unnested arrays
+</li>
+<li>PR #3691: GitHub Workflows security hardening
+</li>
+<li>PR #3688: Construct FormatTokenEnum.TOKENS during class initialization
+</li>
+<li>Issue #3682: MVStoreException at accountForRemovedPage
+</li>
+<li>Issue #3664: [2.1.214] NullPointerException in org.h2.command.query.Select.queryDistinct
+</li>
+<li>PR #3650: fix version number in the archives html table
+</li>
+<li>PR #3649: Basic implementation of materialized view
+</li>
+<li>Issue #3646: org.h2.mvstore.MVStoreException: Chunk metadata too long
+</li>
 <li>Issue #3645: The BITCOUNT function incorrectly counts BINARY/VARBINARY values of &gt;=16 bytes.
 </li>
 <li>Issue #3637: DB content massacred when opening a 2.1.214 DB with current master

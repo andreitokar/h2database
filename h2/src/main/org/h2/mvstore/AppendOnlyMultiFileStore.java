@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2022 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2023 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -81,14 +81,17 @@ public final class AppendOnlyMultiFileStore extends FileStore<MFChunk>
         fileChannels = new FileChannel[maxFileCount];
     }
 
+    @Override
     protected MFChunk createChunk(int newChunkId) {
         return new MFChunk(newChunkId);
     }
 
+    @Override
     public MFChunk createChunk(String s) {
         return new MFChunk(s);
     }
 
+    @Override
     protected MFChunk createChunk(Map<String, String> map) {
         return new MFChunk(map);
     }
@@ -100,8 +103,10 @@ public final class AppendOnlyMultiFileStore extends FileStore<MFChunk>
 
     @Override
     public void open(String fileName, boolean readOnly, char[] encryptionKey) {
-        open(fileName, readOnly, encryptionKey == null ? null :
-                fileChannel ->  new FileEncrypt(fileName, FilePathEncrypt.getPasswordBytes(encryptionKey), fileChannel));
+        open(fileName, readOnly,
+                encryptionKey == null ? null
+                        : fileChannel -> new FileEncrypt(fileName, FilePathEncrypt.getPasswordBytes(encryptionKey),
+                                fileChannel));
     }
 
     @Override
@@ -193,11 +198,13 @@ public final class AppendOnlyMultiFileStore extends FileStore<MFChunk>
         writeBytes.addAndGet(len);
     }
 
+    @Override
     public ByteBuffer readFully(MFChunk chunk, long pos, int len) {
         int volumeId = chunk.volumeId;
         return readFully(fileChannels[volumeId], pos, len);
     }
 
+    @Override
     protected void initializeStoreHeader(long time) {
         initializeCommonHeaderAttributes(time);
         storeHeader.put(HDR_VOL_ID, 0);
@@ -223,6 +230,7 @@ public final class AppendOnlyMultiFileStore extends FileStore<MFChunk>
     }
 
 
+    @Override
     protected void readStoreHeader(boolean recoveryMode) {
         ByteBuffer fileHeaderBlocks = readFully(new MFChunk(""), 0, FileStore.BLOCK_SIZE);
         byte[] buff = new byte[FileStore.BLOCK_SIZE];
@@ -266,21 +274,24 @@ public final class AppendOnlyMultiFileStore extends FileStore<MFChunk>
         setSize((chunk.block + chunk.len) * BLOCK_SIZE);
     }
 
+    @Override
     protected void writeChunk(MFChunk chunk, WriteBuffer buff) {
         long filePos = chunk.block * BLOCK_SIZE;
         writeFully(chunk, filePos, buff.getBuffer());
     }
 
+    @Override
     protected void writeCleanShutdownMark() {
 
     }
 
+    @Override
     protected void adjustStoreToLastChunk() {
 
     }
 
     @Override
-    protected void compactStore(int thresholdFildRate, long maxCompactTime, int maxWriteSize, MVStore mvStore) {
+    protected void compactStore(int thresholdFillRate, long maxCompactTime, int maxWriteSize, MVStore mvStore) {
 
     }
 
@@ -301,6 +312,7 @@ public final class AppendOnlyMultiFileStore extends FileStore<MFChunk>
     @Override
     protected void freeChunkSpace(Iterable<MFChunk> chunks) {}
 
+    @Override
     protected boolean validateFileLength(String msg) {
         return true;
     }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2022 H2 Group. Multiple-Licensed under the MPL 2.0,
+ * Copyright 2004-2023 H2 Group. Multiple-Licensed under the MPL 2.0,
  * and the EPL 1.0 (https://h2database.com/html/license.html).
  * Initial Developer: H2 Group
  */
@@ -788,9 +788,9 @@ public class Select extends Query {
             }
         }
         if (distinct) {
+            result = createLocalResult(result);
             if (!isDistinctQuery) {
                 quickOffset = false;
-                result = createLocalResult(result);
                 result.setDistinct();
             }
         } else if (distinctExpressions != null) {
@@ -1709,6 +1709,12 @@ public class Select extends Query {
         ExpressionVisitor v2 = visitor.incrementQueryLevel(1);
         for (Expression e : expressions) {
             if (!e.isEverything(v2)) {
+                return false;
+            }
+        }
+        for (TableFilter f : filters) {
+            Expression c = f.getJoinCondition();
+            if (c != null && !c.isEverything(v2)) {
                 return false;
             }
         }
