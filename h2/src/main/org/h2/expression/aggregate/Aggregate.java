@@ -995,7 +995,8 @@ public class Aggregate extends AbstractAggregate implements ExpressionWithFlags 
                     return ValueExpression.get(ValueBigint.get(0L));
                 }
                 if (!distinct) {
-                    Aggregate aggregate = new Aggregate(AggregateType.COUNT_ALL, new Expression[0], select, false);
+                    Aggregate aggregate = new Aggregate(AggregateType.COUNT_ALL, Expression.EMPTY_EXPRESSION_ARR,
+                                                        select, false);
                     aggregate.setFilterCondition(filterCondition);
                     aggregate.setOverCondition(over);
                     return aggregate.optimize(session);

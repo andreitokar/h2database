@@ -105,7 +105,7 @@ public class UniquePredicate extends PredicateWithSubquery {
         query.setSession(session);
         int columnCount = query.getColumnCount();
         LocalResult result = new LocalResult(session,
-                query.getExpressions().toArray(new Expression[0]), columnCount, columnCount);
+                query.getExpressions().toArray(Expression.EMPTY_EXPRESSION_ARR), columnCount, columnCount);
         result.setDistinct();
         Target target = new Target(columnCount, nullsDistinct, result);
         query.query(Integer.MAX_VALUE, target);

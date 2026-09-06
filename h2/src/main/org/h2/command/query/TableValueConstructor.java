@@ -191,7 +191,7 @@ public class TableValueConstructor extends Query {
         if (sort != null) {
             cleanupOrder();
         }
-        expressionArray = expressions.toArray(new Expression[0]);
+        expressionArray = expressions.toArray(Expression.EMPTY_EXPRESSION_ARR);
     }
 
     @Override

@@ -268,7 +268,7 @@ public class SelectUnion extends Query {
             }
         }
         resultColumnCount = expressions.size();
-        expressionArray = expressions.toArray(new Expression[0]);
+        expressionArray = expressions.toArray(Expression.EMPTY_EXPRESSION_ARR);
     }
 
     @Override
@@ -356,7 +356,7 @@ public class SelectUnion extends Query {
             throw DbException.getInternalError("type=" + unionType);
         }
         right.getPlanSQL(builder.append('('), sqlFlags).append(')');
-        appendEndOfQueryToSQL(builder, sqlFlags, expressions.toArray(new Expression[0]));
+        appendEndOfQueryToSQL(builder, sqlFlags, expressions.toArray(Expression.EMPTY_EXPRESSION_ARR));
         if (forUpdate != null) {
             forUpdate.getSQL(builder, sqlFlags);
         }

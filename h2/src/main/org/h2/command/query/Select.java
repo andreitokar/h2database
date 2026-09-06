@@ -1218,7 +1218,7 @@ public class Select extends Query {
                 && filters.size() == 1) {
             isQuickAggregateQuery = isEverything(ExpressionVisitor.getOptimizableVisitor(filters.get(0).getTable()));
         }
-        expressionArray = expressions.toArray(new Expression[0]);
+        expressionArray = expressions.toArray(Expression.EMPTY_EXPRESSION_ARR);
     }
 
     @Override
@@ -1411,7 +1411,7 @@ public class Select extends Query {
         // can not use the field sqlStatement because the parameter
         // indexes may be incorrect: ? may be in fact ?2 for a subquery
         // but indexes may be set manually as well
-        Expression[] exprList = expressions.toArray(new Expression[0]);
+        Expression[] exprList = expressions.toArray(Expression.EMPTY_EXPRESSION_ARR);
         if (isExplicitTable) {
             builder.append("TABLE ");
             filters.get(0).getPlanSQL(builder, false, sqlFlags);

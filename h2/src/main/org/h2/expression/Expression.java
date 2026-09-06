@@ -60,6 +60,8 @@ public abstract class Expression implements HasSQL, Typed {
      */
     public static final int WITHOUT_PARENTHESES = 2;
 
+    public static final Expression[] EMPTY_EXPRESSION_ARR = new Expression[0];
+
     private boolean addedToFilter;
 
     /**

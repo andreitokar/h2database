@@ -69,7 +69,7 @@ public final class NullPredicate extends SimplePredicate {
                             }
                         }
                         left = newList.size() == 1 ? newList.get(0) //
-                                : new ExpressionList(newList.toArray(new Expression[0]), false);
+                                : new ExpressionList(newList.toArray(Expression.EMPTY_EXPRESSION_ARR), false);
                         break;
                     }
                 }

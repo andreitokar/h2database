@@ -1067,7 +1067,7 @@ public final class Parser extends ParserBase {
                 list.add(readExpression());
                 read(CLOSE_BRACKET);
             } while (readIf(OPEN_BRACKET));
-            return list.toArray(new Expression[0]);
+            return list.toArray(Expression.EMPTY_EXPRESSION_ARR);
         }
         return null;
     }
@@ -1508,7 +1508,7 @@ public final class Parser extends ParserBase {
             } while (readIfMore());
         }
         MergeUsing.WhenNotMatched when = command.new WhenNotMatched(columns, overridingSystem,
-                values.toArray(new Expression[0]));
+                values.toArray(Expression.EMPTY_EXPRESSION_ARR));
         when.setAndCondition(and);
         command.addWhen(when);
     }
@@ -1546,7 +1546,7 @@ public final class Parser extends ParserBase {
         readValues: {
             if (!requireQuery) {
                 if (overridingSystem == null && readIf(DEFAULT, VALUES)) {
-                    command.addRow(new Expression[0]);
+                    command.addRow(Expression.EMPTY_EXPRESSION_ARR);
                     break readValues;
                 }
                 if (readIf(VALUES)) {
@@ -1589,7 +1589,7 @@ public final class Parser extends ParserBase {
             values.add(readExpressionOrDefault());
         } while (readIf(COMMA));
         command.setColumns(columnList.toArray(Column.EMPTY_COLUMNS_ARR));
-        command.addRow(values.toArray(new Expression[0]));
+        command.addRow(values.toArray(Expression.EMPTY_EXPRESSION_ARR));
     }
 
     private void parseInsertCompatibility(Insert command, Table table, Mode mode) {
@@ -1691,7 +1691,7 @@ public final class Parser extends ParserBase {
             } else {
                 values.add(readExpressionOrDefault());
             }
-            command.addRow(values.toArray(new Expression[0]));
+            command.addRow(values.toArray(Expression.EMPTY_EXPRESSION_ARR));
         } while (readIf(COMMA));
     }
 
@@ -1928,7 +1928,7 @@ public final class Parser extends ParserBase {
                 argList.add(readExpression());
             } while (readIfMore());
         }
-        return new JavaTableFunction(functionAlias, argList.toArray(new Expression[0]));
+        return new JavaTableFunction(functionAlias, argList.toArray(Expression.EMPTY_EXPRESSION_ARR));
     }
 
     private boolean readIfUseIndex() {
@@ -2421,7 +2421,7 @@ public final class Parser extends ParserBase {
                 argList.add(readExpression());
             } while (readIf(COMMA));
         }
-        args = argList.toArray(new Expression[0]);
+        args = argList.toArray(Expression.EMPTY_EXPRESSION_ARR);
         command.setExpression(new JavaFunction(functionAlias, args));
         return command;
     }
@@ -2756,7 +2756,7 @@ public final class Parser extends ParserBase {
                 do {
                     distinctExpressions.add(readExpression());
                 } while (readIfMore());
-                command.setDistinct(distinctExpressions.toArray(new Expression[0]));
+                command.setDistinct(distinctExpressions.toArray(Expression.EMPTY_EXPRESSION_ARR));
             } else {
                 command.setDistinct();
             }
@@ -3354,13 +3354,13 @@ public final class Parser extends ParserBase {
         switch (aggregateType) {
         case COUNT:
             if (readIf(ASTERISK)) {
-                r = new Aggregate(AggregateType.COUNT_ALL, new Expression[0], currentSelect, false);
+                r = new Aggregate(AggregateType.COUNT_ALL, Expression.EMPTY_EXPRESSION_ARR, currentSelect, false);
             } else {
                 boolean distinct = readDistinctAgg();
                 Expression on = readExpression();
                 if (on instanceof Wildcard && !distinct) {
                     // PostgreSQL compatibility: count(t.*)
-                    r = new Aggregate(AggregateType.COUNT_ALL, new Expression[0], currentSelect, false);
+                    r = new Aggregate(AggregateType.COUNT_ALL, Expression.EMPTY_EXPRESSION_ARR, currentSelect, false);
                 } else {
                     r = new Aggregate(AggregateType.COUNT, new Expression[] { on }, currentSelect, distinct);
                 }
@@ -3453,7 +3453,8 @@ public final class Parser extends ParserBase {
             do {
                 expressions.add(readExpression());
             } while (readIfMore());
-            r = readWithinGroup(aggregateType, expressions.toArray(new Expression[0]), false, null, true, false);
+            r = readWithinGroup(aggregateType, expressions.toArray(Expression.EMPTY_EXPRESSION_ARR),
+                                false, null, true, false);
             break;
         }
         case PERCENTILE_CONT:
@@ -3465,10 +3466,10 @@ public final class Parser extends ParserBase {
         }
         case MODE: {
             if (readIf(CLOSE_PAREN)) {
-                r = readWithinGroup(AggregateType.MODE, new Expression[0], false, null, false, true);
+                r = readWithinGroup(AggregateType.MODE, Expression.EMPTY_EXPRESSION_ARR, false, null, false, true);
             } else {
                 Expression expr = readExpression();
-                r = new Aggregate(AggregateType.MODE, new Expression[0], currentSelect, false);
+                r = new Aggregate(AggregateType.MODE, Expression.EMPTY_EXPRESSION_ARR, currentSelect, false);
                 if (readIf(ORDER)) {
                     read("BY");
                     Expression expr2 = readExpression();
@@ -3588,7 +3589,7 @@ public final class Parser extends ParserBase {
                     argList.add(readExpression());
                 } while (readIfMore());
             }
-            return new JavaFunction(functionAlias, argList.toArray(new Expression[0]));
+            return new JavaFunction(functionAlias, argList.toArray(Expression.EMPTY_EXPRESSION_ARR));
         } else {
             UserAggregate aggregate = (UserAggregate) userDefinedFunction;
             boolean distinct = readDistinctAgg();
@@ -3596,7 +3597,7 @@ public final class Parser extends ParserBase {
             do {
                 params.add(readExpression());
             } while (readIfMore());
-            Expression[] list = params.toArray(new Expression[0]);
+            Expression[] list = params.toArray(Expression.EMPTY_EXPRESSION_ARR);
             JavaAggregate agg = new JavaAggregate(aggregate, list, currentSelect, distinct);
             readFilterAndOver(agg);
             return agg;
@@ -4732,7 +4733,7 @@ public final class Parser extends ParserBase {
             if (functionAlias != null) {
                 return new JavaFunction(functionAlias,
                         scale >= 0 ? new Expression[] { ValueExpression.get(ValueInteger.get(scale)) }
-                                : new Expression[0]);
+                                : Expression.EMPTY_EXPRESSION_ARR);
             }
         }
         return new CurrentDateTimeValueFunction(function, scale);
@@ -4943,7 +4944,7 @@ public final class Parser extends ParserBase {
                     do {
                         list.add(readExpression());
                     } while (readIfMore());
-                    r = new ExpressionList(list.toArray(new Expression[0]), false);
+                    r = new ExpressionList(list.toArray(Expression.EMPTY_EXPRESSION_ARR), false);
                 } else if (r instanceof BinaryOperation) {
                     BinaryOperation binaryOperation = (BinaryOperation) r;
                     if (binaryOperation.getOperationType() == OpType.MINUS) {
@@ -4966,7 +4967,7 @@ public final class Parser extends ParserBase {
                         list.add(readExpression());
                     } while (readIf(COMMA));
                     read(CLOSE_BRACKET);
-                    r = new ExpressionList(list.toArray(new Expression[0]), true);
+                    r = new ExpressionList(list.toArray(Expression.EMPTY_EXPRESSION_ARR), true);
                 }
             } else {
                 read(OPEN_PAREN);
@@ -4988,7 +4989,7 @@ public final class Parser extends ParserBase {
                     do {
                         list.add(readExpression());
                     } while (readIfMore());
-                    r = new ExpressionList(list.toArray(new Expression[0]), false);
+                    r = new ExpressionList(list.toArray(Expression.EMPTY_EXPRESSION_ARR), false);
                 }
             } else {
                 r = readTermWithIdentifier();
@@ -5443,7 +5444,7 @@ public final class Parser extends ParserBase {
                 operands.add(readWhenOperand(caseOperand));
             } while (readIf(COMMA));
             read("THEN");
-            return new SimpleCase.SimpleWhen(operands.toArray(new Expression[0]), readExpression());
+            return new SimpleCase.SimpleWhen(operands.toArray(Expression.EMPTY_EXPRESSION_ARR), readExpression());
         }
         read("THEN");
         return new SimpleCase.SimpleWhen(whenOperand, readExpression());

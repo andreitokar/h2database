@@ -50,7 +50,7 @@ public class Plan {
                 }
             });
         }
-        allConditions = allCond.toArray(new Expression[0]);
+        allConditions = allCond.toArray(Expression.EMPTY_EXPRESSION_ARR);
         allFilters = all.toArray(new TableFilter[0]);
     }
 
