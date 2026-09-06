@@ -630,7 +630,7 @@ public class Select extends Query {
             }
             sortCols = new Column[] { column };
         } else {
-            sortCols = sortColumns.toArray(new Column[0]);
+            sortCols = sortColumns.toArray(Column.EMPTY_COLUMNS_ARR);
         }
         DefaultNullOrdering defaultNullOrdering = getDatabase().getDefaultNullOrdering();
         ArrayList<IndexSort> indexSorts = Utils.newSmallArrayList();

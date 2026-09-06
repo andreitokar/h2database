@@ -280,7 +280,7 @@ public final class Merge extends CommandWithValues {
         if (columns == null) {
             if (!valuesExpressionList.isEmpty() && valuesExpressionList.get(0).length == 0) {
                 // special case where table is used as a sequence
-                columns = new Column[0];
+                columns = Column.EMPTY_COLUMNS_ARR;
             } else {
                 columns = table.getColumns();
             }

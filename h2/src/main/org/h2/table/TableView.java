@@ -138,7 +138,7 @@ public final class TableView extends QueryExpressionTable {
             // this avoids problems when creating the view when opening the
             // database.
             tables = Utils.newSmallArrayList();
-            cols = new Column[0];
+            cols = Column.EMPTY_COLUMNS_ARR;
         }
         setColumns(cols);
         if (getId() != 0) {

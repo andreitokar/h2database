@@ -62,6 +62,8 @@ public final class Column implements HasSQL, Typed, ColumnTemplate {
     public static final int NULLABLE_UNKNOWN =
             ResultSetMetaData.columnNullableUnknown;
 
+    public static final Column[] EMPTY_COLUMNS_ARR = new Column[0];
+
     private TypeInfo type;
     private Table table;
     private String name;

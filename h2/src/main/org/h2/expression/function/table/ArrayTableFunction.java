@@ -97,7 +97,7 @@ public final class ArrayTableFunction extends TableFunction {
     }
 
     public void setColumns(ArrayList<Column> columns) {
-        this.columns = columns.toArray(new Column[0]);
+        this.columns = columns.toArray(Column.EMPTY_COLUMNS_ARR);
     }
 
     private ResultInterface getTable(SessionLocal session, boolean onlyColumnList) {

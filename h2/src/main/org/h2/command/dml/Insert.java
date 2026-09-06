@@ -283,7 +283,7 @@ public final class Insert extends CommandWithValues implements ResultTarget {
         if (columns == null) {
             if (!valuesExpressionList.isEmpty() && valuesExpressionList.get(0).length == 0) {
                 // special case where table is used as a sequence
-                columns = new Column[0];
+                columns = Column.EMPTY_COLUMNS_ARR;
             } else {
                 columns = table.getVisibleColumns();
             }

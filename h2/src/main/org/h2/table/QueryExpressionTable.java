@@ -141,7 +141,7 @@ public abstract class QueryExpressionTable extends Table {
             }
             list.add(new Column(name, type, this, i));
         }
-        return list.toArray(new Column[0]);
+        return list.toArray(Column.EMPTY_COLUMNS_ARR);
     }
 
     public final Query getQuery() {

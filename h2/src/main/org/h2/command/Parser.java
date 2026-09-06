@@ -1163,7 +1163,7 @@ public final class Parser extends ParserBase {
                 columns.add(column);
             } while (readIfMore());
         }
-        return columns.toArray(new Column[0]);
+        return columns.toArray(Column.EMPTY_COLUMNS_ARR);
     }
 
     private Column parseColumn(Table table) {
@@ -1588,7 +1588,7 @@ public final class Parser extends ParserBase {
             read(EQUAL);
             values.add(readExpressionOrDefault());
         } while (readIf(COMMA));
-        command.setColumns(columnList.toArray(new Column[0]));
+        command.setColumns(columnList.toArray(Column.EMPTY_COLUMNS_ARR));
         command.addRow(values.toArray(new Expression[0]));
     }
 
@@ -1822,7 +1822,7 @@ public final class Parser extends ParserBase {
                     query.init();
                     columnTemplates = QueryExpressionTable.createQueryColumnTemplateList(
                             derivedColumnNames.toArray(StringUtils.EMPTY_STRING_ARR), query, false)
-                            .toArray(new Column[0]);
+                            .toArray(Column.EMPTY_COLUMNS_ARR);
                 }
                 table = query.toTable(alias, columnTemplates, queryParameters, createView != null, currentSelect);
                 if (readIfUseIndex()) {
@@ -7048,7 +7048,8 @@ public final class Parser extends ParserBase {
              * work (its removed after creation in this method). Only create table
              * data and table if we don't have a working CTE already.
              */
-            Table recursiveTable = new ShadowTable(database.getMainSchema(), cteName, columns.toArray(new Column[0]));
+            Table recursiveTable = new ShadowTable(database.getMainSchema(), cteName,
+                                                    columns.toArray(Column.EMPTY_COLUMNS_ARR));
             BitSet outerUsedParameters = openParametersScope();
             queryScope.tableSubqueries.put(cteName, recursiveTable);
             try {
@@ -7079,7 +7080,7 @@ public final class Parser extends ParserBase {
         }
         read(CLOSE_PAREN);
         queryScope.tableSubqueries.put(cteName, new CTE(cteName, withQuery, StringUtils.cache(sql),
-                queryParameters, columnTemplateList.toArray(new Column[0]), session, isPotentiallyRecursive,
+                queryParameters, columnTemplateList.toArray(Column.EMPTY_COLUMNS_ARR), session, isPotentiallyRecursive,
                 queryScope));
     }
 

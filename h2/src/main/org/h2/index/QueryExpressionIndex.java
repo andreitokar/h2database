@@ -30,7 +30,7 @@ public abstract class QueryExpressionIndex extends Index {
         this.table = table;
         this.querySQL = querySQL;
         this.originalParameters = originalParameters;
-        columns = new Column[0];
+        columns = Column.EMPTY_COLUMNS_ARR;
     }
 
     public abstract boolean isExpired();

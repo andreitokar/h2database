@@ -66,7 +66,7 @@ public abstract class TableBase extends Table {
         this.globalTemporary = data.globalTemporary;
         this.tableEngineParams = data.tableEngineParams != null ? data.tableEngineParams : Collections.emptyList();
         setTemporary(data.temporary);
-        setColumns(data.columns.toArray(new Column[0]));
+        setColumns(data.columns.toArray(Column.EMPTY_COLUMNS_ARR));
     }
 
     @Override

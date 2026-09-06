@@ -110,7 +110,7 @@ public final class RegularQueryExpressionIndex extends QueryExpressionIndex impl
                 i++;
             }
         }
-        columns = columnList.toArray(new Column[0]);
+        columns = columnList.toArray(Column.EMPTY_COLUMNS_ARR);
 
         // reconstruct the index columns from the masks
         this.indexColumns = new IndexColumn[indexColumnCount];

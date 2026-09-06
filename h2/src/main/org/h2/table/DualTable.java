@@ -28,7 +28,7 @@ public class DualTable extends VirtualTable {
      */
     public DualTable(Database database) {
         super(database.getMainSchema(), 0, NAME);
-        setColumns(new Column[0]);
+        setColumns(Column.EMPTY_COLUMNS_ARR);
     }
 
     @Override
