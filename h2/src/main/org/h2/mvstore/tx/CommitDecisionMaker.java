@@ -28,7 +28,7 @@ final class CommitDecisionMaker<V> extends MVMap.DecisionMaker<VersionedValue<V>
     private MVMap.Decision decision;
 
     private final BitSet entryIds;
-    private final int pageEntryIds[];
+    private final int[] pageEntryIds;
     private int entryIdsCount;
 
     public CommitDecisionMaker(Transaction transaction, int maxKeysPerPage) {

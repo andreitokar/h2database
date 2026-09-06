@@ -1489,7 +1489,7 @@ public final class Database implements DataHandler, CastDataProvider {
                 list.add(s);
             }
         }
-        return list.toArray(new SessionLocal[0]);
+        return list.toArray(EMPTY_SESSION_ARRAY);
     }
 
     /**

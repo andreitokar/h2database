@@ -1400,12 +1400,14 @@ public abstract class Page<K,V> implements Cloneable {
         @Override
         protected void writeChildren(WriteBuffer buff, boolean withCounts) {
             int keyCount = getKeyCount();
-            for (int i = 0; i <= keyCount; i++) {
-                buff.putLong(children[i].getPos());
-            }
             if(withCounts) {
+                buff.position(buff.position() + (keyCount + 1) * 8); // reserve space for positions
                 for (int i = 0; i <= keyCount; i++) {
                     buff.putVarLong(children[i].count);
+                }
+            } else {
+                for (int i = 0; i <= keyCount; i++) {
+                    buff.putLong(children[i].getPos());
                 }
             }
         }

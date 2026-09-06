@@ -216,6 +216,10 @@ public class WriteBuffer {
      * @return this
      */
     public WriteBuffer position(int newPosition) {
+        int advancement = newPosition - buff.position();
+        if (advancement > 0) {
+            ensureCapacity(advancement);
+        }
         buff.position(newPosition);
         return this;
     }
