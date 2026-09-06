@@ -474,8 +474,8 @@ public class FullText {
         Parser p = new Parser(session);
         Expression expr = p.parseExpression(key);
         addColumnData(session, columns, data, expr);
-        String[] col = columns.toArray(new String[0]);
-        String[] dat = data.toArray(new String[0]);
+        String[] col = columns.toArray(StringUtils.EMPTY_STRING_ARR);
+        String[] dat = data.toArray(StringUtils.EMPTY_STRING_ARR);
         String[][] columnData = { col, dat };
         return columnData;
     }
@@ -913,7 +913,7 @@ public class FullText {
             index = new IndexInfo();
             index.schema = schemaName;
             index.table = tableName;
-            index.columns = columnList.toArray(new String[0]);
+            index.columns = columnList.toArray(StringUtils.EMPTY_STRING_ARR);
             rs = meta.getColumns(null,
                     StringUtils.escapeMetaDataPattern(schemaName),
                     StringUtils.escapeMetaDataPattern(tableName),

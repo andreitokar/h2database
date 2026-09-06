@@ -160,7 +160,7 @@ public class JdbcUtils {
                     classNames.add(p);
                 }
             }
-            allowedClassNamePrefixes = prefixes.toArray(new String[0]);
+            allowedClassNamePrefixes = prefixes.toArray(StringUtils.EMPTY_STRING_ARR);
             allowAllClasses = allowAll;
             allowedClassNames = classNames;
         }

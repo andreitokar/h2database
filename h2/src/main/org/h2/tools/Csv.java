@@ -355,7 +355,7 @@ public class Csv implements SimpleRowSource {
                 }
             }
         }
-        columnNames = list.toArray(new String[0]);
+        columnNames = list.toArray(StringUtils.EMPTY_STRING_ARR);
     }
 
     private static boolean isSimpleColumnName(String columnName) {

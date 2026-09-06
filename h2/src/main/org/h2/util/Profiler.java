@@ -251,7 +251,7 @@ public class Profiler implements Runnable {
                 stack.add(line);
             }
             if (!stack.isEmpty()) {
-                String[] s = stack.toArray(new String[0]);
+                String[] s = stack.toArray(StringUtils.EMPTY_STRING_ARR);
                 list.add(s);
             }
         }

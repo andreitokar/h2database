@@ -8,6 +8,7 @@ package org.h2.mvstore.type;
 import java.nio.ByteBuffer;
 import org.h2.mvstore.DataUtils;
 import org.h2.mvstore.WriteBuffer;
+import org.h2.util.StringUtils;
 
 /**
  * A string type.
@@ -16,11 +17,9 @@ public class StringDataType extends BasicDataType<String> {
 
     public static final StringDataType INSTANCE = new StringDataType();
 
-    private static final String[] EMPTY_STRING_ARR = new String[0];
-
     @Override
     public String[] createStorage(int size) {
-        return size == 0 ? EMPTY_STRING_ARR : new String[size];
+        return size == 0 ? StringUtils.EMPTY_STRING_ARR : new String[size];
     }
 
     @Override

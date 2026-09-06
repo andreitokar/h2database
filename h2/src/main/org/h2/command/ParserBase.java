@@ -265,7 +265,7 @@ public class ParserBase {
                 list.add(currentToken);
                 read();
             } while (readIfMore());
-            return list.toArray(new String[0]);
+            return list.toArray(StringUtils.EMPTY_STRING_ARR);
         } else if (currentTokenType == LITERAL) {
             ArrayList<Integer> list = Utils.newSmallArrayList();
             do {

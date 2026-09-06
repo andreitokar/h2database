@@ -264,7 +264,7 @@ public class CipherFactory {
                 set.add(x);
             }
         }
-        return set.toArray(new String[0]);
+        return set.toArray(StringUtils.EMPTY_STRING_ARR);
     }
 
 }

@@ -1148,7 +1148,7 @@ public final class Parser extends ParserBase {
                 columns.add(readIdentifier());
             } while (readIfMore());
         }
-        return columns.toArray(new String[0]);
+        return columns.toArray(StringUtils.EMPTY_STRING_ARR);
     }
 
     private Column[] parseColumnList(Table table) {
@@ -1179,7 +1179,7 @@ public final class Parser extends ParserBase {
         while (currentTokenType != END_OF_INPUT) {
             conditions.add(StringUtils.toUpperEnglish(readIdentifierOrKeyword()));
         }
-        return new Help(session, conditions.toArray(new String[0]));
+        return new Help(session, conditions.toArray(StringUtils.EMPTY_STRING_ARR));
     }
 
     private Prepared parseShow() {
@@ -1821,7 +1821,7 @@ public final class Parser extends ParserBase {
                 if (derivedColumnNames != null) {
                     query.init();
                     columnTemplates = QueryExpressionTable.createQueryColumnTemplateList(
-                            derivedColumnNames.toArray(new String[0]), query, false)
+                            derivedColumnNames.toArray(StringUtils.EMPTY_STRING_ARR), query, false)
                             .toArray(new Column[0]);
                 }
                 table = query.toTable(alias, columnTemplates, queryParameters, createView != null, currentSelect);
@@ -6320,7 +6320,8 @@ public final class Parser extends ParserBase {
         do {
             enumeratorList.add(readString());
         } while (readIfMore());
-        return TypeInfo.getTypeInfo(Value.ENUM, -1L, -1, new ExtTypeInfoEnum(enumeratorList.toArray(new String[0])));
+        return TypeInfo.getTypeInfo(Value.ENUM, -1L, -1,
+                                    new ExtTypeInfoEnum(enumeratorList.toArray(StringUtils.EMPTY_STRING_ARR)));
     }
 
     private TypeInfo parseGeometryType() {
@@ -7612,7 +7613,7 @@ public final class Parser extends ParserBase {
             do {
                 list.add(readIdentifier());
             } while (readIf(COMMA));
-            command.setStringArray(list.toArray(new String[0]));
+            command.setStringArray(list.toArray(StringUtils.EMPTY_STRING_ARR));
             return command;
         } else if (readIf("JAVA_OBJECT_SERIALIZER")) {
             readIfEqualOrTo();
@@ -7648,7 +7649,7 @@ public final class Parser extends ParserBase {
                     list.add(StringUtils.toUpperEnglish(readIdentifierOrKeyword()));
                 } while (readIf(COMMA));
             }
-            command.setStringArray(list.toArray(new String[0]));
+            command.setStringArray(list.toArray(StringUtils.EMPTY_STRING_ARR));
             return command;
         } else if (readIf("DEFAULT_NULL_ORDERING")) {
             readIfEqualOrTo();
@@ -7838,7 +7839,7 @@ public final class Parser extends ParserBase {
                         list.add(0, pgCatalog);
                     }
                 }
-                command.setStringArray(list.toArray(new String[0]));
+                command.setStringArray(list.toArray(StringUtils.EMPTY_STRING_ARR));
                 return command;
             }
             break;

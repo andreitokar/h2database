@@ -336,7 +336,7 @@ public class Bnf {
             }
             list.add(s);
         }
-        return list.toArray(new String[0]);
+        return list.toArray(StringUtils.EMPTY_STRING_ARR);
     }
 
     /**

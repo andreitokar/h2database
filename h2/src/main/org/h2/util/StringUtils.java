@@ -25,7 +25,9 @@ import org.h2.message.DbException;
 /**
  * A few String-related utility functions.
  */
-public class StringUtils {
+public class StringUtils
+{
+    public static final String[] EMPTY_STRING_ARR = new String[0];
 
     private static SoftReference<String[]> softCache;
     private static long softCacheCreatedNs;
@@ -492,7 +494,7 @@ public class StringUtils {
         }
         int length = s.length();
         if (length == 0) {
-            return new String[0];
+            return StringUtils.EMPTY_STRING_ARR;
         }
         ArrayList<String> list = Utils.newSmallArrayList();
         StringBuilder buff = new StringBuilder(length);
@@ -510,7 +512,7 @@ public class StringUtils {
         }
         String e = buff.toString();
         list.add(trim ? e.trim() : e);
-        return list.toArray(new String[0]);
+        return list.toArray(StringUtils.EMPTY_STRING_ARR);
     }
 
     /**

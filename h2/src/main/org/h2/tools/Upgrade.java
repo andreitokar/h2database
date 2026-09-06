@@ -327,7 +327,7 @@ public final class Upgrade {
     private static int exec(ArrayList<String> args) {
         try {
             ProcessBuilder pb = new ProcessBuilder();
-            pb.command(args.toArray(new String[0]));
+            pb.command(args.toArray(StringUtils.EMPTY_STRING_ARR));
             pb.inheritIO();
             Process p = pb.start();
             p.waitFor();

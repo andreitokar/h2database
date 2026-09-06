@@ -56,6 +56,7 @@ import org.h2.util.DateTimeUtils;
 import org.h2.util.HasSQL;
 import org.h2.util.NetworkConnectionInfo;
 import org.h2.util.SmallLRUCache;
+import org.h2.util.StringUtils;
 import org.h2.util.TimeZoneProvider;
 import org.h2.util.Utils;
 import org.h2.value.CompareMode;
@@ -362,9 +363,9 @@ public final class SessionLocal extends Session implements TransactionStore.Roll
      */
     public String[] getVariableNames() {
         if (variables == null) {
-            return new String[0];
+            return StringUtils.EMPTY_STRING_ARR;
         }
-        return variables.keySet().toArray(new String[0]);
+        return variables.keySet().toArray(StringUtils.EMPTY_STRING_ARR);
     }
 
     /**
@@ -846,7 +847,7 @@ public final class SessionLocal extends Session implements TransactionStore.Roll
             markUsedTablesAsUpdated();
         }
         if (savepoints != null) {
-            String[] names = savepoints.keySet().toArray(new String[0]);
+            String[] names = savepoints.keySet().toArray(StringUtils.EMPTY_STRING_ARR);
             for (String name : names) {
                 Savepoint sp = savepoints.get(name);
                 int savepointIndex = sp.logIndex;

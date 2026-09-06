@@ -20,6 +20,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 import org.h2.util.NetworkConnectionInfo;
+import org.h2.util.StringUtils;
 
 /**
  * This servlet lets the H2 Console be used in a Jakarta servlet container
@@ -46,7 +47,7 @@ public class JakartaWebServlet extends HttpServlet {
                 list.add(value);
             }
         }
-        String[] args = list.toArray(new String[0]);
+        String[] args = list.toArray(StringUtils.EMPTY_STRING_ARR);
         server = new WebServer();
         server.setAllowChunked(false);
         server.init(args);
